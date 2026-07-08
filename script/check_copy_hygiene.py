@@ -783,6 +783,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_security_path = ROOT / "docs/security.md"
     docs_connection_overlay_path = ROOT / "docs/connection-overlay.md"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    qr_scan_result_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/PairingQrScanResult.kt"
+    qr_scan_result_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt"
     client_screens_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
         "ClientScreensNoDeviceComposeTest.kt"
@@ -845,6 +847,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_security_text = docs_security_path.read_text(encoding="utf-8", errors="replace")
     docs_connection_overlay_text = docs_connection_overlay_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    qr_scan_result_text = qr_scan_result_path.read_text(encoding="utf-8", errors="replace")
+    qr_scan_result_test_text = qr_scan_result_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_remote_route_planner_text = runtime_remote_route_planner_path.read_text(
         encoding="utf-8",
         errors="replace",
@@ -951,9 +955,6 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         )
 
     required_main_activity_snippets = (
-        "parseRuntimePairingQrPayload(",
-        "allowDebugLoopbackRelay = BuildConfig.DEBUG",
-        "allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG",
         "val requireRemoteRouteForPairingQr = true",
         "requireRemoteRoute = requireRemoteRoute",
         "internal data class SharedChatDraft(",
@@ -980,6 +981,37 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             failures.append(
                 f"{main_activity_path.relative_to(ROOT)}: Android scanner raw-value acceptance must "
                 "reuse the runtime pairing parser policy before closing the camera scanner."
+            )
+
+    required_qr_scan_result_snippets = (
+        "parseRuntimePairingQrPayload(",
+        "allowDebugLoopbackRelay = BuildConfig.DEBUG",
+        "allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG",
+        "internal fun Iterable<String?>.aetherLinkPairingScanResultOrNull(",
+        "PairingQrScanResult.Valid(nonBlankRawValue)",
+        "sawInvalidPairingQr -> PairingQrScanResult.InvalidPairingQr",
+        "sawUnsupportedQr -> PairingQrScanResult.UnsupportedQr",
+    )
+    for snippet in required_qr_scan_result_snippets:
+        if snippet not in qr_scan_result_text:
+            failures.append(
+                f"{qr_scan_result_path.relative_to(ROOT)}: Android QR scanner result classification must "
+                f"stay on the runtime pairing parser policy and preserve result priority {snippet}."
+            )
+
+    required_qr_scan_result_test_snippets = (
+        "validCompactRemoteRouteQrReturnsValid",
+        "identityOnlyPairQrIsInvalidWhenRemoteRouteIsRequired",
+        "nonAetherLinkQrReturnsUnsupported",
+        "blankAndNullFrameValuesAreIgnored",
+        "mixedFrameBatchPrioritizesValidPairingQr",
+        "invalidPairingQrBeatsUnsupportedQrWhenNoValidQrExists",
+    )
+    for snippet in required_qr_scan_result_test_snippets:
+        if snippet not in qr_scan_result_test_text:
+            failures.append(
+                f"{qr_scan_result_test_path.relative_to(ROOT)}: Missing Android QR scanner decoded-result "
+                f"regression {snippet}."
             )
 
     required_archive_snackbar_runtime_snippets = (
@@ -13191,6 +13223,10 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical pairing smoke must keep the optional chat/cancel UI path.",
         ),
         (
+            "--expect-chat-complete",
+            "Physical pairing smoke must keep the optional chat-complete UI path.",
+        ),
+        (
             "--capture-ui-polish",
             "Physical pairing smoke must keep the optional UI polish screenshot/XML capture path.",
         ),
@@ -13209,6 +13245,118 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         (
             "--chat-delta-timeout",
             "Physical live-backend smoke must allow longer first-token waits.",
+        ),
+        (
+            "--chat-complete-timeout",
+            "Physical live-backend complete-response smoke must allow longer natural completion waits.",
+        ),
+        (
+            "--chat-expected-terms",
+            "Physical chat-complete smoke must be able to assert expected completed transcript terms.",
+        ),
+        (
+            "--chat-model-query",
+            "Physical live-provider smoke must support selecting a specific chat model/provider before send.",
+        ),
+        (
+            "--summary-json",
+            "Physical pairing smoke must write machine-readable proof-boundary summary JSON when requested.",
+        ),
+        (
+            "AETHERLINK_ANDROID_PAIRING_SUMMARY_JSON",
+            "Physical pairing smoke must allow summary JSON evidence to be requested from the environment.",
+        ),
+        (
+            "write_pairing_summary_json",
+            "Physical pairing smoke must centralize summary JSON writing for success and failure paths.",
+        ),
+        (
+            "optical_camera_qr_scan",
+            "Physical pairing smoke summary must keep optical QR proof explicitly false for adb deeplink injection runs.",
+        ),
+        (
+            "collect_ui_polish_artifacts",
+            "Physical pairing smoke summary must collect individual UI polish PNG/XML artifact paths.",
+        ),
+        (
+            "ui_polish_capture_artifact_manifest_complete",
+            "Physical pairing smoke summary must report whether the UI polish artifact manifest is complete.",
+        ),
+        (
+            "live_provider_chat_complete_proof",
+            "Physical pairing smoke summary must keep live-provider chat-complete proof separate from chat/cancel proof.",
+        ),
+        (
+            "chat_expected_terms_observed",
+            "Physical pairing smoke summary must record expected completed-chat terms observed in the completed transcript.",
+        ),
+        (
+            "run_chat_complete_smoke",
+            "Physical pairing smoke must keep the natural chat-complete UI smoke path.",
+        ),
+        (
+            "latest_chat_send_request_id",
+            "Physical chat-complete smoke must bind delta/done checks to the new chat.send request id.",
+        ),
+        (
+            "wait_for_runtime_response_for_request",
+            "Physical chat-complete smoke must wait for chat.delta and chat.done for the selected request id.",
+        ),
+        (
+            "ui_xml_contains_expected_terms",
+            "Physical chat-complete smoke must verify expected terms from the completed Android transcript XML.",
+        ),
+        (
+            "android_pairing_chat_complete_summary_json_self_test_not_phone_chat_proof",
+            "Android pairing chat-complete summary self-test must state that it is not phone chat proof.",
+        ),
+        (
+            "paths[\"ui_polish_artifacts\"]",
+            "Physical pairing smoke summary must publish UI polish artifact paths under the safe paths object.",
+        ),
+        (
+            "real_different_network_connectivity_proof",
+            "Physical pairing smoke summary must keep real different-network proof separate from local adb-reverse smokes.",
+        ),
+        (
+            "android_direct_model_backend_access",
+            "Physical pairing smoke summary must explicitly avoid direct Android model-backend proof claims.",
+        ),
+        (
+            "--self-test-summary-json",
+            "Physical pairing smoke must expose a no-device summary JSON proof-boundary self-test path.",
+        ),
+        (
+            "--self-test-summary-json-failure",
+            "Physical pairing smoke must expose a no-device failure-path summary JSON self-test path.",
+        ),
+        (
+            "android_pairing_summary_json_self_test_not_phone_pairing_proof",
+            "Android pairing summary JSON self-test must state that it is not phone pairing proof.",
+        ),
+        (
+            "android_pairing_summary_json_failure_self_test_not_phone_pairing_proof",
+            "Android pairing failure summary JSON self-test must state that it is not phone pairing proof.",
+        ),
+        (
+            "write_pairing_summary_json 42",
+            "Physical pairing summary JSON self-test must cover failure-path summary writing.",
+        ),
+        (
+            "AETHERLINK_ANDROID_CHAT_MODEL_QUERY",
+            "Physical live-provider smoke must allow model selection to be scripted from the environment.",
+        ),
+        (
+            "model_query_selector_from_xml_path",
+            "Physical live-provider smoke must keep the pure XML model-row selector used by no-device coverage.",
+        ),
+        (
+            "tap_chat_model_matching_query",
+            "Physical live-provider smoke must tap the model row that matches the requested query.",
+        ),
+        (
+            "wait_for_chat_send_model_query",
+            "Physical live-provider smoke must verify the runtime received chat.send for the requested model.",
         ),
         (
             "--probe-external-relay-from-device",
@@ -13331,6 +13479,18 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Android QA artifact sanitizer self-test must state that it is not phone logcat or activity proof.",
         ),
         (
+            "--self-test-chat-model-query-selector",
+            "Physical pairing smoke must expose a no-device chat-model query selector self-test path.",
+        ),
+        (
+            "CHAT_MODEL_QUERY_SELECTOR_SELF_TEST_MARKER",
+            "Physical pairing smoke must give the chat-model query selector self-test an in-band proof-boundary marker.",
+        ),
+        (
+            "chat_model_query_selector_self_test_not_phone_model_selection_proof",
+            "Android chat-model query selector self-test must state that it is not phone model-selection proof.",
+        ),
+        (
             "RAW_AM_START_LOG",
             "Physical pairing smoke must keep raw am start output temporary so stored artifacts are sanitized.",
         ),
@@ -13392,6 +13552,74 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "No-device quality gate must behavior-test Android failed activity/logcat artifact redaction.",
         ),
         (
+            "check_android_pairing_chat_model_query_selector_guard",
+            "No-device quality gate must behavior-test Android chat-model query selector matching.",
+        ),
+        (
+            "check_android_pairing_summary_json_guard",
+            "No-device quality gate must behavior-test Android pairing summary JSON proof-boundary coverage.",
+        ),
+        (
+            "--self-test-chat-complete-summary-json",
+            "No-device quality gate must behavior-test Android chat-complete summary JSON coverage.",
+        ),
+        (
+            "complete-summary.json",
+            "No-device quality gate must write a separate Android chat-complete summary JSON artifact.",
+        ),
+        (
+            "live_provider_chat_complete_proof",
+            "No-device quality gate must assert Android chat-complete summary proof coverage.",
+        ),
+        (
+            "chat_expected_terms_observed",
+            "No-device quality gate must assert expected completed-chat term observation in summary JSON.",
+        ),
+        (
+            "failure-summary.json",
+            "No-device quality gate must behavior-test Android pairing failure-path summary JSON coverage.",
+        ),
+        (
+            'summary.get("success") is not False',
+            "No-device quality gate must assert failure-path summary JSON success=false.",
+        ),
+        (
+            'summary.get("exit_status") != 42',
+            "No-device quality gate must assert failure-path summary JSON preserves nonzero status.",
+        ),
+        (
+            '"physical_device_observed"',
+            "No-device quality gate must assert failure-path summary JSON does not imply phone proof.",
+        ),
+        (
+            "ui_polish_capture_artifact_manifest_complete",
+            "No-device quality gate must behavior-test Android pairing summary UI polish artifact manifest coverage.",
+        ),
+        (
+            "Covered Android pairing summary UI polish artifact-manifest addendum",
+            "No-device quality summary must mention Android pairing summary UI polish artifact-manifest coverage.",
+        ),
+        (
+            "success and failure-path physical smoke proof booleans",
+            "No-device quality summary must mention Android pairing summary failure-path proof-boundary coverage.",
+        ),
+        (
+            "live-provider chat-complete",
+            "No-device quality summary must mention Android chat-complete summary proof-boundary coverage.",
+        ),
+        (
+            "physical/live-backend streamed chat/cancel or chat-complete",
+            "No-device quality final caveat must keep physical chat-complete outside no-device proof.",
+        ),
+        (
+            "lm_studio:target-model",
+            "No-device chat-model query selector guard must cover provider-qualified LM Studio model queries.",
+        ),
+        (
+            "chat_model_query_selector_self_test_not_phone_model_selection_proof",
+            "No-device chat-model query selector guard must prove self-test output is not phone model-selection proof.",
+        ),
+        (
             "--self-test-sanitize-android-qa-artifacts",
             "No-device quality gate must run the Android QA artifact sanitizer self-test.",
         ),
@@ -13415,10 +13643,39 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Android pairing deeplink am-start sanitizer self-test proof-boundary addendum",
             "No-device quality summary must mention Android pairing deeplink am-start sanitizer self-test proof-boundary coverage.",
         ),
+        (
+            "Android pairing chat-model query selector addendum",
+            "No-device quality summary must mention Android pairing chat-model query selector coverage.",
+        ),
+        (
+            "Android pairing summary JSON proof-boundary addendum",
+            "No-device quality summary must mention Android pairing summary JSON proof-boundary coverage.",
+        ),
     )
     for snippet, guidance in required_no_device_snippets:
         if snippet not in no_device_text:
             failures.append(f"{no_device_relative}: {guidance}")
+
+    runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
+    runtime_dev_server_text = runtime_dev_server_path.read_text(encoding="utf-8", errors="replace")
+    runtime_dev_server_relative = runtime_dev_server_path.relative_to(ROOT)
+    required_runtime_log_snippets = (
+        (
+            "logReceivedEnvelope(envelope, route: \"relay\")",
+            "RuntimeDevServer relay path must use the shared safe receive logger.",
+        ),
+        (
+            "received chat.send model=",
+            "RuntimeDevServer must log only the selected chat model for physical forced-model proof.",
+        ),
+        (
+            "safeLogIdentifier",
+            "RuntimeDevServer chat model logging must sanitize control/whitespace characters.",
+        ),
+    )
+    for snippet, guidance in required_runtime_log_snippets:
+        if snippet not in runtime_dev_server_text:
+            failures.append(f"{runtime_dev_server_relative}: {guidance}")
 
     relay_probe_path = ROOT / "script/android_relay_reachability_probe.sh"
     relay_probe_text = relay_probe_path.read_text(encoding="utf-8", errors="replace")
@@ -13502,12 +13759,48 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical external-relay QA summary must not claim production relay proof.",
         ),
         (
+            '"production_relay_proof": False',
+            "Physical external-relay QA summary must keep production relay proof explicitly false.",
+        ),
+        (
             '"production_session_key_exchange": False',
             "Physical external-relay QA summary must not claim production session-key proof.",
         ),
         (
+            '"production_session_key_exchange_proof": False',
+            "Physical external-relay QA summary must keep production session-key proof explicitly false.",
+        ),
+        (
             '"production_end_to_end_transport_encryption": False',
             "Physical external-relay QA summary must not claim production E2E transport encryption proof.",
+        ),
+        (
+            '"production_end_to_end_transport_encryption_proof": False',
+            "Physical external-relay QA summary must keep production E2E transport encryption proof explicitly false.",
+        ),
+        (
+            '"external_network_operator_confirmed": external_network_operator_confirmed',
+            "Physical external-relay QA summary must expose the operator-confirmed external-network gate.",
+        ),
+        (
+            '"real_different_network_relay_verified": real_different_network_connectivity_proof',
+            "Physical external-relay QA summary must split real different-network relay proof from generic physical wrapper success.",
+        ),
+        (
+            '"real_different_network_connectivity_proof": real_different_network_connectivity_proof',
+            "Physical external-relay QA summary must expose real different-network proof separately from same-LAN/private relay evidence.",
+        ),
+        (
+            '"android_direct_model_backend_access": False',
+            "Physical external-relay QA summary must not claim direct Android model-backend access.",
+        ),
+        (
+            '"private_or_same_lan_development_relay": private_or_same_lan_development_relay',
+            "Physical external-relay QA summary must identify private or same-LAN development relay evidence.",
+        ),
+        (
+            "private_or_same_lan_development_relay_not_real_different_network_proof",
+            "Physical external-relay QA summary must caveat private or same-LAN relay runs as not real different-network proof.",
         ),
         (
             '"physical_external_relay_success": physical_external_relay_verified',
@@ -13544,6 +13837,74 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         (
             "Invalid relay host $SUMMARY_RELAY_HOST:$RELAY_PORT: use a host or IP address, not a URL.",
             "Physical external-relay QA must report unsafe relay-host input with a safe invalid-host label.",
+        ),
+        (
+            "--summary-json \"$ANDROID_PAIRING_SUMMARY_JSON\"",
+            "Physical external-relay QA must pass child Android pairing summary JSON through to the smoke.",
+        ),
+        (
+            "--expect-chat-complete",
+            "Physical external-relay QA must pass chat-complete proof options through to the child Android pairing smoke.",
+        ),
+        (
+            "--chat-complete-timeout",
+            "Physical external-relay QA must pass chat-complete timeout through to the child Android pairing smoke.",
+        ),
+        (
+            "--chat-expected-terms",
+            "Physical external-relay QA must pass expected completed transcript terms through to the child Android pairing smoke.",
+        ),
+        (
+            "--chat-model-query",
+            "Physical external-relay QA must pass chat-model query selection through to the child Android pairing smoke.",
+        ),
+        (
+            "safe_android_pairing_summary",
+            "Physical external-relay QA summary must embed only safe child Android pairing summary fields.",
+        ),
+        (
+            '"live_provider_chat_complete_proof"',
+            "Physical external-relay QA summary must preserve safe child Android chat-complete proof coverage.",
+        ),
+        (
+            '"chat_expected_terms_observed"',
+            "Physical external-relay QA summary must preserve safe completed transcript term coverage.",
+        ),
+        (
+            '"expect_chat_complete": expect_chat_complete_bool',
+            "Physical external-relay QA summary must expose whether chat-complete was requested.",
+        ),
+        (
+            '"chat_done_count": chat_done_count',
+            "Physical external-relay QA summary must expose natural chat.done counts.",
+        ),
+        (
+            '"android_pairing_summary_live_provider_chat_complete_proof": android_pairing_summary_live_provider_chat_complete_proof',
+            "Physical external-relay QA summary must expose child-derived live-provider chat-complete proof.",
+        ),
+        (
+            '"chat_complete_ui_xml": bool(paths.get("chat_complete_ui_xml"))',
+            "Physical external-relay QA safe child summary must preserve completed transcript XML path presence only.",
+        ),
+        (
+            '"android_pairing_summary_proof_boundary_preserved": android_pairing_summary_proof_boundary_preserved',
+            "Physical external-relay QA summary must expose child Android pairing summary proof-boundary preservation.",
+        ),
+        (
+            '"adb_deeplink_injection": nested_value(android_pairing_child_summary, ("coverage", "adb_deeplink_injection_succeeded")) is True',
+            "Physical external-relay QA summary must expose adb deeplink injection separately from optical QR proof.",
+        ),
+        (
+            '"optical_camera_qr_scan": False',
+            "Physical external-relay QA summary must not claim optical camera QR proof.",
+        ),
+        (
+            '"child_summaries": {',
+            "Physical external-relay QA summary must expose safe child summary evidence separately from probe summaries.",
+        ),
+        (
+            "Physical external relay smoke completed but Android pairing summary JSON success was not proven.",
+            "Physical external-relay QA must fail successful-looking runs when child Android pairing summary success is missing.",
         ),
     )
     for snippet, guidance in required_physical_wrapper_snippets:
@@ -13680,6 +14041,86 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "No-device physical wrapper guard must assert seeded probe-summary redaction self-tests do not claim physical external-relay proof.",
         ),
         (
+            'summary["coverage"]["adb_deeplink_injection"] is True',
+            "No-device physical wrapper guard must assert seeded child deeplink injection remains separate from optical QR proof.",
+        ),
+        (
+            'summary["coverage"]["optical_camera_qr_scan"] is False',
+            "No-device physical wrapper guard must assert wrapper-level optical QR proof remains false.",
+        ),
+        (
+            'summary["coverage"]["production_relay_proof"] is False',
+            "No-device physical wrapper guard must assert wrapper-level production relay proof remains false.",
+        ),
+        (
+            'summary["coverage"]["production_session_key_exchange_proof"] is False',
+            "No-device physical wrapper guard must assert wrapper-level production session-key proof remains false.",
+        ),
+        (
+            'summary["coverage"]["production_end_to_end_transport_encryption_proof"] is False',
+            "No-device physical wrapper guard must assert wrapper-level production E2E proof remains false.",
+        ),
+        (
+            'summary["coverage"]["external_network_operator_confirmed"] is False',
+            "No-device physical wrapper guard must assert seeded self-tests do not claim operator-confirmed external-network proof.",
+        ),
+        (
+            'summary["coverage"]["real_different_network_relay_verified"] is False',
+            "No-device physical wrapper guard must assert seeded self-tests do not claim real different-network relay proof.",
+        ),
+        (
+            'summary["coverage"]["real_different_network_connectivity_proof"] is False',
+            "No-device physical wrapper guard must assert seeded self-tests do not claim real different-network connectivity proof.",
+        ),
+        (
+            'summary["coverage"]["android_direct_model_backend_access"] is False',
+            "No-device physical wrapper guard must assert wrapper-level direct Android backend access proof remains false.",
+        ),
+        (
+            'summary["coverage"]["android_pairing_summary_json_present"] is True',
+            "No-device physical wrapper guard must assert child Android pairing summary presence.",
+        ),
+        (
+            'summary["coverage"]["android_pairing_summary_proof_boundary_preserved"] is True',
+            "No-device physical wrapper guard must assert child Android pairing summary proof-boundary preservation.",
+        ),
+        (
+            'summary["coverage"]["android_pairing_summary_live_provider_chat_complete_proof"] is True',
+            "No-device physical wrapper guard must assert child Android pairing chat-complete proof preservation.",
+        ),
+        (
+            'summary["coverage"]["android_pairing_summary_chat_expected_terms_observed"] == ["ExternalComplete"]',
+            "No-device physical wrapper guard must assert expected completed transcript terms survive summary reduction.",
+        ),
+        (
+            'summary["coverage"]["expect_chat_complete"] is True',
+            "No-device physical wrapper guard must assert chat-complete pass-through was requested.",
+        ),
+        (
+            'child["coverage"]["chat_complete_requested"] is True',
+            "No-device physical wrapper guard must assert child chat-complete request coverage survives.",
+        ),
+        (
+            'child["coverage"]["live_provider_chat_complete_proof"] is True',
+            "No-device physical wrapper guard must assert child live-provider chat-complete proof survives.",
+        ),
+        (
+            'child["coverage"]["chat_expected_terms_observed"] == ["ExternalComplete"]',
+            "No-device physical wrapper guard must assert child expected-term coverage survives.",
+        ),
+        (
+            'child["paths_present"]["chat_complete_ui_xml"] is False',
+            "No-device physical wrapper guard must assert child chat-complete path presence is tracked without inventing artifacts.",
+        ),
+        (
+            'summary["child_summaries"]["android_pairing_deeplink"] is None',
+            "No-device physical wrapper guard must assert invalid-host runs do not invent child Android pairing summary proof.",
+        ),
+        (
+            'child["coverage"]["production_relay_proof"] is False',
+            "No-device physical wrapper guard must assert child Android pairing summary keeps production relay proof false.",
+        ),
+        (
             '"self_test_redaction_only_not_physical_relay_proof" in summary["caveats"]',
             "No-device physical wrapper guard must assert seeded redaction self-tests carry a not-physical-proof caveat.",
         ),
@@ -13795,12 +14236,34 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "physical external-relay different-network confirmation gate addendum",
             "No-device quality summary must name physical external-relay different-network confirmation coverage as a distinct addendum.",
         ),
+        (
+            "physical external-relay Android pairing summary artifact addendum",
+            "No-device quality summary must name physical external-relay Android pairing summary artifact coverage.",
+        ),
+        (
+            "physical external-relay chat-complete pass-through addendum",
+            "No-device quality summary must name physical external-relay chat-complete pass-through coverage.",
+        ),
+        (
+            "physical external-relay proof-boundary split addendum",
+            "No-device quality summary must name physical external-relay proof-boundary split coverage.",
+        ),
     )
     for snippet, guidance in required_no_device_physical_wrapper_snippets:
         if snippet not in no_device_text:
             failures.append(f"{no_device_relative}: {guidance}")
 
     required_physical_summary_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Android Pairing Summary Artifact No-Device Gate",
+            "Progress docs must record the physical external-relay Android pairing summary artifact gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Android Pairing Summary Artifact No-Device Gate",
+            "QA evidence must record the physical external-relay Android pairing summary artifact gate.",
+        ),
         (
             ROOT / "docs/progress.md",
             "Physical External Relay Summary No-Device Gate",
@@ -13815,6 +14278,11 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             ROOT / "docs/roadmap.md",
             "physical external-relay summary",
             "Roadmap smoke coverage queue must name physical external-relay summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "physical external-relay Android pairing summary artifact",
+            "Roadmap smoke coverage queue must name physical external-relay Android pairing summary artifact coverage.",
         ),
     )
     for path, snippet, guidance in required_physical_summary_doc_snippets:
@@ -14813,6 +15281,52 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
     return failures
 
 
+def docs_hygiene_latest_qa_evidence_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "script/check_docs_hygiene.py": (
+            "QA_EVIDENCE_DOC",
+            "def latest_qa_evidence_entry",
+            "def latest_qa_evidence_failures",
+            "Latest QA evidence entry must name the proof boundary.",
+            "Latest QA evidence entry must record that GPT-5.3-Codex-Spark was not used.",
+            "failures.extend(latest_qa_evidence_failures())",
+        ),
+        "script/check_no_device_quality.sh": (
+            "Covered QA evidence latest-entry proof-boundary hygiene addendum",
+        ),
+        "docs/progress.md": (
+            "QA Evidence Latest-Entry Proof-Boundary Hygiene",
+            "latest QA evidence entry",
+            "no-device docs-hygiene proof only",
+        ),
+        "docs/qa-evidence.md": (
+            "QA Evidence Latest-Entry Proof-Boundary Hygiene",
+            "Agent state: GPT-5.3-Codex-Spark was not used.",
+            "Verification commands:",
+            "optical/camera QR",
+            "production relay",
+            "real different-network",
+        ),
+        "docs/roadmap.md": (
+            "Latest QA evidence latest-entry hygiene",
+            "QA evidence latest-entry proof-boundary hygiene",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for QA evidence latest-entry hygiene guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing QA evidence latest-entry hygiene snippet {snippet!r}."
+                )
+    return failures
+
+
 def attachment_ingestion_guard_failures() -> list[str]:
     failures: list[str] = []
     android_picker_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
@@ -14823,9 +15337,19 @@ def attachment_ingestion_guard_failures() -> list[str]:
         "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeAttachmentPromptResourceTest.kt"
     )
     macos_extractor_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift"
+    macos_ingestor_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentIngestor.swift"
+    macos_chunker_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentChunker.swift"
     macos_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift"
+    macos_ingestor_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentIngestorTests.swift"
+    macos_chunker_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentChunkerTests.swift"
     macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_document_index_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift"
+    macos_sqlite_document_index_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift"
     macos_router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    macos_document_index_test_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift"
+    macos_sqlite_document_index_test_path = ROOT / (
+        "apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift"
+    )
     lm_studio_test_path = ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift"
     protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
@@ -14843,9 +15367,17 @@ def attachment_ingestion_guard_failures() -> list[str]:
         android_runtime_test_path,
         android_prompt_resource_test_path,
         macos_extractor_path,
+        macos_ingestor_path,
+        macos_chunker_path,
         macos_test_path,
+        macos_ingestor_test_path,
+        macos_chunker_test_path,
         macos_router_path,
+        macos_document_index_path,
+        macos_sqlite_document_index_path,
         macos_router_test_path,
+        macos_document_index_test_path,
+        macos_sqlite_document_index_test_path,
         lm_studio_test_path,
         protocol_schema_path,
         protocol_schema_check_path,
@@ -14867,9 +15399,17 @@ def attachment_ingestion_guard_failures() -> list[str]:
     android_runtime_test_text = android_runtime_test_path.read_text(encoding="utf-8")
     android_prompt_resource_test_text = android_prompt_resource_test_path.read_text(encoding="utf-8")
     macos_extractor_text = macos_extractor_path.read_text(encoding="utf-8")
+    macos_ingestor_text = macos_ingestor_path.read_text(encoding="utf-8")
+    macos_chunker_text = macos_chunker_path.read_text(encoding="utf-8")
     macos_test_text = macos_test_path.read_text(encoding="utf-8")
+    macos_ingestor_test_text = macos_ingestor_test_path.read_text(encoding="utf-8")
+    macos_chunker_test_text = macos_chunker_test_path.read_text(encoding="utf-8")
     macos_router_text = macos_router_path.read_text(encoding="utf-8")
+    macos_document_index_text = macos_document_index_path.read_text(encoding="utf-8")
+    macos_sqlite_document_index_text = macos_sqlite_document_index_path.read_text(encoding="utf-8")
     macos_router_test_text = macos_router_test_path.read_text(encoding="utf-8")
+    macos_document_index_test_text = macos_document_index_test_path.read_text(encoding="utf-8")
+    macos_sqlite_document_index_test_text = macos_sqlite_document_index_test_path.read_text(encoding="utf-8")
     lm_studio_test_text = lm_studio_test_path.read_text(encoding="utf-8")
     protocol_schema_text = protocol_schema_path.read_text(encoding="utf-8")
     protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8")
@@ -15076,6 +15616,462 @@ def attachment_ingestion_guard_failures() -> list[str]:
 
     required_document_resource_policy_snippets = (
         (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public final class RuntimeDocumentIndexStore",
+            "Runtime document indexing must keep a runtime-owned store before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "public final class SQLiteRuntimeDocumentIndexStore",
+            "Runtime document indexing must keep a durable SQLite store before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "runtime-document-index.sqlite",
+            "SQLite runtime document indexing must use a dedicated durable database file.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "RuntimeEventLogFileProtection.prepareDirectory",
+            "SQLite runtime document indexing must reuse owner-only runtime file protection.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public func documents(limit: Int = 100)",
+            "Runtime document indexing must keep a bounded catalog listing API before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "public func documents(limit: Int = 100) throws",
+            "SQLite runtime document indexing must keep a bounded catalog listing API before protocol exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "documents(\n        matchingContentFingerprint contentFingerprint: String,",
+            "Runtime document indexing must keep a bounded content-fingerprint match API before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "documents(\n        matchingContentFingerprint contentFingerprint: String,",
+            "SQLite runtime document indexing must keep a bounded content-fingerprint match API before protocol exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "documents(\n        matchingQuality quality: DocumentIngestionQuality,",
+            "Runtime document indexing must keep a quality-filtered catalog API before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "documents(\n        matchingQuality quality: DocumentIngestionQuality,",
+            "SQLite runtime document indexing must keep a quality-filtered catalog API before protocol exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public struct RuntimeDocumentIndexSummary",
+            "Runtime document indexing must keep a safe summary snapshot type before protocol exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public func summary() -> RuntimeDocumentIndexSummary",
+            "Runtime document indexing must keep safe summary counts before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "public func summary() throws -> RuntimeDocumentIndexSummary",
+            "SQLite runtime document indexing must keep safe summary counts before protocol exposure.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "runtimeDocumentSearchResults(",
+            "SQLite runtime document indexing must share lexical query ranking with the in-memory store.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "runtime_document_index_chunk_fts",
+            "SQLite runtime document indexing must keep its FTS candidate table.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "ftsCandidateChunkIDsUnlocked",
+            "SQLite runtime document indexing must query FTS candidates before final lexical ranking.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "tokenize = 'unicode61 remove_diacritics 2'",
+            "SQLite runtime document indexing must keep unicode-aware FTS tokenization.",
+        ),
+        (
+            macos_sqlite_document_index_text,
+            macos_sqlite_document_index_path,
+            "public func deleteDocument",
+            "SQLite runtime document indexing must support deletion before retrieval integration.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "stableDocumentID",
+            "Runtime document indexing must keep deterministic document IDs.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "stableChunkID",
+            "Runtime document indexing must keep deterministic chunk IDs.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "contentFingerprint",
+            "Runtime document indexing must keep content fingerprints instead of source paths.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public func query(",
+            "Runtime document indexing must keep a bounded lexical query seam.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public func deleteDocument",
+            "Runtime document indexing must support deletion before retrieval integration.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testIndexesChunksWithStableIDsAndSourceLabels",
+            "Runtime document index tests must cover stable IDs and source labels.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testLexicalQueryRanksAndReturnsBoundedSnippets",
+            "Runtime document index tests must cover lexical rank/snippet results.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testListsDocumentsAsBoundedCatalog",
+            "Runtime document index tests must cover bounded catalog listing.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testSummarizesDocumentIndexWithoutContentOrFutureMetadata",
+            "Runtime document index tests must cover safe summary counts without content or future metadata.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testFindsDocumentsByContentFingerprintWithoutContentOrFutureMetadata",
+            "Runtime document index tests must cover content-fingerprint match listing without content or future metadata.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testListsDocumentsByQualityWithoutContentOrFutureMetadata",
+            "Runtime document index tests must cover quality-filtered catalog listing without content or future metadata.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testReplacingDocumentRemovesOldChunks",
+            "Runtime document index tests must cover replacement cleanup.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testIndexRecordsDoNotCarryWorkspaceSourcePathOrRetrievalMetadata",
+            "Runtime document index tests must cover no workspace/source/retrieval metadata.",
+        ),
+        (
+            macos_document_index_test_text,
+            macos_document_index_test_path,
+            "testDeletedDocumentsAreNotReturned",
+            "Runtime document index tests must cover deletion.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStorePersistsDocumentAndChunksAcrossReopen",
+            "SQLite runtime document index tests must cover persistence across reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen",
+            "SQLite runtime document index tests must cover lexical query parity after reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreUsesFtsCandidateIndexWithoutChangingQueryResults",
+            "SQLite runtime document index tests must cover FTS candidate indexing without changing query results.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreListsDocumentsAsBoundedCatalogAfterReopen",
+            "SQLite runtime document index tests must cover bounded catalog listing after reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreSummarizesDocumentIndexAfterReopen",
+            "SQLite runtime document index tests must cover safe summary counts after reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreFindsDocumentsByContentFingerprintAfterReopen",
+            "SQLite runtime document index tests must cover content-fingerprint match listing after reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreListsDocumentsByQualityAfterReopen",
+            "SQLite runtime document index tests must cover quality-filtered catalog listing after reopen.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreReplacingDocumentRemovesOldChunksAndQueryRows",
+            "SQLite runtime document index tests must cover replacement cleanup.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreDeleteRemovesDocumentChunksAndQueryRows",
+            "SQLite runtime document index tests must cover deletion cleanup.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreSchemaDoesNotPersistPathProjectRetrievalEmbeddingOrCitationColumns",
+            "SQLite runtime document index tests must cover schema metadata boundaries.",
+        ),
+        (
+            macos_sqlite_document_index_test_text,
+            macos_sqlite_document_index_test_path,
+            "testSQLiteStoreRejectsCorruptQualityValues",
+            "SQLite runtime document index tests must cover corrupt quality failure.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDocumentIndexStoreTests",
+            "Default no-device gate must run RuntimeDocumentIndexStoreTests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "SQLiteRuntimeDocumentIndexStoreTests",
+            "Default no-device gate must run SQLiteRuntimeDocumentIndexStoreTests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "runtime document index store addendum",
+            "Default no-device summary must name runtime document index store coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "SQLite runtime document index store addendum",
+            "Default no-device summary must name SQLite runtime document index store coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "FTS candidate query prefiltering",
+            "Default no-device summary must name SQLite document-index FTS candidate coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "bounded catalog listing",
+            "Default no-device summary must name runtime document-index catalog listing coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "safe summary counts",
+            "Default no-device summary must name runtime document-index summary coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "content-fingerprint match listing",
+            "Default no-device summary must name runtime document-index content-fingerprint matching coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "quality-filtered catalog",
+            "Default no-device summary must name runtime document-index quality-filtered catalog coverage.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "public final class DocumentIngestor",
+            "Document ingestion must keep a runtime-side extraction-plus-chunking result envelope.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "public struct DocumentIngestionSummary",
+            "Document ingestion result envelope must keep safe structural summary metadata.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "public enum DocumentIngestionQuality",
+            "Document ingestion result envelope must expose bounded quality states.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "extractedCharacterCount",
+            "Document ingestion summary must preserve extracted text character counts for future indexing policy.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "chunkCount",
+            "Document ingestion summary must preserve chunk counts for future indexing policy.",
+        ),
+        (
+            macos_ingestor_text,
+            macos_ingestor_path,
+            "case noUsableText",
+            "Document ingestion quality states must keep whitespace-only extracted documents explicit.",
+        ),
+        (
+            macos_ingestor_test_text,
+            macos_ingestor_test_path,
+            "testIngestsExtractedDocumentIntoChunksAndSafeSummary",
+            "Document ingestor tests must cover extracted-document chunking and safe summary metadata.",
+        ),
+        (
+            macos_ingestor_test_text,
+            macos_ingestor_test_path,
+            "testIngestsFileThroughExtractorWithoutLeakingSourcePathIntoSummary",
+            "Document ingestor tests must prove source paths stay out of portable summaries.",
+        ),
+        (
+            macos_ingestor_test_text,
+            macos_ingestor_test_path,
+            "testWhitespaceExtractedDocumentProducesNoUsableTextSummary",
+            "Document ingestor tests must cover whitespace-only extracted documents.",
+        ),
+        (
+            macos_ingestor_test_text,
+            macos_ingestor_test_path,
+            "testPropagatesChunkingPolicyErrorsBeforeReturningResult",
+            "Document ingestor tests must propagate chunking policy errors.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentIngestorTests",
+            "Default no-device gate must run DocumentIngestorTests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentIngestion result envelope addendum",
+            "Default no-device summary must name DocumentIngestion result-envelope coverage.",
+        ),
+        (
+            macos_chunker_text,
+            macos_chunker_path,
+            "public struct DocumentChunkingPolicy",
+            "Document ingestion must keep a pure document chunking policy.",
+        ),
+        (
+            macos_chunker_text,
+            macos_chunker_path,
+            "public final class DocumentChunker",
+            "Document ingestion must keep a pure runtime-side document chunker.",
+        ),
+        (
+            macos_chunker_text,
+            macos_chunker_path,
+            "startCharacterOffset",
+            "Document chunks must preserve character-offset metadata for future indexing.",
+        ),
+        (
+            macos_chunker_text,
+            macos_chunker_path,
+            "overlapCharacters must be less than maxCharacters",
+            "Document chunking must reject invalid overlap policies before indexing.",
+        ),
+        (
+            macos_chunker_text,
+            macos_chunker_path,
+            "isSentenceTerminal",
+            "Document chunking must prefer sentence boundaries before hard splitting.",
+        ),
+        (
+            macos_chunker_test_text,
+            macos_chunker_test_path,
+            "testShortExtractedDocumentReturnsSingleSourceLabeledChunk",
+            "Document chunker tests must preserve source labels on short documents.",
+        ),
+        (
+            macos_chunker_test_text,
+            macos_chunker_test_path,
+            "testLongDocumentPrefersSentenceAndWordBoundaries",
+            "Document chunker tests must cover sentence and word boundary selection.",
+        ),
+        (
+            macos_chunker_test_text,
+            macos_chunker_test_path,
+            "testAppliesBoundedOverlapBetweenAdjacentChunks",
+            "Document chunker tests must cover bounded adjacent overlap.",
+        ),
+        (
+            macos_chunker_test_text,
+            macos_chunker_test_path,
+            "testKeepsMultilingualTextAndReturnsNoChunksForWhitespaceOnlyDocuments",
+            "Document chunker tests must preserve multilingual text and drop whitespace-only input.",
+        ),
+        (
+            macos_chunker_test_text,
+            macos_chunker_test_path,
+            "testRejectsInvalidChunkingPolicies",
+            "Document chunker tests must reject invalid policies.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentChunkerTests",
+            "Default no-device gate must run DocumentChunkerTests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentIngestion chunk planner addendum",
+            "Default no-device summary must name DocumentIngestion chunk planner coverage.",
+        ),
+        (
             macos_extractor_text,
             macos_extractor_path,
             "public struct DocumentIngestionResourcePolicy",
@@ -15163,6 +16159,27 @@ def attachment_ingestion_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_document_resource_policy_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    forbidden_document_index_terms = (
+        "sourcePath",
+        "projectID",
+        "projectId",
+        "workspaceID",
+        "workspaceId",
+        "retrievalContext",
+        "retrieval_context",
+        "embeddingModelID",
+        "embeddingModelId",
+    )
+    for term in forbidden_document_index_terms:
+        if term in macos_document_index_text:
+            failures.append(
+                f"{macos_document_index_path.relative_to(ROOT)}: Runtime document index store must not introduce {term}."
+            )
+        if term in macos_sqlite_document_index_text:
+            failures.append(
+                f"{macos_sqlite_document_index_path.relative_to(ROOT)}: SQLite runtime document index store must not introduce {term}."
+            )
 
     required_attachment_source_metadata_snippets = (
         (
@@ -28080,8 +29097,10 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
 
 def macos_runtime_compaction_guard_failures() -> list[str]:
     failures: list[str] = []
+    store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     tests_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    sqlite_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
     llm_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
     ollama_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
     lmstudio_backend_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
@@ -28095,8 +29114,10 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     protocol_doc_path = ROOT / "docs/protocol.md"
 
     required_paths = (
+        store_path,
         router_path,
         tests_path,
+        sqlite_tests_path,
         llm_backend_path,
         ollama_backend_path,
         lmstudio_backend_path,
@@ -28112,8 +29133,10 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     if any(not path.exists() for path in required_paths):
         return ["macOS runtime compaction guard files are missing."]
 
+    store_text = store_path.read_text(encoding="utf-8", errors="replace")
     router_text = router_path.read_text(encoding="utf-8", errors="replace")
     tests_text = tests_path.read_text(encoding="utf-8", errors="replace")
+    sqlite_tests_text = sqlite_tests_path.read_text(encoding="utf-8", errors="replace")
     llm_backend_text = llm_backend_path.read_text(encoding="utf-8", errors="replace")
     ollama_backend_text = ollama_backend_path.read_text(encoding="utf-8", errors="replace")
     lmstudio_backend_text = lmstudio_backend_path.read_text(encoding="utf-8", errors="replace")
@@ -28126,6 +29149,10 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
     router_snippets = (
+        (
+            "RuntimeChatCompactionMetadata(sourcePointers:",
+            "chat.send compaction must persist structural runtime source-pointer metadata.",
+        ),
         (
             "chatRequestWithRuntimeConversationCompaction(\n                request,\n                contextWindowTokens: model.contextWindowTokens",
             "chat.send must use resolved model context-window metadata before backend.chat compaction.",
@@ -28167,12 +29194,27 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         if snippet not in router_text:
             failures.append(f"{router_path.relative_to(ROOT)}: {guidance}")
 
+    store_snippets = (
+        "public struct RuntimeChatCompactionSourcePointer",
+        "public struct RuntimeChatCompactionMetadata",
+        'case compactionMetadata = "compaction_metadata"',
+        'case sourcePointers = "source_pointers"',
+        "chat compaction metadata is only valid on request events",
+    )
+    for snippet in store_snippets:
+        if snippet not in store_text:
+            failures.append(
+                f"{store_path.relative_to(ROOT)}: missing durable runtime compaction metadata guard {snippet!r}."
+            )
+
     test_snippets = (
         "testChatSendDoesNotCompactShortConversation",
         "testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
         "testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
         "Source span: client-visible conversation turns 1-6 of 18.",
         'XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)',
+        "requestEvent.compactionMetadata",
+        "testChatMessagesListDoesNotExposeRuntimeCompactionMetadata",
         "testChatSendUsesModelContextWindowMetadataForCompactionBudget",
         "testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
     )
@@ -28180,6 +29222,23 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         if snippet not in tests_text:
             failures.append(
                 f"{tests_path.relative_to(ROOT)}: missing runtime compaction regression {snippet}."
+            )
+
+    sqlite_test_snippets = (
+        "testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt",
+        "testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata",
+        "rawSQLiteEvents(at: databaseURL)",
+        "sourcepointerftssentinel9f31",
+        "storedRequest.compactionMetadata",
+        "chat compaction metadata is only valid on request events",
+        "chat compaction source pointer range is invalid",
+        "chat compaction retained range starts before compacted range",
+        "chat compaction retained range exceeds total turns",
+    )
+    for snippet in sqlite_test_snippets:
+        if snippet not in sqlite_tests_text:
+            failures.append(
+                f"{sqlite_tests_path.relative_to(ROOT)}: missing SQLite runtime compaction metadata regression {snippet!r}."
             )
 
     for path, text, snippets in (
@@ -28240,6 +29299,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             (
                 "contextWindowTokens = 32768",
                 "assertEquals(32768, chatModel.contextWindowTokens)",
+                "chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload",
+                "runtime_compaction_backend_summary_SENTINEL",
             ),
         ),
         (
@@ -28253,16 +29314,20 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             (
                 "LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget",
                 "LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
+                "LocalRuntimeMessageRouterTests/testChatMessagesListDoesNotExposeRuntimeCompactionMetadata",
                 "context-window compaction addendum",
-                "backend-only source-span metadata",
+                "durable source-pointer metadata",
+                "runtime compaction metadata validation addendum",
+                "RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload",
+                "Android chat.messages.list compaction metadata projection addendum",
             ),
         ),
         (
             protocol_doc_path,
             protocol_doc_text,
             (
-                "may include deterministic transient source-span metadata",
-                "transient source-span is not a durable transcript source pointer",
+                "Runtime event stores may persist structural source-pointer metadata",
+                "source-pointer metadata is not exposed through `chat.messages.list`",
             ),
         ),
     ):
@@ -34037,6 +35102,13 @@ def main() -> int:
     if android_heading_accessibility_failures:
         print("Android heading accessibility guard failed:", file=sys.stderr)
         for failure in android_heading_accessibility_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    docs_hygiene_latest_qa_evidence_failures = docs_hygiene_latest_qa_evidence_guard_failures()
+    if docs_hygiene_latest_qa_evidence_failures:
+        print("Docs hygiene latest QA evidence guard failed:", file=sys.stderr)
+        for failure in docs_hygiene_latest_qa_evidence_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

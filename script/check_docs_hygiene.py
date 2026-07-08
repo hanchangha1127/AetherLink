@@ -384,6 +384,7 @@ FILE_CONTRACTS = (
 
 
 PROGRESS_DOC = ROOT / "docs/progress.md"
+QA_EVIDENCE_DOC = ROOT / "docs/qa-evidence.md"
 
 
 def target_files() -> list[Path]:
@@ -440,6 +441,40 @@ def latest_progress_entry() -> tuple[int, str]:
     return (start_index + 1, "\n".join(lines[start_index:end_index]))
 
 
+def latest_qa_evidence_entry() -> tuple[int, str]:
+    if not QA_EVIDENCE_DOC.is_file():
+        return (0, "")
+
+    lines = QA_EVIDENCE_DOC.read_text(encoding="utf-8", errors="replace").splitlines()
+    current_rule_index = next(
+        (index for index, line in enumerate(lines) if line.strip() == "## Current Rule"),
+        -1,
+    )
+    if current_rule_index < 0:
+        return (0, "")
+
+    start_index = next(
+        (
+            index
+            for index in range(current_rule_index + 1, len(lines))
+            if lines[index].startswith("## ")
+        ),
+        -1,
+    )
+    if start_index < 0:
+        return (0, "")
+
+    end_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if lines[index].startswith("## ")
+        ),
+        len(lines),
+    )
+    return (start_index + 1, "\n".join(lines[start_index:end_index]))
+
+
 def latest_progress_evidence_failures() -> list[str]:
     failures: list[str] = []
     start_line, entry = latest_progress_entry()
@@ -482,6 +517,61 @@ def latest_progress_evidence_failures() -> list[str]:
     if "artifacts/" in entry and "device/runtime state" not in entry:
         failures.append(
             f"docs/progress.md:{start_line}: Progress entries that cite artifacts must explain the device/runtime state."
+        )
+
+    return failures
+
+
+def latest_qa_evidence_failures() -> list[str]:
+    failures: list[str] = []
+    start_line, entry = latest_qa_evidence_entry()
+    if not entry:
+        return [
+            "docs/qa-evidence.md: missing latest QA evidence entry after '## Current Rule'."
+        ]
+
+    required_patterns = (
+        (
+            re.compile(r"^## \d{4}-\d{2}-\d{2} .+", re.MULTILINE),
+            "Latest QA evidence entry must start with a dated evidence heading.",
+        ),
+        (
+            re.compile(r"\bproof-boundary\b|\bproof boundary\b", re.IGNORECASE),
+            "Latest QA evidence entry must name the proof boundary.",
+        ),
+        (
+            re.compile(r"\bno-device\b", re.IGNORECASE),
+            "Latest QA evidence entry must state whether no-device evidence is involved.",
+        ),
+        (
+            re.compile(r"\bphysical\b|\blive-provider\b|\blive provider\b", re.IGNORECASE),
+            "Latest QA evidence entry must separate physical or live-provider proof from no-device evidence.",
+        ),
+        (
+            re.compile(r"\bAgent state:.*\bGPT-5\.3-Codex-Spark was not used\b", re.IGNORECASE | re.DOTALL),
+            "Latest QA evidence entry must record that GPT-5.3-Codex-Spark was not used.",
+        ),
+        (
+            re.compile(r"\bCaveat:", re.IGNORECASE),
+            "Latest QA evidence entry must include an explicit caveat.",
+        ),
+        (
+            re.compile(r"\bVerification commands:", re.IGNORECASE),
+            "Latest QA evidence entry must list verification commands.",
+        ),
+        (
+            re.compile(r"`(?:swift|python3|JAVA_HOME=|git diff|bash|./script|script/)\b", re.IGNORECASE),
+            "Latest QA evidence entry must include concrete verification commands in backticks.",
+        ),
+    )
+
+    for pattern, guidance in required_patterns:
+        if not pattern.search(entry):
+            failures.append(f"docs/qa-evidence.md:{start_line}: {guidance}")
+
+    if "artifacts/" in entry and "device/runtime state" not in entry:
+        failures.append(
+            f"docs/qa-evidence.md:{start_line}: QA entries that cite artifacts must explain the device/runtime state."
         )
 
     return failures
@@ -554,6 +644,7 @@ def main() -> int:
             )
 
     failures.extend(latest_progress_evidence_failures())
+    failures.extend(latest_qa_evidence_failures())
     failures.extend(syntax_only_no_device_gate_evidence_failures())
 
     if failures:

@@ -602,21 +602,32 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 guardedRequest,
                 memoryEntries: memoryEntries
             )
-            try recordChatEvent(.init(
-                kind: .request,
-                requestID: envelope.requestID,
-                sessionID: request.sessionID,
-                model: request.model,
-                messages: storedMessages,
-                ownerDeviceID: ownerDeviceID
-            ))
-            registerActiveChatStorageContext(storageContext)
-            activeStorageRequestID = envelope.requestID
-            let model = try await resolvedInstalledChatModel(request.model)
-            let backendRequest = Self.chatRequestWithRuntimeConversationCompaction(
+            func recordRequest(compactionMetadata: RuntimeChatCompactionMetadata?) throws {
+                try recordChatEvent(.init(
+                    kind: .request,
+                    requestID: envelope.requestID,
+                    sessionID: request.sessionID,
+                    model: request.model,
+                    messages: storedMessages,
+                    ownerDeviceID: ownerDeviceID,
+                    compactionMetadata: compactionMetadata
+                ))
+            }
+            let model: ResolvedRuntimeModel
+            do {
+                model = try await resolvedInstalledChatModel(request.model)
+            } catch {
+                try recordRequest(compactionMetadata: nil)
+                throw error
+            }
+            let compactionResult = Self.chatRequestWithRuntimeConversationCompaction(
                 request,
                 contextWindowTokens: model.contextWindowTokens
             )
+            try recordRequest(compactionMetadata: compactionResult.compactionMetadata)
+            registerActiveChatStorageContext(storageContext)
+            activeStorageRequestID = envelope.requestID
+            let backendRequest = compactionResult.request
             try validateAttachments(in: backendRequest, for: model)
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: backendRequest) {
@@ -2086,19 +2097,29 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static func chatRequestWithRuntimeConversationCompaction(
         _ request: ChatRequest,
         contextWindowTokens: Int? = nil
-    ) -> ChatRequest {
+    ) -> RuntimeConversationCompactionResult {
         let messages = request.messages.filter { !$0.isRuntimeConversationCompactionContext }
+        func result(
+            messages: [ChatMessage],
+            compactionMetadata: RuntimeChatCompactionMetadata? = nil
+        ) -> RuntimeConversationCompactionResult {
+            RuntimeConversationCompactionResult(
+                request: ChatRequest(
+                    generationID: request.generationID,
+                    sessionID: request.sessionID,
+                    model: request.model,
+                    messages: messages
+                ),
+                compactionMetadata: compactionMetadata
+            )
+        }
+
         let estimatedCharacters = estimatedRuntimeContextCharacters(in: messages)
         let maxContextCharacters = runtimeConversationCompactionMaxContextCharacters(
             contextWindowTokens: contextWindowTokens
         )
         guard estimatedCharacters > maxContextCharacters else {
-            return ChatRequest(
-                generationID: request.generationID,
-                sessionID: request.sessionID,
-                model: request.model,
-                messages: messages
-            )
+            return result(messages: messages)
         }
 
         var conversationTurns: [(messageIndex: Int, turnNumber: Int, message: ChatMessage)] = []
@@ -2106,15 +2127,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             conversationTurns.append((messageIndex: index, turnNumber: conversationTurns.count + 1, message: message))
         }
         guard conversationTurns.count > runtimeConversationCompactionRecentTurnCount else {
-            return ChatRequest(
-                generationID: request.generationID,
-                sessionID: request.sessionID,
-                model: request.model,
-                messages: messages
-            )
+            return result(messages: messages)
         }
 
         let compactedTurns = Array(conversationTurns.dropLast(runtimeConversationCompactionRecentTurnCount))
+        let retainedTurns = Array(conversationTurns.suffix(runtimeConversationCompactionRecentTurnCount))
         guard let summaryMessage = runtimeConversationCompactionMessage(
             from: compactedTurns.map { $0.message },
             sourceSpan: (
@@ -2123,12 +2140,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 totalTurns: conversationTurns.count
             )
         ) else {
-            return ChatRequest(
-                generationID: request.generationID,
-                sessionID: request.sessionID,
-                model: request.model,
-                messages: messages
-            )
+            return result(messages: messages)
         }
 
         let compactedIndices = Set(compactedTurns.map(\.messageIndex))
@@ -2145,11 +2157,20 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
 
-        return ChatRequest(
-            generationID: request.generationID,
+        let sourcePointer = RuntimeChatCompactionSourcePointer(
             sessionID: request.sessionID,
-            model: request.model,
-            messages: compactedRequestMessages
+            requestID: request.generationID,
+            startTurn: compactedTurns.first?.turnNumber ?? 1,
+            endTurn: compactedTurns.last?.turnNumber ?? compactedTurns.count,
+            totalTurns: conversationTurns.count,
+            compactedTurnCount: compactedTurns.count,
+            retainedStartTurn: retainedTurns.first?.turnNumber,
+            retainedEndTurn: retainedTurns.last?.turnNumber,
+            retainedTurnCount: retainedTurns.count
+        )
+        return result(
+            messages: compactedRequestMessages,
+            compactionMetadata: RuntimeChatCompactionMetadata(sourcePointers: [sourcePointer])
         )
     }
 
@@ -2429,6 +2450,11 @@ private struct RuntimeChatStorageContext {
 private struct RuntimeParsedChatRequest {
     var request: ChatRequest
     var storageMessages: [ChatMessage]
+}
+
+private struct RuntimeConversationCompactionResult {
+    var request: ChatRequest
+    var compactionMetadata: RuntimeChatCompactionMetadata?
 }
 
 private struct RuntimeParsedChatMessage {

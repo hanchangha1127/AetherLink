@@ -83,8 +83,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.TestScope
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -11280,6 +11282,93 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val sentinel = "runtime_compaction_backend_summary_SENTINEL"
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "runtime-session",
+                        title = "Runtime session",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 2,
+                    )
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    payload = JsonObject(
+                        mapOf(
+                            "session_id" to JsonPrimitive("runtime-session"),
+                            "messages" to JsonArray(
+                                listOf(
+                                    JsonObject(
+                                        mapOf(
+                                            "role" to JsonPrimitive("user"),
+                                            "content" to JsonPrimitive("Visible prompt"),
+                                            "created_at" to JsonPrimitive("2026-06-23T09:02:00Z"),
+                                            "compaction_metadata" to compactionMetadataJson(sentinel),
+                                        ),
+                                    ),
+                                    JsonObject(
+                                        mapOf(
+                                            "role" to JsonPrimitive("assistant"),
+                                            "content" to JsonPrimitive("Visible answer"),
+                                            "reasoning" to JsonPrimitive("Visible reasoning"),
+                                            "source_pointers" to sourcePointersJson(sentinel),
+                                            "created_at" to JsonPrimitive("2026-06-23T09:02:05Z"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            "compaction_metadata" to compactionMetadataJson(sentinel),
+                            "source_pointers" to sourcePointersJson(sentinel),
+                        ),
+                    ),
+                )
+            )
+            advanceUntilIdle()
+
+            val stateMessages = fixture.viewModel.state.value.messages
+            assertEquals(listOf("Visible prompt", "Visible answer"), stateMessages.map { it.content })
+            assertEquals("Visible reasoning", stateMessages.last().reasoning)
+            assertTrue(stateMessages.none { it.content.contains(sentinel) || it.reasoning.contains(sentinel) })
+            assertNull(fixture.viewModel.state.value.error)
+
+            val persistedMessages = fixture.localStore.data.sessions
+                .single { it.id == "runtime-session" }
+                .messages
+            assertEquals(listOf("Visible prompt", "Visible answer"), persistedMessages.map { it.content })
+            assertEquals("Visible reasoning", persistedMessages.last().reasoning)
+            val persistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(persistedSnapshot.contains(sentinel))
+            assertFalse(persistedSnapshot.contains("compaction_metadata"))
+            assertFalse(persistedSnapshot.contains("source_pointers"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun sendChatMessageClearsOnlyActiveSessionComposerDraft() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -15051,6 +15140,30 @@ class RuntimeClientViewModelTest {
             type = type,
             requestId = requestId,
             payload = json.encodeToJsonElement(serializer, payload).jsonObject,
+        )
+    }
+
+    private fun compactionMetadataJson(sentinel: String): JsonObject {
+        return JsonObject(
+            mapOf(
+                "summary" to JsonPrimitive(sentinel),
+                "source_pointers" to sourcePointersJson(sentinel),
+            ),
+        )
+    }
+
+    private fun sourcePointersJson(sentinel: String): JsonArray {
+        return JsonArray(
+            listOf(
+                JsonObject(
+                    mapOf(
+                        "session_id" to JsonPrimitive("runtime-session"),
+                        "message_index" to JsonPrimitive(1),
+                        "role" to JsonPrimitive("user"),
+                        "excerpt" to JsonPrimitive(sentinel),
+                    ),
+                ),
+            ),
         )
     }
 

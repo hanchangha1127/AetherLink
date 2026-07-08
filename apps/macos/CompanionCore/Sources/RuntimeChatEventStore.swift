@@ -74,6 +74,74 @@ public struct RuntimeChatStoredError: Codable, Equatable, Sendable {
     }
 }
 
+public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
+    public var sourceKind: String
+    public var sessionID: String
+    public var requestID: String
+    public var startTurn: Int
+    public var endTurn: Int
+    public var totalTurns: Int
+    public var compactedTurnCount: Int
+    public var retainedStartTurn: Int?
+    public var retainedEndTurn: Int?
+    public var retainedTurnCount: Int
+
+    public init(
+        sourceKind: String = "client_visible_conversation_turns",
+        sessionID: String,
+        requestID: String,
+        startTurn: Int,
+        endTurn: Int,
+        totalTurns: Int,
+        compactedTurnCount: Int,
+        retainedStartTurn: Int? = nil,
+        retainedEndTurn: Int? = nil,
+        retainedTurnCount: Int
+    ) {
+        self.sourceKind = sourceKind
+        self.sessionID = sessionID
+        self.requestID = requestID
+        self.startTurn = startTurn
+        self.endTurn = endTurn
+        self.totalTurns = totalTurns
+        self.compactedTurnCount = compactedTurnCount
+        self.retainedStartTurn = retainedStartTurn
+        self.retainedEndTurn = retainedEndTurn
+        self.retainedTurnCount = retainedTurnCount
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sourceKind = "source_kind"
+        case sessionID = "session_id"
+        case requestID = "request_id"
+        case startTurn = "start_turn"
+        case endTurn = "end_turn"
+        case totalTurns = "total_turns"
+        case compactedTurnCount = "compacted_turn_count"
+        case retainedStartTurn = "retained_start_turn"
+        case retainedEndTurn = "retained_end_turn"
+        case retainedTurnCount = "retained_turn_count"
+    }
+}
+
+public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
+    public var strategy: String
+    public var sourcePointers: [RuntimeChatCompactionSourcePointer]
+
+    public init(
+        strategy: String = "backend_only_summary_v1",
+        sourcePointers: [RuntimeChatCompactionSourcePointer]
+    ) {
+        self.strategy = strategy
+        self.sourcePointers = sourcePointers
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case strategy
+        case sourcePointers = "source_pointers"
+    }
+}
+
 public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
     public var id: String
     public var timestamp: Date
@@ -89,6 +157,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
     public var usage: RuntimeChatStoredUsage?
     public var error: RuntimeChatStoredError?
     public var ownerDeviceID: String?
+    public var compactionMetadata: RuntimeChatCompactionMetadata?
 
     public init(
         id: String = UUID().uuidString,
@@ -104,7 +173,8 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         finishReason: String? = nil,
         usage: RuntimeChatStoredUsage? = nil,
         error: RuntimeChatStoredError? = nil,
-        ownerDeviceID: String? = nil
+        ownerDeviceID: String? = nil,
+        compactionMetadata: RuntimeChatCompactionMetadata? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -120,6 +190,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         self.usage = usage
         self.error = error
         self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        self.compactionMetadata = compactionMetadata
     }
 
     enum CodingKeys: String, CodingKey {
@@ -137,6 +208,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         case usage
         case error
         case ownerDeviceID = "owner_device_id"
+        case compactionMetadata = "compaction_metadata"
     }
 }
 
@@ -608,6 +680,15 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         try requireNonBlank(event.id, line: line, reason: "chat event id is empty")
         try requireNonBlank(event.requestID, line: line, reason: "chat request id is empty")
         try requireNonBlank(event.sessionID, line: line, reason: "chat session id is empty")
+        if let compactionMetadata = event.compactionMetadata {
+            guard event.kind == .request else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction metadata is only valid on request events"
+                )
+            }
+            try validateCompactionMetadata(compactionMetadata, line: line)
+        }
 
         switch event.kind {
         case .request:
@@ -623,9 +704,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         case .title:
             try requireNonBlank(event.title, line: line, reason: "chat title is empty")
         case .assistantDelta:
-            try requireNonBlank(event.delta, line: line, reason: "chat assistant delta is empty")
+            try requireNonEmpty(event.delta, line: line, reason: "chat assistant delta is empty")
         case .reasoningDelta:
-            try requireNonBlank(event.reasoningDelta, line: line, reason: "chat reasoning delta is empty")
+            try requireNonEmpty(event.reasoningDelta, line: line, reason: "chat reasoning delta is empty")
         case .error:
             guard let error = event.error else {
                 throw RuntimeChatEventStoreError.corruptEventLog(
@@ -640,8 +721,58 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
+    private static func validateCompactionMetadata(
+        _ metadata: RuntimeChatCompactionMetadata,
+        line: Int
+    ) throws {
+        try requireNonBlank(metadata.strategy, line: line, reason: "chat compaction strategy is empty")
+        guard !metadata.sourcePointers.isEmpty else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat compaction source pointers are empty"
+            )
+        }
+        for pointer in metadata.sourcePointers {
+            try requireNonBlank(pointer.sourceKind, line: line, reason: "chat compaction source kind is empty")
+            try requireNonBlank(pointer.sessionID, line: line, reason: "chat compaction session id is empty")
+            try requireNonBlank(pointer.requestID, line: line, reason: "chat compaction request id is empty")
+            guard pointer.startTurn > 0,
+                  pointer.endTurn >= pointer.startTurn,
+                  pointer.totalTurns >= pointer.endTurn,
+                  pointer.compactedTurnCount == pointer.endTurn - pointer.startTurn + 1,
+                  pointer.retainedTurnCount >= 0 else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction source pointer range is invalid"
+                )
+            }
+            if let retainedStartTurn = pointer.retainedStartTurn {
+                guard retainedStartTurn > pointer.endTurn else {
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: line,
+                        reason: "chat compaction retained range starts before compacted range"
+                    )
+                }
+            }
+            if let retainedEndTurn = pointer.retainedEndTurn {
+                guard retainedEndTurn <= pointer.totalTurns else {
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: line,
+                        reason: "chat compaction retained range exceeds total turns"
+                    )
+                }
+            }
+        }
+    }
+
     private static func requireNonBlank(_ value: String?, line: Int, reason: String) throws {
         guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeChatEventStoreError.corruptEventLog(line: line, reason: reason)
+        }
+    }
+
+    private static func requireNonEmpty(_ value: String?, line: Int, reason: String) throws {
+        guard let value, !value.isEmpty else {
             throw RuntimeChatEventStoreError.corruptEventLog(line: line, reason: reason)
         }
     }

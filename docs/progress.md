@@ -32,6 +32,702 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 ## Implemented So Far
 
+### 2026-07-08 Runtime Document Index Quality-Filtered Catalog No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding a runtime-owned quality-state catalog filter for maintenance and future trusted-source review, without exposing `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, workspace/project IDs, retrieval context, embeddings, citations, or live-provider behavior.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` now expose bounded `documents(matchingQuality:limit:)` APIs. They filter existing safe document catalog rows by `DocumentIngestionQuality`, preserve deterministic display-name/document-id ordering, return empty results for non-positive limits, and reflect replacement, deletion, and SQLite reopen state.
+- Guardrail: `RuntimeDocumentIndexStoreTests/testListsDocumentsByQualityWithoutContentOrFutureMetadata` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreListsDocumentsByQualityAfterReopen` cover chunked, single-chunk, and no-usable-text document states, limit handling, replacement/deletion visibility, SQLite parity, and absence of body text or future source/workspace/retrieval/embedding/citation metadata. `script/check_no_device_quality.sh` reports quality-filtered catalog, and `script/check_copy_hygiene.py` pins both APIs, focused tests, and the no-device phrase.
+- Device state: this is deterministic no-device SwiftPM storage/catalog evidence only. The attached Android phone is tracked separately; this slice does not install or drive Android, optically scan QR, invoke live providers, expose document indexing through the runtime protocol, prove production relay/session/encryption, prove direct Android backend access, or prove real different-network connectivity.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Socrates` recommended the quality-filtered catalog as the next low-conflict roadmap slice.
+- Caveat: this quality filter is still not wired into chat context, project/workspace registration, trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Runtime Document Index Content-Fingerprint No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding a runtime-owned content-fingerprint lookup primitive for duplicate/reindex review, without exposing `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, workspace/project IDs, retrieval context, embeddings, citations, or live-provider behavior.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` now expose bounded `documents(matchingContentFingerprint:limit:)` APIs. They exact-match existing `contentFingerprint` values, reuse the safe catalog ordering by display name and document ID, return empty results for blank fingerprints or non-positive limits, and reflect replacement, deletion, and SQLite reopen state.
+- Guardrail: `RuntimeDocumentIndexStoreTests/testFindsDocumentsByContentFingerprintWithoutContentOrFutureMetadata` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreFindsDocumentsByContentFingerprintAfterReopen` cover duplicate fingerprint matches, unrelated fingerprint exclusion, limit handling, replacement/deletion visibility, SQLite parity, and absence of body text or future source/workspace/retrieval/embedding metadata. `script/check_no_device_quality.sh` reports content-fingerprint match listing, and `script/check_copy_hygiene.py` pins both APIs, focused tests, and the no-device phrase.
+- Device state: this is deterministic no-device SwiftPM storage/catalog evidence only. It does not install or drive Android, optically scan QR, invoke live providers, expose document indexing through the runtime protocol, prove production relay/session/encryption, prove direct Android backend access, or prove real different-network connectivity.
+- Caveat: this fingerprint lookup is still not wired into chat context, project/workspace registration, trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Runtime Document Index Summary No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding a runtime-owned maintenance summary for indexed documents, without exposing `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, workspace/project IDs, retrieval context, embeddings, citations, or live-provider behavior.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` now expose `summary()` APIs returning `RuntimeDocumentIndexSummary` with document count, chunk count, extracted-character count, and quality-state counts. The SQLite summary matches the in-memory store after reopen, replacement, and deletion while reading only existing safe document-level columns.
+- Guardrail: `RuntimeDocumentIndexStoreTests/testSummarizesDocumentIndexWithoutContentOrFutureMetadata` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreSummarizesDocumentIndexAfterReopen` cover summary counts, replacement/deletion visibility, SQLite parity, and the absence of body text or future source/workspace/retrieval/embedding metadata. `script/check_no_device_quality.sh` reports safe summary counts, and `script/check_copy_hygiene.py` pins the summary type, APIs, tests, and no-device summary phrase.
+- Device state: this is deterministic no-device SwiftPM storage/maintenance evidence only. It does not install or drive Android, optically scan QR, invoke live providers, expose document indexing through the runtime protocol, prove production relay/session/encryption, prove direct Android backend access, or prove real different-network connectivity.
+- Caveat: this summary is still not wired into chat context, project/workspace registration, trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+### 2026-07-08 Connected Android Install, Pairing, And Chat-Cancel Smoke
+
+- Scope: after reconnecting the physical Android phone, verify that the current debug APK installs, launches, accepts a QR-result pairing URI, reconnects through the saved trusted relay route, and can drive the physical chat send/cancel UI through AetherLink Runtime.
+- Result: attached phone `R3CXC0M76VM` / `SM_S936N` was detected over USB, `:app:installDebug` installed the current debug APK, and the app launched to the Korean latest-QR scan state captured at `build/qa/android-real-device-launch-20260708.png` and `build/qa/android-real-device-launch-20260708.xml`. The relay-mode QR-result smoke then accepted pairing, observed `runtime.health` and `models.list`, verified trusted-route reconnect after app relaunch, and a second physical UI smoke observed `chat.send`, `chat.delta`, `chat.cancel`, and `chat.done`.
+- Guardrail: summaries were written to `build/qa/android-real-device-pairing-reconnect-20260708.json` and `build/qa/android-real-device-chat-cancel-20260708.json`, with logs beside them. The smoke kept Android as a client of AetherLink Runtime and used a local development relay plus `adb reverse`; no backend URL or model-provider endpoint was exposed to Android.
+- Device state: this is physical Android USB evidence plus the full no-device gate from the preceding runtime document-index catalog slice. It is not optical camera QR scan evidence, live Ollama/LM Studio provider evidence, public/VPN/tunnel/private-overlay relay evidence, production relay/session/encryption evidence, direct Android backend access evidence, or real different-network connectivity evidence.
+- Caveat: after the smoke scripts exited, the temporary development relay was stopped, so the final captured app screen can show the expected "relay route cannot be opened" recovery notice for the now-unreachable temporary route. That notice is not a failed pairing result from the smoke run.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :app:installDebug --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-reconnect --summary-json build/qa/android-real-device-pairing-reconnect-20260708.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-chat-cancel --summary-json build/qa/android-real-device-chat-cancel-20260708.json`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-08 Runtime Document Index Catalog No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding a runtime-owned document catalog/listing seam for indexed documents, without exposing `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, embeddings, citations, or live-provider behavior.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` now provide bounded `documents(limit:)` catalog listing ordered by display name and document ID. Catalog rows expose only safe document-level metadata already stored in the index, reflect replacement and deletion, survive SQLite reopen, and do not include chunk text, source paths, project/workspace IDs, retrieval context, embeddings, citations, or backend URLs.
+- Guardrail: `RuntimeDocumentIndexStoreTests` covers bounded in-memory catalog listing, ordering, replacement, deletion, and body-text exclusion. `SQLiteRuntimeDocumentIndexStoreTests` covers catalog parity with the in-memory store after reopen, limit handling, replacement/deletion visibility, and continued schema metadata boundaries. `script/check_copy_hygiene.py` pins the catalog API, focused tests, and default-gate summary phrase.
+- Device state: this is deterministic no-device SwiftPM storage/catalog evidence only. It does not install or drive Android, optically scan QR, invoke live providers, or expose document indexing through the runtime protocol.
+- Caveat: trusted-source approval, source selection, project/workspace registration, retrieval context construction, embeddings, citations, protocol/router integration, runtime permission/audit semantics, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap work.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 SQLite Runtime Document Index FTS Candidate No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding a SQLite FTS-backed candidate index for runtime document chunks, without exposing `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, embeddings, citations, or live-provider behavior.
+- Result: `SQLiteRuntimeDocumentIndexStore` now maintains `runtime_document_index_chunk_fts` beside the durable document/chunk tables, syncs FTS rows during document replacement and deletion, uses unicode-aware FTS tokenization to prefilter candidate chunk IDs, and still sends candidate rows through the shared deterministic lexical rank/snippet helper so public query results stay aligned with `RuntimeDocumentIndexStore` for covered token queries.
+- Guardrail: `SQLiteRuntimeDocumentIndexStoreTests` now covers the FTS candidate path without changing query results, raw FTS replacement cleanup, raw FTS deletion cleanup, and continued absence of source-path/project/workspace/retrieval/embedding/citation columns. `script/check_copy_hygiene.py` pins the FTS table, candidate-query helper, unicode tokenization, focused regression, and default-gate summary phrase.
+- Device state: this is deterministic no-device SwiftPM storage/search evidence only. It does not install or drive Android, optically scan QR, invoke live providers, or expose document indexing through the runtime protocol.
+- Caveat: trusted-source approval, source selection, project/workspace registration, richer retrieval policy, embeddings, retrieval context construction, citations, protocol/router integration, runtime permission/audit semantics, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap work.
+
+Verified after this change:
+
+- `swift test --filter SQLiteRuntimeDocumentIndexStoreTests`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 SQLite Runtime Document Index Store No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding durable runtime-host SQLite storage for the existing document index records, without adding `index.*`, `retrieval.*`, `projects.*`, router dispatch, Android UI, source-path persistence, embeddings, citations, or live-provider behavior.
+- Result: `SQLiteRuntimeDocumentIndexStore` now persists `DocumentIngestionResult`-derived document and chunk records in `runtime-document-index.sqlite`, using deterministic document/chunk IDs, display names, MIME types, content fingerprints, extracted character counts, chunk counts, quality states, chunk offsets, chunk text, owner-only SQLite file permissions, replacement, deletion, and lexical query parity with `RuntimeDocumentIndexStore`.
+- Guardrail: `SQLiteRuntimeDocumentIndexStoreTests` covers persistence across reopening the SQLite file, query parity with the in-memory store after reopen, replacement cleanup, deletion cleanup, absence of source-path/project/workspace/retrieval/embedding/citation columns in the SQLite schema, corrupt quality failure, and database permission hardening. `script/check_no_device_quality.sh` now runs `SQLiteRuntimeDocumentIndexStoreTests` and reports `SQLite runtime document index store addendum`; `script/check_copy_hygiene.py` pins the API, focused tests, default-gate phrase, and forbidden metadata terms.
+- Device state: this is deterministic no-device SwiftPM storage evidence only. It does not install or drive Android, optically scan QR, invoke live providers, or expose document indexing through the runtime protocol.
+- Caveat: trusted-source approval, source selection, project/workspace registration, richer search/FTS, embeddings, retrieval context construction, citations, protocol/router integration, runtime permission/audit semantics, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap work.
+
+Verified after this change:
+
+- `swift test --filter SQLiteRuntimeDocumentIndexStoreTests`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Runtime Document Index Store No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG path by adding a runtime-owned in-memory document index store behind the extraction/chunking primitives, without adding `index.*`, `retrieval.*`, `projects.*`, protocol/schema changes, router dispatch, Android UI, source-path persistence, embeddings, or live-provider behavior.
+- Result: `RuntimeDocumentIndexStore` now stores `DocumentIngestionResult` records as deterministic document IDs, deterministic chunk IDs, display names, MIME types, content fingerprints, extracted character counts, chunk counts, quality states, chunk offsets, and chunk text. It supports replacement by document ID, deletion, chunk reads, and lexical query results with deterministic rank, matched terms, and bounded snippets.
+- Guardrail: `RuntimeDocumentIndexStoreTests` covers stable IDs/source labels, lexical rank/snippets, replacement cleanup, deletion, and explicit absence of workspace/source-path/retrieval/embedding metadata on index records. `script/check_no_device_quality.sh` now runs `RuntimeDocumentIndexStoreTests` and reports `runtime document index store addendum`; `script/check_copy_hygiene.py` pins the API, focused tests, forbidden metadata terms, and default-gate summary phrase.
+- Device state: this is deterministic no-device SwiftPM evidence only. It does not install or drive Android, optically scan QR, invoke live providers, or expose document indexing through the runtime protocol.
+- Caveat: durable index storage, trusted-source approval, source selection, embeddings, retrieval/ranking beyond lexical search, citation metadata, protocol/router integration, project/workspace registration, runtime permission/audit semantics, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap work.
+
+Verified after this change:
+
+- `swift test --filter RuntimeDocumentIndexStoreTests`
+
+### 2026-07-08 DocumentIngestion Result Envelope No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by connecting runtime-side text extraction and chunk planning into one deterministic ingestion result envelope, without adding source paths, project IDs, trusted-source approval, embeddings, retrieval, protocol messages, router dispatch, Android UI, or live-provider behavior.
+- Result: `DocumentIngestor` now produces `DocumentIngestionResult` from either a file URL through `DocumentTextExtractor` or an already `ExtractedDocument`, preserving the extracted document and planned chunks while adding a safe `DocumentIngestionSummary` with file name, MIME type, extracted character count, chunk count, min/max chunk lengths, and `noUsableText` / `singleChunk` / `chunked` quality states.
+- Guardrail: `DocumentIngestorTests` covers extracted-document chunking plus summary metadata, file ingestion without source-path leakage into the portable summary, whitespace-only extracted documents returning a no-usable-text summary, and chunking-policy error propagation. `script/check_no_device_quality.sh` now runs `DocumentIngestorTests` and reports `DocumentIngestion result envelope addendum`; `script/check_copy_hygiene.py` pins the API, focused tests, and default-gate summary phrase.
+- Device state: this is deterministic no-device SwiftPM evidence only. A phone may be connected, but this slice does not install or drive Android, optically scan QR, use live providers, or build a project index.
+- Caveat: source approval, indexing storage, embeddings, retrieval/ranking, citations, project/workspace registration, runtime permission/audit semantics, protocol/router integration, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap work.
+
+Verified after this change:
+
+- `swift test --filter DocumentIngestorTests`
+
+### 2026-07-08 Physical Android Pairing Chat-Cancel Smoke After Chunk Planner Gate
+
+- Scope: after the attached Android phone returned, verify the current debug app can recover from the latest-QR recovery state by using a fresh development relay QR-result path, then prove chat send/cancel still reaches the runtime after the DocumentIngestion chunk planner default gate pass.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`. The phone initially showed the Korean latest-QR recovery screen saying the relay route could not be opened; `build/qa/android-current-screen.png` records that starting state.
+- No-device state: the full default `script/check_no_device_quality.sh` gate passed separately before the physical smoke. This entry is attached-phone evidence, not no-device-only evidence.
+- Result: `build/qa/android-pairing-current.json` records `success=true`, requested and observed serial `R3CXC0M76VM`, app install and app-data clear success, ADB VIEW intent QR-result injection success, accepted pairing, `runtime.health`, `models.list`, `chat.send`, `chat.delta`, `chat.cancel`, `chat.done`, trusted-route reconnect after relaunch, and UI polish capture artifact coverage.
+- Proof boundary: this proves the post-scan QR-result path on the attached phone with USB `adb reverse`, a local development relay, and the mock backend. It does not prove optical camera QR scanning, public/VPN/tunnel/private-overlay relay reachability, live Ollama or LM Studio chat, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+- Caveat: the earlier on-screen error was a stale or unreachable relay route state. The successful smoke used newly generated route material; users still need a fresh runtime QR when saved or scanned route material expires or points at an unreachable relay.
+
+Verified after this change:
+
+- `bash script/check_no_device_quality.sh`
+- `bash script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-reconnect --expect-chat-cancel --capture-ui-polish --summary-json build/qa/android-pairing-current.json`
+
+### 2026-07-08 DocumentIngestion Chunk Planner No-Device Gate
+
+- Scope: start the v0.8 Workspace/RAG file-indexing path with a pure runtime-side chunk planner for already extracted documents, without adding project IDs, source paths, embeddings, retrieval, protocol messages, router dispatch, or Android UI.
+- Result: `DocumentChunker` now converts `ExtractedDocument` into deterministic bounded `DocumentChunk` values with file name, MIME type, chunk index, character offsets, and chunk text. The policy prefers sentence boundaries, then word boundaries, falls back to hard character limits only when needed, supports bounded overlap, preserves multilingual text, returns no chunks for whitespace-only input, and rejects invalid max/overlap/min policy values.
+- Guardrail: `DocumentChunkerTests` covers short-document source labels, sentence/word boundary splitting, adjacent overlap, Korean text preservation, whitespace-only empty results, and invalid policy rejection. `script/check_no_device_quality.sh` now runs `DocumentChunkerTests` and reports `DocumentIngestion chunk planner addendum`; `script/check_copy_hygiene.py` pins the public API, focused tests, and default-gate summary phrase.
+- Device state: this is deterministic no-device SwiftPM evidence only. It does not install or drive Android, optically scan QR, touch live providers, or create a file index.
+- Caveat: project/workspace registration, trusted-source approval, embeddings, retrieval, source citations, protocol namespaces, router integration, production relay/session/encryption, direct Android backend access, and real different-network connectivity remain separate roadmap items.
+
+Verified after this change:
+
+- `swift test --filter DocumentChunkerTests`
+
+### 2026-07-08 Runtime Compaction Metadata Validation No-Device Gate
+
+- Scope: harden the runtime chat event-store boundary for the new structural compaction metadata. Runtime-owned `compaction_metadata.source_pointers` may be stored on request events only, and malformed metadata must fail before SQLite event storage.
+- Result: `SQLiteRuntimeChatEventStoreTests.testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata` now covers non-request compaction metadata, blank strategies, empty source-pointer arrays, blank source kinds, invalid compacted turn ranges, retained ranges that overlap compacted turns, and retained ranges that exceed total visible turns.
+- Guardrail: `script/check_no_device_quality.sh` reports `runtime compaction metadata validation addendum`, and `script/check_copy_hygiene.py` pins the focused test name, rejection reasons, and no-device summary phrase.
+- Device state: this is deterministic no-device SwiftPM storage evidence only. It does not install or drive the Android app, use optical QR scanning, or invoke live model providers.
+- Caveat: this validates the structural event metadata guard, not tokenizer-aware budgeting, LLM-generated summaries, durable compacted-session summaries, live Android rendering, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata`
+
+### 2026-07-08 Android Chat Messages Compaction Metadata Projection No-Device Gate
+
+- Scope: continue the context-window compaction roadmap boundary on the Android client side. The runtime may persist structural compaction source-pointer metadata internally, but Android-visible `chat.messages.list` history must remain a clean client transcript.
+- Result: `RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload` now injects a raw `chat.messages.list` result containing runtime-only `compaction_metadata`, `source_pointers`, and a backend-summary sentinel, then verifies Android UI state and local device storage keep only visible prompt/answer/reasoning fields.
+- Guardrail: `script/check_no_device_quality.sh` includes the focused JVM regression and reports `Android chat.messages.list compaction metadata projection addendum`; `script/check_copy_hygiene.py` pins the test name, sentinel, no-device gate entry, and roadmap/docs evidence.
+- Device state: an Android phone is currently connected, but this slice is deterministic no-device JVM/script evidence and does not use optical QR or live phone pairing.
+- Caveat: this does not prove optical QR scanning, production relay/session/encryption, live provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload' --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+
+### 2026-07-08 Android QR Scanner Decoded-Result Classification No-Device Gate
+
+- Scope: harden the QR scan path that runs after ML Kit has decoded frame raw values, without changing camera capture, optical QR recognition, runtime pairing semantics, or relay transport.
+- Device state: adb observed attached phone `R3CXC0M76VM` / `SM_S936N`, but this slice did not install or drive the Android app on the physical device. Verification here is no-device JVM/script/docs evidence for decoded-result classification only.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the scanner decoded-result seam as the lowest-risk follow-up; implementation and verification were done locally.
+- Result: QR scanner raw-value classification now lives in `PairingQrScanResult.kt`, where blank or null frame values are ignored, valid AetherLink route QR values win over other frame values, invalid AetherLink pairing QR values win over unsupported QR values when no valid value is present, and parser validation still reuses `parseRuntimePairingQrPayload`.
+- Guardrail: `PairingQrScanResultTest` covers compact remote-route success, required-remote-route rejection for identity-only QR values, unsupported non-AetherLink QR values, blank/null frames, valid-over-invalid priority, and invalid-over-unsupported priority.
+- Caveat: this is no-device decoded-string classification evidence. It does not prove physical camera focus/exposure, optical/camera QR recognition reliability, Android camera permission behavior on hardware, live phone pairing, live provider-backed chat/cancel, production relay/session/encryption, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.PairingQrScanResultTest'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh'`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/main/java/com/localagentbridge/android/PairingQrScanResult.kt apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+### 2026-07-08 Android Debug Install And Pairing/Reconnect Smoke After Runtime Compaction Slice
+
+- Scope: after the Android phone was reconnected, verify that the current debug Android app still installs, launches, and completes the QR-result pairing/reconnect path after the runtime compaction source-pointer metadata change.
+- Device state: adb observed `R3CXC0M76VM` / `SM-S936N` on Android 16. The device/runtime state for `artifacts/android/connected-launch-2026-07-08.png` was the installed debug Android app launched on the attached phone with the local runtime pairing smoke executed separately.
+- No-device state: this is not no-device evidence; it is attached-phone install/launch and local development relay pairing/reconnect evidence. The no-device runtime compaction gate remains separate.
+- Result: `:app:installDebug` installed `com.localagentbridge.android` on the attached phone, `MainActivity` launched with a live process, and the captured first screen showed the Korean latest-QR scan prompt without a crash or immediate error.
+- Result: `build/qa/android-pairing-deeplink-current.json` records `success=true`, matching requested/observed serials, `adb_deeplink_injection_succeeded=true`, `runtime_pairing_accepted=true`, `runtime_health_observed=true`, `models_list_observed=true`, and `trusted_route_reconnect_verified=true`.
+- Proof boundary: this proves current-debug-APK physical install/launch plus post-scan QR-result deeplink pairing and saved-route reconnect on the attached phone. It is not optical/camera QR scan proof, public/VPN/tunnel/private-overlay relay proof, production relay/session/encryption proof, direct Android backend access proof, live Ollama/LM Studio chat proof, or real different-network connectivity proof.
+- Caveat: the pairing smoke used the local development relay with USB `adb reverse` and ADB VIEW intent injection of the generated `aetherlink://pair` result URI. It does not prove camera scanning reliability or production network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :app:installDebug`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" shell am start -n com.localagentbridge.android/.MainActivity`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ADB="$HOME/Library/Android/sdk/platform-tools/adb" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-reconnect --summary-json build/qa/android-pairing-deeplink-current.json'`
+
+### 2026-07-08 Runtime Compaction Source-Pointer Metadata Storage
+
+- Scope: continue the roadmap context-window compaction track by turning the earlier backend-only source-span audit into runtime-owned structural event metadata, without changing Android, optical QR, live-provider, or external-relay behavior.
+- Device state: this is no-device runtime storage evidence. The Android phone was not driven for this slice, and no physical UI, optical QR, public/VPN/tunnel relay, production relay/session/encryption, direct Android backend access, or real different-network proof is claimed here.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer checked the lowest-risk SQLite/projection/FTS test sites while implementation stayed local.
+- Result: `RuntimeChatStoredEvent` now has optional `compaction_metadata` with structural `source_pointers` containing source kind, session id, request id, compacted turn range, total turns, compacted count, and retained range/count. Validation accepts the metadata only on request events and rejects malformed ranges.
+- Result: `LocalRuntimeMessageRouter` records the metadata on the stored request event after model-aware compaction is computed, while the backend still receives the backend-only summary and the stored request messages remain the original client-visible messages.
+- Guardrail: `chat.messages.list` projection coverage proves compaction metadata is not exposed to clients; SQLite coverage reads raw `runtime_chat_events.event_json` to prove the metadata roundtrips and verifies a metadata-only sentinel is not searchable through SQLite FTS.
+- Caveat: this is structural audit metadata, not tokenizer-aware budgeting, LLM-generated summaries, durable compacted-session summaries, Android UI behavior, optical/camera QR scanning, live provider answer quality, production relay/session/encryption, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatMessagesListDoesNotExposeRuntimeCompactionMetadata|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt'`
+
+### 2026-07-08 RuntimeDevServer LM Studio 12B Provider Eval
+
+- Scope: reduce the remaining broader live-provider comparison gap by adding a second LM Studio chat model to the authenticated RuntimeDevServer eval matrix, without using Android, optical QR, or external relay setup.
+- Device state: this slice did not drive the Android app. It is authenticated RuntimeDevServer evidence against the local LM Studio provider only.
+- No-device state: this is not a default no-device gate run; it requires a live local LM Studio endpoint and a loaded model, while Android and no-device QA remain separate.
+- Provider state: LM Studio reported four installed chat models; `google/gemma-4-12b-qat` was loaded with a 15-minute TTL and exposed through runtime-mediated `models.list`.
+- Result: `build/qa/runtime-provider-eval-lmstudio-gemma12b-20260708-055608.json` records `success=true`, `backend=lm_studio`, `runtime_mediated=true`, `authenticated_runtime_session=true`, `models_requested_by_backend.lm_studio=["google/gemma-4-12b-qat"]`, `eval_count=3`, `lm_studio_proof=true`, `android_client_proof=false`, and production/different-network proof false.
+- Matrix result: `google/gemma-4-12b-qat` passed `korean_local_runtime_summary`, `runtime_boundary_explanation`, and `structured_json_boundary` with `finish_reason=stop`, answer deltas, reasoning deltas, `thinking_observed=true`, and all expected terms observed for each prompt.
+- Proof boundary: this extends LM Studio fixed-prompt RuntimeDevServer evidence beyond the earlier `google/gemma-4-e4b` run. It is still runtime-host live-provider evidence, not Android-client model-quality proof, optical/camera QR proof, production relay/session/encryption proof, or real different-network proof.
+- Caveat: this covers two LM Studio chat models across the existing fixed three-prompt matrix. The installed but untested LM Studio `google/gemma-4-26b-a4b-qat` and `qwen/qwen3.6-35b-a3b` models, Android-client model-quality review, optical QR scanning, production relay/P2P traversal, and real different-network connectivity remain separate.
+
+Verified after this change:
+
+- `"$HOME/.lmstudio/bin/lms" load google/gemma-4-12b-qat -y --ttl 900`
+- `./script/runtime_authenticated_mock_smoke.swift --real-ollama --real-lmstudio-eval-models "google/gemma-4-12b-qat" --eval-summary-json build/qa/runtime-provider-eval-lmstudio-gemma12b-20260708-055608.json`
+- `python3 - build/qa/runtime-provider-eval-lmstudio-gemma12b-20260708-055608.json`
+
+### 2026-07-08 Physical Android Reconnected Pairing/Reconnect Smoke After Wrapper Boundary
+
+- Scope: after the Android phone was reconnected, rerun the current debug APK physical pairing/reconnect smoke against the latest wrapper proof-boundary and no-device gate state.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`; the smoke installed the current Android debug APK, cleared app data, injected the generated `aetherlink://pair` URI through Android's VIEW intent, then force-stopped and relaunched the app.
+- No-device state: the full default no-device quality gate also passed after the wrapper proof-boundary split. This remains separate from the attached-phone smoke.
+- Result: `build/qa/android-physical-reconnected-after-wrapper-proof-boundary-20260708-055015.json` records `success=true`, `exit_status=0`, matching requested/observed serials, `app_install_succeeded=true`, `app_data_cleared=true`, `adb_deeplink_injection_succeeded=true`, `runtime_pairing_accepted=true`, `runtime_health_observed=true`, `models_list_observed=true`, and `trusted_route_reconnect_verified=true`.
+- Result: the summary keeps `optical_camera_qr_scan=false`, `production_relay_proof=false`, `production_session_key_exchange_proof=false`, `production_end_to_end_transport_encryption_proof=false`, `real_different_network_connectivity_proof=false`, `android_direct_model_backend_access=false`, and live-provider chat proof false because this was a fast mock-backend local relay pairing/reconnect smoke.
+- Proof boundary: this confirms the QR-result path after scan/deeplink delivery on the attached phone and catches pairing/reconnect regressions. It is not optical/camera QR scan proof, live Ollama/LM Studio chat proof, production relay/session/encryption proof, direct Android backend access proof, or real different-network proof.
+- Caveat: local relay mode used USB `adb reverse` for runtime and relay ports, so public/VPN/tunnel/private-overlay external-relay and optical QR work remain separate roadmap gaps.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ADB="$HOME/Library/Android/sdk/platform-tools/adb" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-reconnect --summary-json build/qa/android-physical-reconnected-after-wrapper-proof-boundary-20260708-055015.json > build/qa/android-physical-reconnected-after-wrapper-proof-boundary-20260708-055015.log 2>&1'`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh'`
+
+### 2026-07-08 Physical External-Relay Wrapper Proof-Boundary Split No-Device Gate
+
+- Scope: harden the physical external-relay wrapper summary after the same-LAN private relay LM Studio pass, so `physical_external_relay_verified=true` cannot be mistaken for optical QR, production relay/session/encryption, direct Android backend access, or real different-network proof.
+- Device state: no Android app was installed or driven for this guard. The latest physical phone evidence remains the separate same-LAN private relay run on `R3CXC0M76VM` / `SM_S936N`.
+- No-device state: `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary --expect-chat-complete ...` now writes wrapper-level proof-boundary fields without requiring a phone, external relay, or live provider.
+- Result: `script/check_physical_external_relay_pairing.sh` wrapper summaries now record `adb_deeplink_injection`, `optical_camera_qr_scan=false`, `production_relay_proof=false`, `production_session_key_exchange_proof=false`, `production_end_to_end_transport_encryption_proof=false`, `external_network_operator_confirmed`, `real_different_network_relay_verified`, `real_different_network_connectivity_proof`, `android_direct_model_backend_access=false`, `private_relay_allowed`, and `private_or_same_lan_development_relay`.
+- Result: `build/qa/physical-wrapper-proof-boundary-self-test-20260708-054157.json` records `self_test_success=true`, `physical_external_relay_success=false`, `external_network_operator_confirmed=false`, `real_different_network_relay_verified=false`, `real_different_network_connectivity_proof=false`, `optical_camera_qr_scan=false`, production proof fields false, direct backend access false, and child chat-complete proof preserved.
+- Guardrail: `script/check_no_device_quality.sh` now asserts the new wrapper-level false proof fields for invalid-host and seeded probe-summary paths. `script/check_copy_hygiene.py` pins the wrapper fields, no-device assertions, and no-device coverage echo.
+- Proof boundary: this is no-device summary-contract evidence only. It does not replace the physical private-relay smoke, does not prove optical/camera QR scanning, and does not prove public/VPN/tunnel external relay or real different-network connectivity.
+- Caveat: same-LAN/private relay evidence remains valuable development relay evidence, but only a future run with an operator-confirmed public/VPN/tunnel/private-overlay setup and `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1` can set real different-network proof true.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary --expect-chat-complete --chat-text "External wrapper complete proof" --chat-delta-timeout 9 --chat-complete-timeout 11 --chat-expected-terms "ExternalComplete" --chat-model-query "LM Studio" --live-backend --json build/qa/physical-wrapper-proof-boundary-self-test-20260708-054157.json --log build/qa/physical-wrapper-proof-boundary-self-test-20260708-054157.log`
+
+### 2026-07-08 Physical Android Private Relay LM Studio Chat-Complete Smoke
+
+- Scope: use the reconnected physical Android phone to advance the relay-route proof beyond USB-reverse local relay by running the external-relay wrapper against a same-LAN private relay endpoint, with live LM Studio chat-complete proof.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`; the phone was on `192.168.0.101/24`, the runtime Mac was on `192.168.0.102/24`, and the relay listened on `0.0.0.0:43171` with an allocation token. This is private same-LAN relay evidence, not operator-confirmed different-network evidence.
+- No-device state: none was added for this physical private-relay run. The default no-device gates remain separate from this attached-phone evidence.
+- Provider state: LM Studio was available on the runtime host, `google/gemma-4-e4b` was loaded with a refreshed TTL, and Android selected the LM Studio model through runtime-mediated `models.list`; Android still did not receive or call the LM Studio endpoint directly.
+- Result: `script/check_physical_external_relay_pairing.sh --allow-private-relay --expect-chat-complete --live-backend --chat-model-query "LM Studio"` passed with `success=true`, `exit_status=0`, `physical_external_relay_verified=true`, `external_relay_probe_reachable=true`, `external_relay_route_ready=true`, `adb_reverse_absence_proven=true`, `android_pairing_summary_no_relay_adb_reverse=true`, `android_pairing_summary_live_provider_chat_complete_proof=true`, and `android_pairing_summary_chat_expected_terms_observed=["AetherLinkLANRelayLMStudioProof"]`.
+- Result: child summary `build/qa/android-physical-private-relay-lmstudio-chat-complete-20260708-0532.android-pairing-summary.json` records `adb_reverse_runtime_used=false`, `adb_reverse_relay_used=false`, `external_relay_mode=true`, endpoint and route probe artifacts present, accepted pairing, `runtime.health`, `models.list`, trusted reconnect, selected-model runtime-log confirmation, natural `chat.done`, no direct Android backend access, and expected-term completion.
+- Proof boundary: this proves physical Android can use a private relay endpoint without `adb reverse` for the relay while completing a live LM Studio response through the runtime host. It is still adb deeplink injection, same-LAN/private-relay development transport, and not optical/camera QR, public/VPN/tunnel external relay, production relay/session/encryption, direct Android backend access, or real different-network proof.
+- Caveat: the wrapper correctly leaves `operator_must_confirm_phone_was_on_a_different_network` in the caveats because the phone and Mac were both on `192.168.0.0/24`. A later run with a public/VPN/tunnel/private-overlay endpoint and `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1` is still required for real different-network evidence.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" -s R3CXC0M76VM shell ip route`
+- `"$HOME/.lmstudio/bin/lms" load google/gemma-4-e4b -y --ttl 900`
+- `script/run_allocation_relay.sh --host 0.0.0.0 --port 43171 --allocation-token <redacted-dev-token> --ephemeral-allocations`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="Reply with exactly this token and nothing else: AetherLinkLANRelayLMStudioProof" ./script/check_physical_external_relay_pairing.sh --relay-host 192.168.0.102 --relay-port 43171 --allocation-token <redacted-dev-token> --allow-private-relay --serial R3CXC0M76VM --expect-chat-complete --live-backend --chat-model-query "LM Studio" --chat-delta-timeout 180 --chat-complete-timeout 360 --chat-expected-terms "AetherLinkLANRelayLMStudioProof" --json build/qa/android-physical-private-relay-lmstudio-chat-complete-20260708-0532.json --log build/qa/android-physical-private-relay-lmstudio-chat-complete-20260708-0532.log`
+- `python3 - build/qa/android-physical-private-relay-lmstudio-chat-complete-20260708-0532.json`
+- `python3 - build/qa/android-physical-private-relay-lmstudio-chat-complete-20260708-0532.android-pairing-summary.json`
+
+### 2026-07-08 RuntimeDevServer LM Studio Provider Eval Matrix
+
+- Scope: continue the remaining live-provider model-quality evaluation queue by adding RuntimeDevServer-mediated LM Studio eval coverage after the physical Android LM Studio chat-complete proof.
+- Device state: adb still observed `R3CXC0M76VM` / `SM_S936N`, but this slice did not drive the Android app. It is authenticated RuntimeDevServer evidence against live LM Studio, not physical Android UI or optical QR proof.
+- No-device state: this is not no-device evidence. It requires a live LM Studio endpoint and proves runtime-host mediation only, while physical Android and no-device gate coverage remain separate.
+- Provider state: LM Studio server responded on `127.0.0.1:1234`, `google/gemma-4-e4b` was loaded with a refreshed TTL, and RuntimeDevServer exposed the model as runtime-mediated `lm_studio:google/gemma-4-e4b`.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now supports `--real-lmstudio-eval-models` in the existing real-provider aggregate mode, keeps `--real-ollama-eval-models` compatibility, verifies LM Studio `/api/v1/models` chat-model inventory/running state against authenticated `models.list`, and writes redacted eval summary JSON with provider-specific proof-boundary booleans.
+- Live-provider evidence: `build/qa/runtime-provider-eval-lmstudio-20260708-052117.json` records `success=true`, `backend=lm_studio`, `runtime_mediated=true`, `authenticated_runtime_session=true`, `lm_studio_proof=true`, `ollama_proof=false`, `android_client_proof=false`, and production/different-network proof false.
+- Matrix result: `google/gemma-4-e4b` passed `korean_local_runtime_summary`, `runtime_boundary_explanation`, and `structured_json_boundary` with `finish_reason=stop`, answer deltas, reasoning deltas, and all expected terms observed for each prompt.
+- Proof boundary: this is authenticated RuntimeDevServer mediation to live LM Studio. It is not direct-provider-only evaluation, Android client proof, optical/camera QR proof, production relay/session/encryption proof, or real different-network proof.
+- Caveat: this uses one loaded LM Studio model and the existing fixed three-prompt matrix. Broader multi-model LM Studio comparison, physical Android model-quality review beyond adb-deeplink smokes, optical QR scanning, production relay/P2P traversal, and real different-network connectivity remain separate.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `"$HOME/.lmstudio/bin/lms" load google/gemma-4-e4b -y --ttl 900`
+- `./script/runtime_authenticated_mock_smoke.swift --real-ollama --real-lmstudio-eval-models "google/gemma-4-e4b" --eval-summary-json build/qa/runtime-provider-eval-lmstudio-20260708-052117.json`
+- `python3 - build/qa/runtime-provider-eval-lmstudio-20260708-052117.json`
+
+### 2026-07-08 Physical Android Live LM Studio Chat-Complete Smoke
+
+- Scope: close the LM Studio-backed physical chat-complete expected-term proof gap while the Android phone and LM Studio runtime were both available.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`; the smoke installed the current debug APK, cleared app data, injected a sanitized fresh `aetherlink://pair` intent, selected the LM Studio model row, and drove the physical Android chat UI.
+- Provider state: LM Studio server responded on `127.0.0.1:1234`, `google/gemma-4-e4b` was loaded with a refreshed 15-minute TTL, and a direct local API sanity check returned `AetherLinkLMStudioCompleteProof` with `finish_reason=stop`. Android still talked only to AetherLink Runtime and never received the LM Studio endpoint.
+- No-device state: none was added for this physical LM Studio completion rerun; existing no-device gates remain separate from this physical live-provider proof.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --expect-chat-complete --expect-reconnect --capture-ui-polish --live-backend --chat-model-query "LM Studio"` selected `Gemma 4 E4B. LM Studio - running`, confirmed the runtime `chat.send` model log, observed request-id-bound chat send/delta/natural done without `chat.cancel`, found `AetherLinkLMStudioCompleteProof` in the completed Android transcript, and verified trusted-route reconnect.
+- Result: `build/qa/android-physical-live-lmstudio-chat-complete-20260708-051116.json` records `success=true`, `exit_status=0`, `chat_complete_requested=true`, `chat_expected_terms_observed=["AetherLinkLMStudioCompleteProof"]`, `live_provider_chat_complete_proof=true`, `chat_cancel_observed=false`, `chat_model_runtime_log_confirmed=true`, `trusted_route_reconnect_verified=true`, and `ui_polish_capture_artifact_manifest_complete=true`.
+- Result: durable copied artifacts are in `build/qa/android-physical-live-lmstudio-chat-complete-20260708-051116/`, including pairing, chat-complete, chat/model selector/drawer/Settings/launcher PNG/XML captures, `runtime.log`, `relay.log`, and sanitized `am-start.txt`.
+- Visual spot-check: the chat-complete screenshot shows selected `Gemma 4 E4B` and the assistant response `AetherLinkLMStudioCompleteProof`; the model selector screenshot shows `Gemma 4 E4B` selected under `LM Studio - running`.
+- Proof boundary: this proves physical Android app control of a live LM Studio model through the runtime host over the development relay with a completed expected-term answer. It keeps optical QR, production relay/session/encryption, real different-network connectivity, and Android direct backend access unproved.
+- Caveat: this does not prove optical/camera QR scanning, real public/VPN/tunnel relay reachability, production session-key exchange, production transport encryption, or direct Android access to Ollama/LM Studio.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `"$HOME/.lmstudio/bin/lms" ps`
+- direct `http://127.0.0.1:1234/v1/chat/completions` sanity check for `AetherLinkLMStudioCompleteProof`
+- `"$HOME/.lmstudio/bin/lms" load google/gemma-4-e4b -y --ttl 900`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="Reply with exactly this token and nothing else: AetherLinkLMStudioCompleteProof" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-complete --expect-reconnect --capture-ui-polish --live-backend --chat-model-query "LM Studio" --chat-delta-timeout 180 --chat-complete-timeout 360 --chat-expected-terms "AetherLinkLMStudioCompleteProof" --summary-json build/qa/android-physical-live-lmstudio-chat-complete-20260708-051116.json`
+- `python3 - build/qa/android-physical-live-lmstudio-chat-complete-20260708-051116.json`
+
+### 2026-07-08 Physical Android Live LM Studio Chat-Cancel Smoke
+
+- Scope: close the remaining LM Studio-backed physical live-provider gap while the LM Studio CLI/server and attached Android phone were both available.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`; the smoke installed the current debug APK, cleared app data, injected a sanitized fresh `aetherlink://pair` intent, and drove the physical Android chat UI.
+- Provider state: `lms` was installed, LM Studio server responded on `127.0.0.1:1234`, and `google/gemma-4-e4b` was loaded with a 15-minute TTL. Android still talked only to AetherLink Runtime and never received the LM Studio endpoint.
+- No-device state: none was added for this LM Studio rerun; existing no-device gates remain separate from this physical live-provider proof.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --expect-chat-cancel --expect-reconnect --capture-ui-polish --live-backend --chat-model-query "LM Studio"` selected the Android model row `Gemma 4 E4B. LM Studio - running`, confirmed the runtime `chat.send` model log, observed chat send/delta/cancel/done, and verified a second `runtime.health` after app relaunch.
+- Result: `build/qa/android-physical-live-lmstudio-chat-cancel-20260708-050325.json` records `success=true`, `exit_status=0`, `live_provider_chat_cancel_proof=true`, `chat_model_runtime_log_confirmed=true`, `trusted_route_reconnect_verified=true`, and `ui_polish_capture_artifact_manifest_complete=true`.
+- Result: durable copied artifacts are in `build/qa/android-physical-live-lmstudio-chat-cancel-20260708-050325/`, including pairing, chat/cancel, chat/model selector/drawer/Settings/launcher PNG/XML captures, `runtime.log`, `relay.log`, and sanitized `am-start.txt`.
+- Proof boundary: this proves physical Android app control of a live LM Studio model through the runtime host over the development relay. It keeps optical QR, production relay/session/encryption, real different-network connectivity, and Android direct backend access unproved.
+- Caveat: this chat-cancel-only run is superseded for LM Studio expected-term completion by the later chat-complete entry. It does not prove optical/camera QR scanning, real public/VPN/tunnel relay reachability, production session-key exchange, production transport encryption, or direct Android access to Ollama/LM Studio.
+
+Verified after this change:
+
+- `command -v lms`
+- `lms ls`
+- `lms server status`
+- `lms load google/gemma-4-e4b -y --ttl 900`
+- `curl -sS --max-time 5 http://127.0.0.1:1234/api/v1/models`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_lmstudio_live_cancel_20260708-050325" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --live-backend --chat-model-query "LM Studio" --chat-delta-timeout 180 --summary-json build/qa/android-physical-live-lmstudio-chat-cancel-20260708-050325.json`
+- `python3 - build/qa/android-physical-live-lmstudio-chat-cancel-20260708-050325.json`
+
+### 2026-07-08 Connected Phone Fresh Relay Reconnect Smoke
+
+- Scope: use the reconnected Android phone to distinguish the visible stale relay warning from actual fresh QR/deeplink pairing behavior.
+- Device state: adb observed `R3CXC0M76VM` / `SM_S936N`; the pre-smoke screen showed the Korean warning that this device could not open the relay route and should scan the latest QR.
+- No-device state: none was added for this connected-phone rerun; the existing no-device gates remain separate from this physical adb-deeplink proof.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --expect-chat-cancel --expect-reconnect` installed the current debug APK, cleared app data, injected a fresh sanitized `aetherlink://pair` intent, paired through the local diagnostic relay, drove chat send/cancel, and verified a second `runtime.health` after app relaunch.
+- Result: `build/qa/android-physical-connected-phone-reconnect-20260708-044801.json` records `success=true`, `exit_status=0`, `runtime_pairing_accepted=true`, `runtime_health_observed=true`, `trusted_route_reconnect_verified=true`, and chat send/delta/cancel/done coverage on the physical phone.
+- Proof boundary: the stale relay warning can reappear after the script cleans up its temporary runtime/relay, so the post-run screen alone is not failure proof. The in-run logs and summary JSON prove the fresh local diagnostic relay path.
+- Caveat: this remains adb-deeplink plus USB `adb reverse` local-relay evidence. It does not prove optical QR scanning, a production relay, live provider-backed chat, LM Studio, production session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_connected_phone_reconnect_20260708-044801" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --summary-json build/qa/android-physical-connected-phone-reconnect-20260708-044801.json`
+
+### 2026-07-08 Physical External Relay Chat-Complete Pass-Through No-Device Gate
+
+- Scope: continue Immediate Queue 6 and the external-relay proof path by making the physical external-relay wrapper preserve the latest Android chat-complete proof options and safe child-summary booleans. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer inspected the wrapper insertion points and proof-boundary wording.
+- Device state: adb currently observes attached phone `R3CXC0M76VM` / `SM_S936N`, but this slice did not run an external public/VPN relay physical smoke. It is no-device wrapper/summary guard evidence for a future operator-confirmed external-relay run.
+- Provider state: LM Studio at `127.0.0.1:1234` was still unavailable, so no LM Studio-backed phone proof was attempted. The wrapper now accepts model-query pass-through for future live-provider external-relay runs.
+- No-device state: `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary --expect-chat-complete ...` seeds safe child Android pairing summary coverage, while `script/check_no_device_quality.sh` asserts the wrapper does not convert seeded self-tests into physical external-relay proof.
+- Result: `script/check_physical_external_relay_pairing.sh` now supports `--expect-chat-complete`, `--chat-complete-timeout`, `--chat-expected-terms`, and `--chat-model-query`, enforces cancel/complete mutual exclusion, and forwards those options to `script/android_pairing_deeplink_smoke.sh`.
+- Result: wrapper summary JSON now records `expect_chat_complete`, `chat_done_count`, child-derived `android_pairing_summary_live_provider_chat_complete_proof`, and `android_pairing_summary_chat_expected_terms_observed`, while the safe child summary preserves only proof booleans and path-presence fields such as `chat_complete_ui_xml`.
+- Result: the no-device wrapper redaction self-test shows `self_test_success=true`, `physical_external_relay_success=false`, `expect_chat_complete=true`, `android_pairing_summary_live_provider_chat_complete_proof=true`, and `android_pairing_summary_chat_expected_terms_observed=["ExternalComplete"]` without exposing route material.
+- Proof boundary: this makes future physical external-relay chat-complete evidence auditable, but it does not prove a live external public/VPN relay, optical QR scanning, LM Studio, production relay/session/encryption, or real different-network runtime connectivity.
+- Caveat: this is wrapper and summary behavior only. A real external-relay pass still requires an attached phone on the target network, a reachable public/VPN/tunnel/private-overlay relay, `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1` when required, and a live physical run.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary --expect-chat-complete --chat-text "External wrapper complete proof" --chat-delta-timeout 9 --chat-complete-timeout 11 --chat-expected-terms "ExternalComplete" --chat-model-query "gemma4:e4b-mlx" --live-backend --json <tmp>/summary.json --log <tmp>/run.log`
+- `ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --serial no-device-serial-1 --expect-chat-complete --chat-text "External wrapper complete proof" --chat-delta-timeout 9 --chat-complete-timeout 11 --chat-expected-terms "ExternalComplete" --chat-model-query "gemma4:e4b-mlx" --live-backend --json <tmp>/summary.json --log <tmp>/run.log`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md README.md`
+
+### 2026-07-08 Physical Android Live Ollama Chat-Complete Smoke
+
+- Scope: continue the Android client live-provider proof beyond chat/cancel by proving a natural completed assistant response through the physical phone UI. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the insertion points and proof-boundary shape, then was closed.
+- Device state: adb observed attached phone `R3CXC0M76VM` / `SM_S936N`; the smoke installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, paired through the local relay, selected `gemma4:e4b-mlx`, and drove the Android chat UI.
+- Provider state: Ollama was available at `127.0.0.1:11434` with `gemma4:e4b-mlx`; LM Studio at `127.0.0.1:1234` was not available during this pass, so this is Ollama live-backend evidence, not LM Studio evidence.
+- No-device state: `script/check_no_device_quality.sh` now covers the chat-complete summary JSON schema and proof-boundary self-test only. That no-device path does not prove physical phone UI or a live backend.
+- Result: `script/android_pairing_deeplink_smoke.sh` now supports `--expect-chat-complete`, `--chat-complete-timeout`, and `--chat-expected-terms`, binds `chat.delta` and natural `chat.done` to the new `chat.send` request id, rejects completion proof if `chat.cancel` appears for the run, and checks expected completed transcript terms in the final Android UI XML.
+- Result: `build/qa/android-physical-live-ollama-chat-complete-20260708-042530.json` records `success=true`, `exit_status=0`, `physical_device_observed=true`, `adb_deeplink_injection_succeeded=true`, accepted pairing, `runtime.health`, `models.list`, `chat_complete_requested=true`, chat send/delta/done, `chat_cancel_observed=false`, `live_provider_chat_complete_proof=true`, `chat_expected_terms_observed=["AetherLinkCompleteProof"]`, and selected-model runtime-log confirmation.
+- Result: durable copied artifacts are in `build/qa/android-physical-live-ollama-chat-complete-20260708-042530/`, including `aetherlink-chat-complete-smoke.png`, `aetherlink-chat-complete-smoke.xml`, `aetherlink-pairing-smoke.png`, `runtime.log`, `relay.log`, and sanitized `am-start.txt`.
+- Proof boundary: this is physical Android app proof through adb deeplink injection, USB `adb reverse`, a local development relay, and live Ollama via the runtime host. It keeps `optical_camera_qr_scan=false`, production relay/session/encryption proof false, `real_different_network_connectivity_proof=false`, and `android_direct_model_backend_access=false`.
+- Caveat: this does not prove optical/camera QR scanning, LM Studio-backed live chat-complete, production relay behavior, production session-key exchange, production transport encryption, direct Android access to Ollama/LM Studio, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="Reply with exactly one token made by joining AetherLink Complete Proof without spaces" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-complete --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 120 --chat-complete-timeout 240 --chat-expected-terms "AetherLinkCompleteProof" --summary-json build/qa/android-physical-live-ollama-chat-complete-20260708-042530.json`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+### 2026-07-08 RuntimeDevServer Ollama Provider Eval Matrix And Whitespace Delta Store Fix
+
+- Scope: continue live-provider validation through the runtime-host boundary after the attached Android phone was observed. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the failure mode and the proof-boundary shape.
+- Device state: adb observed attached phone `R3CXC0M76VM` / `SM_S936N`, but this slice did not drive the Android app. It is RuntimeDevServer-mediated macOS/runtime evidence against live Ollama, not physical Android UI or optical QR evidence.
+- No-device state: this is not a default no-device gate run. The focused Swift tests are no-Android-device regression coverage for the chat event store, and the live-provider smoke requires a running local Ollama endpoint.
+- Failure found: the first real Ollama matrix attempt failed with `chat_store_unavailable` because the runtime chat event store treated whitespace-only `assistant_delta` or `reasoning_delta` chunks as empty after trimming.
+- Result: JSONL and SQLite runtime chat event stores now accept non-empty whitespace-only streaming chunks, preserving answer spacing and reasoning newlines, while still rejecting truly empty `delta` and `reasoningDelta` values.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now supports `--real-ollama-eval-models` plus `--eval-summary-json`, extends the real-Ollama read timeout only for model eval runs, and writes redacted RuntimeDevServer-mediated eval summaries.
+- Live-provider evidence: `build/qa/runtime-provider-eval-ollama-matrix-20260708-035945.log` and `build/qa/runtime-provider-eval-ollama-matrix-20260708-035945.json` record `success=true` for a 3-model by 3-prompt Ollama matrix through authenticated RuntimeDevServer.
+- Matrix result: `gemma4:e4b-mlx`, `gemma4:26b-mlx`, and `qwen3.6:35b-mlx` each answered `korean_local_runtime_summary`, `runtime_boundary_explanation`, and `structured_json_boundary` with expected terms observed, `finish_reason=stop`, answer deltas, and reasoning deltas; the same run preserved trusted-route reconnect and revocation checks.
+- Proof boundary: the summary keeps `runtime_dev_server_authenticated=true`, `direct_provider_only_eval=false`, `android_client_proof=false`, `lm_studio_proof=false`, production relay/session/encryption proof false, real different-network proof false, and route/backend material redacted.
+- Caveat: this proves authenticated RuntimeDevServer mediation to live Ollama for fixed eval prompts. It does not prove physical Android rendering or pairing, optical/camera QR scanning, LM Studio-backed live chat/cancel, production relay behavior, production session-key exchange, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `swift test --package-path apps/macos --filter 'SQLiteRuntimeChatEventStoreTests|LocalRuntimeMessageRouterTests/testRuntimeChatStorePreservesWhitespaceOnlyStreamingDeltas'`
+- `./script/runtime_authenticated_mock_smoke.swift --real-ollama --real-ollama-eval-models "gemma4:e4b-mlx,gemma4:26b-mlx,qwen3.6:35b-mlx" --eval-summary-json build/qa/runtime-provider-eval-ollama-matrix-20260708-035945.json`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- docs/progress.md docs/qa-evidence.md docs/roadmap.md apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift script/runtime_authenticated_mock_smoke.swift`
+
+### 2026-07-08 Physical Android Live Qwen UI Polish Smoke
+
+- Scope: combine live provider-backed routing, selected-model runtime-log confirmation, chat/cancel, trusted reconnect, and UI-polish artifact capture in one attached-phone proof using a second installed Ollama chat model. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the documentation and proof-boundary shape.
+- Provider state: Ollama was available at `127.0.0.1:11434` with `qwen3.6:35b-mlx`; LM Studio at `127.0.0.1:1234` refused connection, so this is Ollama live-backend evidence, not LM Studio evidence.
+- No-device state: no new no-device gate assertion was added for the physical serial or `qwen3.6:35b-mlx`; this is physical/live-provider evidence only.
+- Physical evidence: attached phone `R3CXC0M76VM` / `SM_S936N` installed the current debug APK, cleared app data, received the sanitized `aetherlink://pair` VIEW intent, selected `qwen3.6:35b-mlx` in the Android model picker, confirmed the runtime `chat.send model` log, streamed `chat.delta`, sent `chat.cancel`, received `chat.done`, reconnected with a second `runtime.health` after relaunch, and captured chat, model selector, drawer, Settings, and launcher PNG/XML artifacts.
+- Result: `build/qa/android-physical-live-qwen-ui-polish-20260708-034114.json` records `success=true`, `exit_status=0`, matching requested/observed serials, physical device observation, adb deeplink injection, accepted pairing, `runtime.health`, `models.list`, chat send/delta/cancel/done, `live_provider_chat_cancel_proof=true`, `chat_model_runtime_log_confirmed=true`, trusted-route reconnect, `ui_polish_capture_requested=true`, `ui_polish_capture_artifacts=true`, and `ui_polish_capture_artifact_manifest_complete=true`.
+- Result: the same summary keeps `optical_camera_qr_scan=false`, `external_relay_mode=false`, production relay proof false, production session-key exchange proof false, production end-to-end transport encryption proof false, `real_different_network_connectivity_proof=false`, and `android_direct_model_backend_access=false`.
+- Result: durable copied artifacts are in `build/qa/android-physical-live-qwen-ui-polish-20260708-034114/`, including chat, model selector, drawer, Settings, launcher, pairing, chat/cancel screenshots/XML, `runtime.log`, and `relay.log`.
+- Visual spot-check: the copied qwen captures show the selected `qwen3.6:35b-mlx` row, the qwen chat surface with thinking text, Settings, drawer, and launcher UI without obvious visible overlap in the captured regions.
+- Caveat: this is physical Android app proof through adb deeplink injection, USB `adb reverse`, a local development relay, and live Ollama. It does not prove optical/camera QR scanning, LM Studio-backed live chat/cancel, production relay behavior, production session-key exchange, production transport encryption, direct Android access to Ollama/LM Studio, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `curl -sS --max-time 2 http://127.0.0.1:11434/api/tags`
+- `curl -sS --max-time 2 http://127.0.0.1:1234/v1/models || true`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_live_qwen_ui_polish_20260708-034114" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --live-backend --chat-model-query "qwen3.6:35b-mlx" --chat-delta-timeout 180 --summary-json build/qa/android-physical-live-qwen-ui-polish-20260708-034114.json`
+- `python3 - build/qa/android-physical-live-qwen-ui-polish-20260708-034114.json`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-07-08 Physical Android Large-Font UI Polish Smoke
+
+- Scope: reduce the remaining physical Android font/rendering review gap by running the existing UI-polish physical smoke with a temporary larger system font scale. No production behavior changed, and no new no-device gate assertion was added. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer was used in parallel for next-slice review.
+- Device state: attached phone `R3CXC0M76VM` / `SM_S936N` was observed by adb. The script wrapper read the original Android `font_scale=1.15`, temporarily set `font_scale=1.3`, ran the physical smoke, and restored `font_scale=1.15` after completion.
+- No-device state: this is not no-device evidence. The existing no-device TalkBack-order proxy tests remain separate from this physical large-font rendering spot-check.
+- Physical evidence: `script/android_pairing_deeplink_smoke.sh --relay --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-large-font-ui-polish-20260708-033636.json` installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, observed chat send/delta/cancel/done, observed trusted-route reconnect after relaunch, and captured chat, model selector, drawer, Settings, and launcher PNG/XML artifacts while the phone was using `font_scale=1.3`.
+- Result: `build/qa/android-physical-large-font-ui-polish-20260708-033636.json` records `success=true`, `exit_status=0`, matching requested/observed serials, physical device observation, adb deeplink injection, accepted pairing, `runtime.health`, `models.list`, chat send/delta/cancel/done, trusted-route reconnect, `ui_polish_capture_requested=true`, `ui_polish_capture_artifacts=true`, and `ui_polish_capture_artifact_manifest_complete=true`.
+- Result: durable copied artifacts are in `build/qa/android-physical-large-font-ui-polish-20260708-033636/`, including chat, model selector, drawer, Settings, launcher, pairing, chat/cancel screenshots/XML, `runtime.log`, and `relay.log`.
+- Visual spot-check: the copied large-font chat, model selector, drawer, and Settings captures rendered and did not show obvious text overlap in the visible regions; the launcher capture still reported the AetherLink label visible.
+- Caveat: this is physical Android rendering evidence at temporary `font_scale=1.3` through adb deeplink injection, USB `adb reverse`, a local development relay, and a mock backend. It does not prove physical TalkBack traversal, optical/camera QR scanning, live Ollama or LM Studio provider-backed chat/cancel, production relay behavior, production session-key exchange, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" -s R3CXC0M76VM shell settings get system font_scale`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_large_font_ui_polish_20260708-033636" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-large-font-ui-polish-20260708-033636.json`
+- `python3 - build/qa/android-physical-large-font-ui-polish-20260708-033636.json`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-07-08 Fresh Physical Android Live Ollama Smoke After External-Relay Summary Gate
+
+- Scope: refresh attached-phone proof after the physical external-relay Android pairing summary artifact gate, without changing production behavior or adding new no-device assertions. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the smallest documentation update.
+- Provider state: Ollama was available at `127.0.0.1:11434` with `gemma4:e4b-mlx`; LM Studio at `127.0.0.1:1234` refused connection, so this is Ollama live-backend evidence, not LM Studio evidence.
+- No-device state: no new no-device gate was rerun for this refresh. The existing summary JSON no-device self-tests and physical external-relay child-summary gate remain the guardrails for schema and proof-boundary behavior.
+- Physical evidence: attached phone `R3CXC0M76VM` / `SM_S936N` was observed by adb, installed the current debug APK, cleared app data, received the sanitized `aetherlink://pair` VIEW intent, selected `gemma4:e4b-mlx` in the Android model picker, confirmed the runtime `chat.send model` log, streamed `chat.delta`, sent `chat.cancel`, received `chat.done`, and reconnected with a second `runtime.health` after relaunch.
+- Result: `build/qa/android-physical-live-ollama-after-external-child-summary-20260708-033112.json` records `success=true`, `exit_status=0`, matching requested/observed serials, physical device observation, adb deeplink injection, accepted pairing, `runtime.health`, `models.list`, chat send/delta/cancel/done, trusted-route reconnect, live-provider chat/cancel proof, and selected-model runtime-log confirmation.
+- Result: the same summary keeps production relay and real different-network proof false, and does not turn this adb-deeplink/USB-reverse development relay run into optical QR, production relay, production transport encryption, direct Android model-backend access, or LM Studio proof.
+- Evidence log: `build/qa/android-physical-live-ollama-after-external-child-summary-20260708-033112.log`.
+- Evidence summary: `build/qa/android-physical-live-ollama-after-external-child-summary-20260708-033112.json`.
+- Caveat: this is physical Android app proof through adb deeplink injection, USB `adb reverse`, a local development relay, and live Ollama. It does not prove optical/camera QR scanning, real different-network or production relay reachability, LM Studio-backed live chat/cancel, production session-key exchange, production transport encryption, or direct Android access to Ollama/LM Studio.
+
+Verified after this change:
+
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+- `curl -sS --max-time 2 http://127.0.0.1:11434/api/tags`
+- `curl -sS --max-time 2 http://127.0.0.1:1234/v1/models`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_fresh_connected_phone_live_ollama_20260708-032948" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90 --summary-json build/qa/android-physical-live-ollama-after-external-child-summary-20260708-032948.json`
+- `python3 - build/qa/android-physical-live-ollama-after-external-child-summary-20260708-033112.json`
+
+### 2026-07-08 Physical External Relay Android Pairing Summary Artifact No-Device Gate
+
+- Scope: connect the physical external-relay QA wrapper to the standard Android pairing summary JSON proof-boundary, so a future public/VPN/tunnel relay run can be audited through both the wrapper summary and the child pairing-smoke summary. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended LM Studio live proof, but `127.0.0.1:1234` was not reachable during this pass, so this local slice continued the external-relay proof-boundary work.
+- Result: `script/check_physical_external_relay_pairing.sh` now derives `<summary>.android-pairing-summary.json`, passes it to the child `script/android_pairing_deeplink_smoke.sh --summary-json`, and fails successful-looking physical external-relay runs if that child summary is missing or not successful.
+- Result: the wrapper summary now records `android_pairing_summary_json_present`, `android_pairing_summary_success`, `android_pairing_summary_external_relay_mode`, `android_pairing_summary_no_relay_adb_reverse`, and `android_pairing_summary_proof_boundary_preserved` under `coverage`.
+- Result: the wrapper summary records a safe `child_summaries.android_pairing_deeplink` subset with success, event counts, path-presence booleans, and proof-boundary booleans only; it does not embed pairing URI query material, relay secrets, route tokens, allocation tokens, provider URLs, or backend URLs.
+- Guardrail: `script/check_no_device_quality.sh` now asserts invalid-host wrapper runs do not invent child pairing proof, while the seeded redaction self-test proves the child summary artifact can be present and proof-boundary-preserved without claiming live Android probe or physical external-relay proof.
+- Guardrail: `script/check_copy_hygiene.py` pins the child `--summary-json` handoff, safe child-summary reducer, wrapper success guard, no-device assertions, and default gate summary wording.
+- Full gate evidence: `script/check_no_device_quality.sh` passed with the physical external-relay Android pairing summary artifact guard; the captured log was `build/qa/check-no-device-quality-physical-external-child-summary-20260708-031956.log`.
+- Caveat: this is no-device script/summary evidence only. It does not prove an actual external relay, a phone on a different network, optical/camera QR scanning, LM Studio-backed live chat/cancel, production relay behavior, production session-key exchange, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary --json <tmp>/summary.json --log <tmp>/run.log`
+- invalid-host wrapper summary smoke with `ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --serial no-device-serial-1 --json <tmp>/summary.json --log <tmp>/run.log`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Android Pairing Summary JSON Failure-Path Proof Boundary
+
+- Scope: make failed or partial Android pairing smokes produce summary JSON that cannot be mistaken for physical/live-provider proof. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer reviewed the minimal guard locations while this implementation stayed local.
+- Result: `script/android_pairing_deeplink_smoke.sh` now accepts `--self-test-summary-json-failure`, which writes a synthetic failed summary with `success=false`, `exit_status=42`, no observed serial, attempted-but-unsuccessful app/deeplink state, and requested reconnect/chat/live-backend/UI-polish options that remain unproved.
+- Result: the failure summary keeps runtime pairing, `runtime.health`, `models.list`, chat send/delta/cancel/done, selected-model runtime-log confirmation, live-provider chat/cancel, trusted reconnect, UI-polish artifacts, optical QR, production relay, production transport encryption, real different-network connectivity, and direct Android backend access false.
+- Result: the failure summary uses the same route/backend redaction boundary as successful summaries, so pairing URI query material, relay secrets, route tokens, allocation tokens, provider URLs, and backend URLs stay absent.
+- Guardrail: `script/check_no_device_quality.sh` now runs both `--self-test-summary-json` and `--self-test-summary-json-failure` in `check_android_pairing_summary_json_guard`.
+- Guardrail: `script/check_copy_hygiene.py` pins the failure self-test flag, marker, nonzero status, `success=false` assertion, no-phone-proof assertion, and default no-device summary wording.
+- Full gate evidence: `script/check_no_device_quality.sh` passed with the failure-path summary JSON proof-boundary guard; the captured log was `build/qa/check-no-device-quality-summary-json-failure-path-20260708-025927.log`.
+- Physical follow-up evidence: after `R3CXC0M76VM` / `SM_S936N` was reconnected, `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-summary-json-after-failure-boundary-20260708-030821.json` installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, observed pairing/runtime/chat/cancel/reconnect, and captured chat, model selector, drawer, Settings, and launcher screenshots/XML.
+- Physical summary: `build/qa/android-physical-summary-json-after-failure-boundary-20260708-030821.json` has `success=true`, `exit_status=0`, matching requested/observed serials, `physical_device_observed=true`, `adb_deeplink_injection_succeeded=true`, `runtime_pairing_accepted=true`, `runtime_health_observed=true`, `trusted_route_reconnect_verified=true`, chat send/delta/cancel/done observed, complete UI-polish artifact manifest, and expected false booleans for live-provider, optical QR, production relay, production transport encryption, real different-network, and direct Android backend proof.
+- Physical evidence log: `build/qa/android-physical-summary-json-after-failure-boundary-20260708-030821.log`.
+- Caveat: the failure-path guard itself is no-device proof-boundary evidence. The physical follow-up proves adb-deeplink pairing, physical UI capture, chat/cancel, and trusted reconnect on the attached phone only; it does not prove optical/camera QR scanning, live-provider chat/cancel, production relay behavior, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `script/android_pairing_deeplink_smoke.sh --self-test-summary-json --summary-json <tmp>/success.json`
+- `script/android_pairing_deeplink_smoke.sh --self-test-summary-json-failure --summary-json <tmp>/failure.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-summary-json-after-failure-boundary-20260708-030821.json`
+
+### 2026-07-08 Android Pairing Summary UI Polish Artifact Manifest
+
+- Scope: make `--capture-ui-polish` physical Android evidence easier to audit by recording the individual chat, model selector, drawer, Settings, and launcher PNG/XML artifact paths in the pairing smoke summary JSON. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer was running for roadmap candidate review while this implementation stayed local.
+- Result: `script/android_pairing_deeplink_smoke.sh --summary-json` now adds `paths.ui_polish_artifacts` when UI polish artifacts exist, with `chat`, `model_selector`, `drawer`, `settings`, and `launcher` entries carrying `screenshot` and `ui_xml` paths.
+- Result: the summary coverage now includes `ui_polish_capture_artifact_manifest_complete`, so a physical `--capture-ui-polish` run can prove the manifest contains all expected PNG/XML pairs without inspecting prose logs.
+- Result: `--self-test-summary-json` now creates fake UI polish PNG/XML artifacts and still prints `android_pairing_summary_json_self_test_not_phone_pairing_proof`, so the no-device guard can validate the manifest shape without claiming physical UI proof.
+- Device state: this also includes attached-phone evidence on `R3CXC0M76VM` / `SM_S936N`, observed by `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` as `device`.
+- Physical evidence: `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-ui-polish-summary-manifest-20260708-024059.json` installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, captured the chat, model selector, drawer, Settings, and launcher PNG/XML artifacts, observed `chat.send`, `chat.delta`, `chat.cancel`, `chat.done`, and verified saved trusted-route reconnect.
+- Physical evidence summary: `build/qa/android-physical-ui-polish-summary-manifest-20260708-024059.json` has `success=true`, `exit_status=0`, `observed_serial=R3CXC0M76VM`, `requested_serial=R3CXC0M76VM`, `ui_polish_capture_requested=true`, `ui_polish_capture_artifacts=true`, `ui_polish_capture_artifact_manifest_complete=true`, `trusted_route_reconnect_verified=true`, `chat_cancel_observed=true`, and expected false booleans for live-provider, optical QR, production relay, production transport encryption, and real different-network proof.
+- Evidence log: `build/qa/android-physical-ui-polish-summary-manifest-20260708-024059.log`.
+- Evidence summary: `build/qa/android-physical-ui-polish-summary-manifest-20260708-024059.json`.
+- Artifact directory: `build/qa/android-physical-ui-polish-summary-manifest-20260708-024059/` contains copied runtime/relay logs plus chat, model selector, drawer, Settings, launcher, pairing, and chat/cancel screenshots/XML where available.
+- Visual spot-check: the copied physical captures are nonblank; chat, model selector, drawer, Settings, and launcher screens rendered, and the launcher capture shows the AetherLink icon label.
+- Guardrail: `script/check_no_device_quality.sh` asserts the UI polish artifact manifest shape inside `check_android_pairing_summary_json_guard` and reports `Covered Android pairing summary UI polish artifact-manifest addendum`.
+- Full gate evidence: `script/check_no_device_quality.sh` passed after adding the UI polish artifact-manifest summary guard and docs evidence; the captured log was `build/qa/check-no-device-quality-ui-polish-summary-manifest-20260708-024635.log`.
+- Caveat: this is physical Android UI capture evidence through adb deeplink injection, USB `adb reverse`, a temporary development relay, and a mock backend. It does not prove optical/camera QR scanning, live-provider chat/cancel, production relay behavior, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `script/android_pairing_deeplink_smoke.sh --self-test-summary-json --summary-json <tmp>/summary.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_ui_polish_summary_manifest_smoke" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish --summary-json build/qa/android-physical-ui-polish-summary-manifest-20260708-024059.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+### 2026-07-08 QA Evidence Latest-Entry Proof-Boundary Hygiene
+
+- Scope: make the current QA evidence page keep the same proof-boundary discipline as the progress log, so future live-device, no-device, and production-transport claims do not drift when a new entry is added. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the smallest matching `check_docs_hygiene.py` pattern.
+- Result: `script/check_docs_hygiene.py` now extracts the latest QA evidence entry, specifically the latest dated `docs/qa-evidence.md` entry after `## Current Rule`, and requires a dated heading, proof-boundary wording, no-device scope, physical/live-provider separation, agent-state wording, an explicit caveat, a `Verification commands:` section, and concrete backticked verification commands.
+- Result: `script/check_copy_hygiene.py` now pins the latest QA evidence guard, the no-device gate summary phrase, and current progress/QA/roadmap evidence so the guard cannot be silently removed.
+- Result: `script/check_no_device_quality.sh` now reports the QA evidence latest-entry proof-boundary hygiene addendum in the default no-device summary.
+- Guardrail: this makes no-device docs hygiene fail when the latest QA entry omits the agent-state line, caveat, verification commands, or the physical/live-provider proof split.
+- Full gate evidence: `script/check_no_device_quality.sh` passed and reported `Covered QA evidence latest-entry proof-boundary hygiene addendum`; the captured log was `build/qa/check-no-device-quality-qa-entry-hygiene-20260708-022936.log`.
+- Caveat: this is no-device docs-hygiene proof only. It does not prove physical Android rendering, optical/camera QR scanning, live-provider chat/cancel, production relay behavior, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_docs_hygiene.py script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `git diff --check -- script/check_docs_hygiene.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+### 2026-07-08 Physical Android Pairing Summary JSON Proof Boundary
+
+- Scope: make the physical Android QR/deeplink smoke emit a machine-readable proof-boundary summary so live-device evidence, no-device self-tests, and remaining gaps are not inferred only from prose logs. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended a related QA-evidence guardrail, and this slice implements the lower-level smoke summary evidence first.
+- Result: `script/android_pairing_deeplink_smoke.sh` now accepts `--summary-json <path>` and `AETHERLINK_ANDROID_PAIRING_SUMMARY_JSON`.
+- Result: the summary JSON records safe event counts, artifact paths, selected options, observed/requested adb serials, and explicit coverage booleans for adb deeplink injection, runtime pairing acceptance, `runtime.health`, `models.list`, trusted-route reconnect, physical chat/cancel, live-provider chat/cancel, selected-model runtime-log confirmation, and UI capture.
+- Result: the summary keeps optical camera QR scanning, production relay proof, production session-key exchange proof, production end-to-end transport encryption proof, real different-network connectivity proof, and direct Android model-backend access false for this development smoke.
+- Result: the summary writer does not include pairing URI query material, relay secrets, route tokens, allocation tokens, provider URLs, or backend URLs; the no-device self-test asserts those markers stay absent.
+- Device state: this includes live physical-device evidence on `R3CXC0M76VM` / `SM_S936N` and no-device summary JSON self-test evidence.
+- Physical evidence: `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90 --summary-json build/qa/android-physical-live-ollama-summary-json-20260708-020828.json` cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, selected the `gemma4:e4b-mlx` Ollama row, confirmed `chat.send model=ollama:gemma4:e4b-mlx`, streamed `chat.delta`, sent `chat.cancel`, sent `chat.done`, and reconnected with saved trusted route after relaunch.
+- Fresh connected-device evidence: after reconnecting `R3CXC0M76VM`, `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90 --summary-json build/qa/android-physical-live-ollama-summary-json-fresh-20260708-022103.json` installed the current debug APK, cleared app data, selected the `gemma4:e4b-mlx` Ollama row, confirmed the runtime model log, streamed, cancelled, completed, reconnected, and exited 0.
+- Evidence log: `build/qa/android-physical-live-ollama-summary-json-20260708-020828.log`.
+- Evidence summary: `build/qa/android-physical-live-ollama-summary-json-20260708-020828.json` has `success=true`, `exit_status=0`, `live_provider_chat_cancel_proof=true`, `chat_model_runtime_log_confirmed=true`, `trusted_route_reconnect_verified=true`, and the expected production/optical/different-network/direct-backend proof booleans false.
+- Artifact directory: `build/qa/android-physical-live-ollama-summary-json-20260708-020828/`.
+- Fresh evidence log: `build/qa/android-physical-live-ollama-summary-json-fresh-20260708-022103.log`.
+- Fresh evidence summary: `build/qa/android-physical-live-ollama-summary-json-fresh-20260708-022103.json` has the same expected success, reconnect, live-provider, selected-model, and proof-boundary booleans.
+- Fresh artifact directory: `build/qa/android-physical-live-ollama-summary-json-fresh-20260708-022103/` contains selected runtime/relay logs and smoke screenshots, excluding trusted identity and route-material JSON files.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_android_pairing_summary_json_guard`, which executes `--self-test-summary-json` and asserts summary booleans and redaction boundaries without claiming phone pairing proof.
+- Full gate evidence: `script/check_no_device_quality.sh` completed with the summary JSON proof-boundary guard and emitted the final no-device caveat summary; the captured log was `build/qa/check-no-device-quality-summary-json-20260708-021121.log`.
+- Caveat: this is physical Android proof through adb deeplink injection, USB `adb reverse`, a temporary development relay, and live Ollama. It does not prove optical camera QR scanning, external public/VPN relay reachability, LM Studio-backed live chat/cancel, production relay/P2P traversal, production transport encryption, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py && bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `script/android_pairing_deeplink_smoke.sh --self-test-summary-json --summary-json <tmp>/summary.json`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90 --summary-json build/qa/android-physical-live-ollama-summary-json-20260708-020828.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90 --summary-json build/qa/android-physical-live-ollama-summary-json-fresh-20260708-022103.json`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Physical Android Chat-Model Query Live Smoke Gate
+
+- Scope: make live provider-backed physical Android smokes target a specific chat model/provider instead of relying on the Android client's default installed-model selection. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended qualified-provider model targeting for future LM Studio proof.
+- Result: `script/android_pairing_deeplink_smoke.sh` now accepts `--chat-model-query <text>` and `AETHERLINK_ANDROID_CHAT_MODEL_QUERY`; when used with `--expect-chat-cancel`, it opens the Android chat model picker, selects a row whose accessibility summary matches every normalized query token, and fails with captured artifacts if no row matches.
+- Result: model queries normalize provider-qualified values such as `lm_studio:model-name`, so future LM Studio physical proof can target LM Studio rows without exposing LM Studio or Ollama URLs to Android.
+- Result: RuntimeDevServer now logs only safe chat model metadata for `chat.send`, for example `relay received chat.send model=ollama:gemma4:e4b-mlx`, without logging prompts, messages, route tokens, relay secrets, files, provider endpoints, or backend URLs.
+- Result: the physical smoke waits for the RuntimeDevServer `chat.send model` log when `--chat-model-query` is provided, so a chat/cancel pass proves the selected model was the one received by the runtime.
+- Device state: this includes live physical-device evidence on `R3CXC0M76VM` / `SM_S936N` and no-device selector self-test evidence.
+- Physical evidence: `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90` installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, selected the `gemma4:e4b-mlx` Ollama row in the Android model picker, confirmed the runtime `chat.send` model log, streamed `chat.delta`, sent `chat.cancel`, sent `chat.done`, and reconnected with a second `runtime.health`.
+- Evidence log: `build/qa/android-physical-live-ollama-chat-model-query-20260708-014907.log`.
+- Artifact directory: `build/qa/android-physical-live-ollama-chat-model-query-20260708-014907/`.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_android_pairing_chat_model_query_selector_guard`, which proves a provider-qualified `lm_studio:target-model` query selects the LM Studio row from fixture UI XML while marking the result as not phone model-selection proof.
+- Full gate evidence: `script/check_no_device_quality.sh` passed after adding the chat-model query selector guard and safe RuntimeDevServer model log guard; the captured log was `build/qa/check-no-device-quality-chat-model-query-selector-20260708-015216.log`.
+- Caveat: this is model-targeted physical Android proof through adb deeplink injection, USB `adb reverse`, a temporary development relay, and live Ollama. It prepares LM Studio-backed live chat/cancel proof, but LM Studio itself remains unverified until the LM Studio local endpoint is running with a target installed local chat model. It still does not prove optical camera QR scanning, external public/VPN relay reachability, production relay/P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `AETHERLINK_ANDROID_CHAT_MODEL_QUERY='lm_studio:target-model' script/android_pairing_deeplink_smoke.sh --self-test-chat-model-query-selector`
+- `swift build --product RuntimeDevServer`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_model_query_live_ollama_smoke" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=90 ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-model-query "gemma4:e4b-mlx" --chat-delta-timeout 90'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Physical Android Live Ollama Relay Smoke After Allocation Canonicality Gate
+
+- Scope: refresh live provider-backed physical Android proof after the Swift relay allocation relay-id canonicality gate and the physical relay UI smoke. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer checked the `--live-backend` smoke behavior while the main run used the attached phone.
+- Device under test: `R3CXC0M76VM` / `SM_S936N`, observed by `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` as `device`.
+- Device state: this is live physical-device evidence, not no-device verification.
+- Provider state: Ollama responded at `127.0.0.1:11434/api/tags` with `gemma4:e4b-mlx` available; LM Studio at `127.0.0.1:1234/v1/models` refused connection, so this is Ollama live-backend evidence, not LM Studio evidence.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-delta-timeout 90` installed the current debug APK, cleared app data, injected the sanitized `aetherlink://pair` VIEW intent, and passed in relay mode.
+- Result: RuntimeDevServer logged `[runtime] Backend: Ollama + LM Studio`, received `models.list`, received `chat.send`, streamed multiple `chat.delta` frames, received `chat.cancel`, sent `chat.cancel`, and sent `chat.done` before the reconnect phase.
+- Result: the physical app flow observed saved trusted-route reconnect after relaunch with a second `runtime.health` and a second `models.list`.
+- Result: live-smoke artifacts were copied to `build/qa/android-physical-live-ollama-post-allocation-canonicality-20260708-013834/`; the after-smoke screenshot showed the selected `gemma4:e4b-mlx` model chip and the expected latest-QR recovery notice after the temporary development relay was stopped by script cleanup.
+- Evidence log: `build/qa/android-physical-live-ollama-post-allocation-canonicality-20260708-013834.log`.
+- Caveat: this is physical Android proof through adb deeplink injection, USB `adb reverse`, a temporary development relay, and a live Ollama backend. It still does not prove optical camera QR scanning, external public/VPN relay reachability, LM Studio-backed live chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `curl -sS --max-time 3 http://127.0.0.1:11434/api/tags`
+- `curl -sS --max-time 3 http://127.0.0.1:1234/v1/models`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" AETHERLINK_ANDROID_CHAT_SMOKE_TEXT="AetherLink_live_ollama_cancel_smoke" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=90 ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --live-backend --chat-delta-timeout 90'`
+- visual spot-check of `build/qa/android-physical-live-ollama-post-allocation-canonicality-20260708-013834/current-after-live-smoke.png`
+
+### 2026-07-08 Physical Android Relay Smoke After Swift Allocation Canonicality Gate
+
+- Scope: refresh physical client-device QA after the Swift relay allocation relay-id canonicality no-device gate. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended using the attached phone for the next roadmap slice.
+- Device under test: `R3CXC0M76VM` / `SM_S936N`, observed by `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` as `device`.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish` installed the current debug APK, cleared app data for a clean pairing run, injected the sanitized `aetherlink://pair` VIEW intent, and passed in relay mode.
+- Result: the physical app flow observed saved trusted-route reconnect after relaunch with a second `runtime.health`.
+- Result: the physical Android UI chat/cancel flow observed `chat.send`, streamed `chat.delta`, `chat.cancel`, and `chat.done`.
+- Result: the smoke captured chat, model selector, drawer, Settings, launcher, and chat/cancel PNG/XML artifacts, copied to `build/qa/android-physical-relay-post-allocation-canonicality-20260708-012939/`; visual spot-check showed nonblank Korean UI captures with no obvious blocking overlap, and the launcher icon label was visible.
+- Evidence log: `build/qa/android-physical-relay-post-allocation-canonicality-20260708-012939.log`.
+- Caveat: this is physical Android app proof through adb deeplink injection and USB `adb reverse`. It still does not prove optical camera QR scanning, external public/VPN relay reachability, LM Studio-backed live chat, production relay/P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --expect-reconnect --capture-ui-polish'`
+- visual spot-check of `build/qa/android-physical-relay-post-allocation-canonicality-20260708-012939/aetherlink-ui-chat.png`, `aetherlink-ui-model-selector.png`, `aetherlink-ui-drawer.png`, `aetherlink-ui-settings.png`, and `aetherlink-ui-launcher.png`
+
 ### 2026-07-08 Swift Relay Allocation Relay-ID Canonicality No-Device Gate
 
 - Scope: continue Immediate Queue relay bootstrap hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Swift allocation response and persisted-ticket relay-id canonicality gap.
@@ -41,8 +737,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - Guardrail: `RelayAllocationTests.testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad` now covers the same canonicality rule when loading persisted allocation tickets.
 - Guardrail: `script/check_no_device_quality.sh` already runs both focused SwiftPM regressions and now emits the Swift relay allocation relay-id canonicality addendum.
 - Static evidence: `script/check_copy_hygiene.py` pins the shared helper usage, invalid relay-id canaries, no-device gate selector, current progress evidence, QA evidence, and roadmap coverage.
-- Full gate evidence: pending full no-device gate run for this slice.
-- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Full gate evidence: `script/check_no_device_quality.sh` passed after adding the Swift relay allocation relay-id canonicality regression and summary addendum; the captured log was `build/qa/check-no-device-quality-swift-relay-allocation-relay-id-20260708-011915.log`.
+- Device state: this gate is no-device evidence and does not rely on adb. After the run, `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` listed `R3CXC0M76VM` / `SM_S936N`, so any live-phone proof remains separate from this gate.
 - Caveat: this is no-device Swift relay allocation parser/store evidence only. It does not prove production relay deployment, physical Android QR scanning, optical QR reliability, live phone pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
 
 Verified after this change:

@@ -144,7 +144,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
@@ -152,11 +151,9 @@ import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeAppTheme
-import com.localagentbridge.android.runtime.RuntimePairingQrParseResult
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
-import com.localagentbridge.android.runtime.parseRuntimePairingQrPayload
 import com.localagentbridge.android.runtime.supportsImageInput
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.ChatScreen
@@ -167,7 +164,6 @@ import com.localagentbridge.android.ui.chatHistorySessionStatusRes
 import com.localagentbridge.android.ui.filterChatHistorySessions
 import com.localagentbridge.android.ui.runtimeProviderDisplayName
 import kotlinx.coroutines.launch
-import java.net.URI
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -3263,19 +3259,21 @@ private fun PairingQrCameraPreview(
                                     barcodeScanner.process(inputImage)
                                         .addOnSuccessListener { barcodes ->
                                             when (
-                                                val scanResult = barcodes.aetherLinkPairingScanResultOrNull(
-                                                    requireRemoteRoute = requireRemoteRoute,
-                                                )
+                                                val scanResult = barcodes
+                                                    .map { it.rawValue }
+                                                    .aetherLinkPairingScanResultOrNull(
+                                                        requireRemoteRoute = requireRemoteRoute,
+                                                    )
                                             ) {
-                                                is PairingQrBarcodeScanResult.Valid -> {
+                                                is PairingQrScanResult.Valid -> {
                                                     if (resultConsumed.compareAndSet(false, true)) {
                                                         onResult(scanResult.rawValue)
                                                     }
                                                 }
-                                                PairingQrBarcodeScanResult.InvalidPairingQr -> {
+                                                PairingQrScanResult.InvalidPairingQr -> {
                                                     onInvalidPairingQr()
                                                 }
-                                                PairingQrBarcodeScanResult.UnsupportedQr -> {
+                                                PairingQrScanResult.UnsupportedQr -> {
                                                     onUnsupportedQr()
                                                 }
                                                 null -> Unit
@@ -3321,86 +3319,6 @@ internal enum class PairingQrScannerFeedback(
 ) {
     UnsupportedQr(R.string.qr_scanner_feedback_unsupported),
     InvalidPairingQr(R.string.qr_scanner_feedback_invalid),
-}
-
-internal enum class PairingQrRawValueScanResult {
-    Valid,
-    InvalidPairingQr,
-    UnsupportedQr,
-}
-
-private sealed interface PairingQrBarcodeScanResult {
-    data class Valid(val rawValue: String) : PairingQrBarcodeScanResult
-    data object InvalidPairingQr : PairingQrBarcodeScanResult
-    data object UnsupportedQr : PairingQrBarcodeScanResult
-}
-
-internal fun String.isAetherLinkPairingQrValue(
-    requireRemoteRoute: Boolean = true,
-): Boolean {
-    val result = parseRuntimePairingQrPayload(
-        rawValue = trim(),
-        allowDebugLoopbackRelay = BuildConfig.DEBUG,
-        allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
-        requireRemoteRoute = requireRemoteRoute,
-    )
-    return result is RuntimePairingQrParseResult.Accepted
-}
-
-internal fun String.aetherLinkPairingQrRawValueScanResult(
-    requireRemoteRoute: Boolean = true,
-): PairingQrRawValueScanResult {
-    val trimmed = trim()
-    if (!trimmed.isAetherLinkPairingQrCandidateValue()) {
-        return PairingQrRawValueScanResult.UnsupportedQr
-    }
-    return when (
-        parseRuntimePairingQrPayload(
-            rawValue = trimmed,
-            allowDebugLoopbackRelay = BuildConfig.DEBUG,
-            allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
-            requireRemoteRoute = requireRemoteRoute,
-        )
-    ) {
-        is RuntimePairingQrParseResult.Accepted -> PairingQrRawValueScanResult.Valid
-        is RuntimePairingQrParseResult.Rejected -> PairingQrRawValueScanResult.InvalidPairingQr
-    }
-}
-
-internal fun String.isAetherLinkPairingQrCandidateValue(): Boolean {
-    val uri = runCatching { URI(trim()) }.getOrNull() ?: return false
-    val scheme = uri.scheme?.lowercase(Locale.US)
-    if (scheme != "aetherlink" && scheme != "lab") return false
-    val action = uri.host?.lowercase(Locale.US)
-    return action == "pair"
-}
-
-private fun List<Barcode>.aetherLinkPairingScanResultOrNull(
-    requireRemoteRoute: Boolean = true,
-): PairingQrBarcodeScanResult? {
-    var sawInvalidPairingQr = false
-    var sawUnsupportedQr = false
-    for (barcode in this) {
-        val rawValue = barcode.rawValue
-            ?.takeIf { it.isNotBlank() }
-            ?: continue
-        when (rawValue.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = requireRemoteRoute)) {
-            PairingQrRawValueScanResult.Valid -> {
-                return PairingQrBarcodeScanResult.Valid(rawValue)
-            }
-            PairingQrRawValueScanResult.InvalidPairingQr -> {
-                sawInvalidPairingQr = true
-            }
-            PairingQrRawValueScanResult.UnsupportedQr -> {
-                sawUnsupportedQr = true
-            }
-        }
-    }
-    return when {
-        sawInvalidPairingQr -> PairingQrBarcodeScanResult.InvalidPairingQr
-        sawUnsupportedQr -> PairingQrBarcodeScanResult.UnsupportedQr
-        else -> null
-    }
 }
 
 private fun Intent?.pairingUriOrNull(): String? {

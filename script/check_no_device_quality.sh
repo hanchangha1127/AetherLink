@@ -1560,6 +1560,13 @@ check_physical_external_relay_summary_guard() {
       script/check_physical_external_relay_pairing.sh \
         --relay-host 0.0.0.0 \
         --serial no-device-serial-1 \
+        --expect-chat-complete \
+        --chat-text "External wrapper complete proof" \
+        --chat-delta-timeout 9 \
+        --chat-complete-timeout 11 \
+        --chat-expected-terms "ExternalComplete" \
+        --chat-model-query "gemma4:e4b-mlx" \
+        --live-backend \
         --json "$summary_path" \
         --log "$log_path" \
         2>&1
@@ -1583,20 +1590,47 @@ assert summary["coverage"]["external_relay_probe_from_device"] is False, summary
 assert summary["coverage"]["external_relay_route_probe_from_device"] is False, summary
 assert summary["coverage"]["external_relay_probe_reachable"] is False, summary
 assert summary["coverage"]["external_relay_route_ready"] is False, summary
+assert summary["coverage"]["android_pairing_summary_json_present"] is False, summary
+assert summary["coverage"]["android_pairing_summary_success"] is False, summary
+assert summary["coverage"]["android_pairing_summary_external_relay_mode"] is False, summary
+assert summary["coverage"]["android_pairing_summary_no_relay_adb_reverse"] is False, summary
+assert summary["coverage"]["android_pairing_summary_proof_boundary_preserved"] is False, summary
+assert summary["coverage"]["expect_chat_complete"] is True, summary
+assert summary["coverage"]["chat_model_query_requested"] is True, summary
+assert summary["coverage"]["live_backend"] is True, summary
+assert summary["coverage"]["adb_deeplink_injection"] is False, summary
+assert summary["coverage"]["optical_camera_qr_scan"] is False, summary
 assert summary["coverage"]["production_relay"] is False, summary
+assert summary["coverage"]["production_relay_proof"] is False, summary
 assert summary["coverage"]["production_session_key_exchange"] is False, summary
+assert summary["coverage"]["production_session_key_exchange_proof"] is False, summary
 assert summary["coverage"]["production_end_to_end_transport_encryption"] is False, summary
+assert summary["coverage"]["production_end_to_end_transport_encryption_proof"] is False, summary
+assert summary["coverage"]["external_network_operator_confirmed"] is False, summary
+assert summary["coverage"]["real_different_network_relay_verified"] is False, summary
+assert summary["coverage"]["real_different_network_connectivity_proof"] is False, summary
+assert summary["coverage"]["android_direct_model_backend_access"] is False, summary
+assert summary["coverage"]["private_relay_allowed"] is False, summary
+assert summary["coverage"]["private_or_same_lan_development_relay"] is False, summary
 assert summary["probe_summaries"]["device_relay_endpoint"] is None, summary
 assert summary["probe_summaries"]["device_relay_route"] is None, summary
+assert summary["child_summaries"]["android_pairing_deeplink"] is None, summary
+assert summary["artifacts"]["android_pairing_summary_json"].endswith(".android-pairing-summary.json"), summary
 assert summary["android_device"]["requested_adb_serial"] == "no-device-serial-1", summary
 assert summary["android_device"]["observed_adb_serial"] is None, summary
+assert "android_pairing_summary_json_missing" in summary["caveats"], summary
 assert "device_endpoint_probe_not_reachable_or_missing" in summary["caveats"], summary
 assert "device_route_probe_not_ready_or_missing" in summary["caveats"], summary
 assert "does_not_expose_ollama_or_lm_studio_to_android" in summary["caveats"], summary
+assert "not_production_relay_proof" in summary["caveats"], summary
 assert "not_production_session_key_exchange_proof" in summary["caveats"], summary
 assert "not_production_end_to_end_transport_encryption_proof" in summary["caveats"], summary
 assert "--serial" in summary["command"], summary
 assert "no-device-serial-1" in summary["command"], summary
+assert "--expect-chat-complete" in summary["command"], summary
+assert "--chat-complete-timeout" in summary["command"], summary
+assert "--chat-expected-terms" in summary["command"], summary
+assert "--chat-model-query" in summary["command"], summary
 assert "--allocation-token" not in summary["command"], summary
 PY
   rm -rf "$work_dir"
@@ -1651,11 +1685,23 @@ assert summary["coverage"]["external_relay_probe_from_device"] is False, summary
 assert summary["coverage"]["external_relay_route_probe_from_device"] is False, summary
 assert summary["coverage"]["live_android_device_probe_verified"] is False, summary
 assert summary["coverage"]["physical_external_relay_verified"] is False, summary
+assert summary["coverage"]["adb_deeplink_injection"] is False, summary
+assert summary["coverage"]["optical_camera_qr_scan"] is False, summary
 assert summary["coverage"]["production_relay"] is False, summary
+assert summary["coverage"]["production_relay_proof"] is False, summary
 assert summary["coverage"]["production_session_key_exchange"] is False, summary
+assert summary["coverage"]["production_session_key_exchange_proof"] is False, summary
 assert summary["coverage"]["production_end_to_end_transport_encryption"] is False, summary
+assert summary["coverage"]["production_end_to_end_transport_encryption_proof"] is False, summary
+assert summary["coverage"]["external_network_operator_confirmed"] is False, summary
+assert summary["coverage"]["real_different_network_relay_verified"] is False, summary
+assert summary["coverage"]["real_different_network_connectivity_proof"] is False, summary
+assert summary["coverage"]["android_direct_model_backend_access"] is False, summary
+assert summary["coverage"]["private_relay_allowed"] is False, summary
+assert summary["coverage"]["private_or_same_lan_development_relay"] is False, summary
 assert summary["android_device"]["observed_adb_serial"] is None, summary
 assert "physical_external_relay_pairing_failed" in summary["caveats"], summary
+assert "not_production_relay_proof" in summary["caveats"], summary
 assert "not_production_session_key_exchange_proof" in summary["caveats"], summary
 assert "not_production_end_to_end_transport_encryption_proof" in summary["caveats"], summary
 assert "<invalid-host>" in combined, combined
@@ -1687,6 +1733,13 @@ check_physical_external_relay_probe_summary_redaction_guard() {
   set +e
   script/check_physical_external_relay_pairing.sh \
     --self-test-redact-probe-summary \
+    --expect-chat-complete \
+    --chat-text "External wrapper complete proof" \
+    --chat-delta-timeout 9 \
+    --chat-complete-timeout 11 \
+    --chat-expected-terms "ExternalComplete" \
+    --chat-model-query "gemma4:e4b-mlx" \
+    --live-backend \
     --json "$summary_path" \
     --log "$log_path" \
     >"$stdout_path" \
@@ -1743,11 +1796,33 @@ assert "route_material=<redacted>" in probe_output, summary
 assert summary["coverage"]["external_relay_probe_reachable"] is True, summary
 assert summary["coverage"]["external_relay_route_ready"] is True, summary
 assert summary["coverage"]["probe_summary_redaction_self_test"] is True, summary
+assert summary["coverage"]["android_pairing_summary_json_present"] is True, summary
+assert summary["coverage"]["android_pairing_summary_success"] is True, summary
+assert summary["coverage"]["android_pairing_summary_external_relay_mode"] is True, summary
+assert summary["coverage"]["android_pairing_summary_no_relay_adb_reverse"] is True, summary
+assert summary["coverage"]["android_pairing_summary_proof_boundary_preserved"] is True, summary
+assert summary["coverage"]["android_pairing_summary_live_provider_chat_complete_proof"] is True, summary
+assert summary["coverage"]["android_pairing_summary_chat_expected_terms_observed"] == ["ExternalComplete"], summary
+assert summary["coverage"]["expect_chat_complete"] is True, summary
+assert summary["coverage"]["chat_model_query_requested"] is True, summary
+assert summary["coverage"]["live_backend"] is True, summary
+assert summary["coverage"]["chat_done_count"] == 1, summary
 assert summary["coverage"]["live_android_device_probe_verified"] is False, summary
 assert summary["coverage"]["physical_external_relay_verified"] is False, summary
+assert summary["coverage"]["adb_deeplink_injection"] is True, summary
+assert summary["coverage"]["optical_camera_qr_scan"] is False, summary
 assert summary["coverage"]["production_relay"] is False, summary
+assert summary["coverage"]["production_relay_proof"] is False, summary
 assert summary["coverage"]["production_session_key_exchange"] is False, summary
+assert summary["coverage"]["production_session_key_exchange_proof"] is False, summary
 assert summary["coverage"]["production_end_to_end_transport_encryption"] is False, summary
+assert summary["coverage"]["production_end_to_end_transport_encryption_proof"] is False, summary
+assert summary["coverage"]["external_network_operator_confirmed"] is False, summary
+assert summary["coverage"]["real_different_network_relay_verified"] is False, summary
+assert summary["coverage"]["real_different_network_connectivity_proof"] is False, summary
+assert summary["coverage"]["android_direct_model_backend_access"] is False, summary
+assert summary["coverage"]["private_relay_allowed"] is False, summary
+assert summary["coverage"]["private_or_same_lan_development_relay"] is False, summary
 assert summary["coverage"]["wrapper_log_artifact_present"] is True, summary
 assert summary["coverage"]["wrapper_log_omits_temporary_secret_material"] is True, summary
 assert summary["coverage"]["wrapper_log_contains_unredacted_route_material"] is False, summary
@@ -1757,10 +1832,33 @@ assert summary["coverage"]["runtime_log_contains_temporary_route_material"] is T
 assert "wrapper_log_contains_unredacted_route_material" not in summary["caveats"], summary
 assert "wrapper_log_redaction_not_verified" not in summary["caveats"], summary
 assert "self_test_redaction_only_not_physical_relay_proof" in summary["caveats"], summary
+assert "not_production_relay_proof" in summary["caveats"], summary
 assert "not_production_session_key_exchange_proof" in summary["caveats"], summary
 assert "not_production_end_to_end_transport_encryption_proof" in summary["caveats"], summary
 assert "runtime_log_contains_temporary_pairing_or_route_material" in summary["caveats"], summary
 assert "aetherlink://pair?<redacted>" in wrapper_log, wrapper_log
+child = summary["child_summaries"]["android_pairing_deeplink"]
+assert child["success"] is True, summary
+assert child["coverage"]["external_relay_mode"] is True, summary
+assert child["coverage"]["adb_reverse_relay_used"] is False, summary
+assert child["coverage"]["chat_complete_requested"] is True, summary
+assert child["coverage"]["chat_send_observed"] is True, summary
+assert child["coverage"]["chat_delta_observed"] is True, summary
+assert child["coverage"]["chat_done_observed"] is True, summary
+assert child["coverage"]["live_backend_requested"] is True, summary
+assert child["coverage"]["live_provider_chat_complete_proof"] is True, summary
+assert child["coverage"]["chat_expected_terms_requested"] is True, summary
+assert child["coverage"]["chat_expected_terms_observed"] == ["ExternalComplete"], summary
+assert child["coverage"]["chat_model_query_requested"] is True, summary
+assert child["coverage"]["chat_model_runtime_log_confirmed"] is True, summary
+assert child["coverage"]["optical_camera_qr_scan"] is False, summary
+assert child["coverage"]["production_relay_proof"] is False, summary
+assert child["coverage"]["production_session_key_exchange_proof"] is False, summary
+assert child["coverage"]["production_end_to_end_transport_encryption_proof"] is False, summary
+assert child["coverage"]["real_different_network_connectivity_proof"] is False, summary
+assert child["coverage"]["android_direct_model_backend_access"] is False, summary
+assert child["paths_present"]["external_relay_route_probe_json"] is True, summary
+assert child["paths_present"]["chat_complete_ui_xml"] is False, summary
 for marker in ("pairing_nonce=", "pairing_code=", "relay_secret=", "relay_nonce=", "route_token=", "allocation_token=", "requested_route_token=", "runtime_public_key=", "runtime_key_fingerprint=", "rs=", "rrn=", "rt=", "rk=", "rf="):
     assert marker not in wrapper_log, wrapper_log
 PY
@@ -2079,6 +2177,307 @@ check_android_pairing_failure_artifact_redaction_guard() {
   done
 }
 
+check_android_pairing_chat_model_query_selector_guard() {
+  local output
+
+  output="$(
+    AETHERLINK_ANDROID_CHAT_MODEL_QUERY="lm_studio:target-model" \
+      script/android_pairing_deeplink_smoke.sh --self-test-chat-model-query-selector <<'XML'
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node class="android.view.View" content-desc="Chat model picker. Selected chat model Target Model." enabled="true" bounds="[10,10][600,110]" />
+  <node class="android.view.View" content-desc="Refresh models" enabled="true" bounds="[100,160][900,280]" />
+  <node class="android.view.View" content-desc="Selected chat model Target Model. LM Studio - Installed." enabled="true" bounds="[100,640][900,780]" />
+  <node class="android.view.View" content-desc="Chat model Other Model. Ollama - Installed." enabled="true" bounds="[100,820][900,960]" />
+</hierarchy>
+XML
+  )"
+
+  if [[ "$output" != *"chat_model_query_selector_self_test_not_phone_model_selection_proof"* ]]; then
+    echo "Android pairing chat-model query selector self-test should mark its output as not phone model-selection proof." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"500 710 Selected chat model Target Model. LM Studio - Installed."* ]]; then
+    echo "Android pairing chat-model query selector should choose the LM Studio row from a provider-qualified query." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" == *"Chat model picker. Selected chat model Target Model."* ]]; then
+    echo "Android pairing chat-model query selector must not choose the top-bar picker summary." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+}
+
+check_android_pairing_summary_json_guard() {
+  local work_dir
+  local summary_path
+  local complete_summary_path
+  local failure_summary_path
+  local output
+  local complete_output
+  local failure_output
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-summary-json-guard.XXXXXX")"
+  summary_path="$work_dir/summary.json"
+  complete_summary_path="$work_dir/complete-summary.json"
+  failure_summary_path="$work_dir/failure-summary.json"
+  output="$(
+    script/android_pairing_deeplink_smoke.sh \
+      --self-test-summary-json \
+      --summary-json "$summary_path"
+  )"
+
+  if [[ "$output" != *"android_pairing_summary_json_self_test_not_phone_pairing_proof"* ]]; then
+    echo "Android pairing summary JSON self-test should mark output as not phone pairing proof." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+
+  python3 - "$summary_path" <<'PY'
+import json
+import sys
+
+summary_path = sys.argv[1]
+with open(summary_path, "r", encoding="utf-8") as handle:
+    summary = json.load(handle)
+
+coverage = summary.get("coverage", {})
+required_true = {
+    "adb_deeplink_injection_succeeded",
+    "runtime_pairing_accepted",
+    "runtime_health_observed",
+    "models_list_observed",
+    "trusted_route_reconnect_verified",
+    "chat_send_observed",
+    "chat_delta_observed",
+    "chat_cancel_observed",
+    "chat_done_observed",
+    "live_backend_requested",
+    "live_provider_chat_cancel_proof",
+    "chat_model_query_requested",
+    "chat_model_runtime_log_confirmed",
+    "ui_polish_capture_requested",
+    "ui_polish_capture_artifacts",
+    "ui_polish_capture_artifact_manifest_complete",
+}
+required_false = {
+    "optical_camera_qr_scan",
+    "production_relay_proof",
+    "production_session_key_exchange_proof",
+    "production_end_to_end_transport_encryption_proof",
+    "real_different_network_connectivity_proof",
+    "android_direct_model_backend_access",
+}
+missing_true = sorted(key for key in required_true if coverage.get(key) is not True)
+missing_false = sorted(key for key in required_false if coverage.get(key) is not False)
+if missing_true or missing_false:
+    raise SystemExit(
+        "summary coverage mismatch; true=%s false=%s"
+        % (",".join(missing_true), ",".join(missing_false))
+    )
+
+ui_artifacts = summary.get("paths", {}).get("ui_polish_artifacts", {})
+required_ui_artifacts = {
+    "chat",
+    "model_selector",
+    "drawer",
+    "settings",
+    "launcher",
+}
+missing_artifacts = []
+for key in sorted(required_ui_artifacts):
+    entry = ui_artifacts.get(key, {})
+    if not entry.get("screenshot") or not entry.get("ui_xml"):
+        missing_artifacts.append(key)
+if missing_artifacts:
+    raise SystemExit("missing UI polish artifact manifest entries: %s" % ",".join(missing_artifacts))
+
+encoded = json.dumps(summary, ensure_ascii=False).lower()
+for forbidden in (
+    "aetherlink://pair?",
+    "pairing_uri",
+    "relay_secret",
+    "route_token",
+    "allocation_token",
+    "provider_url",
+    "backend_url",
+):
+    if forbidden in encoded:
+        raise SystemExit(f"summary JSON exposed forbidden route/backend material marker: {forbidden}")
+PY
+
+  complete_output="$(
+    script/android_pairing_deeplink_smoke.sh \
+      --self-test-chat-complete-summary-json \
+      --summary-json "$complete_summary_path"
+  )"
+
+  if [[ "$complete_output" != *"android_pairing_chat_complete_summary_json_self_test_not_phone_chat_proof"* ]]; then
+    echo "Android pairing chat-complete summary JSON self-test should mark output as not phone chat proof." >&2
+    echo "$complete_output" >&2
+    exit 1
+  fi
+
+  python3 - "$complete_summary_path" <<'PY'
+import json
+import sys
+
+summary_path = sys.argv[1]
+with open(summary_path, "r", encoding="utf-8") as handle:
+    summary = json.load(handle)
+
+coverage = summary.get("coverage", {})
+required_true = {
+    "adb_deeplink_injection_succeeded",
+    "runtime_pairing_accepted",
+    "runtime_health_observed",
+    "models_list_observed",
+    "chat_complete_requested",
+    "chat_send_observed",
+    "chat_delta_observed",
+    "chat_done_observed",
+    "live_backend_requested",
+    "live_provider_chat_complete_proof",
+    "chat_expected_terms_requested",
+    "chat_model_query_requested",
+    "chat_model_runtime_log_confirmed",
+}
+required_false = {
+    "chat_cancel_requested",
+    "chat_cancel_observed",
+    "live_provider_chat_cancel_proof",
+    "trusted_route_reconnect_verified",
+    "ui_polish_capture_artifacts",
+    "ui_polish_capture_artifact_manifest_complete",
+    "optical_camera_qr_scan",
+    "production_relay_proof",
+    "production_session_key_exchange_proof",
+    "production_end_to_end_transport_encryption_proof",
+    "real_different_network_connectivity_proof",
+    "android_direct_model_backend_access",
+}
+missing_true = sorted(key for key in required_true if coverage.get(key) is not True)
+missing_false = sorted(key for key in required_false if coverage.get(key) is not False)
+if missing_true or missing_false:
+    raise SystemExit(
+        "chat-complete summary coverage mismatch; true=%s false=%s"
+        % (",".join(missing_true), ",".join(missing_false))
+    )
+
+observed_terms = set(coverage.get("chat_expected_terms_observed", []))
+if not {"CompleteProof", "런타임"}.issubset(observed_terms):
+    raise SystemExit("chat-complete summary did not preserve expected-term observation")
+
+if "chat_complete_ui_xml" not in summary.get("paths", {}):
+    raise SystemExit("chat-complete summary should include completed transcript UI XML")
+
+encoded = json.dumps(summary, ensure_ascii=False).lower()
+for forbidden in (
+    "aetherlink://pair?",
+    "pairing_uri",
+    "relay_secret",
+    "route_token",
+    "allocation_token",
+    "provider_url",
+    "backend_url",
+):
+    if forbidden in encoded:
+        raise SystemExit(f"chat-complete summary JSON exposed forbidden route/backend material marker: {forbidden}")
+PY
+
+  failure_output="$(
+    script/android_pairing_deeplink_smoke.sh \
+      --self-test-summary-json-failure \
+      --summary-json "$failure_summary_path"
+  )"
+
+  if [[ "$failure_output" != *"android_pairing_summary_json_failure_self_test_not_phone_pairing_proof"* ]]; then
+    echo "Android pairing failure summary JSON self-test should mark output as not phone pairing proof." >&2
+    echo "$failure_output" >&2
+    exit 1
+  fi
+
+  python3 - "$failure_summary_path" <<'PY'
+import json
+import sys
+
+summary_path = sys.argv[1]
+with open(summary_path, "r", encoding="utf-8") as handle:
+    summary = json.load(handle)
+
+if summary.get("success") is not False or summary.get("exit_status") != 42:
+    raise SystemExit("failure summary should preserve unsuccessful status and exit code")
+
+coverage = summary.get("coverage", {})
+required_true = {
+    "adb_deeplink_injection_attempted",
+    "app_install_attempted",
+    "app_data_clear_attempted",
+    "adb_reverse_runtime_used",
+    "adb_reverse_relay_used",
+    "trusted_route_reconnect_requested",
+    "chat_complete_requested",
+    "chat_cancel_requested",
+    "live_backend_requested",
+    "chat_model_query_requested",
+    "ui_polish_capture_requested",
+}
+required_false = {
+    "physical_device_observed",
+    "adb_deeplink_injection_succeeded",
+    "app_install_succeeded",
+    "app_data_cleared",
+    "runtime_pairing_accepted",
+    "runtime_health_observed",
+    "models_list_observed",
+    "trusted_route_reconnect_verified",
+    "chat_send_observed",
+    "chat_delta_observed",
+    "chat_cancel_observed",
+    "chat_done_observed",
+    "live_provider_chat_cancel_proof",
+    "live_provider_chat_complete_proof",
+    "chat_model_runtime_log_confirmed",
+    "ui_polish_capture_artifacts",
+    "ui_polish_capture_artifact_manifest_complete",
+    "optical_camera_qr_scan",
+    "production_relay_proof",
+    "production_session_key_exchange_proof",
+    "production_end_to_end_transport_encryption_proof",
+    "real_different_network_connectivity_proof",
+    "android_direct_model_backend_access",
+}
+missing_true = sorted(key for key in required_true if coverage.get(key) is not True)
+missing_false = sorted(key for key in required_false if coverage.get(key) is not False)
+if missing_true or missing_false:
+    raise SystemExit(
+        "failure summary coverage mismatch; true=%s false=%s"
+        % (",".join(missing_true), ",".join(missing_false))
+    )
+
+if coverage.get("chat_expected_terms_observed"):
+    raise SystemExit("failure summary should not observe completed-chat expected terms")
+
+if "ui_polish_artifacts" in summary.get("paths", {}):
+    raise SystemExit("failure summary should not invent a UI polish artifact manifest")
+
+encoded = json.dumps(summary, ensure_ascii=False).lower()
+for forbidden in (
+    "aetherlink://pair?",
+    "pairing_uri",
+    "relay_secret",
+    "route_token",
+    "allocation_token",
+    "provider_url",
+    "backend_url",
+):
+    if forbidden in encoded:
+        raise SystemExit(f"failure summary JSON exposed forbidden route/backend material marker: {forbidden}")
+PY
+}
+
 check_macos_dock_capture_dry_run_summary_guard() {
   local work_dir
   local output_path
@@ -2158,6 +2557,8 @@ run check_android_relay_reachability_probe_input_guard
 run check_android_relay_reachability_probe_route_material_redaction_guard
 run check_android_pairing_deeplink_am_start_log_redaction_guard
 run check_android_pairing_failure_artifact_redaction_guard
+run check_android_pairing_chat_model_query_selector_guard
+run check_android_pairing_summary_json_guard
 run check_legacy_relay_guard
 run check_link_local_relay_guard
 run check_different_network_relay_endpoint_input_redaction_guard
@@ -3066,11 +3467,12 @@ run ./gradlew --no-daemon \
 	  :app:compileDebugKotlin \
 		  :app:testDebugUnitTest \
 		  --tests com.localagentbridge.android.AppNavigationTest \
-		  --tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages \
-			  --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner \
-			  --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult \
-			  --tests com.localagentbridge.android.AppNavigationTest.routeNoticeActionIgnoresTrustedLastKnownEndpointForNormalQrFirstRecovery \
-			  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
+			  --tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages \
+				  --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner \
+				  --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult \
+				  --tests com.localagentbridge.android.PairingQrScanResultTest \
+				  --tests com.localagentbridge.android.AppNavigationTest.routeNoticeActionIgnoresTrustedLastKnownEndpointForNormalQrFirstRecovery \
+				  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
 			  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages \
@@ -3323,6 +3725,7 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsDoesNotDeleteActivePreviousChats \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsSuppressesOnlyRuntimeOwnedArchivedSessions \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesReplaceSessionTranscriptAndPreserveReasoningWithStableIds \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesReplaceRuntimeOwnedCacheAndPreserveLocalSessions \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts \
@@ -3459,6 +3862,10 @@ run swift test --filter AetherLinkLocalizationTests
 run swift test --filter 'AetherLinkLocalizationTests/testActivityTechnicalDetailsRedactRouteSecrets|AetherLinkLocalizationTests/testRouteDiagnosticDisclosureRedactsSensitiveDetails'
 run swift test --filter AetherLinkRenderSmokeTests
 run swift test --filter 'AetherLinkLocalizationTests/testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages|AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances'
+run swift test --filter RuntimeDocumentIndexStoreTests
+run swift test --filter SQLiteRuntimeDocumentIndexStoreTests
+run swift test --filter DocumentIngestorTests
+run swift test --filter DocumentChunkerTests
 run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded
 	run swift test --filter DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded
 	run swift test --filter DocumentTextExtractorTests
@@ -3473,7 +3880,7 @@ run swift test --filter 'LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthR
 run swift test --filter LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession|LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections'
 run swift test --filter PairingCoordinatorTests
-		run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedP2PRendezvousFixture|LocalRuntimeMessageRouterTests/testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart|LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost|LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease|LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testChatSendIntoArchivedRuntimeSessionReturnsStructuredErrorWithoutMutatingStore|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeChatStoreSearchesSessionSummariesAndTranscriptWithinOwnerScope|LocalRuntimeMessageRouterTests/testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows|LocalRuntimeMessageRouterTests/testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testRuntimeChatSessionRenameStoresRuntimeTitle|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation|LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries|LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListQueryMatchesReasoningWhileMessagesKeepAnswerSeparate|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreScopesEntriesByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeMemoryListCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory|LocalRuntimeMessageRouterTests/testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendRuntimeMemoryOverridesClientSuppliedMemory|LocalRuntimeMessageRouterTests/testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext|LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|LocalRuntimeMessageRouterTests/testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid'
+			run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedP2PRendezvousFixture|LocalRuntimeMessageRouterTests/testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart|LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost|LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease|LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testChatSendIntoArchivedRuntimeSessionReturnsStructuredErrorWithoutMutatingStore|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testChatMessagesListDoesNotExposeRuntimeCompactionMetadata|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeChatStoreSearchesSessionSummariesAndTranscriptWithinOwnerScope|LocalRuntimeMessageRouterTests/testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows|LocalRuntimeMessageRouterTests/testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testRuntimeChatSessionRenameStoresRuntimeTitle|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation|LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries|LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListQueryMatchesReasoningWhileMessagesKeepAnswerSeparate|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreScopesEntriesByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeMemoryListCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory|LocalRuntimeMessageRouterTests/testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendRuntimeMemoryOverridesClientSuppliedMemory|LocalRuntimeMessageRouterTests/testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext|LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|LocalRuntimeMessageRouterTests/testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid'
 		run swift test --filter 'LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListRejectsOversizedQueryBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata'
 		run swift test --filter LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch
 	run swift test --filter LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation
@@ -3574,6 +3981,7 @@ echo "Covered Android stored trusted identity canonicality addendum: PairingStor
 echo "Covered Android trusted relay scope canonicality addendum: PairingStore rejects blank, unknown, case-mutated, and whitespace-mutated runtime_relay_scope values on write/read before trusted relay restore or persistence."
 echo "Covered Android pairing QR relay-secret canonicality addendum: relay_secret, remote_secret, route_secret, rendezvous_secret, and rs reject whitespace-mutated values while preserving base64-style +, /, and = characters."
 echo "Covered Android pairing QR service_type discovery-hint sanitization addendum: pairing QR parsing and the shared QR schema accept only AetherLink discovery service hints and reject URL-shaped, backend, provider, model, or whitespace-mutated service_type values."
+echo "Covered Android QR scanner decoded-result classification addendum: scanner raw-value batches ignore blank frames, prioritize valid AetherLink route QR values, and preserve invalid-pairing feedback ahead of unsupported QR feedback."
 echo "Covered Android pairing QR duplicate query-key rejection addendum: decoded pairing QR query keys cannot repeat before field selection, alias handling, or route material assembly."
 echo "Covered shared QR verifier duplicate query-key rejection addendum: rendered QR artifact verification rejects repeated decoded query keys before route material validation, matching Android parser duplicate-key rejection."
 echo "Covered Android pairing QR unknown query-key rejection addendum: decoded pairing QR query keys outside the shared schema allowlist fail before identity, relay, P2P, backend, or model-shaped metadata can be ignored."
@@ -3788,7 +4196,9 @@ echo "Covered RuntimeDevServer memory.list query search metadata smoke addendum:
 echo "Covered RuntimeDevServer future memory.search rejection addendum: authenticated RuntimeDevServer relay smoke rejects memory.search with unknown_message_type before any advanced semantic memory search path exists."
 echo "Covered Android Settings memory runtime search addendum: Settings Memory local filtering forwards trimmed runtime memory query refresh, renders rank/snippet/matched_fields metadata, and keeps runtime search snippets out of device storage."
 echo "Covered runtime reasoning search metadata addendum: chat.sessions.list can match stored assistant reasoning separately from visible answer text across JSONL router and SQLite/FTS paths, and Android Settings labels reasoning matched fields."
-echo "Covered context-window compaction addendum: models.result carries optional context_window_tokens, Android preserves the metadata, Ollama/LM Studio parse context-window hints, and macOS chat.send uses resolved model context windows to choose runtime compaction budget plus backend-only source-span metadata."
+echo "Covered context-window compaction addendum: models.result carries optional context_window_tokens, Android preserves the metadata, Ollama/LM Studio parse context-window hints, and macOS chat.send uses resolved model context windows to choose runtime compaction budget plus backend-only summary text and durable source-pointer metadata that stays out of chat.messages.list and SQLite FTS."
+echo "Covered runtime compaction metadata validation addendum: SQLite runtime chat storage rejects non-request compaction metadata, blank strategies, empty source pointers, invalid turn ranges, and invalid retained ranges before event storage."
+echo "Covered Android chat.messages.list compaction metadata projection addendum: Android ignores runtime-only compaction_metadata/source_pointers in raw chat.messages.list results and keeps summary sentinels out of UI state and device storage."
 echo "Covered long-inactivity memory summarization eligibility addendum: runtime-host policy selects only owner-scoped, active, sufficiently old, sufficiently long chat sessions as future memory-summary candidates, and builds deterministic long-inactivity memory summary drafts/source pointers from visible transcript text without writing runtime memory."
 echo "Covered runtime archive polish addendum: chat.send into archived runtime sessions returns a restore-required structured error before backend dispatch or chat-event mutation."
 echo "Covered RuntimeDevServer multi-device owner isolation smoke addendum: authenticated relay smoke validates memory, chat session, message, and session mutation owner-device boundaries across two trusted devices."
@@ -3847,7 +4257,19 @@ echo "Covered Android provider diagnostics addendum: Android provider diagnostic
 echo "Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation."
 echo "Covered macOS Dock capture dry-run summary addendum: capture_macos_dock_icon dry-run writes no-side-effect summary evidence without claiming a physical Dock screenshot."
 echo "Physical UI polish capture option: script/android_pairing_deeplink_smoke.sh --capture-ui-polish captures chat, model selector, drawer, Settings, and launcher screenshots/XML on an attached phone."
+echo "Covered Android pairing summary UI polish artifact-manifest addendum: android_pairing_deeplink_smoke --summary-json lists chat, model selector, drawer, Settings, and launcher PNG/XML artifacts when --capture-ui-polish runs, without turning no-device self-tests into physical UI proof."
+echo "Covered Android pairing chat-model query selector addendum: android_pairing_deeplink_smoke --chat-model-query can select provider/model rows from UI XML and the no-device self-test proves provider-qualified LM Studio query matching without claiming phone model-selection proof."
+echo "Covered Android pairing summary JSON proof-boundary addendum: android_pairing_deeplink_smoke --summary-json records success and failure-path physical smoke proof booleans for adb deeplink injection, live-provider chat/cancel, live-provider chat-complete, model-log confirmation, reconnect, and UI capture while keeping optical QR, production relay, real different-network, direct backend access, and raw route material proof false or absent."
+echo "Covered Android pairing chat-complete summary addendum: android_pairing_deeplink_smoke --expect-chat-complete records natural chat.done without chat.cancel and expected transcript terms in summary JSON without converting no-device self-tests into phone chat proof."
+echo "Covered physical external-relay Android pairing summary artifact addendum: check_physical_external_relay_pairing passes --summary-json into the child Android pairing smoke and records safe child-summary proof booleans without converting no-device self-tests into physical external-relay proof."
+echo "Covered physical external-relay chat-complete pass-through addendum: check_physical_external_relay_pairing forwards --expect-chat-complete, completed-term checks, and model query options to the child Android pairing smoke and preserves safe child chat-complete proof booleans in wrapper summary JSON."
+echo "Covered physical external-relay proof-boundary split addendum: check_physical_external_relay_pairing records external_network_operator_confirmed, real_different_network_relay_verified, real_different_network_connectivity_proof, optical_camera_qr_scan, production proof, direct-backend, and private_or_same_lan_development_relay fields so same-LAN/private relay evidence cannot be mistaken for real different-network, optical QR, production relay/session/encryption, or direct Android backend proof."
+echo "Covered QA evidence latest-entry proof-boundary hygiene addendum: check_docs_hygiene validates the latest QA evidence entry for proof-boundary, no-device, physical/live-provider separation, agent-state, caveat, and verification-command wording."
 echo "Physical macOS Dock capture option: script/capture_macos_dock_icon.sh stages dist/AetherLink.app and captures build/qa/aetherlink-macos-dock-visible.png with CFBundleIconFile=AppIcon."
+echo "Covered SQLite runtime document index store addendum: SQLiteRuntimeDocumentIndexStore persists runtime-owned document records and chunks with deterministic IDs, owner-only SQLite file protection, bounded catalog listing, safe summary counts, content-fingerprint match listing, quality-filtered catalog, FTS candidate query prefiltering, lexical query parity, replacement, and deletion without project IDs, workspace IDs, source paths, retrieval_context, embeddings, protocol/router exposure, or Android UI integration."
+echo "Covered runtime document index store addendum: RuntimeDocumentIndexStore stores runtime-owned document records and chunks with deterministic document IDs, deterministic chunk IDs, display names, MIME types, content fingerprints, bounded catalog listing, safe summary counts, content-fingerprint match listing, quality-filtered catalog, chunk offsets, lexical query rank/snippet results, replacement, and deletion without project IDs, workspace IDs, source paths, retrieval_context, embeddings, protocol/router exposure, or Android UI integration."
+echo "Covered DocumentIngestion result envelope addendum: runtime-side DocumentIngestor combines extraction and chunk planning into a safe result with document text, chunks, file name, MIME type, extracted character count, chunk count, min/max chunk lengths, and no-usable-text/single-chunk/chunked quality states without source paths, project IDs, embeddings, retrieval, protocol, router, or Android UI integration."
+echo "Covered DocumentIngestion chunk planner addendum: runtime-side DocumentChunker creates deterministic bounded chunks from extracted text with source labels, character offsets, sentence/word boundary preference, overlap, multilingual text preservation, whitespace-only empty results, and invalid policy rejection without project IDs, source paths, embeddings, or protocol/router integration."
 echo "Covered DocumentIngestion resource policy addendum: runtime-side document extraction rejects oversized archive entry output and oversized normalized extracted text before backend dispatch."
 echo "Covered protocol reserved namespace guard addendum: projects. and automation. active messages remain blocked by protocol schema hygiene."
 echo "Covered protocol generic tool namespace guard addendum: tool.* active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke until runtime tool permissions, execution, result handling, and audit semantics are designed."
@@ -3873,4 +4295,4 @@ echo "Covered RuntimeDevServer future route namespace rejection addendum: authen
 echo "Covered macOS protocol model metadata parity addendum: BridgeProtocol ModelInfo preserves provider, provider_model_id, qualified_id, model_kind, capabilities, and context_window_tokens for embedding model registration."
 echo "Covered Android protocol model metadata parity addendum: Android ModelInfoPayload preserves backend, provider, provider_model_id, qualified_id, model_kind, kind, capabilities, size_bytes, context_window_tokens, modified_at, and remote_model for embedding model registration, and legacy missing capabilities decode as empty."
 echo "Physical external-relay QA gate: script/check_physical_external_relay_pairing.sh --relay-host <public-or-vpn-host> writes build/qa/android-external-relay-pairing.json and must be run with a real attached phone on the target network."
-echo "Not covered by this no-device gate: physical install, camera QR scan, real device haptics, physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, launcher/Dock screenshots, physical/live-backend streamed chat/cancel, and real different-network runtime connectivity."
+echo "Not covered by this no-device gate: physical install, camera QR scan, real device haptics, physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, launcher/Dock screenshots, physical/live-backend streamed chat/cancel or chat-complete, and real different-network runtime connectivity."

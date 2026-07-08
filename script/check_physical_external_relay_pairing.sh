@@ -8,14 +8,19 @@ ALLOCATION_TOKEN="${AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN:-${AETHERLINK_RE
 SERIAL=""
 JSON_PATH="$ROOT_DIR/build/qa/android-external-relay-pairing.json"
 LOG_PATH="$ROOT_DIR/build/qa/android-external-relay-pairing.log"
+ANDROID_PAIRING_SUMMARY_JSON=""
 SKIP_INSTALL=0
 KEEP_APP_DATA=0
 ALLOW_PRIVATE_RELAY=0
 EXPECT_RECONNECT=1
 EXPECT_CHAT_CANCEL=0
+EXPECT_CHAT_COMPLETE=0
 LIVE_BACKEND=0
+CHAT_MODEL_QUERY="${AETHERLINK_ANDROID_CHAT_MODEL_QUERY:-}"
 CHAT_TEXT="${AETHERLINK_ANDROID_CHAT_SMOKE_TEXT:-AetherLink_external_relay_smoke}"
 CHAT_DELTA_TIMEOUT="${AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS:-15}"
+CHAT_COMPLETE_TIMEOUT="${AETHERLINK_ANDROID_CHAT_COMPLETE_TIMEOUT_SECONDS:-180}"
+CHAT_EXPECTED_TERMS="${AETHERLINK_ANDROID_CHAT_EXPECTED_TERMS:-}"
 REQUIRE_DIFFERENT_NETWORK_CONFIRMATION=0
 SELF_TEST_REDACT_PROBE_SUMMARY=0
 SUMMARY_RELAY_HOST="$RELAY_HOST"
@@ -55,10 +60,17 @@ Options:
                           explicit VPN, tunnel, or private overlay.
   --no-expect-reconnect   Do not relaunch the app to prove saved route reconnect.
   --expect-chat-cancel    Also drive physical chat send/cancel UI proof.
+  --expect-chat-complete  Also drive physical chat send/complete UI proof.
   --live-backend          Use real local providers behind the runtime.
-  --chat-text <text>      Text used by the optional chat/cancel proof.
+  --chat-model-query <q>  Select a provider/model row before chat proof.
+  --chat-text <text>      Text used by the optional chat proof.
   --chat-delta-timeout <s>
                           Timeout for optional chat.delta proof.
+  --chat-complete-timeout <s>
+                          Timeout for optional natural chat.done proof.
+  --chat-expected-terms <term,...>
+                          Comma-separated completed transcript terms required
+                          by --expect-chat-complete.
   --require-different-network-confirmation
                           Require AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1 so
                           local relay runs are not mistaken for cross-network
@@ -140,9 +152,21 @@ while [[ $# -gt 0 ]]; do
       EXPECT_CHAT_CANCEL=1
       shift
       ;;
+    --expect-chat-complete)
+      EXPECT_CHAT_COMPLETE=1
+      shift
+      ;;
     --live-backend)
       LIVE_BACKEND=1
       shift
+      ;;
+    --chat-model-query)
+      if [[ $# -lt 2 ]]; then
+        echo "--chat-model-query requires a value." >&2
+        exit 2
+      fi
+      CHAT_MODEL_QUERY="$2"
+      shift 2
       ;;
     --chat-text)
       if [[ $# -lt 2 ]]; then
@@ -158,6 +182,22 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       CHAT_DELTA_TIMEOUT="$2"
+      shift 2
+      ;;
+    --chat-complete-timeout)
+      if [[ $# -lt 2 ]]; then
+        echo "--chat-complete-timeout requires a value." >&2
+        exit 2
+      fi
+      CHAT_COMPLETE_TIMEOUT="$2"
+      shift 2
+      ;;
+    --chat-expected-terms)
+      if [[ $# -lt 2 ]]; then
+        echo "--chat-expected-terms requires a value." >&2
+        exit 2
+      fi
+      CHAT_EXPECTED_TERMS="$2"
       shift 2
       ;;
     --require-different-network-confirmation)
@@ -180,6 +220,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$EXPECT_CHAT_CANCEL" -eq 1 && "$EXPECT_CHAT_COMPLETE" -eq 1 ]]; then
+  echo "--expect-chat-cancel and --expect-chat-complete are mutually exclusive." >&2
+  exit 2
+fi
+if [[ -n "$CHAT_MODEL_QUERY" && "$EXPECT_CHAT_CANCEL" -ne 1 && "$EXPECT_CHAT_COMPLETE" -ne 1 ]]; then
+  echo "--chat-model-query requires --expect-chat-cancel or --expect-chat-complete." >&2
+  exit 2
+fi
+if [[ -n "$CHAT_EXPECTED_TERMS" && "$EXPECT_CHAT_COMPLETE" -ne 1 ]]; then
+  echo "--chat-expected-terms requires --expect-chat-complete." >&2
+  exit 2
+fi
+
 if [[ "$SELF_TEST_REDACT_PROBE_SUMMARY" -eq 1 && -z "$RELAY_HOST" ]]; then
   RELAY_HOST="relay.example.test"
 fi
@@ -196,6 +249,9 @@ if [[ "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" -eq 1 && "${AETHERLINK_DIFFERENT
 fi
 
 SUMMARY_RELAY_HOST="$RELAY_HOST"
+json_dir="$(dirname "$JSON_PATH")"
+json_base="$(basename "$JSON_PATH")"
+ANDROID_PAIRING_SUMMARY_JSON="$json_dir/${json_base%.json}.android-pairing-summary.json"
 
 mkdir -p "$(dirname "$JSON_PATH")" "$(dirname "$LOG_PATH")"
 cd "$ROOT_DIR"
@@ -206,6 +262,7 @@ COMMAND=(
   --external-relay-host "$RELAY_HOST"
   --external-relay-port "$RELAY_PORT"
   --probe-external-relay-from-device
+  --summary-json "$ANDROID_PAIRING_SUMMARY_JSON"
 )
 
 if [[ -n "$SERIAL" ]]; then
@@ -225,6 +282,15 @@ if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
 fi
 if [[ "$EXPECT_CHAT_CANCEL" -eq 1 ]]; then
   COMMAND+=(--expect-chat-cancel --chat-text "$CHAT_TEXT" --chat-delta-timeout "$CHAT_DELTA_TIMEOUT")
+fi
+if [[ "$EXPECT_CHAT_COMPLETE" -eq 1 ]]; then
+  COMMAND+=(--expect-chat-complete --chat-text "$CHAT_TEXT" --chat-delta-timeout "$CHAT_DELTA_TIMEOUT" --chat-complete-timeout "$CHAT_COMPLETE_TIMEOUT")
+  if [[ -n "$CHAT_EXPECTED_TERMS" ]]; then
+    COMMAND+=(--chat-expected-terms "$CHAT_EXPECTED_TERMS")
+  fi
+fi
+if [[ -n "$CHAT_MODEL_QUERY" ]]; then
+  COMMAND+=(--chat-model-query "$CHAT_MODEL_QUERY")
 fi
 if [[ "$LIVE_BACKEND" -eq 1 ]]; then
   COMMAND+=(--live-backend)
@@ -324,6 +390,7 @@ write_json_summary() {
   local no_adb_reverse="${10}"
   local device_route_probe_json="${11}"
   local redacted_command_text="${12}"
+  local android_pairing_summary_json="${13:-$ANDROID_PAIRING_SUMMARY_JSON}"
 
   local pairing_count
   local health_count
@@ -331,12 +398,14 @@ write_json_summary() {
   local chat_send_count
   local chat_delta_count
   local chat_cancel_count
+  local chat_done_count
   pairing_count="$(count_in_file "$runtime_log" "Development pairing accepted")"
   health_count="$(count_in_file "$runtime_log" "runtime.health")"
   model_list_count="$(count_in_file "$runtime_log" "models.list")"
   chat_send_count="$(count_in_file "$runtime_log" "chat.send")"
   chat_delta_count="$(count_in_file "$runtime_log" "chat.delta")"
   chat_cancel_count="$(count_in_file "$runtime_log" "chat.cancel")"
+  chat_done_count="$(count_in_file "$runtime_log" "chat.done")"
 
   python3 - \
     "$JSON_PATH" \
@@ -351,7 +420,9 @@ write_json_summary() {
     "$ALLOW_PRIVATE_RELAY" \
     "$EXPECT_RECONNECT" \
     "$EXPECT_CHAT_CANCEL" \
+    "$EXPECT_CHAT_COMPLETE" \
     "$LIVE_BACKEND" \
+    "$([[ -n "$CHAT_MODEL_QUERY" ]] && echo 1 || echo 0)" \
     "$no_adb_reverse" \
     "$pairing_count" \
     "$health_count" \
@@ -359,6 +430,7 @@ write_json_summary() {
     "$chat_send_count" \
     "$chat_delta_count" \
     "$chat_cancel_count" \
+    "$chat_done_count" \
     "$LOG_PATH" \
     "$smoke_work_dir" \
     "$runtime_log" \
@@ -368,7 +440,8 @@ write_json_summary() {
 	    "$redacted_command_text" \
 	    "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" \
 	    "$([[ -n "$ALLOCATION_TOKEN" ]] && echo 1 || echo 0)" \
-	    "$SELF_TEST_REDACT_PROBE_SUMMARY" <<'PY'
+	    "$SELF_TEST_REDACT_PROBE_SUMMARY" \
+	    "$android_pairing_summary_json" <<'PY'
 import json
 import os
 import re
@@ -388,7 +461,9 @@ import urllib.parse
     allow_private_relay,
     expect_reconnect,
     expect_chat_cancel,
+    expect_chat_complete,
     live_backend,
+    chat_model_query_requested,
     no_adb_reverse,
     pairing_count,
     health_count,
@@ -396,6 +471,7 @@ import urllib.parse
     chat_send_count,
     chat_delta_count,
     chat_cancel_count,
+    chat_done_count,
     log_path,
     smoke_work_dir,
     runtime_log,
@@ -406,6 +482,7 @@ import urllib.parse
     require_different_network_confirmation,
     allocation_token_set,
     self_test_redact_probe_summary,
+    android_pairing_summary_json,
 ) = sys.argv[1:]
 
 exit_status = int(status)
@@ -415,18 +492,22 @@ model_list_count = int(model_list_count)
 chat_send_count = int(chat_send_count)
 chat_delta_count = int(chat_delta_count)
 chat_cancel_count = int(chat_cancel_count)
+chat_done_count = int(chat_done_count)
 expect_reconnect_bool = expect_reconnect == "1"
 expect_chat_cancel_bool = expect_chat_cancel == "1"
+expect_chat_complete_bool = expect_chat_complete == "1"
 self_test_redaction_only = self_test_redact_probe_summary == "1"
+external_network_operator_confirmed = require_different_network_confirmation == "1"
 
 caveats = [
     "uses_adb_deeplink_injection_not_optical_camera_qr_scan",
     "requires_user_controlled_public_vpn_tunnel_or_private_overlay_relay",
     "does_not_expose_ollama_or_lm_studio_to_android",
+    "not_production_relay_proof",
     "not_production_session_key_exchange_proof",
     "not_production_end_to_end_transport_encryption_proof",
 ]
-if require_different_network_confirmation != "1":
+if not external_network_operator_confirmed:
     caveats.append("operator_must_confirm_phone_was_on_a_different_network")
 if exit_status != 0:
     caveats.append("physical_external_relay_pairing_failed")
@@ -436,6 +517,10 @@ if expect_reconnect_bool and model_list_count < 1:
     caveats.append("saved_route_models_list_reconnect_not_observed")
 if expect_chat_cancel_bool and chat_cancel_count < 1:
     caveats.append("chat_cancel_not_observed")
+if expect_chat_complete_bool and chat_done_count < 1:
+    caveats.append("chat_complete_not_observed")
+if expect_chat_complete_bool and chat_cancel_count > 0:
+    caveats.append("chat_cancel_observed_during_chat_complete")
 if self_test_redaction_only:
     caveats.append("self_test_redaction_only_not_physical_relay_proof")
 
@@ -553,10 +638,135 @@ def probe_bool(summary, key):
 
 device_endpoint_probe = load_json_artifact(device_probe_json)
 device_route_probe = load_json_artifact(device_route_probe_json)
+android_pairing_summary = load_json_artifact(android_pairing_summary_json)
 endpoint_reachable = probe_bool(device_endpoint_probe, "reachable")
 route_ready = probe_bool(device_route_probe, "route_ready")
 runtime_log_artifact_present = os.path.exists(runtime_log)
 wrapper_log_artifact_present = os.path.exists(log_path)
+
+def nested_value(summary, keys):
+    value = summary
+    for key in keys:
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+def safe_android_pairing_summary(summary):
+    if not isinstance(summary, dict):
+        return None
+    if "load_error" in summary:
+        return None
+    coverage = summary.get("coverage")
+    events = summary.get("events")
+    paths = summary.get("paths")
+    safe_coverage_keys = (
+        "physical_device_observed",
+        "adb_deeplink_injection_attempted",
+        "adb_deeplink_injection_succeeded",
+        "adb_reverse_runtime_used",
+        "adb_reverse_relay_used",
+        "external_relay_mode",
+        "external_relay_endpoint_probe_requested",
+        "external_relay_endpoint_probe_artifact",
+        "external_relay_route_probe_artifact",
+        "runtime_pairing_accepted",
+        "runtime_health_observed",
+        "models_list_observed",
+        "trusted_route_reconnect_requested",
+        "trusted_route_reconnect_verified",
+        "chat_cancel_requested",
+        "chat_complete_requested",
+        "chat_send_observed",
+        "chat_delta_observed",
+        "chat_cancel_observed",
+        "chat_done_observed",
+        "live_backend_requested",
+        "live_provider_chat_cancel_proof",
+        "live_provider_chat_complete_proof",
+        "chat_expected_terms_requested",
+        "chat_expected_terms_observed",
+        "chat_model_query_requested",
+        "chat_model_runtime_log_confirmed",
+        "optical_camera_qr_scan",
+        "production_relay_proof",
+        "production_session_key_exchange_proof",
+        "production_end_to_end_transport_encryption_proof",
+        "real_different_network_connectivity_proof",
+        "android_direct_model_backend_access",
+    )
+    safe_summary = {
+        "success": summary.get("success") is True,
+        "exit_status": summary.get("exit_status"),
+        "mode": summary.get("mode"),
+        "requested_serial_bound": bool(summary.get("requested_serial")),
+        "observed_serial_present": bool(summary.get("observed_serial")),
+        "coverage": {},
+        "events": {},
+        "paths_present": {},
+    }
+    if isinstance(coverage, dict):
+        safe_summary["coverage"] = {
+            key: coverage.get(key)
+            for key in safe_coverage_keys
+            if key in coverage
+        }
+    if isinstance(events, dict):
+        for key in (
+            "pairing_accepted_count",
+            "runtime_health_count",
+            "models_list_count",
+            "chat_send_count",
+            "chat_delta_count",
+            "chat_cancel_count",
+            "chat_done_count",
+        ):
+            if key in events:
+                safe_summary["events"][key] = events.get(key)
+    if isinstance(paths, dict):
+        safe_summary["paths_present"] = {
+            "runtime_log": bool(paths.get("runtime_log")),
+            "external_relay_endpoint_probe_json": bool(paths.get("external_relay_endpoint_probe_json")),
+            "external_relay_route_probe_json": bool(paths.get("external_relay_route_probe_json")),
+            "screenshot": bool(paths.get("screenshot")),
+            "chat_screenshot": bool(paths.get("chat_screenshot")),
+            "chat_complete_ui_xml": bool(paths.get("chat_complete_ui_xml")),
+        }
+    return safe_summary
+
+android_pairing_child_summary = safe_android_pairing_summary(android_pairing_summary)
+android_pairing_summary_present = android_pairing_child_summary is not None
+android_pairing_summary_success = bool(
+    android_pairing_child_summary
+    and android_pairing_child_summary.get("success") is True
+)
+android_pairing_summary_external_relay_mode = nested_value(
+    android_pairing_child_summary,
+    ("coverage", "external_relay_mode"),
+) is True
+android_pairing_summary_no_relay_adb_reverse = nested_value(
+    android_pairing_child_summary,
+    ("coverage", "adb_reverse_relay_used"),
+) is False
+android_pairing_summary_live_provider_chat_complete_proof = nested_value(
+    android_pairing_child_summary,
+    ("coverage", "live_provider_chat_complete_proof"),
+) is True
+android_pairing_summary_chat_expected_terms_observed = nested_value(
+    android_pairing_child_summary,
+    ("coverage", "chat_expected_terms_observed"),
+) or []
+android_pairing_summary_proof_boundary_preserved = bool(
+    android_pairing_child_summary
+    and nested_value(android_pairing_child_summary, ("coverage", "optical_camera_qr_scan")) is False
+    and nested_value(android_pairing_child_summary, ("coverage", "production_relay_proof")) is False
+    and nested_value(android_pairing_child_summary, ("coverage", "production_session_key_exchange_proof")) is False
+    and nested_value(android_pairing_child_summary, ("coverage", "production_end_to_end_transport_encryption_proof")) is False
+    and nested_value(android_pairing_child_summary, ("coverage", "real_different_network_connectivity_proof")) is False
+    and nested_value(android_pairing_child_summary, ("coverage", "android_direct_model_backend_access")) is False
+)
+if expect_chat_complete_bool and not android_pairing_summary_live_provider_chat_complete_proof:
+    caveats.append("android_pairing_summary_chat_complete_not_proven")
 
 def read_text(candidate_path):
     try:
@@ -614,6 +824,12 @@ if wrapper_log_contains_route_material:
     caveats.append("wrapper_log_contains_unredacted_route_material")
 if not wrapper_log_artifact_present or wrapper_log_contains_route_material:
     caveats.append("wrapper_log_redaction_not_verified")
+if not android_pairing_summary_present:
+    caveats.append("android_pairing_summary_json_missing")
+elif not android_pairing_summary_success:
+    caveats.append("android_pairing_summary_json_not_successful")
+if android_pairing_summary_present and not android_pairing_summary_proof_boundary_preserved:
+    caveats.append("android_pairing_summary_json_proof_boundary_not_preserved")
 
 live_android_device_probe_verified = (
     not self_test_redaction_only
@@ -626,10 +842,23 @@ live_android_device_probe_verified = (
 physical_external_relay_verified = (
     exit_status == 0
     and no_adb_reverse == "1"
+    and android_pairing_summary_success
+    and android_pairing_summary_external_relay_mode
+    and android_pairing_summary_no_relay_adb_reverse
     and live_android_device_probe_verified
     and pairing_count > 0
     and health_count > 0
 )
+real_different_network_connectivity_proof = (
+    physical_external_relay_verified
+    and external_network_operator_confirmed
+)
+private_or_same_lan_development_relay = (
+    allow_private_relay == "1"
+    and not external_network_operator_confirmed
+)
+if private_or_same_lan_development_relay:
+    caveats.append("private_or_same_lan_development_relay_not_real_different_network_proof")
 
 summary = {
     "generated_at": ended_at,
@@ -659,9 +888,25 @@ summary = {
         "probe_summary_redaction_self_test": self_test_redaction_only,
         "live_android_device_probe_verified": live_android_device_probe_verified,
         "physical_external_relay_verified": physical_external_relay_verified,
+        "android_pairing_summary_json_present": android_pairing_summary_present,
+        "android_pairing_summary_success": android_pairing_summary_success,
+        "android_pairing_summary_external_relay_mode": android_pairing_summary_external_relay_mode,
+        "android_pairing_summary_no_relay_adb_reverse": android_pairing_summary_no_relay_adb_reverse,
+        "android_pairing_summary_proof_boundary_preserved": android_pairing_summary_proof_boundary_preserved,
+        "adb_deeplink_injection": nested_value(android_pairing_child_summary, ("coverage", "adb_deeplink_injection_succeeded")) is True,
+        "optical_camera_qr_scan": False,
         "production_relay": False,
+        "production_relay_proof": False,
         "production_session_key_exchange": False,
+        "production_session_key_exchange_proof": False,
         "production_end_to_end_transport_encryption": False,
+        "production_end_to_end_transport_encryption_proof": False,
+        "external_network_operator_confirmed": external_network_operator_confirmed,
+        "real_different_network_relay_verified": real_different_network_connectivity_proof,
+        "real_different_network_connectivity_proof": real_different_network_connectivity_proof,
+        "android_direct_model_backend_access": False,
+        "private_relay_allowed": allow_private_relay == "1",
+        "private_or_same_lan_development_relay": private_or_same_lan_development_relay,
         "wrapper_log_artifact_present": wrapper_log_artifact_present,
         "wrapper_log_omits_temporary_secret_material": wrapper_log_artifact_present and not wrapper_log_contains_route_material,
         "wrapper_log_contains_unredacted_route_material": wrapper_log_contains_route_material,
@@ -676,13 +921,19 @@ summary = {
         "chat_send_count": chat_send_count,
         "chat_delta_count": chat_delta_count,
         "chat_cancel_count": chat_cancel_count,
+        "chat_done_count": chat_done_count,
         "expect_chat_cancel": expect_chat_cancel_bool,
+        "expect_chat_complete": expect_chat_complete_bool,
+        "chat_model_query_requested": chat_model_query_requested == "1",
+        "android_pairing_summary_live_provider_chat_complete_proof": android_pairing_summary_live_provider_chat_complete_proof,
+        "android_pairing_summary_chat_expected_terms_observed": android_pairing_summary_chat_expected_terms_observed,
         "live_backend": live_backend == "1",
     },
     "artifacts": {
         "wrapper_log": log_path,
         "smoke_work_dir": smoke_work_dir or None,
         "runtime_log": runtime_log or None,
+        "android_pairing_summary_json": android_pairing_summary_json or None,
         "device_relay_probe_json": device_probe_json or None,
         "device_relay_route_probe_json": device_route_probe_json or None,
         "screenshot": screenshot or None,
@@ -690,6 +941,9 @@ summary = {
     "probe_summaries": {
         "device_relay_endpoint": device_endpoint_probe,
         "device_relay_route": device_route_probe,
+    },
+    "child_summaries": {
+        "android_pairing_deeplink": android_pairing_child_summary,
     },
     "caveats": caveats,
 }
@@ -708,11 +962,15 @@ if [[ "$SELF_TEST_REDACT_PROBE_SUMMARY" -eq 1 ]]; then
   SELF_TEST_RUNTIME_LOG="$SELF_TEST_WORK_DIR/runtime.log"
   SELF_TEST_ENDPOINT_JSON="$SELF_TEST_WORK_DIR/endpoint.json"
   SELF_TEST_ROUTE_JSON="$SELF_TEST_WORK_DIR/route.json"
+  SELF_TEST_PAIRING_SUMMARY_JSON="$SELF_TEST_WORK_DIR/android-pairing-summary.json"
   cat >"$SELF_TEST_RUNTIME_LOG" <<'LOG'
 [runtime] AETHERLINK_DEV_PAIRING_URI aetherlink://pair?v=1&pairing_nonce=runtime-pairing-nonce-sensitive&pairing_code=123456&runtime_device_id=runtime-device-sensitive&runtime_name=AetherLink&runtime_public_key=runtime-public-key-sensitive&runtime_key_fingerprint=runtime-fingerprint-sensitive&route_token=runtime-route-token-sensitive&relay_host=relay.example.test&relay_port=43171&relay_id=relay-id-sensitive&relay_secret=relay-secret-sensitive&relay_expires_at=4102444800&relay_nonce=relay-nonce-sensitive
 Development pairing accepted
 runtime.health
 models.list
+chat.send
+chat.delta
+chat.done
 LOG
   cat >"$LOG_PATH" <<'LOG'
 Running physical external relay pairing QA self-test.
@@ -750,6 +1008,64 @@ JSON
   }
 }
 JSON
+  cat >"$SELF_TEST_PAIRING_SUMMARY_JSON" <<'JSON'
+{
+  "success": true,
+  "exit_status": 0,
+  "mode": "relay",
+  "requested_serial": "self-test-requested-serial",
+  "observed_serial": "self-test-observed-serial",
+  "events": {
+    "pairing_accepted_count": 1,
+    "runtime_health_count": 1,
+    "models_list_count": 1,
+    "chat_send_count": 1,
+    "chat_delta_count": 1,
+    "chat_cancel_count": 0,
+    "chat_done_count": 1
+  },
+  "coverage": {
+    "physical_device_observed": true,
+    "adb_deeplink_injection_attempted": true,
+    "adb_deeplink_injection_succeeded": true,
+    "adb_reverse_runtime_used": false,
+    "adb_reverse_relay_used": false,
+    "external_relay_mode": true,
+    "external_relay_endpoint_probe_requested": true,
+    "external_relay_endpoint_probe_artifact": true,
+    "external_relay_route_probe_artifact": true,
+    "runtime_pairing_accepted": true,
+    "runtime_health_observed": true,
+    "models_list_observed": true,
+    "trusted_route_reconnect_requested": true,
+    "trusted_route_reconnect_verified": true,
+    "chat_cancel_requested": false,
+    "chat_complete_requested": true,
+    "chat_send_observed": true,
+    "chat_delta_observed": true,
+    "chat_cancel_observed": false,
+    "chat_done_observed": true,
+    "live_backend_requested": true,
+    "live_provider_chat_cancel_proof": false,
+    "live_provider_chat_complete_proof": true,
+    "chat_expected_terms_requested": true,
+    "chat_expected_terms_observed": ["ExternalComplete"],
+    "chat_model_query_requested": true,
+    "chat_model_runtime_log_confirmed": true,
+    "optical_camera_qr_scan": false,
+    "production_relay_proof": false,
+    "production_session_key_exchange_proof": false,
+    "production_end_to_end_transport_encryption_proof": false,
+    "real_different_network_connectivity_proof": false,
+    "android_direct_model_backend_access": false
+  },
+  "paths": {
+    "runtime_log": "/tmp/redacted-runtime.log",
+    "external_relay_endpoint_probe_json": "/tmp/redacted-endpoint.json",
+    "external_relay_route_probe_json": "/tmp/redacted-route.json"
+  }
+}
+JSON
   write_json_summary \
     0 \
     "2026-07-03T00:00:00Z" \
@@ -762,7 +1078,8 @@ JSON
     "$SELF_TEST_ENDPOINT_JSON" \
     1 \
     "$SELF_TEST_ROUTE_JSON" \
-    "$(redacted_command)"
+    "$(redacted_command)" \
+    "$SELF_TEST_PAIRING_SUMMARY_JSON"
   cat "$JSON_PATH"
   rm -rf "$SELF_TEST_WORK_DIR"
   exit 0
@@ -840,6 +1157,12 @@ if [[ "$STATUS" -eq 0 ]]; then
   elif [[ -z "$DEVICE_ROUTE_PROBE_JSON" ]] || ! json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready"; then
     echo "Physical external relay smoke completed but Android route-level relay readiness was not proven." >&2
     STATUS=26
+  elif [[ -z "$ANDROID_PAIRING_SUMMARY_JSON" || ! -f "$ANDROID_PAIRING_SUMMARY_JSON" ]] || ! json_bool_at "$ANDROID_PAIRING_SUMMARY_JSON" "success"; then
+    echo "Physical external relay smoke completed but Android pairing summary JSON success was not proven." >&2
+    STATUS=27
+  elif [[ "$EXPECT_CHAT_COMPLETE" -eq 1 ]] && ! json_bool_at "$ANDROID_PAIRING_SUMMARY_JSON" "coverage.live_provider_chat_complete_proof"; then
+    echo "Physical external relay smoke completed but Android pairing summary JSON did not prove chat-complete." >&2
+    STATUS=28
   fi
 fi
 

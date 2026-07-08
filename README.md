@@ -197,7 +197,11 @@ For the external-relay physical deeplink smoke, add
 `--probe-external-relay-from-device` to run that device-side TCP probe before
 the pairing URI is injected. This still does not call Ollama or LM Studio from
 the device; it only checks whether the relay route in the QR is reachable from
-the device network.
+the device network. The wrapper also passes through the Android smoke's
+`--expect-chat-complete`, `--chat-complete-timeout`, `--chat-expected-terms`,
+and `--chat-model-query` options so an operator-confirmed external-relay phone
+run can preserve completed-chat proof in summary JSON without treating seeded
+no-device wrapper self-tests as physical external-relay success.
 
 The real-Ollama mode keeps the same development pairing/auth path, but leaves
 `LOCAL_AGENT_BRIDGE_MOCK_BACKEND` unset so RuntimeDevServer talks to the local

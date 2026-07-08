@@ -55,7 +55,7 @@ struct RuntimeDevServer {
         let relayPairingReadiness = RelayPairingReadiness()
         let routerBox = RuntimeRouterBox()
         let relayMessageHandler: LocalPeerMessageHandler = { envelope, sink in
-            print("[runtime] relay received type=\(envelope.type) request_id=\(envelope.requestID)")
+            logReceivedEnvelope(envelope, route: "relay")
             routerBox.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
         let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void = { status in
@@ -107,7 +107,7 @@ struct RuntimeDevServer {
         RuntimeDevServerState.relayClient = relayClient
 
         server.start(port: port) { envelope, sink in
-            print("[runtime] received type=\(envelope.type) request_id=\(envelope.requestID)")
+            logReceivedEnvelope(envelope, route: nil)
             routerBox.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
         if shouldAdvertiseBonjour {
@@ -263,6 +263,27 @@ struct RuntimeDevServer {
         print("[runtime] For local direct diagnostics with a USB-connected trusted device, run:")
         print("[runtime]   adb reverse tcp:\(port) tcp:\(port)")
         print("[runtime] Then use the local diagnostic route 127.0.0.1:\(port) in AetherLink.")
+    }
+
+    private static func logReceivedEnvelope(_ envelope: ProtocolEnvelope, route: String?) {
+        let routePrefix = route.map { "\($0) " } ?? ""
+        print("[runtime] \(routePrefix)received type=\(envelope.type) request_id=\(envelope.requestID)")
+        guard envelope.type == "chat.send",
+              case .string(let model)? = envelope.payload["model"] else {
+            return
+        }
+        print("[runtime] \(routePrefix)received chat.send model=\(safeLogIdentifier(model)) request_id=\(envelope.requestID)")
+    }
+
+    private static func safeLogIdentifier(_ value: String) -> String {
+        let normalized = value.unicodeScalars.map { scalar -> String in
+            if CharacterSet.whitespacesAndNewlines.contains(scalar)
+                || CharacterSet.controlCharacters.contains(scalar) {
+                return "_"
+            }
+            return String(scalar)
+        }.joined()
+        return String(normalized.prefix(256))
     }
 
     private static func relayRouteAllocation(

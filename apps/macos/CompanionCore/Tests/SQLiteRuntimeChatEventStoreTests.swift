@@ -1,5 +1,6 @@
 @testable import CompanionCore
 import OllamaBackend
+import SQLite3
 import XCTest
 
 final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
@@ -91,6 +92,319 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertEqual(reasoningSearchResults.first?.search?.snippet, "Checking route material.")
         XCTAssertTrue(try reopenedStore.listSessions(limit: 0).isEmpty)
         XCTAssertTrue(try reopenedStore.listMessages(sessionID: "sqlite-session", limit: 0).isEmpty)
+    }
+
+    func testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let metadataSentinel = "sourcepointerftssentinel9f31"
+        let metadata = RuntimeChatCompactionMetadata(sourcePointers: [
+            RuntimeChatCompactionSourcePointer(
+                sessionID: "sqlite-compaction-session",
+                requestID: metadataSentinel,
+                startTurn: 1,
+                endTurn: 6,
+                totalTurns: 18,
+                compactedTurnCount: 6,
+                retainedStartTurn: 7,
+                retainedEndTurn: 18,
+                retainedTurnCount: 12
+            )
+        ])
+
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 180),
+            kind: .request,
+            requestID: "sqlite-compaction-visible-request",
+            sessionID: "sqlite-compaction-session",
+            model: "ollama:llama3.1:8b",
+            messages: [
+                ChatMessage(role: "user", content: "Visible compaction transcript only.")
+            ],
+            compactionMetadata: metadata
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 181),
+            kind: .assistantDelta,
+            requestID: "sqlite-compaction-visible-request",
+            sessionID: "sqlite-compaction-session",
+            model: "ollama:llama3.1:8b",
+            delta: "Visible answer only."
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 182),
+            kind: .done,
+            requestID: "sqlite-compaction-visible-request",
+            sessionID: "sqlite-compaction-session",
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop"
+        ))
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let visibleMessages = try reopenedStore.listMessages(sessionID: "sqlite-compaction-session", limit: 10)
+        XCTAssertEqual(visibleMessages.map(\.content), [
+            "Visible compaction transcript only.",
+            "Visible answer only."
+        ])
+        XCTAssertEqual(
+            try reopenedStore.listSessions(
+                ownerDeviceID: nil,
+                limit: 10,
+                includeArchived: true,
+                query: "Visible transcript"
+            ).map(\.sessionID),
+            ["sqlite-compaction-session"]
+        )
+        XCTAssertTrue(
+            try reopenedStore.listSessions(
+                ownerDeviceID: nil,
+                limit: 10,
+                includeArchived: true,
+                query: metadataSentinel
+            ).isEmpty
+        )
+
+        let rawEvents = try rawSQLiteEvents(at: databaseURL)
+        let storedRequest = try XCTUnwrap(rawEvents.first { $0.kind == .request })
+        XCTAssertEqual(storedRequest.compactionMetadata, metadata)
+        XCTAssertFalse(storedRequest.messages?.contains { $0.content.contains(metadataSentinel) } == true)
+    }
+
+    func testSQLiteStorePreservesWhitespaceOnlyStreamingDeltas() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 170),
+            kind: .request,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            messages: [ChatMessage(role: "user", content: "Stream whitespace chunks.")]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 171),
+            kind: .reasoningDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            reasoningDelta: "Think"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 172),
+            kind: .reasoningDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            reasoningDelta: "\n"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 173),
+            kind: .reasoningDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            reasoningDelta: "more"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 174),
+            kind: .assistantDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            delta: "Hello"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 175),
+            kind: .assistantDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            delta: " "
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 176),
+            kind: .assistantDelta,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            delta: "world"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 177),
+            kind: .done,
+            requestID: "sqlite-whitespace",
+            sessionID: "sqlite-whitespace-session",
+            model: "ollama:qwen3:8b",
+            finishReason: "stop"
+        ))
+
+        let messages = try store.listMessages(sessionID: "sqlite-whitespace-session", limit: 10)
+
+        XCTAssertEqual(messages.map(\.role), ["user", "assistant"])
+        XCTAssertEqual(messages.last?.content, "Hello world")
+        XCTAssertEqual(messages.last?.reasoning, "Think\nmore")
+    }
+
+    func testSQLiteStoreRejectsEmptyStreamingDeltas() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+
+        XCTAssertThrowsError(try store.append(RuntimeChatStoredEvent(
+            kind: .assistantDelta,
+            requestID: "sqlite-empty-assistant",
+            sessionID: "sqlite-empty-session",
+            model: "ollama:qwen3:8b",
+            delta: ""
+        ))) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatEventStoreError,
+                .corruptEventLog(line: 0, reason: "chat assistant delta is empty")
+            )
+        }
+        XCTAssertThrowsError(try store.append(RuntimeChatStoredEvent(
+            kind: .reasoningDelta,
+            requestID: "sqlite-empty-reasoning",
+            sessionID: "sqlite-empty-session",
+            model: "ollama:qwen3:8b",
+            reasoningDelta: ""
+        ))) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatEventStoreError,
+                .corruptEventLog(line: 0, reason: "chat reasoning delta is empty")
+            )
+        }
+    }
+
+    func testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let validPointer = RuntimeChatCompactionSourcePointer(
+            sessionID: "sqlite-invalid-compaction-session",
+            requestID: "sqlite-invalid-compaction",
+            startTurn: 1,
+            endTurn: 2,
+            totalTurns: 5,
+            compactedTurnCount: 2,
+            retainedStartTurn: 3,
+            retainedEndTurn: 5,
+            retainedTurnCount: 3
+        )
+        let validMetadata = RuntimeChatCompactionMetadata(sourcePointers: [validPointer])
+
+        let invalidEvents: [(event: RuntimeChatStoredEvent, reason: String)] = [
+            (
+                RuntimeChatStoredEvent(
+                    kind: .assistantDelta,
+                    requestID: "sqlite-invalid-compaction-non-request",
+                    sessionID: "sqlite-invalid-compaction-session",
+                    model: "ollama:llama3.1:8b",
+                    delta: "Visible answer.",
+                    compactionMetadata: validMetadata
+                ),
+                "chat compaction metadata is only valid on request events"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-empty-strategy",
+                    metadata: RuntimeChatCompactionMetadata(
+                        strategy: "  ",
+                        sourcePointers: [validPointer]
+                    )
+                ),
+                "chat compaction strategy is empty"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-empty-pointers",
+                    metadata: RuntimeChatCompactionMetadata(sourcePointers: [])
+                ),
+                "chat compaction source pointers are empty"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-empty-source-kind",
+                    metadata: RuntimeChatCompactionMetadata(sourcePointers: [
+                        RuntimeChatCompactionSourcePointer(
+                            sourceKind: "  ",
+                            sessionID: "sqlite-invalid-compaction-session",
+                            requestID: "sqlite-invalid-compaction-empty-source-kind",
+                            startTurn: 1,
+                            endTurn: 2,
+                            totalTurns: 5,
+                            compactedTurnCount: 2,
+                            retainedStartTurn: 3,
+                            retainedEndTurn: 5,
+                            retainedTurnCount: 3
+                        )
+                    ])
+                ),
+                "chat compaction source kind is empty"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-range",
+                    metadata: RuntimeChatCompactionMetadata(sourcePointers: [
+                        RuntimeChatCompactionSourcePointer(
+                            sessionID: "sqlite-invalid-compaction-session",
+                            requestID: "sqlite-invalid-compaction-range",
+                            startTurn: 2,
+                            endTurn: 4,
+                            totalTurns: 5,
+                            compactedTurnCount: 2,
+                            retainedStartTurn: 5,
+                            retainedEndTurn: 5,
+                            retainedTurnCount: 1
+                        )
+                    ])
+                ),
+                "chat compaction source pointer range is invalid"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-retained-start",
+                    metadata: RuntimeChatCompactionMetadata(sourcePointers: [
+                        RuntimeChatCompactionSourcePointer(
+                            sessionID: "sqlite-invalid-compaction-session",
+                            requestID: "sqlite-invalid-compaction-retained-start",
+                            startTurn: 1,
+                            endTurn: 3,
+                            totalTurns: 5,
+                            compactedTurnCount: 3,
+                            retainedStartTurn: 3,
+                            retainedEndTurn: 5,
+                            retainedTurnCount: 3
+                        )
+                    ])
+                ),
+                "chat compaction retained range starts before compacted range"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-retained-end",
+                    metadata: RuntimeChatCompactionMetadata(sourcePointers: [
+                        RuntimeChatCompactionSourcePointer(
+                            sessionID: "sqlite-invalid-compaction-session",
+                            requestID: "sqlite-invalid-compaction-retained-end",
+                            startTurn: 1,
+                            endTurn: 2,
+                            totalTurns: 5,
+                            compactedTurnCount: 2,
+                            retainedStartTurn: 3,
+                            retainedEndTurn: 6,
+                            retainedTurnCount: 4
+                        )
+                    ])
+                ),
+                "chat compaction retained range exceeds total turns"
+            ),
+        ]
+
+        for (event, reason) in invalidEvents {
+            XCTAssertThrowsError(try store.append(event), reason) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
     }
 
     func testSQLiteStoreScopesLifecycleAndMutationsByOwnerDevice() throws {
@@ -1036,6 +1350,20 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertTrue(try emptySQLiteStore.listSessions(limit: 10).isEmpty)
     }
 
+    private func invalidCompactionRequest(
+        requestID: String,
+        metadata: RuntimeChatCompactionMetadata
+    ) -> RuntimeChatStoredEvent {
+        RuntimeChatStoredEvent(
+            kind: .request,
+            requestID: requestID,
+            sessionID: "sqlite-invalid-compaction-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Visible prompt.")],
+            compactionMetadata: metadata
+        )
+    }
+
     private func temporaryDatabaseURL() throws -> URL {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1048,6 +1376,55 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         return directoryURL.appendingPathComponent("runtime-chat-events.jsonl")
+    }
+
+    private func rawSQLiteEvents(at databaseURL: URL) throws -> [RuntimeChatStoredEvent] {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(
+                domain: "SQLiteRuntimeChatEventStoreTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Could not open SQLite event store."]
+            )
+        }
+        defer { sqlite3_close(database) }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT event_json FROM runtime_chat_events ORDER BY sequence ASC",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK,
+              let statement else {
+            throw NSError(
+                domain: "SQLiteRuntimeChatEventStoreTests",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Could not prepare SQLite event read."]
+            )
+        }
+        defer { sqlite3_finalize(statement) }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var events: [RuntimeChatStoredEvent] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw NSError(
+                    domain: "SQLiteRuntimeChatEventStoreTests",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Could not step SQLite event read."]
+                )
+            }
+            let text = try XCTUnwrap(sqlite3_column_text(statement, 0))
+            let data = Data(String(cString: text).utf8)
+            events.append(try decoder.decode(RuntimeChatStoredEvent.self, from: data))
+        }
+        return events
     }
 
     private func writeRawLegacyEvents(_ events: [RuntimeChatStoredEvent], to fileURL: URL) throws {

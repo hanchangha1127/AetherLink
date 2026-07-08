@@ -38,7 +38,7 @@ enum BackendMode {
         case .mock:
             return "mock"
         case .realOllama:
-            return "real Ollama"
+            return "real provider aggregate"
         }
     }
 }
@@ -63,10 +63,15 @@ struct SmokeOptions {
     var transportMode: TransportMode = .direct
     var allowDirectFallback = false
     var expectP2PRouteRefresh = false
+    var realOllamaEvalModels: [String] = []
+    var realLMStudioEvalModels: [String] = []
+    var evalSummaryPath: String?
 
     static func parse(_ arguments: [String]) throws -> SmokeOptions {
         var options = SmokeOptions()
-        for argument in arguments.dropFirst() {
+        var index = 1
+        while index < arguments.count {
+            let argument = arguments[index]
             switch argument {
             case "--real-ollama":
                 options.backendMode = .realOllama
@@ -78,9 +83,33 @@ struct SmokeOptions {
                 options.allowDirectFallback = true
             case "--expect-p2p-route-refresh":
                 options.expectP2PRouteRefresh = true
+            case "--real-ollama-eval-models":
+                index += 1
+                guard index < arguments.count else {
+                    throw SmokeFailure.message("--real-ollama-eval-models requires a comma-separated value")
+                }
+                options.realOllamaEvalModels = arguments[index]
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            case "--real-lmstudio-eval-models":
+                index += 1
+                guard index < arguments.count else {
+                    throw SmokeFailure.message("--real-lmstudio-eval-models requires a comma-separated value")
+                }
+                options.realLMStudioEvalModels = arguments[index]
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            case "--eval-summary-json":
+                index += 1
+                guard index < arguments.count else {
+                    throw SmokeFailure.message("--eval-summary-json requires a value")
+                }
+                options.evalSummaryPath = arguments[index]
             case "--help", "-h":
                 print("""
-                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--allow-direct-fallback] [--expect-p2p-route-refresh] [--real-ollama] [--allow-unavailable]
+                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--allow-direct-fallback] [--expect-p2p-route-refresh] [--real-ollama] [--allow-unavailable] [--real-ollama-eval-models <model,...>] [--real-lmstudio-eval-models <model,...>] [--eval-summary-json <path>]
 
                   default              Run authenticated mock E2E smoke, including pull, attachment, and chat coverage.
                   --relay              Route the smoke through AetherLinkRelay allocation with encrypted relay frames.
@@ -90,11 +119,18 @@ struct SmokeOptions {
                                        Require authenticated route.refresh to include complete opaque P2P rendezvous route material.
                   --real-ollama        Run pairing/auth smoke against the real provider aggregate with Ollama behind the runtime host.
                   --allow-unavailable  In --real-ollama mode, skip successfully if Ollama is unavailable.
+                  --real-ollama-eval-models <model,...>
+                                       In --real-ollama mode, send a fixed runtime-mediated chat eval matrix to the named Ollama models.
+                  --real-lmstudio-eval-models <model,...>
+                                       In --real-ollama mode, send the same fixed runtime-mediated chat eval matrix to the named LM Studio models.
+                  --eval-summary-json <path>
+                                       Write redacted machine-readable proof-boundary and timing metrics for the eval matrix.
                 """)
                 exit(0)
             default:
                 throw SmokeFailure.message("Unknown argument: \(argument)")
             }
+            index += 1
         }
         if options.allowUnavailable, case .mock = options.backendMode {
             throw SmokeFailure.message("--allow-unavailable only applies with --real-ollama")
@@ -107,6 +143,17 @@ struct SmokeOptions {
         }
         if options.expectP2PRouteRefresh, options.transportMode != .relay {
             throw SmokeFailure.message("--expect-p2p-route-refresh only applies with --relay")
+        }
+        if !options.realOllamaEvalModels.isEmpty, case .mock = options.backendMode {
+            throw SmokeFailure.message("--real-ollama-eval-models only applies with --real-ollama")
+        }
+        if !options.realLMStudioEvalModels.isEmpty, case .mock = options.backendMode {
+            throw SmokeFailure.message("--real-lmstudio-eval-models only applies with --real-ollama")
+        }
+        if options.evalSummaryPath != nil,
+           options.realOllamaEvalModels.isEmpty,
+           options.realLMStudioEvalModels.isEmpty {
+            throw SmokeFailure.message("--eval-summary-json requires --real-ollama-eval-models or --real-lmstudio-eval-models")
         }
         return options
     }
@@ -330,9 +377,8 @@ final class TCPClient {
             throw SmokeFailure.message("socket() failed: \(String(cString: strerror(errno)))")
         }
 
-        var timeout = timeval(tv_sec: 10, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        setReadTimeout(seconds: 10)
+        setWriteTimeout(seconds: 10)
 
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -382,6 +428,16 @@ final class TCPClient {
 
     func close() {
         Darwin.close(fd)
+    }
+
+    func setReadTimeout(seconds: Int) {
+        var timeout = timeval(tv_sec: max(1, seconds), tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    }
+
+    private func setWriteTimeout(seconds: Int) {
+        var timeout = timeval(tv_sec: max(1, seconds), tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     }
 
     func send(_ envelope: [String: Any]) throws {
@@ -2356,6 +2412,46 @@ func fetchLocalOllamaJSON(path: String) throws -> [String: Any] {
     return object
 }
 
+func fetchLocalLMStudioJSON(path: String) throws -> [String: Any] {
+    guard let url = URL(string: "http://127.0.0.1:1234\(path)") else {
+        throw SmokeFailure.message("Invalid local LM Studio path: \(path)")
+    }
+
+    let semaphore = DispatchSemaphore(value: 0)
+    final class RequestBox {
+        var data: Data?
+        var response: URLResponse?
+        var error: Error?
+    }
+    let box = RequestBox()
+    let task = URLSession.shared.dataTask(with: url) { data, response, error in
+        box.data = data
+        box.response = response
+        box.error = error
+        semaphore.signal()
+    }
+    task.resume()
+    guard semaphore.wait(timeout: .now() + 5) == .success else {
+        task.cancel()
+        throw SmokeFailure.message("Timed out querying local LM Studio \(path)")
+    }
+    if let error = box.error {
+        throw SmokeFailure.message("Could not query local LM Studio \(path): \(error.localizedDescription)")
+    }
+    guard let httpResponse = box.response as? HTTPURLResponse else {
+        throw SmokeFailure.message("Local LM Studio \(path) did not return HTTP")
+    }
+    guard (200..<300).contains(httpResponse.statusCode) else {
+        throw SmokeFailure.message("Local LM Studio \(path) returned HTTP \(httpResponse.statusCode)")
+    }
+    guard let data = box.data,
+          let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+        throw SmokeFailure.message("Local LM Studio \(path) did not return a JSON object")
+    }
+    return object
+}
+
 func ollamaModelNames(from object: [String: Any], context: String) throws -> Set<String> {
     let models = try ollamaModelRecords(from: object, context: context)
     let names = models.compactMap { model in
@@ -2390,6 +2486,43 @@ func isCloudOllamaModel(_ model: [String: Any], name: String) -> Bool {
     }
     let lowered = name.lowercased()
     return lowered.hasSuffix(":cloud") || lowered.hasSuffix("-cloud")
+}
+
+func lmStudioModelRecords(from object: [String: Any], context: String) throws -> [[String: Any]] {
+    guard let models = object["models"] as? [[String: Any]] else {
+        throw SmokeFailure.message("\(context) did not include a models array: \(object)")
+    }
+    return models
+}
+
+func lmStudioChatModelRecords(from object: [String: Any], context: String) throws -> [[String: Any]] {
+    try lmStudioModelRecords(from: object, context: context).filter { model in
+        (model["type"] as? String)?.lowercased() == "llm"
+    }
+}
+
+func lmStudioModelKey(_ model: [String: Any], context: String) throws -> String {
+    if let key = model["key"] as? String, !key.isEmpty {
+        return key
+    }
+    if let id = model["id"] as? String, !id.isEmpty {
+        return id
+    }
+    throw SmokeFailure.message("\(context) model had no key/id field: \(model)")
+}
+
+func lmStudioModelNames(from object: [String: Any], context: String) throws -> Set<String> {
+    let models = try lmStudioChatModelRecords(from: object, context: context)
+    return Set(try models.map { try lmStudioModelKey($0, context: context) })
+}
+
+func runningLMStudioModelNames(from object: [String: Any], context: String) throws -> Set<String> {
+    let models = try lmStudioChatModelRecords(from: object, context: context)
+    return Set(try models.compactMap { model in
+        let loadedInstances = model["loaded_instances"] as? [[String: Any]]
+        guard loadedInstances?.isEmpty == false else { return nil }
+        return try lmStudioModelKey(model, context: context)
+    })
 }
 
 func canonicalModelName(_ name: String) -> String {
@@ -2495,6 +2628,190 @@ func readStoppedChatStream(client: TCPClient, requestID: String, context: String
             throw SmokeFailure.message("Unexpected \(context) response: \(response)")
         }
     }
+}
+
+struct RealOllamaEvalPrompt {
+    var id: String
+    var messages: [[String: String]]
+    var expectedTerms: [String]
+}
+
+struct RealOllamaEvalStreamResult {
+    var answerText: String
+    var reasoningText: String
+    var answerDeltaCount: Int
+    var reasoningDeltaCount: Int
+    var finishReason: String
+    var elapsedMilliseconds: Int
+}
+
+func fixedRealOllamaEvalPrompts() -> [RealOllamaEvalPrompt] {
+    [
+        RealOllamaEvalPrompt(
+            id: "korean_local_runtime_summary",
+            messages: [
+                [
+                    "role": "user",
+                    "content": "한국어 한 문장으로 답하세요. AetherLink는 로컬 런타임을 통해 모델을 사용합니다. 답변에 로컬과 런타임을 포함하세요."
+                ]
+            ],
+            expectedTerms: ["로컬", "런타임"]
+        ),
+        RealOllamaEvalPrompt(
+            id: "runtime_boundary_explanation",
+            messages: [
+                [
+                    "role": "user",
+                    "content": "In one short sentence, explain what a runtime boundary means. Include the words runtime and client."
+                ]
+            ],
+            expectedTerms: ["runtime", "client"]
+        ),
+        RealOllamaEvalPrompt(
+            id: "structured_json_boundary",
+            messages: [
+                [
+                    "role": "user",
+                    "content": "Return one compact JSON object with keys status and boundary. Use status ok and boundary runtime."
+                ]
+            ],
+            expectedTerms: ["status", "boundary", "runtime"]
+        )
+    ]
+}
+
+func readRealOllamaEvalStream(
+    client: TCPClient,
+    requestID: String,
+    context: String
+) throws -> RealOllamaEvalStreamResult {
+    let start = Date()
+    var answerText = ""
+    var reasoningText = ""
+    var answerDeltaCount = 0
+    var reasoningDeltaCount = 0
+    while true {
+        let response = try client.readEnvelope()
+        try assertNoBackendLeak(response, context: context)
+        try requireRequestID(response, requestID, context: context)
+        let responseType = response["type"] as? String
+        if responseType == "chat.delta" {
+            let deltaPayload = try payload(response, context: "\(context) delta")
+            if let delta = deltaPayload["delta"] as? String, !delta.isEmpty {
+                answerText += delta
+                answerDeltaCount += 1
+            }
+            if let reasoningDelta = deltaPayload["reasoning_delta"] as? String, !reasoningDelta.isEmpty {
+                reasoningText += reasoningDelta
+                reasoningDeltaCount += 1
+            }
+        } else if responseType == "chat.done" {
+            let donePayload = try payload(response, context: "\(context) done")
+            let finishReason = try requireString(donePayload, "finish_reason", context: "\(context) done")
+            let elapsedMilliseconds = Int(Date().timeIntervalSince(start) * 1000)
+            guard finishReason != "error" else {
+                throw SmokeFailure.message("\(context) finished with error: \(response)")
+            }
+            guard answerDeltaCount > 0 || reasoningDeltaCount > 0 else {
+                throw SmokeFailure.message("\(context) did not produce any streamed delta before chat.done")
+            }
+            return RealOllamaEvalStreamResult(
+                answerText: answerText,
+                reasoningText: reasoningText,
+                answerDeltaCount: answerDeltaCount,
+                reasoningDeltaCount: reasoningDeltaCount,
+                finishReason: finishReason,
+                elapsedMilliseconds: elapsedMilliseconds
+            )
+        } else {
+            throw SmokeFailure.message("Unexpected \(context) response: \(response)")
+        }
+    }
+}
+
+func truncateForEvalSummary(_ value: String, limit: Int = 1200) -> (text: String, truncated: Bool) {
+    if value.count <= limit {
+        return (value, false)
+    }
+    return (String(value.prefix(limit)), true)
+}
+
+func observedTerms(in value: String, expectedTerms: [String]) -> [String] {
+    let lowercased = value.lowercased()
+    return expectedTerms.filter { lowercased.contains($0.lowercased()) }
+}
+
+func runtimeOllamaModel(named name: String, in modelList: [[String: Any]]) -> [String: Any]? {
+    modelList.first { model in
+        model["backend"] as? String == "ollama"
+            && (model["id"] as? String == name || model["name"] as? String == name)
+    }
+}
+
+func runtimeProviderModel(named name: String, provider: String, in modelList: [[String: Any]]) -> [String: Any]? {
+    let qualifiedName = "\(provider):\(name)"
+    return modelList.first { model in
+        (model["backend"] as? String == provider || model["provider"] as? String == provider)
+            && (
+                model["id"] as? String == name
+                    || model["name"] as? String == name
+                    || model["qualified_id"] as? String == qualifiedName
+                    || model["id"] as? String == qualifiedName
+            )
+    }
+}
+
+func runtimeLMStudioModel(named name: String, in modelList: [[String: Any]]) -> [String: Any]? {
+    runtimeProviderModel(named: name, provider: "lm_studio", in: modelList)
+}
+
+func safeRuntimeModelMetadata(_ model: [String: Any]) throws -> [String: Any] {
+    var result: [String: Any] = [:]
+    for key in [
+        "id",
+        "name",
+        "qualified_id",
+        "backend",
+        "provider",
+        "source",
+        "model_kind"
+    ] {
+        if let value = model[key] as? String {
+            result[key] = value
+        }
+    }
+    for key in ["installed", "running", "supports_vision"] {
+        if let value = model[key] as? Bool {
+            result[key] = value
+        }
+    }
+    for key in ["context_window_tokens"] {
+        if let value = model[key] as? Int {
+            result[key] = value
+        } else if let value = model[key] as? Int64 {
+            result[key] = value
+        } else if let value = model[key] as? Double, value.rounded() == value {
+            result[key] = Int(value)
+        }
+    }
+    if let capabilities = model["capabilities"] as? [String] {
+        result["capabilities"] = capabilities
+    } else if let capabilities = model["capabilities"] as? [Any] {
+        result["capabilities"] = capabilities.compactMap { $0 as? String }
+    }
+    try assertNoBackendLeak(result, context: "real provider eval model metadata")
+    return result
+}
+
+func writeRedactedEvalSummary(_ summary: [String: Any], to path: String) throws {
+    try assertNoBackendLeak(summary, context: "real provider eval summary")
+    let url = URL(fileURLWithPath: path)
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    let data = try JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: url, options: [.atomic])
 }
 
 func relayPlaintextBoundaryMarkers() -> [String] {
@@ -6219,100 +6536,332 @@ func runMockBackendChecks(
     print("OK: authenticated mock E2E smoke passed on local diagnostic port \(port).")
 }
 
-func runRealOllamaChecks(client: TCPClient, port: UInt16, allowUnavailable: Bool) throws {
+func runRealOllamaChecks(
+    client: TCPClient,
+    port: UInt16,
+    allowUnavailable: Bool,
+    ollamaEvalModels: [String],
+    lmStudioEvalModels: [String],
+    evalSummaryPath: String?
+) throws {
     print("Checking runtime.health against real model provider aggregate...")
     let health = try sendAndRead(client, type: "runtime.health", requestID: "smoke-health")
     try requireType(health, "runtime.health", context: "runtime.health")
     let healthPayload = try payload(health, context: "runtime.health")
+    let requiresOllama = !ollamaEvalModels.isEmpty || lmStudioEvalModels.isEmpty
+    let requiresLMStudio = !lmStudioEvalModels.isEmpty
     guard let ollama = healthPayload["ollama"] as? [String: Any] else {
         throw SmokeFailure.message("runtime.health did not include ollama object: \(health)")
     }
 
-    if ollama["available"] as? Bool == false {
+    if requiresOllama, ollama["available"] as? Bool == false {
         guard ollama["code"] as? String == "backend_unavailable" else {
             throw SmokeFailure.message("runtime.health Ollama unavailable response was not useful backend_unavailable: \(health)")
         }
         let message = "Real Ollama smoke skipped: runtime.health reported the Ollama provider unavailable. Start Ollama on the runtime host and rerun --real-ollama."
-        if allowUnavailable {
+        if allowUnavailable, ollamaEvalModels.isEmpty, lmStudioEvalModels.isEmpty {
             print("SKIPPED: \(message)")
             return
         }
         throw SmokeFailure.message(message)
     }
 
-    guard ollama["available"] as? Bool == true
-    else {
+    guard !requiresOllama || ollama["available"] as? Bool == true else {
         throw SmokeFailure.message("runtime.health did not report ok/available for real Ollama: \(health)")
     }
 
-    let directTags = try fetchLocalOllamaJSON(path: "/api/tags")
-    let directPs = try fetchLocalOllamaJSON(path: "/api/ps")
-    let installedModelRecords = try ollamaModelRecords(from: directTags, context: "Ollama /api/tags")
-    let installedModelNames = try ollamaModelNames(from: directTags, context: "Ollama /api/tags")
-    let runningModelNames = try ollamaModelNames(from: directPs, context: "Ollama /api/ps")
-    print("Local Ollama reports \(installedModelNames.count) installed model(s); \(runningModelNames.count) running model(s).")
+    var installedModelRecords: [[String: Any]] = []
+    var installedModelNames: Set<String> = []
+    var runningModelNames: Set<String> = []
+    if requiresOllama {
+        let directTags = try fetchLocalOllamaJSON(path: "/api/tags")
+        let directPs = try fetchLocalOllamaJSON(path: "/api/ps")
+        installedModelRecords = try ollamaModelRecords(from: directTags, context: "Ollama /api/tags")
+        installedModelNames = try ollamaModelNames(from: directTags, context: "Ollama /api/tags")
+        runningModelNames = try ollamaModelNames(from: directPs, context: "Ollama /api/ps")
+        print("Local Ollama reports \(installedModelNames.count) installed model(s); \(runningModelNames.count) running model(s).")
+    }
 
-    print("Checking models.list against real Ollama model state...")
+    var lmStudioInstalledModelRecords: [[String: Any]] = []
+    var lmStudioInstalledModelNames: Set<String> = []
+    var lmStudioRunningModelNames: Set<String> = []
+    if requiresLMStudio {
+        guard let lmStudio = healthPayload["lm_studio"] as? [String: Any] else {
+            throw SmokeFailure.message("runtime.health did not include lm_studio object: \(health)")
+        }
+        guard lmStudio["available"] as? Bool == true else {
+            throw SmokeFailure.message("runtime.health did not report ok/available for real LM Studio: \(health)")
+        }
+        let directLMStudioModels = try fetchLocalLMStudioJSON(path: "/api/v1/models")
+        lmStudioInstalledModelRecords = try lmStudioChatModelRecords(
+            from: directLMStudioModels,
+            context: "LM Studio /api/v1/models"
+        )
+        lmStudioInstalledModelNames = try lmStudioModelNames(
+            from: directLMStudioModels,
+            context: "LM Studio /api/v1/models"
+        )
+        lmStudioRunningModelNames = try runningLMStudioModelNames(
+            from: directLMStudioModels,
+            context: "LM Studio /api/v1/models"
+        )
+        print("Local LM Studio reports \(lmStudioInstalledModelNames.count) installed chat model(s); \(lmStudioRunningModelNames.count) running chat model(s).")
+    }
+
+    print("Checking models.list against real provider model state...")
     let models = try sendAndRead(client, type: "models.list", requestID: "smoke-models")
     try requireType(models, "models.list", context: "models.list")
     let modelList = try requireModelList(models, context: "models.list")
 
-    func runtimeModel(named name: String) -> [String: Any]? {
-        modelList.first { model in
-            model["backend"] as? String == "ollama"
-                && (model["id"] as? String == name || model["name"] as? String == name)
+    if requiresOllama {
+        let missingInstalled = try installedModelRecords.compactMap { record -> String? in
+            let name = try ollamaModelName(record, context: "Ollama /api/tags")
+            guard let model = runtimeOllamaModel(named: name, in: modelList) else { return name }
+            let expectedSource = isCloudOllamaModel(record, name: name) ? "cloud" : "local"
+            guard model["installed"] as? Bool == true,
+                  model["source"] as? String == expectedSource,
+                  model["backend"] as? String == "ollama"
+            else {
+                return name
+            }
+            if let remoteModel = record["remote_model"] as? String, !remoteModel.isEmpty,
+               model["remote_model"] as? String != remoteModel {
+                return name
+            }
+            return nil
+        }
+        guard missingInstalled.isEmpty else {
+            throw SmokeFailure.message("models.list missed or misclassified installed model(s) from /api/tags: \(missingInstalled)")
+        }
+
+        let missingRunning = runningModelNames.sorted().filter { name in
+            guard let model = runtimeOllamaModel(named: name, in: modelList) else { return true }
+            return model["running"] as? Bool != true
+                || model["installed"] as? Bool != true
+        }
+        guard missingRunning.isEmpty else {
+            throw SmokeFailure.message("models.list did not mark running model(s) from /api/ps as running=true: \(missingRunning)")
+        }
+
+        let unexpectedRecommendedModels = try modelList.filter { model in
+            model["source"] as? String == "recommended"
+        }.map { model -> String in
+            try requireString(model, "id", context: "unexpected recommended model")
+        }
+        guard unexpectedRecommendedModels.isEmpty else {
+            throw SmokeFailure.message("models.list returned hardcoded recommended/default model(s): \(unexpectedRecommendedModels)")
+        }
+
+        let cloudModels = try installedModelRecords.compactMap { record -> String? in
+            let name = try ollamaModelName(record, context: "Ollama /api/tags")
+            return isCloudOllamaModel(record, name: name) ? name : nil
+        }
+        if cloudModels.isEmpty {
+            print("No cloud model in local /api/tags; installed/running model checks still passed.")
+        } else {
+            print("Verified cloud model classification for: \(cloudModels.sorted().joined(separator: ", "))")
         }
     }
 
-    let missingInstalled = try installedModelRecords.compactMap { record -> String? in
-        let name = try ollamaModelName(record, context: "Ollama /api/tags")
-        guard let model = runtimeModel(named: name) else { return name }
-        let expectedSource = isCloudOllamaModel(record, name: name) ? "cloud" : "local"
-        guard model["installed"] as? Bool == true,
-              model["source"] as? String == expectedSource,
-              model["backend"] as? String == "ollama"
-        else {
-            return name
+    if requiresLMStudio {
+        let missingLMStudioInstalled = try lmStudioInstalledModelRecords.compactMap { record -> String? in
+            let name = try lmStudioModelKey(record, context: "LM Studio /api/v1/models")
+            guard let model = runtimeLMStudioModel(named: name, in: modelList) else { return name }
+            guard model["installed"] as? Bool == true,
+                  model["backend"] as? String == "lm_studio" || model["provider"] as? String == "lm_studio"
+            else {
+                return name
+            }
+            return nil
         }
-        if let remoteModel = record["remote_model"] as? String, !remoteModel.isEmpty,
-           model["remote_model"] as? String != remoteModel {
-            return name
+        guard missingLMStudioInstalled.isEmpty else {
+            throw SmokeFailure.message("models.list missed or misclassified installed LM Studio model(s): \(missingLMStudioInstalled)")
         }
-        return nil
-    }
-    guard missingInstalled.isEmpty else {
-        throw SmokeFailure.message("models.list missed or misclassified installed model(s) from /api/tags: \(missingInstalled)")
+
+        let missingLMStudioRunning = lmStudioRunningModelNames.sorted().filter { name in
+            guard let model = runtimeLMStudioModel(named: name, in: modelList) else { return true }
+            return model["running"] as? Bool != true
+                || model["installed"] as? Bool != true
+        }
+        guard missingLMStudioRunning.isEmpty else {
+            throw SmokeFailure.message("models.list did not mark running LM Studio model(s) as running=true: \(missingLMStudioRunning)")
+        }
     }
 
-    let missingRunning = runningModelNames.sorted().filter { name in
-        guard let model = runtimeModel(named: name) else { return true }
-        return model["running"] as? Bool != true
-            || model["installed"] as? Bool != true
-    }
-    guard missingRunning.isEmpty else {
-        throw SmokeFailure.message("models.list did not mark running model(s) from /api/ps as running=true: \(missingRunning)")
+    if !ollamaEvalModels.isEmpty || !lmStudioEvalModels.isEmpty {
+        let prompts = fixedRealOllamaEvalPrompts()
+        var evalResults: [[String: Any]] = []
+        if !ollamaEvalModels.isEmpty {
+            print("Checking RuntimeDevServer-mediated real Ollama eval matrix for \(ollamaEvalModels.joined(separator: ", "))...")
+        }
+        for (modelIndex, modelName) in ollamaEvalModels.enumerated() {
+            guard let runtimeModel = runtimeOllamaModel(named: modelName, in: modelList) else {
+                throw SmokeFailure.message("real Ollama eval model was not exposed by runtime models.list: \(modelName)")
+            }
+            guard runtimeModel["installed"] as? Bool == true,
+                  runtimeModel["backend"] as? String == "ollama"
+            else {
+                throw SmokeFailure.message("real Ollama eval model is not an installed runtime Ollama model: \(runtimeModel)")
+            }
+            let modelMetadata = try safeRuntimeModelMetadata(runtimeModel)
+            let qualifiedModel = "ollama:\(modelName)"
+            for (promptIndex, prompt) in prompts.enumerated() {
+                let requestID = "smoke-real-ollama-eval-\(modelIndex)-\(promptIndex)"
+                let context = "real Ollama eval \(modelName) \(prompt.id)"
+                try client.send(envelope(
+                    "chat.send",
+                    requestID: requestID,
+                    payload: [
+                        "session_id": "runtime-provider-eval-\(modelIndex)-\(prompt.id)",
+                        "model": qualifiedModel,
+                        "messages": prompt.messages
+                    ]
+                ))
+                let stream = try readRealOllamaEvalStream(
+                    client: client,
+                    requestID: requestID,
+                    context: context
+                )
+                let answerPreview = truncateForEvalSummary(stream.answerText)
+                let reasoningPreview = truncateForEvalSummary(stream.reasoningText)
+                let combinedText = "\(stream.reasoningText)\n\(stream.answerText)"
+                let observed = observedTerms(in: combinedText, expectedTerms: prompt.expectedTerms)
+                evalResults.append([
+                    "backend": "ollama",
+                    "model": modelName,
+                    "qualified_model": qualifiedModel,
+                    "runtime_model": modelMetadata,
+                    "prompt_id": prompt.id,
+                    "request_id": requestID,
+                    "finish_reason": stream.finishReason,
+                    "elapsed_ms": stream.elapsedMilliseconds,
+                    "answer_delta_count": stream.answerDeltaCount,
+                    "reasoning_delta_count": stream.reasoningDeltaCount,
+                    "thinking_observed": stream.reasoningDeltaCount > 0,
+                    "answer_character_count": stream.answerText.count,
+                    "reasoning_character_count": stream.reasoningText.count,
+                    "answer_preview": answerPreview.text,
+                    "answer_preview_truncated": answerPreview.truncated,
+                    "reasoning_preview": reasoningPreview.text,
+                    "reasoning_preview_truncated": reasoningPreview.truncated,
+                    "expected_terms": prompt.expectedTerms,
+                    "expected_terms_observed": observed
+                ])
+                print("OK: \(context) streamed \(stream.answerDeltaCount) answer delta(s), \(stream.reasoningDeltaCount) reasoning delta(s), finish_reason=\(stream.finishReason), elapsed_ms=\(stream.elapsedMilliseconds).")
+            }
+        }
+        if !lmStudioEvalModels.isEmpty {
+            print("Checking RuntimeDevServer-mediated real LM Studio eval matrix for \(lmStudioEvalModels.joined(separator: ", "))...")
+        }
+        for (modelIndex, modelName) in lmStudioEvalModels.enumerated() {
+            guard let runtimeModel = runtimeLMStudioModel(named: modelName, in: modelList) else {
+                throw SmokeFailure.message("real LM Studio eval model was not exposed by runtime models.list: \(modelName)")
+            }
+            guard runtimeModel["installed"] as? Bool == true,
+                  runtimeModel["backend"] as? String == "lm_studio" || runtimeModel["provider"] as? String == "lm_studio"
+            else {
+                throw SmokeFailure.message("real LM Studio eval model is not an installed runtime LM Studio model: \(runtimeModel)")
+            }
+            let modelMetadata = try safeRuntimeModelMetadata(runtimeModel)
+            let qualifiedModel = "lm_studio:\(modelName)"
+            for (promptIndex, prompt) in prompts.enumerated() {
+                let requestID = "smoke-real-lmstudio-eval-\(modelIndex)-\(promptIndex)"
+                let context = "real LM Studio eval \(modelName) \(prompt.id)"
+                try client.send(envelope(
+                    "chat.send",
+                    requestID: requestID,
+                    payload: [
+                        "session_id": "runtime-provider-eval-lmstudio-\(modelIndex)-\(prompt.id)",
+                        "model": qualifiedModel,
+                        "messages": prompt.messages
+                    ]
+                ))
+                let stream = try readRealOllamaEvalStream(
+                    client: client,
+                    requestID: requestID,
+                    context: context
+                )
+                let answerPreview = truncateForEvalSummary(stream.answerText)
+                let reasoningPreview = truncateForEvalSummary(stream.reasoningText)
+                let combinedText = "\(stream.reasoningText)\n\(stream.answerText)"
+                let observed = observedTerms(in: combinedText, expectedTerms: prompt.expectedTerms)
+                evalResults.append([
+                    "backend": "lm_studio",
+                    "model": modelName,
+                    "qualified_model": qualifiedModel,
+                    "runtime_model": modelMetadata,
+                    "prompt_id": prompt.id,
+                    "request_id": requestID,
+                    "finish_reason": stream.finishReason,
+                    "elapsed_ms": stream.elapsedMilliseconds,
+                    "answer_delta_count": stream.answerDeltaCount,
+                    "reasoning_delta_count": stream.reasoningDeltaCount,
+                    "thinking_observed": stream.reasoningDeltaCount > 0,
+                    "answer_character_count": stream.answerText.count,
+                    "reasoning_character_count": stream.reasoningText.count,
+                    "answer_preview": answerPreview.text,
+                    "answer_preview_truncated": answerPreview.truncated,
+                    "reasoning_preview": reasoningPreview.text,
+                    "reasoning_preview_truncated": reasoningPreview.truncated,
+                    "expected_terms": prompt.expectedTerms,
+                    "expected_terms_observed": observed
+                ])
+                print("OK: \(context) streamed \(stream.answerDeltaCount) answer delta(s), \(stream.reasoningDeltaCount) reasoning delta(s), finish_reason=\(stream.finishReason), elapsed_ms=\(stream.elapsedMilliseconds).")
+            }
+        }
+        if let evalSummaryPath {
+            let backendLabel: String
+            if !ollamaEvalModels.isEmpty, !lmStudioEvalModels.isEmpty {
+                backendLabel = "aggregate"
+            } else if !lmStudioEvalModels.isEmpty {
+                backendLabel = "lm_studio"
+            } else {
+                backendLabel = "ollama"
+            }
+            let summary: [String: Any] = [
+                "schema": "aetherlink.runtime_provider_eval.v1",
+                "generated_at": ISO8601DateFormatter().string(from: Date()),
+                "success": true,
+                "runtime_mediated": true,
+                "authenticated_runtime_session": true,
+                "backend": backendLabel,
+                "transport": "RuntimeDevServer direct TCP",
+                "models_requested": ollamaEvalModels + lmStudioEvalModels,
+                "models_requested_by_backend": [
+                    "ollama": ollamaEvalModels,
+                    "lm_studio": lmStudioEvalModels
+                ],
+                "prompt_count_per_model": prompts.count,
+                "eval_count": evalResults.count,
+                "provider_state": [
+                    "ollama_available": ollama["available"] as? Bool == true,
+                    "installed_model_count": installedModelNames.count,
+                    "running_model_count": runningModelNames.count,
+                    "lm_studio_available": (healthPayload["lm_studio"] as? [String: Any])?["available"] as? Bool == true,
+                    "lm_studio_installed_chat_model_count": lmStudioInstalledModelNames.count,
+                    "lm_studio_running_chat_model_count": lmStudioRunningModelNames.count
+                ],
+                "proof_boundary": [
+                    "runtime_dev_server_authenticated": true,
+                    "direct_provider_only_eval": false,
+                    "android_client_proof": false,
+                    "ollama_proof": !ollamaEvalModels.isEmpty,
+                    "lm_studio_proof": !lmStudioEvalModels.isEmpty,
+                    "production_relay_proof": false,
+                    "production_session_key_exchange_proof": false,
+                    "production_end_to_end_transport_encryption_proof": false,
+                    "real_different_network_connectivity_proof": false,
+                    "backend_urls_redacted": true,
+                    "route_material_redacted": true
+                ],
+                "evals": evalResults
+            ]
+            try writeRedactedEvalSummary(summary, to: evalSummaryPath)
+            print("Real provider eval summary JSON: \(evalSummaryPath)")
+        }
     }
 
-    let unexpectedRecommendedModels = try modelList.filter { model in
-        model["source"] as? String == "recommended"
-    }.map { model -> String in
-        try requireString(model, "id", context: "unexpected recommended model")
-    }
-    guard unexpectedRecommendedModels.isEmpty else {
-        throw SmokeFailure.message("models.list returned hardcoded recommended/default model(s): \(unexpectedRecommendedModels)")
-    }
-
-    let cloudModels = try installedModelRecords.compactMap { record -> String? in
-        let name = try ollamaModelName(record, context: "Ollama /api/tags")
-        return isCloudOllamaModel(record, name: name) ? name : nil
-    }
-    if cloudModels.isEmpty {
-        print("No cloud model in local /api/tags; installed/running model checks still passed.")
-    } else {
-        print("Verified cloud model classification for: \(cloudModels.sorted().joined(separator: ", "))")
-    }
-
-    print("OK: authenticated real Ollama smoke passed on 127.0.0.1:\(port).")
+    print("OK: authenticated real provider smoke passed on 127.0.0.1:\(port).")
 }
 
 func main() throws {
@@ -6673,7 +7222,17 @@ func main() throws {
                 chatRequestAuditFile: mockChatRequestAuditFile
             )
         case .realOllama:
-            try runRealOllamaChecks(client: client, port: port, allowUnavailable: options.allowUnavailable)
+            if !options.realOllamaEvalModels.isEmpty || !options.realLMStudioEvalModels.isEmpty {
+                client.setReadTimeout(seconds: 180)
+            }
+            try runRealOllamaChecks(
+                client: client,
+                port: port,
+                allowUnavailable: options.allowUnavailable,
+                ollamaEvalModels: options.realOllamaEvalModels,
+                lmStudioEvalModels: options.realLMStudioEvalModels,
+                evalSummaryPath: options.evalSummaryPath
+            )
         }
     }
 

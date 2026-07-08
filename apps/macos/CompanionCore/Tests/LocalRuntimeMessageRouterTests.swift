@@ -1226,6 +1226,84 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.last?.reasoning, "Checking route material.")
     }
 
+    func testRuntimeChatStorePreservesWhitespaceOnlyStreamingDeltas() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 170),
+            kind: .request,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            messages: [ChatMessage(role: "user", content: "Stream whitespace chunks.")]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 171),
+            kind: .reasoningDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            reasoningDelta: "Think"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 172),
+            kind: .reasoningDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            reasoningDelta: "\n"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 173),
+            kind: .reasoningDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            reasoningDelta: "more"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 174),
+            kind: .assistantDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            delta: "Hello"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 175),
+            kind: .assistantDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            delta: " "
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 176),
+            kind: .assistantDelta,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            delta: "world"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 177),
+            kind: .done,
+            requestID: "chat-store-whitespace",
+            sessionID: "session-whitespace",
+            model: "qwen3:8b",
+            finishReason: "stop"
+        ))
+
+        let messages = try store.listMessages(sessionID: "session-whitespace", limit: 10)
+
+        XCTAssertEqual(messages.map(\.role), ["user", "assistant"])
+        XCTAssertEqual(messages.last?.content, "Hello world")
+        XCTAssertEqual(messages.last?.reasoning, "Think\nmore")
+    }
+
     func testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog() throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -1961,6 +2039,67 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(assistant["role"], .string("assistant"))
         XCTAssertEqual(assistant["content"], .string("Hello"))
         XCTAssertEqual(assistant["reasoning"], .string("Short thought"))
+    }
+
+    func testChatMessagesListDoesNotExposeRuntimeCompactionMetadata() async throws {
+        let sink = RecordingSink()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 335),
+            kind: .request,
+            requestID: "sourcepointerprojectioncanary",
+            sessionID: "session-compaction-projection",
+            model: "llama3.1:8b",
+            messages: [
+                ChatMessage(role: "user", content: "Keep the visible transcript clean.")
+            ],
+            compactionMetadata: RuntimeChatCompactionMetadata(sourcePointers: [
+                RuntimeChatCompactionSourcePointer(
+                    sessionID: "session-compaction-projection",
+                    requestID: "sourcepointerprojectioncanary",
+                    startTurn: 1,
+                    endTurn: 6,
+                    totalTurns: 18,
+                    compactedTurnCount: 6,
+                    retainedStartTurn: 7,
+                    retainedEndTurn: 18,
+                    retainedTurnCount: 12
+                )
+            ])
+        ))
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatMessagesList,
+            requestID: "messages-compaction-projection",
+            payload: [
+                "session_id": .string("session-compaction-projection"),
+                "limit": .number(20)
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatMessagesList)
+        guard case .array(let messages)? = response?.payload["messages"],
+              case .object(let message)? = messages.first else {
+            XCTFail("Expected messages response")
+            return
+        }
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(Set(message.keys), ["role", "content", "created_at"])
+        XCTAssertEqual(message["role"], .string("user"))
+        XCTAssertEqual(message["content"], .string("Keep the visible transcript clean."))
+        let payloadDescription = String(describing: response?.payload)
+        XCTAssertFalse(payloadDescription.contains("sourcepointerprojectioncanary"))
+        XCTAssertFalse(payloadDescription.contains("compaction_metadata"))
+        XCTAssertFalse(payloadDescription.contains("source_pointers"))
+        XCTAssertFalse(payloadDescription.contains("Runtime conversation summary:"))
     }
 
     func testRuntimeChatHistoryCorruptStoreReturnsStructuredError() async throws {
@@ -4934,6 +5073,23 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(requestEvent.messages?.contains { $0.content.contains("source span turn 1 ") } == true)
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)
+        let metadata = try XCTUnwrap(requestEvent.compactionMetadata)
+        XCTAssertEqual(metadata.strategy, "backend_only_summary_v1")
+        let pointer = try XCTUnwrap(metadata.sourcePointers.first)
+        XCTAssertEqual(metadata.sourcePointers.count, 1)
+        XCTAssertEqual(pointer.sourceKind, "client_visible_conversation_turns")
+        XCTAssertEqual(pointer.sessionID, "session-source-span")
+        XCTAssertEqual(pointer.requestID, "chat-compaction-source-span")
+        XCTAssertEqual(pointer.startTurn, 1)
+        XCTAssertEqual(pointer.endTurn, 6)
+        XCTAssertEqual(pointer.totalTurns, 18)
+        XCTAssertEqual(pointer.compactedTurnCount, 6)
+        XCTAssertEqual(pointer.retainedStartTurn, 7)
+        XCTAssertEqual(pointer.retainedEndTurn, 18)
+        XCTAssertEqual(pointer.retainedTurnCount, 12)
+        let metadataJSON = String(data: try JSONEncoder().encode(metadata), encoding: .utf8)
+        XCTAssertFalse(metadataJSON?.contains("Runtime conversation summary:") == true)
+        XCTAssertFalse(metadataJSON?.contains("Backend-only summary") == true)
     }
 
     func testChatSendUsesModelContextWindowMetadataForCompactionBudget() async throws {
