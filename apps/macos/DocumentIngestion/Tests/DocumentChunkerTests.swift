@@ -97,6 +97,63 @@ final class DocumentChunkerTests: XCTestCase {
         )
     }
 
+    func testAppliesStoreOwnedPolicyCeilingsBeforeChunkPlanning() throws {
+        let document = ExtractedDocument(
+            fileName: "policy-ceiling.txt",
+            mimeType: "text/plain",
+            text: String(repeating: "Runtime-local chunk policy ceilings keep planning bounded. ", count: 4)
+        )
+        let boundaryChunks = try DocumentChunker(policy: DocumentChunkingPolicy(
+            maxCharacters: documentChunkingPolicyMaxCharactersCeiling,
+            overlapCharacters: documentChunkingPolicyOverlapCharactersCeiling,
+            minChunkCharacters: documentChunkingPolicyMinChunkCharactersCeiling
+        )).chunks(from: document)
+
+        XCTAssertEqual(boundaryChunks.count, 1)
+        XCTAssertEqual(boundaryChunks.single?.index, 0)
+
+        let oversizedPolicies: [(DocumentChunkingPolicy, DocumentChunkingError)] = [
+            (
+                DocumentChunkingPolicy(
+                    maxCharacters: documentChunkingPolicyMaxCharactersCeiling + 1,
+                    overlapCharacters: 0,
+                    minChunkCharacters: 1
+                ),
+                .invalidPolicy("maxCharacters must be less than or equal to \(documentChunkingPolicyMaxCharactersCeiling)")
+            ),
+            (
+                DocumentChunkingPolicy(
+                    maxCharacters: Int.max,
+                    overlapCharacters: 0,
+                    minChunkCharacters: 1
+                ),
+                .invalidPolicy("maxCharacters must be less than or equal to \(documentChunkingPolicyMaxCharactersCeiling)")
+            ),
+            (
+                DocumentChunkingPolicy(
+                    maxCharacters: documentChunkingPolicyMaxCharactersCeiling,
+                    overlapCharacters: documentChunkingPolicyOverlapCharactersCeiling + 1,
+                    minChunkCharacters: 1
+                ),
+                .invalidPolicy("overlapCharacters must be less than or equal to \(documentChunkingPolicyOverlapCharactersCeiling)")
+            ),
+            (
+                DocumentChunkingPolicy(
+                    maxCharacters: documentChunkingPolicyMaxCharactersCeiling,
+                    overlapCharacters: 0,
+                    minChunkCharacters: documentChunkingPolicyMinChunkCharactersCeiling + 1
+                ),
+                .invalidPolicy("minChunkCharacters must be less than or equal to \(documentChunkingPolicyMinChunkCharactersCeiling)")
+            )
+        ]
+
+        for (policy, expectedError) in oversizedPolicies {
+            XCTAssertThrowsError(try DocumentChunker(policy: policy).chunks(from: document)) { error in
+                XCTAssertEqual(error as? DocumentChunkingError, expectedError)
+            }
+        }
+    }
+
     func testRejectsInvalidChunkingPolicies() {
         let document = ExtractedDocument(fileName: "policy.txt", mimeType: "text/plain", text: "policy")
         let invalidPolicies: [(DocumentChunkingPolicy, DocumentChunkingError)] = [
@@ -133,5 +190,11 @@ final class DocumentChunkerTests: XCTestCase {
         let startIndex = text.index(text.startIndex, offsetBy: start)
         let endIndex = text.index(text.startIndex, offsetBy: end)
         return String(text[startIndex..<endIndex])
+    }
+}
+
+private extension Array {
+    var single: Element? {
+        count == 1 ? self[0] : nil
     }
 }

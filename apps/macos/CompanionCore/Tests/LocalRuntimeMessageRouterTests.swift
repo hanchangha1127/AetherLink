@@ -3,6 +3,7 @@ import enum BridgeProtocol.MessageType
 import struct BridgeProtocol.ProtocolEnvelope
 @testable import CompanionCore
 import CryptoKit
+import DocumentIngestion
 import OllamaBackend
 import Pairing
 import Transport
@@ -6879,6 +6880,95 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
     }
 
+    func testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RuntimeDocumentIndexStore()
+        let alphaSentinel = "INDEX_ALPHA_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+        let betaSentinel = "INDEX_BETA_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+        _ = documentIndexStore.replaceDocument(
+            result: try routerIndexedDocument(fileName: "zeta.md", text: "\(betaSentinel) beta document body."),
+            documentID: "zeta-doc"
+        )
+        _ = documentIndexStore.replaceDocument(
+            result: try routerIndexedDocument(fileName: "alpha.md", text: "\(alphaSentinel) alpha document body."),
+            documentID: "alpha-doc"
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.indexDocumentsList,
+            requestID: "index-documents-list",
+            payload: ["limit": .number(1)]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.indexDocumentsList)
+        XCTAssertEqual(message?.requestID, "index-documents-list")
+        guard case .array(let documents)? = message?.payload["documents"],
+              case .object(let firstDocument)? = documents.first,
+              case .object(let summary)? = message?.payload["summary"],
+              case .object(let qualityCounts)? = summary["quality_counts"] else {
+            XCTFail("Expected index documents response payload.")
+            return
+        }
+        XCTAssertEqual(documents.count, 1)
+        XCTAssertEqual(firstDocument["id"], .string("alpha-doc"))
+        XCTAssertEqual(firstDocument["display_name"], .string("alpha.md"))
+        XCTAssertEqual(firstDocument["mime_type"], .string("text/markdown"))
+        XCTAssertEqual(firstDocument["chunk_count"], .number(1))
+        XCTAssertEqual(firstDocument["quality"], .string("single_chunk"))
+        XCTAssertEqual(summary["document_count"], .number(2))
+        XCTAssertEqual(summary["chunk_count"], .number(2))
+        XCTAssertEqual(qualityCounts["single_chunk"], .number(2))
+        XCTAssertFalse(String(describing: message?.payload).contains(alphaSentinel))
+        XCTAssertFalse(String(describing: message?.payload).contains(betaSentinel))
+        XCTAssertFalse(String(describing: message?.payload).contains("chunk_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("source_path"))
+        XCTAssertFalse(String(describing: message?.payload).contains("workspace_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("retrieval_context"))
+        XCTAssertFalse(String(describing: message?.payload).contains("embedding"))
+        XCTAssertFalse(String(describing: message?.payload).contains("citation"))
+        XCTAssertFalse(String(describing: message?.payload).contains("trusted_source"))
+    }
+
+    func testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.indexDocumentsList,
+            requestID: "index-documents-unknown-metadata",
+            payload: [
+                "documents": .array([]),
+                "summary": .object([:]),
+                "backend_url": .string("http://127.0.0.1:11434"),
+                "workspace_id": .string("workspace-1"),
+                "source_path": .string("/Users/example/project/notes.md"),
+                "retrieval_context": .string("future retrieval context"),
+                "embedding_model_id": .string("nomic-embed-text"),
+                "citation": .string("future citation"),
+                "trusted_source": .bool(true)
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "index-documents-unknown-metadata")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("backend_url"))
+        XCTAssertTrue(String(describing: message?.payload).contains("documents"))
+        XCTAssertEqual(documentIndexStore.documentsCallCount, 0)
+        XCTAssertEqual(documentIndexStore.summaryCallCount, 0)
+    }
+
     func testResponseOnlyMessageTypesReturnDirectionProtocolError() async throws {
         let router = makeRouter(backend: MockBackend())
         let responseOnlyTypes = [
@@ -11420,6 +11510,7 @@ private func makeRouter(
     ),
     chatEventStore: any RuntimeChatEventStore = NullRuntimeChatEventStore(),
     memoryStore: any RuntimeMemoryStore = NullRuntimeMemoryStore(),
+    documentIndexStore: any RuntimeDocumentIndexCatalogReading = RuntimeDocumentIndexStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
     runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil
 ) -> LocalRuntimeMessageRouter {
@@ -11429,9 +11520,51 @@ private func makeRouter(
         trustedDeviceStore: trustedDeviceStore,
         chatEventStore: chatEventStore,
         memoryStore: memoryStore,
+        documentIndexStore: documentIndexStore,
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner
     )
+}
+
+private func routerIndexedDocument(fileName: String, text: String) throws -> DocumentIngestionResult {
+    try DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
+        maxCharacters: 120,
+        overlapCharacters: 8,
+        minChunkCharacters: 24
+    ))).ingest(extractedDocument: ExtractedDocument(fileName: fileName, mimeType: "text/markdown", text: text))
+}
+
+private final class RecordingRuntimeDocumentIndexCatalogStore: RuntimeDocumentIndexCatalogReading {
+    private let lock = NSLock()
+    private var documentReads = 0
+    private var summaryReads = 0
+
+    var documentsCallCount: Int {
+        lock.withLock { documentReads }
+    }
+
+    var summaryCallCount: Int {
+        lock.withLock { summaryReads }
+    }
+
+    func documents(limit: Int) throws -> [RuntimeDocumentIndexDocument] {
+        lock.withLock {
+            documentReads += 1
+        }
+        return []
+    }
+
+    func summary() throws -> RuntimeDocumentIndexSummary {
+        lock.withLock {
+            summaryReads += 1
+        }
+        return RuntimeDocumentIndexSummary(
+            documentCount: 0,
+            chunkCount: 0,
+            extractedCharacterCount: 0,
+            qualityCounts: [:]
+        )
+    }
 }
 
 private func authenticateTrustedDevice(

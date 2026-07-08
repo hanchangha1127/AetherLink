@@ -50,6 +50,85 @@ final class DocumentIngestorTests: XCTestCase {
         XCTAssertEqual(result.chunks.single?.text, result.document.text)
     }
 
+    func testCanonicalizesDirectExtractedDocumentSourceLabelsBeforeChunkingAndSummary() throws {
+        let document = ExtractedDocument(
+            fileName: " /Users/alice/private/project/runtime-notes.md ",
+            mimeType: "text/markdown",
+            text: "Direct extracted documents still pass through the runtime-owned ingestion envelope."
+        )
+
+        let result = try DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
+            maxCharacters: 120,
+            overlapCharacters: 0,
+            minChunkCharacters: 20
+        ))).ingest(extractedDocument: document)
+
+        XCTAssertEqual(result.document.fileName, "runtime-notes.md")
+        XCTAssertEqual(result.summary.documentFileName, "runtime-notes.md")
+        XCTAssertEqual(result.chunks.single?.documentFileName, "runtime-notes.md")
+        XCTAssertFalse(result.summary.documentFileName.contains("/Users/alice"))
+        XCTAssertEqual(result.document.mimeType, "text/markdown")
+        XCTAssertEqual(result.summary.documentMimeType, "text/markdown")
+        XCTAssertEqual(result.chunks.single?.documentMimeType, "text/markdown")
+
+        let fallbackResult = try DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
+            maxCharacters: 120,
+            overlapCharacters: 0,
+            minChunkCharacters: 20
+        ))).ingest(extractedDocument: ExtractedDocument(
+            fileName: String(repeating: "a", count: documentIngestionDocumentFileNameCharacterLimitCeiling + 1),
+            mimeType: "text/plain; charset=utf-8",
+            text: "Malformed direct labels fall back before result construction."
+        ))
+
+        XCTAssertEqual(fallbackResult.document.fileName, documentIngestionUnknownDocumentFileName)
+        XCTAssertEqual(fallbackResult.summary.documentFileName, documentIngestionUnknownDocumentFileName)
+        XCTAssertEqual(fallbackResult.chunks.single?.documentFileName, documentIngestionUnknownDocumentFileName)
+        XCTAssertEqual(fallbackResult.document.mimeType, "text/plain; charset=utf-8")
+        XCTAssertEqual(fallbackResult.summary.documentMimeType, "text/plain; charset=utf-8")
+        XCTAssertEqual(fallbackResult.chunks.single?.documentMimeType, "text/plain; charset=utf-8")
+    }
+
+    func testRejectsOversizedDirectExtractedDocumentTextBeforeChunking() throws {
+        let ingestor = DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
+            maxCharacters: documentChunkingPolicyMaxCharactersCeiling,
+            overlapCharacters: 0,
+            minChunkCharacters: 1
+        )))
+        let boundaryText = String(
+            repeating: "x",
+            count: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+        )
+
+        let boundaryResult = try ingestor.ingest(extractedDocument: ExtractedDocument(
+            fileName: "direct-ceiling.txt",
+            mimeType: "text/plain",
+            text: boundaryText
+        ))
+
+        XCTAssertEqual(
+            boundaryResult.summary.extractedCharacterCount,
+            documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+        )
+        XCTAssertFalse(boundaryResult.chunks.isEmpty)
+
+        let oversizedText = boundaryText + "x"
+        XCTAssertThrowsError(try ingestor.ingest(extractedDocument: ExtractedDocument(
+            fileName: "direct-oversized.txt",
+            mimeType: "text/plain",
+            text: oversizedText
+        ))) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(
+                    resource: "extracted text",
+                    limit: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
+                    actual: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling + 1
+                )
+            )
+        }
+    }
+
     func testWhitespaceExtractedDocumentProducesNoUsableTextSummary() throws {
         let result = try DocumentIngestor().ingest(extractedDocument: ExtractedDocument(
             fileName: "blank.txt",

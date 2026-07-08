@@ -62,6 +62,9 @@ ALLOWED_MEMORY_TYPES = {
     "memory.summary.draft.approve",
     "memory.summary.draft.dismiss",
 }
+ALLOWED_INDEX_TYPES = {
+    "index.documents.list",
+}
 ALLOWED_TOOL_TYPES = frozenset()
 ALLOWED_ROUTE_TYPES = {"route.refresh"}
 REQUIRED_RELAY_QR_FIELDS = {
@@ -263,6 +266,7 @@ def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) ->
         message_type
         for message_type in message_types
         if message_type.startswith(RESERVED_PREFIXES)
+        and message_type not in ALLOWED_INDEX_TYPES
     ]
 
 
@@ -360,7 +364,7 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
             "reserved protocol namespace guard must reject skills.*, mcp.*, web_search.*, "
             "python.*, projects.*, automation.*, permission.*, approval.*, audit.*, "
             "file.*, terminal.*, network.*, backend.*, embeddings.*, retrieval.*, "
-            "index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*, "
+            "unsupported index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*, "
             "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*, "
             "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names"
         )

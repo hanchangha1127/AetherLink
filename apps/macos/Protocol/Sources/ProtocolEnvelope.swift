@@ -25,6 +25,7 @@ public enum MessageType {
     public static let chatSessionArchive = "chat.session.archive"
     public static let chatSessionRestore = "chat.session.restore"
     public static let chatSessionDelete = "chat.session.delete"
+    public static let indexDocumentsList = "index.documents.list"
     public static let memoryList = "memory.list"
     public static let memoryUpsert = "memory.upsert"
     public static let memoryDelete = "memory.delete"

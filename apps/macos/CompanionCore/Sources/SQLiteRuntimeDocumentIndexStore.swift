@@ -23,7 +23,10 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         result: DocumentIngestionResult,
         documentID requestedDocumentID: String? = nil
     ) throws -> RuntimeDocumentIndexDocument {
-        let documentID = requestedDocumentID ?? RuntimeDocumentIndexStore.stableDocumentID(for: result)
+        let documentID = runtimeDocumentIndexEffectiveDocumentID(
+            requestedDocumentID,
+            fallback: RuntimeDocumentIndexStore.stableDocumentID(for: result)
+        )
         let document = runtimeDocumentIndexDocument(for: result, documentID: documentID)
         let chunks = runtimeDocumentIndexChunks(for: result, documentID: documentID)
 
@@ -47,6 +50,7 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
     }
 
     public func deleteDocument(id documentID: String) throws {
+        guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID) else { return }
         try lock.withLock {
             try withDatabase { database in
                 try Self.execute(database, "BEGIN IMMEDIATE")
@@ -61,27 +65,164 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         }
     }
 
-    public func document(id documentID: String) throws -> RuntimeDocumentIndexDocument? {
+    public func deleteAllDocuments() throws {
         try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    try deleteAllDocumentsUnlocked(database: database)
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func deleteDocuments(matchingQuality quality: DocumentIngestionQuality) throws {
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let documentIDs = try documentIDsUnlocked(matchingQuality: quality, database: database)
+                    for documentID in documentIDs {
+                        try deleteDocumentUnlocked(id: documentID, database: database)
+                    }
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func deleteDocuments(matchingContentFingerprint contentFingerprint: String) throws {
+        guard let contentFingerprint = runtimeDocumentIndexCanonicalContentFingerprint(contentFingerprint) else { return }
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let documentIDs = try documentIDsUnlocked(
+                        matchingContentFingerprint: contentFingerprint,
+                        database: database
+                    )
+                    for documentID in documentIDs {
+                        try deleteDocumentUnlocked(id: documentID, database: database)
+                    }
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func deleteDocuments(matchingDisplayName displayName: String) throws {
+        guard let displayName = runtimeDocumentIndexCanonicalDisplayName(displayName) else { return }
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let documentIDs = try documentIDsUnlocked(matchingDisplayName: displayName, database: database)
+                    for documentID in documentIDs {
+                        try deleteDocumentUnlocked(id: documentID, database: database)
+                    }
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func deleteDocuments(matchingMimeType mimeType: String) throws {
+        guard let mimeType = runtimeDocumentIndexCanonicalMimeType(mimeType) else { return }
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let documentIDs = try documentIDsUnlocked(matchingMimeType: mimeType, database: database)
+                    for documentID in documentIDs {
+                        try deleteDocumentUnlocked(id: documentID, database: database)
+                    }
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func document(id documentID: String) throws -> RuntimeDocumentIndexDocument? {
+        guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID) else { return nil }
+        return try lock.withLock {
             try withDatabase { database in
                 try documentUnlocked(id: documentID, database: database)
             }
         }
     }
 
-    public func chunks(for documentID: String) throws -> [RuntimeDocumentIndexChunk] {
-        try lock.withLock {
+    public func chunks(
+        for documentID: String,
+        limit: Int = 200
+    ) throws -> [RuntimeDocumentIndexChunk] {
+        guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID),
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexChunkReadLimitCeiling
+              ) else { return [] }
+        return try lock.withLock {
             try withDatabase { database in
-                try chunksUnlocked(for: documentID, database: database)
+                try chunksUnlocked(for: documentID, limit: effectiveLimit, database: database)
+            }
+        }
+    }
+
+    public func chunkSummaries(
+        for documentID: String,
+        limit: Int = 100
+    ) throws -> [RuntimeDocumentIndexChunkSummary] {
+        guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID),
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexChunkSummaryLimitCeiling
+              ) else { return [] }
+        return try lock.withLock {
+            try withDatabase { database in
+                try chunkSummariesUnlocked(for: documentID, limit: effectiveLimit, database: database)
             }
         }
     }
 
     public func documents(limit: Int = 100) throws -> [RuntimeDocumentIndexDocument] {
-        guard limit > 0 else { return [] }
+        guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+            limit,
+            ceiling: runtimeDocumentIndexCatalogLimitCeiling
+        ) else { return [] }
         return try lock.withLock {
             try withDatabase { database in
-                try documentsUnlocked(limit: limit, database: database)
+                try documentsUnlocked(limit: effectiveLimit, database: database)
+            }
+        }
+    }
+
+    public func documents(
+        matchingDisplayName displayName: String,
+        limit: Int = 100
+    ) throws -> [RuntimeDocumentIndexDocument] {
+        guard let displayName = runtimeDocumentIndexCanonicalDisplayName(displayName),
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexCatalogLimitCeiling
+              ) else { return [] }
+        return try lock.withLock {
+            try withDatabase { database in
+                try documentsUnlocked(matchingDisplayName: displayName, limit: effectiveLimit, database: database)
             }
         }
     }
@@ -90,14 +231,34 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         matchingContentFingerprint contentFingerprint: String,
         limit: Int = 100
     ) throws -> [RuntimeDocumentIndexDocument] {
-        guard !contentFingerprint.isEmpty, limit > 0 else { return [] }
+        guard let contentFingerprint = runtimeDocumentIndexCanonicalContentFingerprint(contentFingerprint),
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexCatalogLimitCeiling
+              ) else { return [] }
         return try lock.withLock {
             try withDatabase { database in
                 try documentsUnlocked(
                     matchingContentFingerprint: contentFingerprint,
-                    limit: limit,
+                    limit: effectiveLimit,
                     database: database
                 )
+            }
+        }
+    }
+
+    public func documents(
+        matchingMimeType mimeType: String,
+        limit: Int = 100
+    ) throws -> [RuntimeDocumentIndexDocument] {
+        guard let mimeType = runtimeDocumentIndexCanonicalMimeType(mimeType),
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexCatalogLimitCeiling
+              ) else { return [] }
+        return try lock.withLock {
+            try withDatabase { database in
+                try documentsUnlocked(matchingMimeType: mimeType, limit: effectiveLimit, database: database)
             }
         }
     }
@@ -106,10 +267,13 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         matchingQuality quality: DocumentIngestionQuality,
         limit: Int = 100
     ) throws -> [RuntimeDocumentIndexDocument] {
-        guard limit > 0 else { return [] }
+        guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+            limit,
+            ceiling: runtimeDocumentIndexCatalogLimitCeiling
+        ) else { return [] }
         return try lock.withLock {
             try withDatabase { database in
-                try documentsUnlocked(matchingQuality: quality, limit: limit, database: database)
+                try documentsUnlocked(matchingQuality: quality, limit: effectiveLimit, database: database)
             }
         }
     }
@@ -128,16 +292,22 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         maxSnippetCharacters: Int = 160
     ) throws -> [RuntimeDocumentSearchResult] {
         let terms = runtimeDocumentSearchTerms(query)
-        guard !terms.isEmpty, limit > 0 else { return [] }
+        guard !terms.isEmpty,
+              let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+                limit,
+                ceiling: runtimeDocumentIndexQueryLimitCeiling
+              ),
+              let effectiveSnippetLimit = runtimeDocumentIndexEffectiveLimit(
+                maxSnippetCharacters,
+                ceiling: runtimeDocumentIndexSnippetCharacterLimitCeiling
+              ) else { return [] }
         return try lock.withLock {
             try withDatabase { database in
-                let candidateChunkIDs = try ftsCandidateChunkIDsUnlocked(database, terms: terms)
-                guard !candidateChunkIDs.isEmpty else { return [] }
                 return try runtimeDocumentSearchResults(
-                    from: searchSnapshotUnlocked(database, candidateChunkIDs: candidateChunkIDs),
+                    from: searchSnapshotUnlocked(database),
                     query: query,
-                    limit: limit,
-                    maxSnippetCharacters: maxSnippetCharacters
+                    limit: effectiveLimit,
+                    maxSnippetCharacters: effectiveSnippetLimit
                 )
             }
         }
@@ -251,6 +421,124 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         try Self.stepDone(deleteDocument, database: database)
     }
 
+    private func deleteAllDocumentsUnlocked(database: OpaquePointer) throws {
+        try Self.execute(database, "DELETE FROM runtime_document_index_chunk_fts")
+        try Self.execute(database, "DELETE FROM runtime_document_index_chunks")
+        try Self.execute(database, "DELETE FROM runtime_document_index_documents")
+    }
+
+    private func documentIDsUnlocked(
+        matchingQuality quality: DocumentIngestionQuality,
+        database: OpaquePointer
+    ) throws -> [String] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id
+            FROM runtime_document_index_documents
+            WHERE quality = ?
+            ORDER BY document_id ASC
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(quality.rawValue, to: statement, at: 1)
+
+        var documentIDs: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index quality deletion rows.")
+            }
+            documentIDs.append(try Self.columnText(statement, 0))
+        }
+        return documentIDs
+    }
+
+    private func documentIDsUnlocked(
+        matchingContentFingerprint contentFingerprint: String,
+        database: OpaquePointer
+    ) throws -> [String] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id
+            FROM runtime_document_index_documents
+            WHERE content_fingerprint = ?
+            ORDER BY document_id ASC
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(contentFingerprint, to: statement, at: 1)
+
+        var documentIDs: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index fingerprint deletion rows.")
+            }
+            documentIDs.append(try Self.columnText(statement, 0))
+        }
+        return documentIDs
+    }
+
+    private func documentIDsUnlocked(
+        matchingDisplayName displayName: String,
+        database: OpaquePointer
+    ) throws -> [String] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id
+            FROM runtime_document_index_documents
+            WHERE display_name = ?
+            ORDER BY document_id ASC
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(displayName, to: statement, at: 1)
+
+        var documentIDs: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index display-name deletion rows.")
+            }
+            documentIDs.append(try Self.columnText(statement, 0))
+        }
+        return documentIDs
+    }
+
+    private func documentIDsUnlocked(
+        matchingMimeType mimeType: String,
+        database: OpaquePointer
+    ) throws -> [String] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id
+            FROM runtime_document_index_documents
+            WHERE mime_type = ?
+            ORDER BY document_id ASC
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(mimeType, to: statement, at: 1)
+
+        var documentIDs: [String] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index MIME-type deletion rows.")
+            }
+            documentIDs.append(try Self.columnText(statement, 0))
+        }
+        return documentIDs
+    }
+
     private func documentUnlocked(
         id documentID: String,
         database: OpaquePointer
@@ -277,6 +565,7 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
 
     private func chunksUnlocked(
         for documentID: String,
+        limit: Int,
         database: OpaquePointer
     ) throws -> [RuntimeDocumentIndexChunk] {
         try readChunksUnlocked(
@@ -287,9 +576,45 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
             FROM runtime_document_index_chunks
             WHERE document_id = ?
             ORDER BY chunk_index ASC
+            LIMIT ?
             """,
-            bind: { statement in try Self.bindText(documentID, to: statement, at: 1) }
+            bind: { statement in
+                try Self.bindText(documentID, to: statement, at: 1)
+                try Self.bindInt(limit, to: statement, at: 2)
+            }
         )
+    }
+
+    private func chunkSummariesUnlocked(
+        for documentID: String,
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [RuntimeDocumentIndexChunkSummary] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id, document_display_name, document_mime_type,
+                   chunk_index, start_character_offset, end_character_offset, length(text)
+            FROM runtime_document_index_chunks
+            WHERE document_id = ?
+            ORDER BY chunk_index ASC
+            LIMIT ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(documentID, to: statement, at: 1)
+        try Self.bindInt(limit, to: statement, at: 2)
+
+        var chunks: [RuntimeDocumentIndexChunkSummary] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index chunk summaries.")
+            }
+            chunks.append(try Self.chunkSummary(from: statement))
+        }
+        return chunks
     }
 
     private func documentsUnlocked(
@@ -315,6 +640,70 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
             if result == SQLITE_DONE { break }
             guard result == SQLITE_ROW else {
                 throw Self.failure(database, "Could not read runtime document index catalog rows.")
+            }
+            documents.append(try Self.document(from: statement))
+        }
+        return documents
+    }
+
+    private func documentsUnlocked(
+        matchingMimeType mimeType: String,
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [RuntimeDocumentIndexDocument] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id, display_name, mime_type, content_fingerprint,
+                   extracted_character_count, chunk_count, quality
+            FROM runtime_document_index_documents
+            WHERE mime_type = ?
+            ORDER BY display_name ASC, document_id ASC
+            LIMIT ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(mimeType, to: statement, at: 1)
+        try Self.bindInt(limit, to: statement, at: 2)
+
+        var documents: [RuntimeDocumentIndexDocument] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index MIME-type rows.")
+            }
+            documents.append(try Self.document(from: statement))
+        }
+        return documents
+    }
+
+    private func documentsUnlocked(
+        matchingDisplayName displayName: String,
+        limit: Int,
+        database: OpaquePointer
+    ) throws -> [RuntimeDocumentIndexDocument] {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT document_id, display_name, mime_type, content_fingerprint,
+                   extracted_character_count, chunk_count, quality
+            FROM runtime_document_index_documents
+            WHERE display_name = ?
+            ORDER BY display_name ASC, document_id ASC
+            LIMIT ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(displayName, to: statement, at: 1)
+        try Self.bindInt(limit, to: statement, at: 2)
+
+        var documents: [RuntimeDocumentIndexDocument] = []
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read runtime document index display-name rows.")
             }
             documents.append(try Self.document(from: statement))
         }
@@ -618,6 +1007,21 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         )
     }
 
+    private static func chunkSummary(
+        from statement: OpaquePointer,
+        offset: Int32 = 0
+    ) throws -> RuntimeDocumentIndexChunkSummary {
+        RuntimeDocumentIndexChunkSummary(
+            documentID: try columnText(statement, offset),
+            documentDisplayName: try columnText(statement, offset + 1),
+            documentMimeType: try columnText(statement, offset + 2),
+            chunkIndex: columnInt(statement, offset + 3),
+            startCharacterOffset: columnInt(statement, offset + 4),
+            endCharacterOffset: columnInt(statement, offset + 5),
+            characterCount: columnInt(statement, offset + 6)
+        )
+    }
+
     private static func execute(_ database: OpaquePointer, _ sql: String) throws {
         var error: UnsafeMutablePointer<CChar>?
         if sqlite3_exec(database, sql, nil, nil, &error) != SQLITE_OK {
@@ -678,6 +1082,8 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         return SQLiteRuntimeDocumentIndexStoreError(message.isEmpty ? fallback : message)
     }
 }
+
+extension SQLiteRuntimeDocumentIndexStore: RuntimeDocumentIndexCatalogReading {}
 
 private let sqliteDocumentIndexTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 

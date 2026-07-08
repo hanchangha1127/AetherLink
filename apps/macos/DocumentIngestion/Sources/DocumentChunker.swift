@@ -1,5 +1,9 @@
 import Foundation
 
+public let documentChunkingPolicyMaxCharactersCeiling = 10_000
+public let documentChunkingPolicyOverlapCharactersCeiling = 2_000
+public let documentChunkingPolicyMinChunkCharactersCeiling = 10_000
+
 public struct DocumentChunkingPolicy: Equatable, Sendable {
     public static let standard = DocumentChunkingPolicy()
 
@@ -97,14 +101,29 @@ public final class DocumentChunker: Sendable {
         guard policy.maxCharacters > 0 else {
             throw DocumentChunkingError.invalidPolicy("maxCharacters must be greater than zero")
         }
+        guard policy.maxCharacters <= documentChunkingPolicyMaxCharactersCeiling else {
+            throw DocumentChunkingError.invalidPolicy(
+                "maxCharacters must be less than or equal to \(documentChunkingPolicyMaxCharactersCeiling)"
+            )
+        }
         guard policy.overlapCharacters >= 0 else {
             throw DocumentChunkingError.invalidPolicy("overlapCharacters must not be negative")
+        }
+        guard policy.overlapCharacters <= documentChunkingPolicyOverlapCharactersCeiling else {
+            throw DocumentChunkingError.invalidPolicy(
+                "overlapCharacters must be less than or equal to \(documentChunkingPolicyOverlapCharactersCeiling)"
+            )
         }
         guard policy.overlapCharacters < policy.maxCharacters else {
             throw DocumentChunkingError.invalidPolicy("overlapCharacters must be less than maxCharacters")
         }
         guard policy.minChunkCharacters > 0 else {
             throw DocumentChunkingError.invalidPolicy("minChunkCharacters must be greater than zero")
+        }
+        guard policy.minChunkCharacters <= documentChunkingPolicyMinChunkCharactersCeiling else {
+            throw DocumentChunkingError.invalidPolicy(
+                "minChunkCharacters must be less than or equal to \(documentChunkingPolicyMinChunkCharactersCeiling)"
+            )
         }
         guard policy.minChunkCharacters <= policy.maxCharacters else {
             throw DocumentChunkingError.invalidPolicy("minChunkCharacters must be less than or equal to maxCharacters")

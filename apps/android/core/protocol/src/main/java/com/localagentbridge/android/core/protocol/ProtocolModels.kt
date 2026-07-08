@@ -40,6 +40,7 @@ object MessageType {
     const val ChatSessionArchive = "chat.session.archive"
     const val ChatSessionRestore = "chat.session.restore"
     const val ChatSessionDelete = "chat.session.delete"
+    const val IndexDocumentsList = "index.documents.list"
     const val MemoryList = "memory.list"
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"

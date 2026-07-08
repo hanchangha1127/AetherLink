@@ -254,6 +254,24 @@ final class DocumentTextExtractorTests: XCTestCase {
         }
     }
 
+    func testCanonicalizesMimeTypeBeforeDispatchingExtensionlessAttachments() throws {
+        let jsonURL = try writeExtensionlessText(#"{"title":"Parameterized JSON"}"#)
+        let jsonDocument = try DocumentTextExtractor().extractText(
+            from: jsonURL,
+            mimeType: " Application/JSON ; charset=UTF-8 "
+        )
+        XCTAssertEqual(jsonDocument.mimeType, "text/plain")
+        XCTAssertEqual(jsonDocument.text, #"{"title":"Parameterized JSON"}"#)
+
+        let htmlURL = try writeExtensionlessText("<html><body>Hello MIME HTML</body></html>")
+        let htmlDocument = try DocumentTextExtractor().extractText(
+            from: htmlURL,
+            mimeType: " TEXT/HTML; charset=utf-8"
+        )
+        XCTAssertEqual(htmlDocument.mimeType, "text/html")
+        XCTAssertTrue(htmlDocument.text.contains("Hello MIME HTML"))
+    }
+
     func testExtractsRTFText() throws {
         let fileURL = try writeText(#"{\rtf1\ansi Hello RTF}"#, extension: "rtf")
 
@@ -309,6 +327,212 @@ final class DocumentTextExtractorTests: XCTestCase {
         }
     }
 
+    func testRejectsArchiveEntryFanoutWhenResourcePolicyLimitIsExceeded() throws {
+        let fileURL = try makeArchive(
+            extension: "epub",
+            entries: [
+                "OEBPS/chapter1.xhtml": "<html><body>Chapter one</body></html>",
+                "OEBPS/chapter2.xhtml": "<html><body>Chapter two</body></html>",
+                "OEBPS/chapter3.xhtml": "<html><body>Chapter three</body></html>",
+            ]
+        )
+        let allowedExtractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxArchiveEntries: 3)
+        )
+        let boundedExtractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(
+                maxArchiveEntries: 2,
+                maxArchiveEntryBytes: 1
+            )
+        )
+
+        let document = try allowedExtractor.extractText(from: fileURL)
+        XCTAssertTrue(document.text.contains("Chapter one"))
+        XCTAssertTrue(document.text.contains("Chapter three"))
+
+        XCTAssertThrowsError(try boundedExtractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(resource: "archive entries", limit: 2, actual: 3)
+            )
+        }
+    }
+
+    func testIgnoresPathShapedArchiveEntriesBeforeExtraction() throws {
+        let oversizedName = "OEBPS/" +
+            String(repeating: "a", count: documentIngestionArchiveEntryNameCharacterLimitCeiling) +
+            ".xhtml"
+        let fileURL = try makeArchiveWithRawEntries(
+            extension: "epub",
+            entries: [
+                (
+                    name: "OEBPS/chapter.xhtml",
+                    content: "<html><body>Safe chapter text</body></html>"
+                ),
+                (
+                    name: "../secret.xhtml",
+                    content: "<html><body>PATH SENTINEL parent traversal</body></html>"
+                ),
+                (
+                    name: "/absolute/secret.xhtml",
+                    content: "<html><body>PATH SENTINEL absolute path</body></html>"
+                ),
+                (
+                    name: "C:\\Users\\private\\secret.xhtml",
+                    content: "<html><body>PATH SENTINEL windows path</body></html>"
+                ),
+                (
+                    name: "OEBPS/./secret.xhtml",
+                    content: "<html><body>PATH SENTINEL dot component</body></html>"
+                ),
+                (
+                    name: oversizedName,
+                    content: "<html><body>PATH SENTINEL oversized entry</body></html>"
+                ),
+            ]
+        )
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxArchiveEntries: 1)
+        )
+
+        let document = try extractor.extractText(from: fileURL)
+
+        XCTAssertTrue(document.text.contains("Safe chapter text"))
+        XCTAssertFalse(document.text.contains("PATH SENTINEL"))
+    }
+
+    func testAppliesStoreOwnedResourcePolicyCeilingsBeforeExtraction() throws {
+        let fileURL = try writeText("bounded extraction policy", extension: "txt")
+        let boundaryExtractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(
+                maxInputBytes: documentIngestionResourcePolicyMaxInputBytesCeiling,
+                maxArchiveListingBytes: documentIngestionResourcePolicyMaxArchiveListingBytesCeiling,
+                maxArchiveEntries: documentIngestionResourcePolicyMaxArchiveEntriesCeiling,
+                maxArchiveEntryBytes: documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling,
+                maxConverterOutputBytes: documentIngestionResourcePolicyMaxConverterOutputBytesCeiling,
+                maxExtractedTextCharacters: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+            )
+        )
+
+        let document = try boundaryExtractor.extractText(from: fileURL)
+        XCTAssertEqual(document.text, "bounded extraction policy")
+
+        let oversizedPolicies: [(DocumentIngestionResourcePolicy, DocumentIngestionError)] = [
+            (
+                DocumentIngestionResourcePolicy(
+                    maxInputBytes: documentIngestionResourcePolicyMaxInputBytesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxInputBytes must be less than or equal to \(documentIngestionResourcePolicyMaxInputBytesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxArchiveListingBytes: documentIngestionResourcePolicyMaxArchiveListingBytesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxArchiveListingBytes must be less than or equal to \(documentIngestionResourcePolicyMaxArchiveListingBytesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxArchiveEntries: documentIngestionResourcePolicyMaxArchiveEntriesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxArchiveEntries must be less than or equal to \(documentIngestionResourcePolicyMaxArchiveEntriesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxArchiveEntryBytes: documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxArchiveEntryBytes must be less than or equal to \(documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxConverterOutputBytes: documentIngestionResourcePolicyMaxConverterOutputBytesCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxConverterOutputBytes must be less than or equal to \(documentIngestionResourcePolicyMaxConverterOutputBytesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(
+                    maxExtractedTextCharacters: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling + 1
+                ),
+                .invalidResourcePolicy(
+                    "maxExtractedTextCharacters must be less than or equal to \(documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxInputBytes: Int.max),
+                .invalidResourcePolicy(
+                    "maxInputBytes must be less than or equal to \(documentIngestionResourcePolicyMaxInputBytesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxArchiveEntries: Int.max),
+                .invalidResourcePolicy(
+                    "maxArchiveEntries must be less than or equal to \(documentIngestionResourcePolicyMaxArchiveEntriesCeiling)"
+                )
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxExtractedTextCharacters: Int.max),
+                .invalidResourcePolicy(
+                    "maxExtractedTextCharacters must be less than or equal to \(documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling)"
+                )
+            )
+        ]
+
+        for (policy, expectedError) in oversizedPolicies {
+            XCTAssertThrowsError(
+                try DocumentTextExtractor(resourcePolicy: policy).extractText(from: fileURL)
+            ) { error in
+                XCTAssertEqual(error as? DocumentIngestionError, expectedError)
+            }
+        }
+    }
+
+    func testRejectsNonPositiveResourcePolicyBeforeExtraction() throws {
+        let fileURL = try writeText("invalid policy", extension: "txt")
+        let invalidPolicies: [(DocumentIngestionResourcePolicy, DocumentIngestionError)] = [
+            (
+                DocumentIngestionResourcePolicy(maxInputBytes: 0),
+                .invalidResourcePolicy("maxInputBytes must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxArchiveListingBytes: -1),
+                .invalidResourcePolicy("maxArchiveListingBytes must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxArchiveEntries: 0),
+                .invalidResourcePolicy("maxArchiveEntries must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxArchiveEntryBytes: 0),
+                .invalidResourcePolicy("maxArchiveEntryBytes must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxConverterOutputBytes: -1),
+                .invalidResourcePolicy("maxConverterOutputBytes must be greater than zero")
+            ),
+            (
+                DocumentIngestionResourcePolicy(maxExtractedTextCharacters: 0),
+                .invalidResourcePolicy("maxExtractedTextCharacters must be greater than zero")
+            )
+        ]
+
+        for (policy, expectedError) in invalidPolicies {
+            XCTAssertThrowsError(
+                try DocumentTextExtractor(resourcePolicy: policy).extractText(from: fileURL)
+            ) { error in
+                XCTAssertEqual(error as? DocumentIngestionError, expectedError)
+            }
+        }
+    }
+
     private func writeText(_ text: String, extension pathExtension: String) throws -> URL {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -330,6 +554,42 @@ final class DocumentTextExtractorTests: XCTestCase {
             .appendingPathExtension(pathExtension)
         try data.write(to: fileURL)
         return fileURL
+    }
+
+    private func makeArchiveWithRawEntries(
+        extension pathExtension: String,
+        entries: [(name: String, content: String)]
+    ) throws -> URL {
+        let archiveURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(pathExtension)
+        let payloadURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        let payload = entries.map { entry in
+            ["name": entry.name, "content": entry.content]
+        }
+        try JSONSerialization.data(withJSONObject: payload).write(to: payloadURL)
+
+        let script = """
+        import json
+        import sys
+        import zipfile
+
+        with open(sys.argv[2], "r", encoding="utf-8") as payload_file:
+            entries = json.load(payload_file)
+
+        with zipfile.ZipFile(sys.argv[1], "w") as archive:
+            for entry in entries:
+                archive.writestr(entry["name"], entry["content"])
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", "-c", script, archiveURL.path, payloadURL.path]
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        return archiveURL
     }
 
     private func makeArchive(

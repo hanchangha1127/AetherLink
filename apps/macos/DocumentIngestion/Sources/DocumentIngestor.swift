@@ -6,6 +6,9 @@ public enum DocumentIngestionQuality: String, Equatable, Sendable {
     case chunked = "chunked"
 }
 
+public let documentIngestionDocumentFileNameCharacterLimitCeiling = 256
+public let documentIngestionUnknownDocumentFileName = "untitled-document"
+
 public struct DocumentIngestionSummary: Equatable, Sendable {
     public var documentFileName: String
     public var documentMimeType: String
@@ -67,6 +70,8 @@ public final class DocumentIngestor: Sendable {
     }
 
     public func ingest(extractedDocument document: ExtractedDocument) throws -> DocumentIngestionResult {
+        let document = canonicalizedDocumentEnvelope(document)
+        try validateExtractedDocumentEnvelope(document)
         let chunks = try chunker.chunks(from: document)
         return DocumentIngestionResult(
             document: document,
@@ -97,4 +102,43 @@ public final class DocumentIngestor: Sendable {
             quality: quality
         )
     }
+}
+
+private func canonicalizedDocumentEnvelope(_ document: ExtractedDocument) -> ExtractedDocument {
+    ExtractedDocument(
+        fileName: canonicalDocumentFileName(document.fileName) ?? documentIngestionUnknownDocumentFileName,
+        mimeType: document.mimeType,
+        text: document.text
+    )
+}
+
+private func validateExtractedDocumentEnvelope(_ document: ExtractedDocument) throws {
+    guard document.text.count <= documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: "extracted text",
+            limit: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling,
+            actual: document.text.count
+        )
+    }
+}
+
+private func canonicalDocumentFileName(_ fileName: String?) -> String? {
+    guard let fileName else { return nil }
+    let trimmed = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    let normalizedSeparators = trimmed.replacingOccurrences(of: "\\", with: "/")
+    guard let lastComponent = normalizedSeparators
+        .split(separator: "/", omittingEmptySubsequences: true)
+        .last
+        .map(String.init)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+        !lastComponent.isEmpty,
+        lastComponent != ".",
+        lastComponent != "..",
+        lastComponent.count <= documentIngestionDocumentFileNameCharacterLimitCeiling,
+        !lastComponent.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+    else { return nil }
+
+    return lastComponent
 }

@@ -10,6 +10,585 @@ This document separates current verification evidence from historical captures.
 - No-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel or chat-complete, or real different-network runtime connectivity.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
 
+## 2026-07-08 Runtime Document Index Requested Document ID Control-Character Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover control-character requested document IDs for runtime document-index lookup, maintenance, and storage APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` rejects requested document IDs containing control characters before lookup, chunk reads, chunk metadata summaries, deletion, or storage. The shared canonicalizer feeds the in-memory store and SQLite store, so forged control-character requested IDs fall back to deterministic stable document IDs and do not persist in document rows, chunk rows, reopened SQLite rows, or raw SQLite FTS `document_id` columns.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused requested document ID control-character regressions and reports the runtime document index requested document ID control-character canonicality addendum; `script/check_copy_hygiene.py` pins the control-character guard, focused tests, focused no-device filter, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime document-index requested document ID control-character canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Kepler the 2nd` reviewed the guard location, tests, and no-device/copy-hygiene pin shape.
+- Caveat: this requested document ID control-character guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testRejectsControlCharacterRequestedDocumentIDsBeforeStorageAndLookup|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteRejectsControlCharacterRequestedDocumentIDsAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Display-Name Control-Character Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover control-character display names for runtime document-index catalog lookup and storage APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` rejects final display-name components containing control characters before lookup or storage. The shared canonicalizer feeds the in-memory store and SQLite store, so forged control-character document, summary, and chunk display labels fall back to `untitled-document` and do not persist in catalog rows, chunk labels, reopened SQLite rows, or raw SQLite `display_name` / `document_display_name` columns.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused display-name control-character regressions and reports the runtime document index display-name control-character canonicality addendum; `script/check_copy_hygiene.py` pins the control-character guard, focused tests, focused no-device filter, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime document-index display-name control-character canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Maxwell the 2nd` reviewed the guard location, tests, and no-device/copy-hygiene pin shape.
+- Caveat: this display-name control-character guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testRejectsControlCharacterDisplayNamesBeforeStorageAndLookup|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreRejectsControlCharacterDisplayNamesAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Direct Extracted-Document Text Ceiling No-Device Gate
+
+- No-device focused evidence: `DocumentIngestorTests` covers direct `ExtractedDocument` extracted-text ceiling enforcement inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice, no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentIngestor` rejects oversized direct extracted-document text before chunk planning, summary construction, or result return. Direct text at the shared extracted-text ceiling still ingests normally, and ceiling-plus-one text returns `DocumentIngestionError.resourceLimitExceeded` for `extracted text`.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused direct text-ceiling regression and reports the `DocumentIngestion direct extracted-document text ceiling addendum`; `script/check_copy_hygiene.py` pins the envelope validator, focused test, focused no-device filter, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side direct ingestion text-size validation only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, physical SAF attachment behavior proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Wegener the 2nd` reviewed current code and identified direct `ExtractedDocument` text-size enforcement as the next smallest no-device hardening slice.
+- Caveat: this direct-text ceiling guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter DocumentIngestorTests/testRejectsOversizedDirectExtractedDocumentTextBeforeChunking`
+- `swift test --filter DocumentIngestorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentIngestor.swift apps/macos/DocumentIngestion/Tests/DocumentIngestorTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Direct Extracted-Document Source-Label Canonicality No-Device Gate
+
+- No-device focused evidence: `DocumentIngestorTests` covers direct `ExtractedDocument` source-label canonicality inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice, no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentIngestor` canonicalizes direct extracted-document file names before chunk planning, summary construction, or result return. Path-shaped direct file names are reduced to their final component, blank or oversized names fall back to `untitled-document`, and MIME metadata stays on the existing downstream runtime-index validation path.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused direct source-label regression and reports the `DocumentIngestion direct extracted-document source-label canonicality addendum`; `script/check_copy_hygiene.py` pins the file-name ceiling, fallback constant, canonical envelope helpers, focused test, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side direct ingestion envelope label canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, physical SAF attachment behavior proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Ampere the 2nd` reviewed current code and identified direct `ExtractedDocument` source-label canonicality as the next smallest no-device hardening slice.
+- Caveat: this result-envelope label guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter DocumentIngestorTests/testCanonicalizesDirectExtractedDocumentSourceLabelsBeforeChunkingAndSummary`
+- `swift test --filter DocumentIngestorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentIngestor.swift apps/macos/DocumentIngestion/Tests/DocumentIngestorTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Archive-Entry Path Canonicality No-Device Gate
+
+- No-device focused evidence: `DocumentTextExtractorTests` covers path-shaped archive entry rejection inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentTextExtractor` filters archive entry names before selected-entry fanout counting and before per-entry archive extraction. Parent traversal, absolute, Windows/backslash-shaped, dot-component, oversized, whitespace-mutated, and control-character entry names are ignored, while canonical relative entries continue to extract.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused archive-entry path regression and reports the `DocumentIngestion archive-entry path canonicality addendum`; `script/check_copy_hygiene.py` pins the entry-name ceiling, canonicality helper, raw-entry archive test helper, focused test, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side compressed-document entry-name canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, physical SAF attachment behavior proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Anscombe the 2nd` reviewed current code and confirmed the archive-entry path canonicality insertion point, raw ZIP entry test strategy, and no-device/docs pin shape.
+- Caveat: this archive-entry path guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter DocumentTextExtractorTests/testIgnoresPathShapedArchiveEntriesBeforeExtraction`
+- `swift test --filter DocumentTextExtractorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion MIME Dispatch Canonicality No-Device Gate
+
+- No-device focused evidence: `DocumentTextExtractorTests` covers parameterized, whitespace-padded, uppercase MIME dispatch for extensionless attachments inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentTextExtractor` trims MIME values, strips MIME parameters, and lowercases the MIME dispatch key before selecting a document kind, so extensionless MIME-only JSON and HTML attachments do not fall into unsupported handling merely because the content type contains parameters or case/spacing variations. Extracted documents still return the store-owned canonical output MIME.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused MIME dispatch regression and reports the `DocumentIngestion MIME dispatch canonicality addendum`; `script/check_copy_hygiene.py` pins the canonicalizer, focused test, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side MIME dispatch canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, physical SAF MIME behavior proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Harvey the 2nd` reviewed current code and recommended archive-entry path canonicality as an adjacent follow-up candidate while this main-session slice closed MIME dispatch canonicality.
+- Caveat: this MIME dispatch guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter DocumentTextExtractorTests/testCanonicalizesMimeTypeBeforeDispatchingExtensionlessAttachments`
+- `swift test --filter DocumentTextExtractorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Archive Entry Fanout Policy No-Device Gate
+
+- No-device focused evidence: `DocumentTextExtractorTests` covers selected archive-entry fanout limits inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentTextExtractor` rejects excessive selected archive entries before per-entry archive extraction, so compressed documents cannot drive unbounded helper-process fanout through many small XML/HTML/TXT entries before the byte or extracted-text limits run. Boundary entry counts still extract normally, and invalid archive-entry policy values fail closed through `DocumentIngestionError.invalidResourcePolicy`.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused fanout regression and reports the `DocumentIngestion archive entry fanout policy addendum`; `script/check_copy_hygiene.py` pins the ceiling constant, policy field, count-limit helper, focused test, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side compressed-document fanout validation only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `James the 2nd` reviewed current roadmap/code and confirmed this archive-entry fanout policy slice.
+- Caveat: this fanout policy guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'DocumentTextExtractorTests.testRejectsArchiveEntryFanoutWhenResourcePolicyLimitIsExceeded|DocumentTextExtractorTests.testAppliesStoreOwnedResourcePolicyCeilingsBeforeExtraction|DocumentTextExtractorTests.testRejectsNonPositiveResourcePolicyBeforeExtraction'`
+- `swift test --filter DocumentTextExtractorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Resource Policy Ceiling No-Device Gate
+
+- No-device focused evidence: `DocumentTextExtractorTests` covers store-owned extraction resource-policy ceilings inside the SwiftPM `DocumentIngestion` target, and the router mapping compiles through `LocalRuntimeMessageRouter`.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentTextExtractor` rejects oversized or non-positive caller-supplied `DocumentIngestionResourcePolicy` limits before file reads, archive listing, archive entry extraction, `textutil` conversion, or normalized text dispatch. Boundary ceiling values still allow normal extraction, and invalid policies fail closed through `DocumentIngestionError.invalidResourcePolicy`.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused resource-policy ceiling and non-positive policy regressions and reports the `DocumentIngestion resource policy ceiling addendum`; `script/check_copy_hygiene.py` pins the ceiling constants, validation helper, focused tests, no-device summary phrase, router mapping, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side document extraction policy validation only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router feature exposure, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Epicurus the 2nd` reviewed current roadmap/code and recommended this resource-policy ceiling slice.
+- Caveat: this policy ceiling guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'DocumentTextExtractorTests.testAppliesStoreOwnedResourcePolicyCeilingsBeforeExtraction|DocumentTextExtractorTests.testRejectsNonPositiveResourcePolicyBeforeExtraction'`
+- `swift test --filter 'DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded|DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded'`
+- `swift test --filter DocumentTextExtractorTests`
+- `swift test --filter 'DocumentIngestorTests|DocumentChunkerTests|DocumentTextExtractorTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Display-Name Delete Maintenance No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover display-name-scoped document-index deletion for in-memory and reopened SQLite stores in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` remove only documents matching a canonical display name while preserving unrelated catalog rows, chunk metadata, lexical query rows, summaries, and SQLite FTS candidates. Blank, oversized, and non-matching display-name input remains a no-op.
+- Guardrail: `script/check_no_device_quality.sh` reports the `runtime document index display-name delete maintenance addendum`; `script/check_copy_hygiene.py` pins the APIs, SQLite target lookup helper, focused tests, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime document-index display-name maintenance only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Halley the 2nd` reviewed current roadmap/code and recommended this display-name deletion slice.
+- Caveat: this maintenance guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testDeleteDocumentsByDisplayNameClearsMatchingRowsWithoutFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreDeleteDocumentsByDisplayNameClearsMatchingRowsAndFtsAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index MIME-Type Delete Maintenance No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover MIME-type-scoped document-index deletion for in-memory and reopened SQLite stores in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` remove only documents matching a canonical MIME type while preserving unrelated catalog rows, chunk metadata, lexical query rows, summaries, and SQLite FTS candidates. Malformed MIME-type input remains a no-op.
+- Guardrail: `script/check_no_device_quality.sh` reports the `runtime document index MIME-type delete maintenance addendum`; `script/check_copy_hygiene.py` pins the APIs, SQLite target lookup helper, focused tests, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime document-index MIME-type maintenance only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Bernoulli the 2nd` reviewed current roadmap/code and recommended this MIME-type deletion slice.
+- Caveat: this maintenance guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testDeleteDocumentsByMimeTypeClearsMatchingRowsWithoutFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreDeleteDocumentsByMimeTypeClearsMatchingRowsAndFtsAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Content-Fingerprint Delete Maintenance No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover content-fingerprint-scoped document-index deletion for in-memory and reopened SQLite stores in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` remove only documents matching a canonical content fingerprint while preserving unrelated catalog rows, chunk metadata, lexical query rows, summaries, and SQLite FTS candidates. Malformed fingerprint input remains a no-op.
+- Guardrail: `script/check_no_device_quality.sh` reports the `runtime document index content-fingerprint delete maintenance addendum`; `script/check_copy_hygiene.py` pins the APIs, SQLite target lookup helper, focused tests, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime document-index content-fingerprint maintenance only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Jason the 2nd` reviewed current roadmap/code and recommended this content-fingerprint deletion slice.
+- Caveat: this maintenance guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testDeleteDocumentsByContentFingerprintClearsMatchingRowsWithoutFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreDeleteDocumentsByContentFingerprintClearsMatchingRowsAndFtsAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 DocumentIngestion Chunk Policy Ceiling No-Device Gate
+
+- No-device focused evidence: `DocumentChunkerTests` covers store-owned chunking policy ceilings inside the SwiftPM `DocumentIngestion` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `DocumentChunker` rejects oversized `maxCharacters`, `overlapCharacters`, and `minChunkCharacters` values before chunk planning. The tests prove ceiling-boundary policy values still work, while oversized max, `Int.max` max, oversized overlap, and oversized min-chunk values fail closed through `DocumentChunkingError.invalidPolicy`.
+- Guardrail: `script/check_no_device_quality.sh` runs `DocumentChunkerTests` and reports the `DocumentIngestion chunk policy ceiling addendum`; `script/check_copy_hygiene.py` pins the public policy ceiling constants, validation messages, focused test, no-device summary phrase, docs, and roadmap wording.
+- Proof boundary: this proves internal runtime-side chunk policy ceiling behavior only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Carver the 2nd` reviewed current roadmap/code in parallel and identified content-fingerprint delete maintenance as a next runtime-index candidate; this pass closed the smaller DocumentIngestion chunk policy ceiling gap found in the main session.
+- Caveat: this chunk policy ceiling guard is still not wired into trusted-source review UI, retrieval APIs, citations, runtime permission/audit semantics, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'DocumentChunkerTests.testAppliesStoreOwnedPolicyCeilingsBeforeChunkPlanning|DocumentChunkerTests.testRejectsInvalidChunkingPolicies'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentChunker.swift apps/macos/DocumentIngestion/Tests/DocumentChunkerTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Chunk-Envelope Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover chunk-envelope canonicality for runtime document-index chunk storage, chunk reads, chunk summaries, stable chunk IDs, and reopened SQLite rows in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` derive stored chunk indexes and offsets through store-owned envelopes. The tests prove forged chunk index and offset values from direct-ingestion chunks do not persist as stored `chunk_index`, `start_character_offset`, or `end_character_offset` values. Valid offsets must match document text, malformed offsets are located from document text when possible, and unlocatable forged chunk text receives bounded fallback offsets.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index chunk-envelope canonicality addendum; `script/check_copy_hygiene.py` pins `RuntimeDocumentIndexChunkEnvelope`, the effective/validated/located/fallback helpers, minimum repeated-text search handling, storage call sites, focused tests, raw SQLite row inspection, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index chunk-envelope canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Hume the 2nd` reviewed the current roadmap/code and recommended chunk-envelope canonicality as the next no-device-verifiable runtime document-index slice.
+- Caveat: this chunk-envelope canonicality guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testNormalizesChunkEnvelopeBeforeStorageAndLookup|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreNormalizesChunkEnvelopeAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Display-Name Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover display-name canonicality for runtime document-index catalog lookup and storage APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` trim display-name lookup input, reduce path-shaped display names to their final component, derive stored document display names and chunk labels from the owning document file name, and fall back to `untitled-document` for blank or oversized labels. Forged path-shaped display names in summaries or chunk labels do not persist in catalog rows, chunk rows, chunk summaries, reopened SQLite rows, or raw SQLite `display_name` / `document_display_name` columns.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index display-name canonicality addendum; `script/check_copy_hygiene.py` pins the display-name ceiling, fallback, canonicalizer, effective helper, in-memory and SQLite lookup guards, storage call sites, focused tests, raw SQLite row inspection, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index display-name canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Volta the 2nd` reviewed the broader chunk-envelope seam; this pass closed display-name/source-label canonicality, and the later chunk-envelope gate now covers chunk index/offset normalization.
+- Caveat: this display-name canonicality guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testNormalizesDisplayNamesBeforeStorageAndLookup|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreNormalizesDisplayNamesAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Ingestion Summary Normalization No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover malformed direct-ingestion summaries for runtime document-index catalog storage in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` derive extracted-character count, chunk count, and quality from document text and chunks before catalog or SQLite storage. Forged negative/oversized counts or mismatched quality states in `DocumentIngestionResult.summary` no longer affect stable content fingerprints, catalog rows, summary totals, quality counts, or reopened SQLite rows.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index ingestion summary normalization addendum; `script/check_copy_hygiene.py` pins the derived helper functions, storage and fingerprint call sites, in-memory and SQLite focused tests, raw SQLite integer column inspection, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index summary normalization only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Helmholtz the 2nd` reviewed the source contract, malformed-summary test coverage, no-device phrase, and docs/gate pins for this slice.
+- Caveat: this summary normalization guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests.testNormalizesMalformedIngestionSummaryBeforeStorage|SQLiteRuntimeDocumentIndexStoreTests.testSQLiteStoreNormalizesMalformedIngestionSummaryAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index MIME-Type Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover MIME-type canonicality for runtime document-index catalog lookup and storage APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` trim MIME-type lookup input, accept only canonical lowercase `type/subtype` token strings, reject blank, whitespace-only, case-mutated, missing-slash, URL-shaped, parameterized, or oversized lookup input before in-memory filtering or SQLite query dispatch, normalize stored document/chunk MIME metadata, and persist malformed direct-ingestion MIME metadata as `application/octet-stream`.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index MIME-type canonicality addendum; `script/check_copy_hygiene.py` pins the MIME length ceiling, unknown MIME fallback, canonicalizer, token-byte guard, effective storage fallback, in-memory and SQLite focused tests, raw SQLite row inspection, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index MIME metadata and lookup canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Popper the 2nd` reviewed the MIME-type canonicality candidate while the implementation stayed in the main session.
+- Caveat: this MIME canonicality guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testListsDocumentsByMimeTypeWithoutContentOrFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreListsDocumentsByMimeTypeAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Content-Fingerprint Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover content-fingerprint canonicality for runtime document-index catalog lookup APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` trim content-fingerprint lookup input, accept only lowercase 16-hex fingerprints, reject blank, whitespace-only, wrong-length, uppercase/case-mutated, or non-hex values before in-memory filtering or SQLite query dispatch, and preserve trimmed canonical lookup parity after SQLite reopen.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index content-fingerprint canonicality addendum; `script/check_copy_hygiene.py` pins the content-fingerprint length constant, canonicalizer, lowercase-hex guard, in-memory and SQLite focused tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index content-fingerprint lookup canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Hubble the 2nd` reviewed the source contract, malformed-input test coverage, no-device phrase, and docs/gate pins for this slice.
+- Caveat: this fingerprint canonicality guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testFindsDocumentsByContentFingerprintWithoutContentOrFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreFindsDocumentsByContentFingerprintAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Chunk Read Limit No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover bounded full chunk reads for runtime document-index storage APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` clamp caller-supplied full chunk read limits through `runtimeDocumentIndexChunkReadLimitCeiling`, keep deterministic chunk-index ordering, return empty results for non-positive limits or blank document IDs, and preserve replacement/deletion behavior with SQLite reopen parity.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index chunk read limit addendum; `script/check_copy_hygiene.py` pins the full chunk read ceiling, bounded in-memory and SQLite APIs, focused tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index chunk read resource limiting only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Dirac the 2nd` inspected the dirty worktree and proposed content-fingerprint canonicality as another low-scope next candidate; this chunk-read slice was selected locally because it closes the current unbounded full chunk-text read seam.
+- Caveat: this chunk read limit is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testChunkReadsApplyStoreOwnedLimitCeiling|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteChunkReadsApplyStoreOwnedLimitCeilingAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Requested Document ID Canonicality No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover requested document ID canonicality for runtime document-index storage/search APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` trim requested document IDs before storage, fall back to deterministic stable IDs for blank, whitespace-only, or over-ceiling requested IDs, and share the same canonicality guard for document lookup, chunk reads, chunk metadata summaries, and deletion.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index requested document ID canonicality addendum; `script/check_copy_hygiene.py` pins the document ID length ceiling, shared effective/canonical ID helpers, focused in-memory and SQLite tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index requested-ID canonicality only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Franklin the 2nd` independently recommended the requested document ID canonicality slice while the implementation stayed in the main session.
+- Caveat: this document ID canonicality guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testRequestedDocumentIDsUseStoreOwnedCanonicalityGuards|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteRequestedDocumentIDsUseStoreOwnedCanonicalityGuardsAfterReopen'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index SQLite Substring Parity No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover substring lexical query parity between the in-memory and SQLite runtime document-index stores in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: public SQLite document-index query preserves the shared substring lexical rank/snippet contract even when internal FTS candidate rows miss substring-only token matches such as `time` inside `runtime`. FTS rows remain maintained as internal maintenance and future-search infrastructure, not as an authoritative public-query filter.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index SQLite substring parity addendum; `script/check_copy_hygiene.py` pins the in-memory substring test, SQLite substring parity test, FTS row-maintenance regression, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index SQLite lexical parity only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Locke` confirmed the FTS hard-prefilter parity risk while the implementation stayed in the main session.
+- Caveat: this substring parity guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testLexicalQueryMatchesSubstringInsideTokens|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteQueryPreservesSubstringParityWhenFtsMissesSubstringCandidate|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreMaintainsFtsCandidateRowsWithoutChangingQueryResults'`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Query Resource Guard No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover lexical query input resource guards for runtime document-index storage/search APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` reject overlong lexical query text, excessive deduplicated query terms, and overlong individual terms before in-memory search or SQLite search dispatch. Blank/noise queries return empty results, duplicate terms still collapse, and operator-like punctuation is normalized into literal bounded terms.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index query resource guard addendum; `script/check_copy_hygiene.py` pins the query text, term-count, and term-length ceilings, shared term helper, focused tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index lexical query input hardening only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Zeno` reviewed the query/SQLite FTS risk while the implementation stayed in the main session.
+- Caveat: this query resource guard is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Quality-Delete Maintenance No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover quality-filtered deletion for runtime document-index storage/search APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose `deleteDocuments(matchingQuality:)` APIs that remove only documents matching the requested ingestion quality state, clear their chunk metadata/text and SQLite FTS candidates, preserve unrelated catalog rows and query results, update summaries, and stay idempotent when no rows match.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index quality-delete maintenance addendum; `script/check_copy_hygiene.py` pins the quality-delete APIs, focused tests, SQLite quality-matched ID helper, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index quality-scoped cleanup only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Singer` was used for next-slice review while the implementation stayed in the main session.
+- Caveat: this quality-delete operation is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Clear-All Maintenance No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover clear-all maintenance for runtime document-index storage/search APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose `deleteAllDocuments()` APIs that clear document catalog rows, chunk metadata/text, lexical query rows, summaries, and SQLite FTS candidates. Empty catalog/query/summary behavior is covered after SQLite reopen, and a second clear remains safe.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index clear-all maintenance addendum; `script/check_copy_hygiene.py` pins the clear-all APIs, focused tests, SQLite cleanup SQL, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index maintenance cleanup only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Mill` recommended the clear-all maintenance gate as the next low-conflict roadmap slice.
+- Caveat: this clear-all operation is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Limit-Ceiling No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover store-owned limit ceilings for runtime document-index maintenance/search APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` clamp caller-supplied limits for catalog rows, chunk metadata summaries, lexical query results, and lexical snippets to safe store-owned maximums. SQLite parity is covered after reopen.
+- Guardrail: `script/check_no_device_quality.sh` reports the runtime document index limit-ceiling addendum; `script/check_copy_hygiene.py` pins the ceiling constants, shared clamp helper, focused tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves internal runtime document-index resource-bound behavior only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Laplace` recommended the store-owned limit-ceiling gate as the next low-conflict roadmap slice.
+- Caveat: this limit ceiling is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Chunk Metadata Summary No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover the new runtime document-index chunk metadata summary APIs in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: the Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose bounded `chunkSummaries(for:limit:)` APIs that return safe per-document chunk metadata in chunk-index order, including document identity fields, chunk index, character offsets, and character counts, while returning empty results for blank document IDs or non-positive limits and matching after SQLite reopen, replacement, and deletion.
+- Guardrail: `script/check_no_device_quality.sh` reports chunk metadata summaries; `script/check_copy_hygiene.py` pins `RuntimeDocumentIndexChunkSummary`, both `chunkSummaries` APIs, focused tests, docs, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation/trusted-source metadata terms.
+- Proof boundary: this proves an internal runtime document-index maintenance primitive only. It is not trusted-source approval, project/workspace registration, source-path persistence, chunk-text exposure, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Popper` recommended chunk metadata summaries as the next low-conflict roadmap slice and specifically recommended keeping chunk IDs out of the summary type.
+- Caveat: this chunk metadata summary is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index Display-Name Catalog Filter No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover the new runtime document-index display-name catalog filter in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose bounded `documents(matchingDisplayName:limit:)` APIs that exact-match existing safe catalog display-name values, preserve deterministic catalog ordering, return empty results for empty display names or non-positive limits, and match after SQLite reopen, replacement, and deletion.
+- Guardrail: `script/check_no_device_quality.sh` reports display-name catalog filtering; `script/check_copy_hygiene.py` pins both APIs, focused tests, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation metadata terms.
+- Proof boundary: this proves an internal runtime document-index maintenance primitive only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Beauvoir` recommended display-name catalog filtering as the next low-conflict roadmap slice.
+- Caveat: this display-name filter is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+## 2026-07-08 Runtime Document Index MIME-Type Catalog Filter No-Device Gate
+
+- No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover the new runtime document-index MIME-type catalog filter in the SwiftPM `CompanionCore` target.
+- Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose bounded `documents(matchingMimeType:limit:)` APIs that exact-match existing safe catalog MIME type values, preserve deterministic catalog ordering, return empty results for empty MIME types or non-positive limits, and match after SQLite reopen, replacement, and deletion.
+- Guardrail: `script/check_no_device_quality.sh` reports MIME-type catalog filtering; `script/check_copy_hygiene.py` pins both APIs, focused tests, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation metadata terms.
+- Proof boundary: this proves an internal runtime document-index maintenance primitive only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Chandrasekhar` recommended MIME-type catalog filtering as the next low-conflict roadmap slice.
+- Caveat: this MIME filter is still not wired into chat context, project workspaces, retrieval APIs, trusted-source review UI, Android UI, or protocol messages; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries.
+
+Verification commands:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests|SQLiteRuntimeDocumentIndexStoreTests'`
+- `swift test --filter 'SQLiteRuntimeDocumentIndexStoreTests|RuntimeDocumentIndexStoreTests|DocumentIngestorTests|DocumentChunkerTests'`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
 ## 2026-07-08 Runtime Document Index Quality-Filtered Catalog No-Device Gate
 
 - No-device focused evidence: `RuntimeDocumentIndexStoreTests` and `SQLiteRuntimeDocumentIndexStoreTests` cover the new runtime document-index quality-state catalog filter in the SwiftPM `CompanionCore` target.
@@ -105,8 +684,8 @@ Verification commands:
 
 - No-device focused evidence: `SQLiteRuntimeDocumentIndexStoreTests` covers the new SQLite FTS candidate table for runtime document chunk search in the SwiftPM `CompanionCore` target.
 - Physical/live-provider separation: no Android app was installed or driven for this slice, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
-- Result: `SQLiteRuntimeDocumentIndexStore` maintains `runtime_document_index_chunk_fts` rows for chunk text, removes stale FTS rows on replacement and deletion, uses FTS to prefilter candidate chunk IDs, and preserves deterministic lexical rank/snippet results by reusing the shared `RuntimeDocumentIndexStore` query helper for final results.
-- Guardrail: `script/check_no_device_quality.sh` runs `SQLiteRuntimeDocumentIndexStoreTests` and reports FTS candidate query prefiltering; `script/check_copy_hygiene.py` pins the FTS table name, candidate helper, unicode tokenization, focused regression, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation metadata terms.
+- Result: `SQLiteRuntimeDocumentIndexStore` maintains `runtime_document_index_chunk_fts` rows for chunk text, removes stale FTS rows on replacement and deletion, and keeps unicode-aware FTS candidate rows available for internal maintenance and future search infrastructure while public query results remain governed by the shared lexical rank/snippet helper.
+- Guardrail: `script/check_no_device_quality.sh` runs `SQLiteRuntimeDocumentIndexStoreTests` and reports FTS candidate row maintenance; `script/check_copy_hygiene.py` pins the FTS table name, candidate helper, unicode tokenization, focused regression, no-device summary phrase, and forbidden workspace/source-path/retrieval/embedding/citation metadata terms.
 - Proof boundary: this proves an internal SQLite FTS candidate index only. It is not trusted-source approval, project/workspace registration, source-path persistence, embeddings, retrieval protocol exposure, citation generation, protocol/router integration, Android UI proof, optical QR proof, production relay/session/encryption proof, direct Android backend access proof, live-provider behavior proof, or real different-network connectivity proof.
 - Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer independently recommended SQLite FTS-backed lexical query as the next roadmap slice.
 - Caveat: this store is still not wired into chat context, project workspaces, retrieval APIs, or Android UI; later work still needs source approval, retrieval policy, citations, runtime permission/audit semantics, and protocol boundaries.

@@ -31,6 +31,7 @@
         "chat.session.archive",
         "chat.session.restore",
         "chat.session.delete",
+        "index.documents.list",
         "memory.list",
         "memory.upsert",
         "memory.delete",
@@ -132,6 +133,10 @@
     {
       "if": { "properties": { "type": { "const": "chat.session.delete" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionDeletePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "index.documents.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/indexDocumentsListPayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "memory.list" } }, "required": ["type"] },
@@ -879,6 +884,75 @@
       },
       "additionalProperties": false
     },
+    "indexDocument": {
+      "type": "object",
+      "required": [
+        "id",
+        "display_name",
+        "mime_type",
+        "content_fingerprint",
+        "extracted_character_count",
+        "chunk_count",
+        "quality"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "display_name": { "$ref": "#/$defs/nonEmptyString" },
+        "mime_type": { "$ref": "#/$defs/nonEmptyString" },
+        "content_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+        "extracted_character_count": { "type": "integer", "minimum": 0 },
+        "chunk_count": { "type": "integer", "minimum": 0 },
+        "quality": { "enum": ["no_usable_text", "single_chunk", "chunked"] }
+      },
+      "additionalProperties": false
+    },
+    "indexDocumentsSummary": {
+      "type": "object",
+      "required": [
+        "document_count",
+        "chunk_count",
+        "extracted_character_count",
+        "quality_counts"
+      ],
+      "properties": {
+        "document_count": { "type": "integer", "minimum": 0 },
+        "chunk_count": { "type": "integer", "minimum": 0 },
+        "extracted_character_count": { "type": "integer", "minimum": 0 },
+        "quality_counts": {
+          "type": "object",
+          "properties": {
+            "no_usable_text": { "type": "integer", "minimum": 0 },
+            "single_chunk": { "type": "integer", "minimum": 0 },
+            "chunked": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "indexDocumentsListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "limit": { "type": "integer", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["documents", "summary"],
+          "properties": {
+            "documents": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/indexDocument" }
+            },
+            "summary": { "$ref": "#/$defs/indexDocumentsSummary" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "memoryListPayload": {
       "oneOf": [
         {
@@ -1096,6 +1170,7 @@
             "unsupported_attachment",
             "unreadable_attachment",
             "chat_store_unavailable",
+            "document_index_unavailable",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",

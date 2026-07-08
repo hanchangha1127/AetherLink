@@ -13,24 +13,35 @@ public struct ExtractedDocument: Equatable, Sendable {
     }
 }
 
+public let documentIngestionResourcePolicyMaxInputBytesCeiling = 32 * 1024 * 1024
+public let documentIngestionResourcePolicyMaxArchiveListingBytesCeiling = 1 * 1024 * 1024
+public let documentIngestionArchiveEntryNameCharacterLimitCeiling = 512
+public let documentIngestionResourcePolicyMaxArchiveEntriesCeiling = 512
+public let documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling = 8 * 1024 * 1024
+public let documentIngestionResourcePolicyMaxConverterOutputBytesCeiling = 8 * 1024 * 1024
+public let documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling = 200_000
+
 public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
     public static let standard = DocumentIngestionResourcePolicy()
 
     public var maxInputBytes: Int
     public var maxArchiveListingBytes: Int
+    public var maxArchiveEntries: Int
     public var maxArchiveEntryBytes: Int
     public var maxConverterOutputBytes: Int
     public var maxExtractedTextCharacters: Int
 
     public init(
-        maxInputBytes: Int = 32 * 1024 * 1024,
-        maxArchiveListingBytes: Int = 1 * 1024 * 1024,
-        maxArchiveEntryBytes: Int = 8 * 1024 * 1024,
-        maxConverterOutputBytes: Int = 8 * 1024 * 1024,
-        maxExtractedTextCharacters: Int = 200_000
+        maxInputBytes: Int = documentIngestionResourcePolicyMaxInputBytesCeiling,
+        maxArchiveListingBytes: Int = documentIngestionResourcePolicyMaxArchiveListingBytesCeiling,
+        maxArchiveEntries: Int = documentIngestionResourcePolicyMaxArchiveEntriesCeiling,
+        maxArchiveEntryBytes: Int = documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling,
+        maxConverterOutputBytes: Int = documentIngestionResourcePolicyMaxConverterOutputBytesCeiling,
+        maxExtractedTextCharacters: Int = documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
     ) {
         self.maxInputBytes = maxInputBytes
         self.maxArchiveListingBytes = maxArchiveListingBytes
+        self.maxArchiveEntries = maxArchiveEntries
         self.maxArchiveEntryBytes = maxArchiveEntryBytes
         self.maxConverterOutputBytes = maxConverterOutputBytes
         self.maxExtractedTextCharacters = maxExtractedTextCharacters
@@ -45,6 +56,7 @@ public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
     case converterFailed(String)
     case noExtractableText(String)
     case resourceLimitExceeded(resource: String, limit: Int, actual: Int)
+    case invalidResourcePolicy(String)
 
     public var errorDescription: String? {
         switch self {
@@ -62,6 +74,8 @@ public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
             return "No extractable document text found: \(path)"
         case .resourceLimitExceeded(let resource, let limit, let actual):
             return "Document ingestion resource limit exceeded for \(resource): \(actual) exceeded \(limit)"
+        case .invalidResourcePolicy(let reason):
+            return "Invalid document ingestion resource policy: \(reason)"
         }
     }
 }
@@ -74,6 +88,7 @@ public final class DocumentTextExtractor: Sendable {
     }
 
     public func extractText(from fileURL: URL, mimeType: String? = nil) throws -> ExtractedDocument {
+        try validateResourcePolicy(resourcePolicy)
         let kind = DocumentKind(fileURL: fileURL, mimeType: mimeType)
         try enforceFileSizeLimit(fileURL, limit: resourcePolicy.maxInputBytes)
         let text: String
@@ -184,7 +199,7 @@ public final class DocumentTextExtractor: Sendable {
         fallbackEntryPrefixes: [String],
         allowedPathExtensions: Set<String>
     ) throws -> String {
-        let entries = try archiveEntries(fileURL)
+        let entries = try archiveEntries(fileURL).filter(isCanonicalArchiveEntryPath)
         let selectedEntries = preferredEntries.filter(entries.contains)
         let fallbackEntries = entries
             .filter { entry in
@@ -204,6 +219,11 @@ public final class DocumentTextExtractor: Sendable {
                 result.append(entry)
             }
         }
+        try enforceCountLimit(
+            xmlEntries.count,
+            resource: "archive entries",
+            limit: resourcePolicy.maxArchiveEntries
+        )
 
         let textParts = try xmlEntries.map { entry -> String in
             let data = try archiveEntryData(fileURL, entry: entry)
@@ -336,6 +356,48 @@ public final class DocumentTextExtractor: Sendable {
     }
 }
 
+private func validateResourcePolicy(_ policy: DocumentIngestionResourcePolicy) throws {
+    try validatePositiveCeiling(
+        policy.maxInputBytes,
+        name: "maxInputBytes",
+        ceiling: documentIngestionResourcePolicyMaxInputBytesCeiling
+    )
+    try validatePositiveCeiling(
+        policy.maxArchiveListingBytes,
+        name: "maxArchiveListingBytes",
+        ceiling: documentIngestionResourcePolicyMaxArchiveListingBytesCeiling
+    )
+    try validatePositiveCeiling(
+        policy.maxArchiveEntries,
+        name: "maxArchiveEntries",
+        ceiling: documentIngestionResourcePolicyMaxArchiveEntriesCeiling
+    )
+    try validatePositiveCeiling(
+        policy.maxArchiveEntryBytes,
+        name: "maxArchiveEntryBytes",
+        ceiling: documentIngestionResourcePolicyMaxArchiveEntryBytesCeiling
+    )
+    try validatePositiveCeiling(
+        policy.maxConverterOutputBytes,
+        name: "maxConverterOutputBytes",
+        ceiling: documentIngestionResourcePolicyMaxConverterOutputBytesCeiling
+    )
+    try validatePositiveCeiling(
+        policy.maxExtractedTextCharacters,
+        name: "maxExtractedTextCharacters",
+        ceiling: documentIngestionResourcePolicyMaxExtractedTextCharactersCeiling
+    )
+}
+
+private func validatePositiveCeiling(_ value: Int, name: String, ceiling: Int) throws {
+    guard value > 0 else {
+        throw DocumentIngestionError.invalidResourcePolicy("\(name) must be greater than zero")
+    }
+    guard value <= ceiling else {
+        throw DocumentIngestionError.invalidResourcePolicy("\(name) must be less than or equal to \(ceiling)")
+    }
+}
+
 private func enforceFileSizeLimit(_ fileURL: URL, limit: Int) throws {
     guard let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
         return
@@ -392,6 +454,16 @@ private func enforceDataLimit(_ data: Data, resource: String, limit: Int) throws
     }
 }
 
+private func enforceCountLimit(_ count: Int, resource: String, limit: Int) throws {
+    guard count <= limit else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: resource,
+            limit: limit,
+            actual: count
+        )
+    }
+}
+
 private func enforceStringLimit(_ text: String, resource: String, limit: Int) throws {
     guard text.count <= limit else {
         throw DocumentIngestionError.resourceLimitExceeded(
@@ -429,7 +501,7 @@ private enum DocumentKind {
 
     init(fileURL: URL, mimeType: String?) {
         let ext = fileURL.pathExtension.lowercased()
-        let normalizedMimeType = mimeType?.lowercased()
+        let normalizedMimeType = normalizedDocumentMimeType(mimeType)
         switch (ext, normalizedMimeType) {
         case ("pdf", _), (_, "application/pdf"):
             self = .pdf
@@ -593,6 +665,42 @@ private enum DocumentKind {
             return "application/octet-stream"
         }
     }
+}
+
+private func normalizedDocumentMimeType(_ mimeType: String?) -> String? {
+    guard let mimeType else { return nil }
+    let value = mimeType.split(
+        separator: ";",
+        maxSplits: 1,
+        omittingEmptySubsequences: false
+    ).first.map(String.init) ?? mimeType
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.isEmpty ? nil : normalized
+}
+
+private func isCanonicalArchiveEntryPath(_ entry: String) -> Bool {
+    guard !entry.isEmpty else { return false }
+    guard entry.count <= documentIngestionArchiveEntryNameCharacterLimitCeiling else { return false }
+    guard entry.trimmingCharacters(in: .whitespacesAndNewlines) == entry else { return false }
+    guard !entry.hasPrefix("/") && !entry.hasPrefix("~") else { return false }
+    guard !entry.contains("\\") && !hasWindowsDrivePrefix(entry) else { return false }
+    guard !entry.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+        return false
+    }
+
+    let components = entry.split(separator: "/", omittingEmptySubsequences: false)
+    guard components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+        return false
+    }
+
+    return true
+}
+
+private func hasWindowsDrivePrefix(_ entry: String) -> Bool {
+    let scalars = Array(entry.unicodeScalars.prefix(2))
+    guard scalars.count == 2 else { return false }
+    let first = scalars[0].value
+    return ((65...90).contains(first) || (97...122).contains(first)) && scalars[1].value == 58
 }
 
 private final class XMLTextCollector: NSObject, XMLParserDelegate {

@@ -16,6 +16,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let trustedDeviceStore: TrustedDeviceStore
     private let chatEventStore: any RuntimeChatEventStore
     private let memoryStore: any RuntimeMemoryStore
+    private let documentIndexStore: any RuntimeDocumentIndexCatalogReading
     private let memorySummaryPolicy: @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy
     private let routeRefresher: (any RuntimeRouteRefreshing)?
     private let runtimeChallengeSigner: (any RuntimeChallengeSigning)?
@@ -35,6 +36,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
+        documentIndexStore: any RuntimeDocumentIndexCatalogReading = SQLiteRuntimeDocumentIndexStore(),
         memorySummaryPolicy: @escaping @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy = {
             RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: $0)
         },
@@ -48,6 +50,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.trustedDeviceStore = trustedDeviceStore
         self.chatEventStore = chatEventStore
         self.memoryStore = memoryStore
+        self.documentIndexStore = documentIndexStore
         self.memorySummaryPolicy = memorySummaryPolicy
         self.routeRefresher = routeRefresher
         self.runtimeChallengeSigner = runtimeChallengeSigner
@@ -131,6 +134,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatSessionDelete:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .delete)
+        case MessageType.indexDocumentsList:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleIndexDocumentsList(envelope, sink: sink)
         case MessageType.memoryList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryList(envelope, sink: sink)
@@ -1296,6 +1302,42 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func handleIndexDocumentsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedIndexDocumentsListPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "index.documents.list payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
+        do {
+            let limit = boundedWindowLimit(
+                try optionalRequestInt("limit", in: envelope.payload),
+                defaultLimit: runtimeDocumentIndexCatalogLimitCeiling,
+                maxLimit: runtimeDocumentIndexCatalogLimitCeiling
+            )
+            let documents = try documentIndexStore.documents(limit: limit)
+            let summary = try documentIndexStore.summary()
+            sink.send(ProtocolEnvelope(
+                type: MessageType.indexDocumentsList,
+                requestID: envelope.requestID,
+                payload: [
+                    "documents": .array(documents.map { .object(runtimeDocumentPayload($0)) }),
+                    "summary": .object(runtimeDocumentIndexSummaryPayload(summary))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.documentIndexUnavailable(error.localizedDescription)
+            ))
+        }
+    }
+
     private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryUpsertPayloadKeys)
@@ -1349,6 +1391,31 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }
+    }
+
+    private func runtimeDocumentPayload(_ document: RuntimeDocumentIndexDocument) -> [String: JSONValue] {
+        [
+            "id": .string(document.id),
+            "display_name": .string(document.displayName),
+            "mime_type": .string(document.mimeType),
+            "content_fingerprint": .string(document.contentFingerprint),
+            "extracted_character_count": .number(Double(document.extractedCharacterCount)),
+            "chunk_count": .number(Double(document.chunkCount)),
+            "quality": .string(document.quality.rawValue)
+        ]
+    }
+
+    private func runtimeDocumentIndexSummaryPayload(_ summary: RuntimeDocumentIndexSummary) -> [String: JSONValue] {
+        [
+            "document_count": .number(Double(summary.documentCount)),
+            "chunk_count": .number(Double(summary.chunkCount)),
+            "extracted_character_count": .number(Double(summary.extractedCharacterCount)),
+            "quality_counts": .object(Dictionary(
+                uniqueKeysWithValues: summary.qualityCounts.map { quality, count in
+                    (quality.rawValue, JSONValue.number(Double(count)))
+                }
+            ))
+        ]
     }
 
     private func memoryEntryPayload(_ entry: RuntimeMemoryEntry) -> [String: JSONValue] {
@@ -2642,6 +2709,7 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
     case chatSessionMustBeArchivedBeforeDelete(String)
     case chatSessionMustBeRestoredBeforeSend(String)
     case chatStoreUnavailable(String)
+    case documentIndexUnavailable(String)
     case memoryStoreUnavailable(String)
     case memorySummaryDraftUnavailable(String)
     case memorySummaryDraftStale(String)
@@ -2664,6 +2732,8 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "chat_session_must_be_restored_before_send"
         case .chatStoreUnavailable:
             return "chat_store_unavailable"
+        case .documentIndexUnavailable:
+            return "document_index_unavailable"
         case .memoryStoreUnavailable:
             return "memory_store_unavailable"
         case .memorySummaryDraftUnavailable:
@@ -2690,6 +2760,8 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "Restore this archived chat before sending another message: \(sessionID)"
         case .chatStoreUnavailable(let message):
             return "The runtime could not access chat history on this host: \(message)"
+        case .documentIndexUnavailable(let message):
+            return "The runtime could not access the document index on this host: \(message)"
         case .memoryStoreUnavailable(let message):
             return "The runtime could not access memory on this host: \(message)"
         case .memorySummaryDraftUnavailable:
@@ -2773,6 +2845,10 @@ private let allowedChatSessionRenamePayloadKeys: Set<String> = [
 
 private let allowedMemoryListPayloadKeys: Set<String> = [
     "query",
+]
+
+private let allowedIndexDocumentsListPayloadKeys: Set<String> = [
+    "limit",
 ]
 
 private let memoryListQueryMaxCharacters = 256
@@ -2948,7 +3024,8 @@ private func extractDocumentAttachment(
              .archiveEntryReadFailed,
              .converterFailed,
              .noExtractableText,
-             .resourceLimitExceeded:
+             .resourceLimitExceeded,
+             .invalidResourcePolicy:
             throw LocalRuntimeRouterError.unreadableAttachment(
                 "Attachment '\(name)' could not be read: \(error.localizedDescription)"
             )
