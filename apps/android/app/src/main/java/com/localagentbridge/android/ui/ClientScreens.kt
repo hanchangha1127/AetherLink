@@ -150,6 +150,9 @@ import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.MAX_PENDING_ATTACHMENTS
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeChatSession
+import com.localagentbridge.android.runtime.RuntimeDocumentCatalog
+import com.localagentbridge.android.runtime.RuntimeDocumentIndexDocument
+import com.localagentbridge.android.runtime.RuntimeDocumentSearchResult
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraft
@@ -407,6 +410,7 @@ internal fun ManualPairingPayloadDialog(
 }
 
 internal const val MANUAL_QR_PAYLOAD_DIALOG_TEST_TAG = "manual_qr_payload_dialog"
+internal const val MANUAL_QR_PAYLOAD_OPEN_TEST_TAG = "manual_qr_payload_open"
 internal const val MANUAL_QR_PAYLOAD_TITLE_TEST_TAG = "manual_qr_payload_title"
 internal const val MANUAL_QR_PAYLOAD_DETAIL_TEST_TAG = "manual_qr_payload_detail"
 internal const val MANUAL_QR_PAYLOAD_INPUT_TEST_TAG = "manual_qr_payload_input"
@@ -1988,6 +1992,8 @@ fun SettingsScreen(
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit = {},
     onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
+    onRefreshDocuments: () -> Unit = {},
+    onSearchDocuments: (String) -> Unit = {},
     onRefreshChatHistory: (String?) -> Unit = {},
     onOpenChatSession: (String) -> Unit = {},
     onRenameChatSession: (String) -> Unit = {},
@@ -2097,6 +2103,29 @@ fun SettingsScreen(
                     state = state,
                     onRequestModels = onRequestModels,
                     onSelectEmbeddingModel = onSelectEmbeddingModel,
+                    showHeader = false,
+                )
+            }
+        }
+        item {
+            SettingsExpandableSection(
+                title = R.string.document_index_title,
+                subtitle = R.string.document_index_subtitle,
+                initiallyExpanded = settingsLowerPrioritySectionInitiallyExpanded(),
+            ) {
+                DocumentIndexPanel(
+                    catalog = state.documentCatalog,
+                    searchQuery = state.documentSearchQuery,
+                    searchResults = state.documentSearchResults,
+                    isLoadingCatalog = state.isLoadingDocumentCatalog,
+                    isSearchingDocuments = state.isSearchingDocuments,
+                    actionsEnabled = documentIndexActionsEnabled(state),
+                    actionsDisabledReasonRes = documentIndexLockNoticeTextRes(
+                        state = state,
+                        hasDocuments = state.documentCatalog.documents.isNotEmpty(),
+                    ),
+                    onRefreshDocuments = onRefreshDocuments,
+                    onSearchDocuments = onSearchDocuments,
                     showHeader = false,
                 )
             }
@@ -2740,6 +2769,7 @@ private fun DeveloperDiagnosticsPanel(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(MANUAL_QR_PAYLOAD_OPEN_TEST_TAG)
                         .semantics {
                             contentDescription = manualQrPayloadOpenAccessibilityLabel
                             onClick(label = manualQrPayloadOpenAccessibilityLabel, action = null)
@@ -2816,6 +2846,7 @@ private fun EndpointPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(ENDPOINT_PANEL_TOGGLE_ROW_TEST_TAG)
                     .clickable(
                         role = Role.Button,
                         onClickLabel = toggleActionLabel,
@@ -4637,6 +4668,7 @@ internal const val DEVELOPER_DIAGNOSTICS_TITLE_TAG = "developer-diagnostics-titl
 internal const val DEVELOPER_DIAGNOSTICS_DETAIL_TAG = "developer-diagnostics-detail"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG = "developer-diagnostics-switch-disabled"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG = "developer-diagnostics-switch-enabled"
+internal const val ENDPOINT_PANEL_TOGGLE_ROW_TEST_TAG = "endpoint-panel-toggle-row"
 internal const val SETTINGS_CHAT_HISTORY_HEADER_TEST_TAG = "aetherlink_settings_chat_history_header"
 internal const val SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG =
     "aetherlink_settings_chat_history_header_title"
@@ -7026,6 +7058,397 @@ private fun TwoStepConfirmationDialog(
 }
 
 @Composable
+internal fun DocumentIndexPanel(
+    catalog: RuntimeDocumentCatalog,
+    searchQuery: String,
+    searchResults: List<RuntimeDocumentSearchResult>,
+    isLoadingCatalog: Boolean,
+    isSearchingDocuments: Boolean,
+    actionsEnabled: Boolean,
+    @StringRes actionsDisabledReasonRes: Int = documentIndexLockNoticeTextRes(
+        hasDocuments = catalog.documents.isNotEmpty(),
+    ),
+    onRefreshDocuments: () -> Unit,
+    onSearchDocuments: (String) -> Unit,
+    showHeader: Boolean = true,
+) {
+    var documentSearchQuery by rememberSaveable(searchQuery) { mutableStateOf(searchQuery) }
+    val hapticFeedback = LocalHapticFeedback.current
+    val normalizedSearchQuery = documentSearchQuery.trim()
+    val activeRuntimeSearchQuery = searchQuery.trim()
+    val hasSearchQuery = normalizedSearchQuery.isNotBlank()
+    val hasFreshSearchResults = hasSearchQuery &&
+        normalizedSearchQuery == activeRuntimeSearchQuery &&
+        searchResults.isNotEmpty()
+    val isBusy = isLoadingCatalog || isSearchingDocuments
+    val actionEnabled = actionsEnabled && !isBusy
+    val actionsDisabledReason = stringResource(actionsDisabledReasonRes)
+    val refreshStateDescription = when {
+        isBusy -> stringResource(R.string.document_index_refresh_state_loading)
+        actionEnabled -> stringResource(R.string.document_index_refresh_state_ready)
+        else -> actionsDisabledReason
+    }
+    val refreshContentDescription = stringResource(R.string.document_index_refresh)
+    val clearSearchContentDescription = stringResource(
+        R.string.clear_document_search_named,
+        normalizedSearchQuery.ifBlank { documentSearchQuery },
+    )
+    val searchReadyText = stringResource(R.string.document_index_search_ready, normalizedSearchQuery)
+
+    fun refreshOrSearch() {
+        if (hasSearchQuery) {
+            onSearchDocuments(normalizedSearchQuery)
+        } else {
+            onRefreshDocuments()
+        }
+    }
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(DOCUMENT_INDEX_PANEL_HEADER_TEST_TAG),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                if (showHeader) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.document_index_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        Text(
+                            text = stringResource(R.string.document_index_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                IconButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        refreshOrSearch()
+                    },
+                    enabled = actionEnabled,
+                    modifier = Modifier
+                        .testTag(DOCUMENT_INDEX_REFRESH_ACTION_TEST_TAG)
+                        .semantics {
+                            contentDescription = refreshContentDescription
+                            stateDescription = refreshStateDescription
+                            onClick(label = refreshContentDescription, action = null)
+                        },
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                }
+            }
+            if (!actionsEnabled) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(DOCUMENT_INDEX_LOCK_NOTICE_TEST_TAG),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    Text(
+                        text = actionsDisabledReason,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag(DOCUMENT_INDEX_LOCK_NOTICE_TEXT_TEST_TAG),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            DocumentIndexSummary(catalog)
+            OutlinedTextField(
+                value = documentSearchQuery,
+                onValueChange = { documentSearchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(DOCUMENT_INDEX_SEARCH_TEST_TAG),
+                enabled = actionsEnabled,
+                singleLine = true,
+                label = { Text(stringResource(R.string.document_index_search_label)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = {
+                    if (documentSearchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                documentSearchQuery = ""
+                            },
+                            modifier = Modifier
+                                .testTag(DOCUMENT_INDEX_SEARCH_CLEAR_TEST_TAG)
+                                .semantics {
+                                    contentDescription = clearSearchContentDescription
+                                    onClick(label = clearSearchContentDescription, action = null)
+                                },
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = null)
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        if (actionEnabled) {
+                            refreshOrSearch()
+                        }
+                    },
+                ),
+            )
+            if (isBusy) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(DOCUMENT_INDEX_PROGRESS_TEST_TAG),
+                )
+            }
+            when {
+                hasFreshSearchResults -> {
+                    DocumentSearchResultSummary(
+                        query = normalizedSearchQuery,
+                        resultCount = searchResults.size,
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        searchResults.forEach { result ->
+                            DocumentSearchResultRow(result)
+                        }
+                    }
+                }
+                hasSearchQuery && normalizedSearchQuery != activeRuntimeSearchQuery -> {
+                    Text(
+                        text = searchReadyText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(DOCUMENT_INDEX_SEARCH_READY_TEST_TAG)
+                            .semantics {
+                                contentDescription = searchReadyText
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                    )
+                }
+                hasSearchQuery -> {
+                    EmptyState(
+                        text = stringResource(R.string.no_document_search_results),
+                        announceChanges = true,
+                        modifier = Modifier.testTag(DOCUMENT_INDEX_EMPTY_STATE_TEST_TAG),
+                        textModifier = Modifier.testTag(DOCUMENT_INDEX_EMPTY_STATE_TEXT_TEST_TAG),
+                    )
+                }
+                catalog.documents.isEmpty() -> {
+                    EmptyState(
+                        text = stringResource(documentIndexEmptyStateTextRes(actionsEnabled = actionsEnabled)),
+                        announceChanges = true,
+                        modifier = Modifier.testTag(DOCUMENT_INDEX_EMPTY_STATE_TEST_TAG),
+                        textModifier = Modifier.testTag(DOCUMENT_INDEX_EMPTY_STATE_TEXT_TEST_TAG),
+                    )
+                }
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        catalog.documents.forEach { document ->
+                            DocumentCatalogRow(document)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocumentIndexSummary(catalog: RuntimeDocumentCatalog) {
+    val summary = catalog.summary
+    val summaryText = stringResource(
+        R.string.document_index_summary,
+        summary.documentCount,
+        summary.chunkCount,
+        summary.extractedCharacterCount,
+        summary.qualityCounts.noUsableText,
+        summary.qualityCounts.singleChunk,
+        summary.qualityCounts.chunked,
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(DOCUMENT_INDEX_SUMMARY_TEST_TAG)
+            .semantics {
+                contentDescription = summaryText
+                liveRegion = LiveRegionMode.Polite
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Text(
+            text = summaryText,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun DocumentCatalogRow(document: RuntimeDocumentIndexDocument) {
+    val qualityLabel = documentQualityLabel(document.quality)
+    val metadata = stringResource(
+        R.string.document_index_document_metadata,
+        document.mimeType,
+        document.chunkCount,
+        document.extractedCharacterCount,
+        qualityLabel,
+    )
+    val rowSummary = stringResource(
+        R.string.document_index_catalog_row_summary,
+        document.displayName,
+        metadata,
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(documentCatalogRowTestTag(document.id))
+            .semantics {
+                contentDescription = rowSummary
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = document.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = metadata,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(documentCatalogMetadataTestTag(document.id)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocumentSearchResultSummary(
+    query: String,
+    resultCount: Int,
+) {
+    val resultText = stringResource(R.string.document_index_search_result_summary, query, resultCount)
+    Text(
+        text = resultText,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier
+            .testTag(DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG)
+            .semantics {
+                contentDescription = resultText
+                liveRegion = LiveRegionMode.Polite
+            },
+    )
+}
+
+@Composable
+private fun DocumentSearchResultRow(result: RuntimeDocumentSearchResult) {
+    val qualityLabel = documentQualityLabel(result.document.quality)
+    val terms = result.matchedTerms.joinToString(", ").ifBlank {
+        stringResource(R.string.document_index_search_no_terms)
+    }
+    val metadata = stringResource(
+        R.string.document_index_search_metadata,
+        result.rank,
+        result.chunkIndex + 1,
+        result.startCharacterOffset,
+        result.endCharacterOffset,
+        terms,
+    )
+    val rowSummary = stringResource(
+        R.string.document_index_search_row_summary,
+        result.document.displayName,
+        qualityLabel,
+        metadata,
+        result.snippet,
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(documentSearchResultRowTestTag(result.document.id, result.rank))
+            .semantics {
+                contentDescription = rowSummary
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = result.document.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = metadata,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(documentSearchMetadataTestTag(result.document.id, result.rank)),
+            )
+            Text(
+                text = result.snippet,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(documentSearchSnippetTestTag(result.document.id, result.rank)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun documentQualityLabel(quality: String): String {
+    return when (quality) {
+        "no_usable_text" -> stringResource(R.string.document_index_quality_no_usable_text)
+        "single_chunk" -> stringResource(R.string.document_index_quality_single_chunk)
+        "chunked" -> stringResource(R.string.document_index_quality_chunked)
+        else -> quality.ifBlank { stringResource(R.string.document_index_quality_unknown) }
+    }
+}
+
+@Composable
 internal fun MemoryPanel(
     entries: List<RuntimeMemoryEntry>,
     summaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
@@ -8084,6 +8507,23 @@ internal const val MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG = "memory_entry_sou
 internal const val MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX = "memory_entry_source_excerpt_"
 internal const val MEMORY_ENTRY_SEARCH_METADATA_TEST_TAG_PREFIX = "memory_entry_search_metadata_"
 internal const val MEMORY_ENTRY_SEARCH_SNIPPET_TEST_TAG_PREFIX = "memory_entry_search_snippet_"
+internal const val DOCUMENT_INDEX_PANEL_HEADER_TEST_TAG = "document_index_panel_header"
+internal const val DOCUMENT_INDEX_REFRESH_ACTION_TEST_TAG = "document_index_refresh_action"
+internal const val DOCUMENT_INDEX_LOCK_NOTICE_TEST_TAG = "document_index_lock_notice"
+internal const val DOCUMENT_INDEX_LOCK_NOTICE_TEXT_TEST_TAG = "document_index_lock_notice_text"
+internal const val DOCUMENT_INDEX_SUMMARY_TEST_TAG = "document_index_summary"
+internal const val DOCUMENT_INDEX_SEARCH_TEST_TAG = "document_index_search"
+internal const val DOCUMENT_INDEX_SEARCH_CLEAR_TEST_TAG = "document_index_search_clear"
+internal const val DOCUMENT_INDEX_PROGRESS_TEST_TAG = "document_index_progress"
+internal const val DOCUMENT_INDEX_SEARCH_READY_TEST_TAG = "document_index_search_ready"
+internal const val DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG = "document_index_search_result_summary"
+internal const val DOCUMENT_INDEX_EMPTY_STATE_TEST_TAG = "document_index_empty_state"
+internal const val DOCUMENT_INDEX_EMPTY_STATE_TEXT_TEST_TAG = "document_index_empty_state_text"
+internal const val DOCUMENT_INDEX_CATALOG_ROW_TEST_TAG_PREFIX = "document_index_catalog_row_"
+internal const val DOCUMENT_INDEX_CATALOG_METADATA_TEST_TAG_PREFIX = "document_index_catalog_metadata_"
+internal const val DOCUMENT_INDEX_SEARCH_ROW_TEST_TAG_PREFIX = "document_index_search_row_"
+internal const val DOCUMENT_INDEX_SEARCH_METADATA_TEST_TAG_PREFIX = "document_index_search_metadata_"
+internal const val DOCUMENT_INDEX_SEARCH_SNIPPET_TEST_TAG_PREFIX = "document_index_search_snippet_"
 
 internal fun memoryEntrySourceExcerptTestTag(index: Int): String =
     "$MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX$index"
@@ -8093,6 +8533,24 @@ internal fun memoryEntrySearchMetadataTestTag(entryId: String): String =
 
 internal fun memoryEntrySearchSnippetTestTag(entryId: String): String =
     "$MEMORY_ENTRY_SEARCH_SNIPPET_TEST_TAG_PREFIX$entryId"
+
+internal fun documentCatalogRowTestTag(documentId: String): String =
+    "$DOCUMENT_INDEX_CATALOG_ROW_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}"
+
+internal fun documentCatalogMetadataTestTag(documentId: String): String =
+    "$DOCUMENT_INDEX_CATALOG_METADATA_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}"
+
+internal fun documentSearchResultRowTestTag(documentId: String, rank: Int): String =
+    "$DOCUMENT_INDEX_SEARCH_ROW_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}_$rank"
+
+internal fun documentSearchMetadataTestTag(documentId: String, rank: Int): String =
+    "$DOCUMENT_INDEX_SEARCH_METADATA_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}_$rank"
+
+internal fun documentSearchSnippetTestTag(documentId: String, rank: Int): String =
+    "$DOCUMENT_INDEX_SEARCH_SNIPPET_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}_$rank"
+
+private fun documentIndexTagKey(value: String): String =
+    value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_-]+"), "_").ifBlank { "document" }
 
 internal const val MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG =
     "memory_delete_confirmation_dialog"
@@ -8999,6 +9457,7 @@ private fun settingsExpandableSectionTagKey(@StringRes title: Int): String {
         R.string.status_title -> "status"
         R.string.advanced_connection -> "advanced_connection"
         R.string.embedding_model_title -> "embedding_model"
+        R.string.document_index_title -> "document_index"
         R.string.memory_title -> "memory"
         R.string.chat_history_settings_title -> "chat_history"
         else -> "unknown_$title"
@@ -9244,6 +9703,10 @@ internal fun memoryActionsEnabled(state: RuntimeUiState): Boolean {
     return state.isConnected && state.trustedRuntime != null && !state.isStreaming
 }
 
+internal fun documentIndexActionsEnabled(state: RuntimeUiState): Boolean {
+    return state.isConnected && state.trustedRuntime != null && !state.isStreaming
+}
+
 @StringRes
 internal fun memoryLockNoticeTextRes(hasEntries: Boolean): Int {
     return if (hasEntries) {
@@ -9268,6 +9731,33 @@ internal fun memoryEmptyStateTextRes(actionsEnabled: Boolean): Int {
         R.string.memory_empty
     } else {
         R.string.memory_empty_disconnected
+    }
+}
+
+@StringRes
+internal fun documentIndexLockNoticeTextRes(hasDocuments: Boolean): Int {
+    return if (hasDocuments) {
+        R.string.document_index_read_only_notice
+    } else {
+        R.string.document_index_connect_to_load
+    }
+}
+
+@StringRes
+internal fun documentIndexLockNoticeTextRes(state: RuntimeUiState, hasDocuments: Boolean): Int {
+    return if (state.isStreaming) {
+        R.string.document_index_action_state_wait_for_stream
+    } else {
+        documentIndexLockNoticeTextRes(hasDocuments = hasDocuments)
+    }
+}
+
+@StringRes
+internal fun documentIndexEmptyStateTextRes(actionsEnabled: Boolean): Int {
+    return if (actionsEnabled) {
+        R.string.document_index_empty
+    } else {
+        R.string.document_index_empty_disconnected
     }
 }
 
@@ -9316,6 +9806,9 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "memory_summary_drafts_load_failed" -> stringResource(R.string.error_memory_summary_drafts_load_failed)
         "memory_summary_draft_approval_failed" -> stringResource(R.string.error_memory_summary_draft_approval_failed)
         "memory_summary_draft_dismiss_failed" -> stringResource(R.string.error_memory_summary_draft_dismiss_failed)
+        "document_search_runtime_required" -> stringResource(R.string.error_document_search_runtime_required)
+        "document_catalog_load_failed" -> stringResource(R.string.error_document_catalog_load_failed)
+        "document_search_failed" -> stringResource(R.string.error_document_search_failed)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
         "regenerate_unavailable" -> stringResource(R.string.error_regenerate_unavailable)

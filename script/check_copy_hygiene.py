@@ -15331,6 +15331,9 @@ def attachment_ingestion_guard_failures() -> list[str]:
     failures: list[str] = []
     android_picker_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     android_runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    android_protocol_models_path = ROOT / (
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
+    )
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     android_runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     android_prompt_resource_test_path = ROOT / (
@@ -15363,6 +15366,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
     files = (
         android_picker_path,
         android_runtime_path,
+        android_protocol_models_path,
         android_test_path,
         android_runtime_test_path,
         android_prompt_resource_test_path,
@@ -15395,6 +15399,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
 
     android_picker_text = android_picker_path.read_text(encoding="utf-8")
     android_runtime_text = android_runtime_path.read_text(encoding="utf-8")
+    android_protocol_models_text = android_protocol_models_path.read_text(encoding="utf-8")
     android_test_text = android_test_path.read_text(encoding="utf-8")
     android_runtime_test_text = android_runtime_test_path.read_text(encoding="utf-8")
     android_prompt_resource_test_text = android_prompt_resource_test_path.read_text(encoding="utf-8")
@@ -16230,6 +16235,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_document_index_text,
             macos_document_index_path,
+            "public protocol RuntimeDocumentIndexCatalogReading",
+            "Runtime document indexing must keep a narrow catalog-read protocol for router exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public protocol RuntimeDocumentIndexSearchReading",
+            "Runtime document indexing must keep a narrow lexical search-read protocol for router exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "public protocol RuntimeDocumentIndexReading: RuntimeDocumentIndexCatalogReading, RuntimeDocumentIndexSearchReading",
+            "Runtime document indexing must combine catalog and lexical read seams for router exposure.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "func documents(limit: Int) throws -> [RuntimeDocumentIndexDocument]",
+            "Runtime document index catalog protocol must expose only bounded document metadata reads.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
+            "func query(\n        _ query: String,\n        limit: Int,\n        maxSnippetCharacters: Int\n    ) throws -> [RuntimeDocumentSearchResult]",
+            "Runtime document index search protocol must expose only bounded lexical result reads.",
+        ),
+        (
+            macos_document_index_text,
+            macos_document_index_path,
             "contentFingerprint",
             "Runtime document indexing must keep content fingerprints instead of source paths.",
         ),
@@ -16244,6 +16279,102 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_document_index_path,
             "public func deleteDocument",
             "Runtime document indexing must support deletion before retrieval integration.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "case MessageType.indexDocumentsList",
+            "Runtime router must dispatch index.documents.list explicitly.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "case MessageType.retrievalQuery",
+            "Runtime router must dispatch retrieval.query explicitly.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "handleIndexDocumentsList",
+            "Runtime router must keep index.documents.list behind its own handler.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "handleRetrievalQuery",
+            "Runtime router must keep retrieval.query behind its own handler.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedIndexDocumentsListPayloadKeys",
+            "Runtime router must reject future source metadata before document-index dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedRetrievalQueryPayloadKeys",
+            "Runtime router must reject future retrieval/source metadata before document-index query dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "runtimeDocumentPayload",
+            "Runtime router must serialize document-index catalog metadata without chunk text.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "runtimeDocumentSearchResultPayload",
+            "Runtime router must serialize retrieval.query results without full chunk text or source metadata.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "query.count <= runtimeDocumentIndexQueryTextCharacterLimitCeiling",
+            "Runtime router must reject oversized retrieval.query query text before document-index dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "document_index_unavailable",
+            "Runtime router must return a dedicated document-index unavailable error code.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata",
+            "Runtime router tests must cover bounded index.documents.list catalog metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch",
+            "Runtime router tests must reject future source metadata before document-index store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata",
+            "Runtime router tests must cover bounded retrieval.query lexical result metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch",
+            "Runtime router tests must reject future retrieval metadata before document-index store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch",
+            "Runtime router tests must reject oversized retrieval.query request text before document-index store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(documentIndexStore.queryCallCount, 0)",
+            "Runtime router oversized retrieval.query test must prove no document-index store dispatch.",
         ),
         (
             macos_document_index_test_text,
@@ -16700,6 +16831,108 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_sqlite_document_index_test_path,
             "testSQLiteStoreRejectsCorruptQualityValues",
             "SQLite runtime document index tests must cover corrupt quality failure.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"index.documents.list"',
+            "Protocol schema must expose the read-only document-index catalog message.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"retrieval.query"',
+            "Protocol schema must expose the read-only lexical document retrieval message.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"indexDocumentsListPayload"',
+            "Protocol schema must define the index.documents.list payload contract.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"retrievalQueryPayload"',
+            "Protocol schema must define the retrieval.query payload contract.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"retrievalQueryResult"',
+            "Protocol schema must define the retrieval.query result contract.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"document_index_unavailable"',
+            "Protocol schema must define the document-index unavailable error code.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "ALLOWED_INDEX_TYPES",
+            "Protocol schema checker must allow only the active read-only index message.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "message_type not in ALLOWED_INDEX_TYPES",
+            "Protocol schema checker must keep unsupported index.* messages reserved.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "ALLOWED_RETRIEVAL_TYPES",
+            "Protocol schema checker must allow only the active lexical retrieval message.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "message_type not in ALLOWED_RETRIEVAL_TYPES",
+            "Protocol schema checker must keep unsupported retrieval.* messages reserved.",
+        ),
+        (
+            android_protocol_models_text,
+            android_protocol_models_path,
+            'IndexDocumentsList = "index.documents.list"',
+            "Android protocol constants must include index.documents.list for schema parity.",
+        ),
+        (
+            android_protocol_models_text,
+            android_protocol_models_path,
+            'RetrievalQuery = "retrieval.query"',
+            "Android protocol constants must include retrieval.query for schema parity.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata|LocalRuntimeMessageRouterTests/testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch",
+            "Default no-device gate must run focused index.documents.list router regressions.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch",
+            "Default no-device gate must run focused retrieval.query router regressions.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "runtime document index documents list protocol addendum",
+            "Default no-device summary must name the document-index documents list protocol coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "runtime document retrieval query protocol addendum",
+            "Default no-device summary must name the retrieval.query protocol coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS retrieval.query request bounds addendum",
+            "Default no-device summary must name the retrieval.query request bounds guard.",
         ),
         (
             no_device_text,
@@ -17430,6 +17663,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_progress_text,
             docs_progress_path,
+            "macOS Retrieval Query Request Bounds No-Device Gate",
+            "Progress docs must record the macOS retrieval.query request bounds no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch",
+            "Progress docs must name the oversized retrieval.query router regression.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "documentIndexStore.queryCallCount",
+            "Progress docs must record that oversized retrieval.query requests do not dispatch to the document-index store.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Runtime Document Retrieval Query Protocol No-Device Gate",
+            "Progress docs must record the runtime document retrieval query protocol no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Runtime Document Index Documents List Protocol No-Device Gate",
+            "Progress docs must record the runtime document-index documents list protocol no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
             "Runtime Document Index Requested Document ID Control-Character Canonicality No-Device Gate",
             "Progress docs must record the runtime document-index requested document ID control-character canonicality no-device gate.",
         ),
@@ -17460,6 +17723,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
+            "macOS Retrieval Query Request Bounds No-Device Gate",
+            "QA evidence must record the macOS retrieval.query request bounds no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch",
+            "QA evidence must name the oversized retrieval.query router regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "documentIndexStore.queryCallCount",
+            "QA evidence must record that oversized retrieval.query requests do not dispatch to the document-index store.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Runtime Document Retrieval Query Protocol No-Device Gate",
+            "QA evidence must record the runtime document retrieval query protocol no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Runtime Document Index Documents List Protocol No-Device Gate",
+            "QA evidence must record the runtime document-index documents list protocol no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
             "Runtime Document Index Requested Document ID Control-Character Canonicality No-Device Gate",
             "QA evidence must record the runtime document-index requested document ID control-character canonicality no-device gate.",
         ),
@@ -17480,6 +17773,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_qa_evidence_path,
             "Runtime Document Index Chunk-Envelope Canonicality No-Device Gate",
             "QA evidence must record the runtime document-index chunk-envelope canonicality no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest macOS retrieval.query request bounds no-device gate",
+            "Roadmap smoke coverage queue must name the macOS retrieval.query request bounds slice.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "retrieval.query lexical read-only protocol",
+            "Roadmap smoke coverage queue must name the runtime document retrieval query protocol slice.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "index.documents.list read-only catalog",
+            "Roadmap smoke coverage queue must name the runtime document-index documents list protocol slice.",
         ),
         (
             docs_roadmap_text,
@@ -34461,6 +34772,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
     failures: list[str] = []
     protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
+    runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     protocol_docs_path = ROOT / "docs/protocol.md"
     connection_overlay_path = ROOT / "docs/connection-overlay.md"
@@ -34471,6 +34783,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
     required_paths = (
         protocol_schema_check_path,
         runtime_mock_smoke_path,
+        runtime_dev_server_path,
         no_device_path,
         protocol_docs_path,
         connection_overlay_path,
@@ -34485,6 +34798,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
 
     protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
+    runtime_dev_server_text = runtime_dev_server_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     protocol_docs_text = protocol_docs_path.read_text(encoding="utf-8", errors="replace")
     connection_overlay_text = connection_overlay_path.read_text(encoding="utf-8", errors="replace")
@@ -34511,12 +34825,17 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"index."',
         '"research."',
         '"citation."',
+        '"source_anchor."',
+        '"trusted_source."',
         '"source_control."',
         '"embeddings.create"',
         '"retrieval.query"',
         '"index.build"',
         '"research.brief.create"',
         '"citation.sources.list"',
+        '"source_anchor.resolve"',
+        '"source_anchor.metadata.get"',
+        '"trusted_source.approve"',
         '"source_control.status"',
         '"p2p."',
         '"rendezvous."',
@@ -34532,13 +34851,23 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"transport."',
         '"crypto."',
         "REQUIRED_RESERVED_PREFIXES = frozenset(RESERVED_PREFIXES)",
+        "ALLOWED_INDEX_TYPES = {",
+        '"index.documents.list"',
+        "message_type not in ALLOWED_INDEX_TYPES",
+        "ALLOWED_RETRIEVAL_TYPES = {",
+        '"retrieval.query"',
+        "message_type not in ALLOWED_RETRIEVAL_TYPES",
+        "ALLOWED_SOURCE_ANCHOR_TYPES = {",
+        '"source_anchor.resolve"',
+        "message_type not in ALLOWED_SOURCE_ANCHOR_TYPES",
         "ALLOWED_ROUTE_TYPES = {\"route.refresh\"}",
         "reserved_future_message_types(",
         "check_protocol_schema_rejects_reserved_future_runtime_namespaces",
         "reserved protocol namespace guard must reject skills.*, mcp.*, web_search.*,",
         "python.*, projects.*, automation.*, permission.*, approval.*, audit.*,",
-        "file.*, terminal.*, network.*, backend.*, embeddings.*, retrieval.*,",
-        "index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*,",
+        "file.*, terminal.*, network.*, backend.*, embeddings.*,",
+        "unsupported retrieval.* beyond retrieval.query, unsupported index.*,",
+        "research.*, citation.*, unsupported source_anchor.* beyond source_anchor.resolve, trusted_source.*, source_control.*, p2p.*, rendezvous.*,",
         "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*,",
         "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names",
         "future_memory_message_types(",
@@ -34591,10 +34920,49 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"backend.call"',
         '"backend.configure"',
         '"embeddings.create"',
+        '"index.documents.list"',
+        '"smoke-index-documents-list"',
+        '"smoke-index-documents-list-unknown-metadata"',
+        "smokeRetrievalSecondaryDocumentID",
+        "smokeRetrievalSecondaryDocumentName",
+        "index.documents.list unknown metadata",
+        "index.documents.list should return one bounded seeded catalog row and summary",
+        "index.documents.list exposed forbidden seeded catalog metadata",
         '"retrieval.query"',
+        '"smoke-retrieval-query"',
+        '"smoke-retrieval-query-unknown-metadata"',
+        '"smoke-retrieval-query-oversized-query"',
+        '"smoke-source-anchor-resolve"',
+        '"smoke-source-anchor-resolve-unknown-metadata"',
+        '"smoke-source-anchor-resolve-malformed"',
+        '"smoke-source-anchor-resolve-stale"',
+        '"source_anchor.resolve"',
+        '"source_anchor_id"',
+        '"chunk_summary"',
+        '"character_count"',
+        'String(repeating: "q", count: 1_025)',
+        "retrieval.query oversized query",
+        "retrieval.query oversized query should name the query request ceiling",
+        "smokeRetrievalDocumentID",
+        "smokeRetrievalDocumentName",
+        "smokeRetrievalQuery",
+        "smokeRetrievalSnippetMarker",
+        "smokeRetrievalPrivateBodyCanary",
+        "smokeRetrievalSecondaryBodyCanary",
+        "AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE",
+        "AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE",
+        "retrieval.query should return one seeded runtime document result",
+        "retrieval.query exposed forbidden seeded retrieval metadata",
+        "source_anchor.resolve unknown metadata",
+        "source_anchor.resolve malformed source_anchor_id",
+        "source_anchor.resolve stale source_anchor_id",
+        "source_anchor.resolve did not return redacted seeded document metadata and chunk summary",
+        "source_anchor.resolve exposed forbidden seeded resolver metadata",
         '"index.build"',
         '"research.brief.create"',
         '"citation.sources.list"',
+        '"source_anchor.resolve"',
+        '"trusted_source.approve"',
         '"source_control.status"',
         '"p2p.session.open"',
         '"rendezvous.records.publish"',
@@ -34639,10 +35007,11 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"smoke-future-backend-call"',
         '"smoke-future-backend-configure"',
         '"smoke-future-embeddings-create"',
-        '"smoke-future-retrieval-query"',
         '"smoke-future-index-build"',
         '"smoke-future-research-brief-create"',
         '"smoke-future-citation-sources-list"',
+        '"smoke-future-source-anchor-metadata-get"',
+        '"smoke-future-trusted-source-approve"',
         '"smoke-future-source-control-status"',
         '"smoke-future-p2p-session-open"',
         '"smoke-future-rendezvous-records-publish"',
@@ -34697,10 +35066,12 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "future backend call namespace smoke",
         "future backend configure namespace smoke",
         "future embeddings create namespace smoke",
-        "future retrieval query namespace smoke",
+        "retrieval.query unknown metadata",
         "future index build namespace smoke",
         "future research brief namespace smoke",
         "future citation sources namespace smoke",
+        "future source anchor metadata namespace smoke",
+        "future trusted source approval namespace smoke",
         "future source control status namespace smoke",
         "future p2p session namespace smoke",
         "future rendezvous record namespace smoke",
@@ -34728,6 +35099,22 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
                 f"{runtime_mock_smoke_path.relative_to(ROOT)}: Missing authenticated future runtime namespace smoke {snippet!r}."
             )
 
+    required_runtime_dev_server_snippets = (
+        "AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE",
+        "AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE",
+        "seedDevelopmentDocumentIndex",
+        "runtime-retrieval-smoke.md",
+        "smoke-retrieval-doc",
+        "Seeded runtime retrieval smoke proves document index results stay bounded",
+        "AETHERLINK_SMOKE_RETRIEVAL_PRIVATE_BODY_SHOULD_NOT_APPEAR",
+        "AETHERLINK_SMOKE_RETRIEVAL_SECONDARY_BODY_SHOULD_NOT_APPEAR",
+    )
+    for snippet in required_runtime_dev_server_snippets:
+        if snippet not in runtime_dev_server_text:
+            failures.append(
+                f"{runtime_dev_server_path.relative_to(ROOT)}: Missing seeded RuntimeDevServer retrieval smoke support {snippet!r}."
+            )
+
     required_no_device_snippets = (
         "protocol reserved namespace guard addendum",
         "projects. and automation. active messages remain blocked by protocol schema hygiene",
@@ -34740,7 +35127,11 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "protocol reserved runtime action namespace guard addendum",
         "file., terminal., network., and backend. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
         "protocol reserved RAG/research namespace guard addendum",
-        "embeddings., retrieval., index., research., citation., and source_control. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "embeddings., unsupported retrieval.* beyond retrieval.query, unsupported index.* beyond index.documents.list, research., citation., and source_control. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved source-anchor/trusted-source namespace guard addendum",
+        "source_anchor.resolve is the only active read-only source_anchor. resolver message",
+        "RuntimeDevServer reserved source-anchor namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke accepts source_anchor.resolve but rejects source_anchor.metadata.get with unknown_message_type",
         "protocol reserved private-overlay namespace guard addendum",
         "p2p., rendezvous., bootstrap., dht., nat., stun., and turn. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
         "protocol reserved encrypted-session namespace guard addendum",
@@ -34757,8 +35148,18 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "authenticated RuntimeDevServer relay smoke rejects permission.request, approval.prompt, and audit.events.list with unknown_message_type",
         "RuntimeDevServer reserved runtime action namespace rejection addendum",
         "authenticated RuntimeDevServer relay smoke rejects file.read, file.write, file.index, terminal.exec, terminal.kill, network.request, network.open, backend.call, and backend.configure with unknown_message_type",
+        "RuntimeDevServer index.documents.list seeded catalog no-device smoke addendum",
+        "authenticated RuntimeDevServer relay smoke accepts index.documents.list against a seeded runtime document index with one bounded catalog row",
+        "RuntimeDevServer retrieval.query lexical no-device smoke addendum",
+        "authenticated RuntimeDevServer relay smoke accepts retrieval.query against a seeded runtime document index with one bounded lexical snippet",
+        "RuntimeDevServer retrieval.query request bounds no-device smoke addendum",
+        "authenticated RuntimeDevServer relay smoke rejects retrieval.query query text longer than 1024 characters with invalid_payload",
         "RuntimeDevServer reserved RAG/research namespace rejection addendum",
-        "authenticated RuntimeDevServer relay smoke rejects embeddings.create, retrieval.query, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
+        "authenticated RuntimeDevServer relay smoke rejects embeddings.create, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
+        "RuntimeDevServer source-anchor resolver no-device smoke addendum",
+        "authenticated RuntimeDevServer relay smoke accepts source_anchor.resolve for a seeded retrieval source_anchor_id",
+        "RuntimeDevServer reserved trusted-source namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects trusted_source.approve with unknown_message_type",
         "RuntimeDevServer reserved private-overlay namespace rejection addendum",
         "authenticated RuntimeDevServer relay smoke rejects p2p.session.open, rendezvous.records.publish, bootstrap.records.lookup, dht.records.put, nat.candidates.gather, stun.binding.request, and turn.relay.allocate with unknown_message_type",
         "RuntimeDevServer reserved encrypted-session namespace rejection addendum",
@@ -34796,11 +35197,18 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "reserve the `network.` namespace",
         "reserve the `backend.` namespace",
         "reserve the `embeddings.` namespace",
-        "reserve the `retrieval.` namespace",
-        "reserve the `index.` namespace",
+        "keep `retrieval.query` as the only active deterministic lexical read-only document retrieval message",
+        "reserve unsupported `retrieval.*` messages beyond `retrieval.query`",
+        "keep `index.documents.list` as the only active read-only `index.` catalog message",
+        "reserve other `index.` messages",
         "reserve the `research.` namespace",
         "reserve the `citation.` namespace",
+        "keep `source_anchor.resolve` as the only active read-only `source_anchor.` resolver message",
+        "reserve the `trusted_source.` namespace",
         "reserve the `source_control.` namespace",
+        "source_anchor.resolve",
+        "trusted_source.approve",
+        "`source_anchor.resolve` accepts only `source_anchor_id` in requests and returns only `source_anchor_id`, `document`, and `chunk_summary`",
         "reserve the `p2p.` namespace",
         "reserve the `rendezvous.` namespace",
         "reserve the `bootstrap.` namespace",
@@ -34824,10 +35232,11 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "Protocol schema hygiene rejects active message enum entries under `transport.` and `crypto.`",
         "Protocol schema hygiene rejects active message enum entries under `permission.`, `approval.`, and `audit.`",
         "Protocol schema hygiene rejects active message enum entries under `file.`, `terminal.`, `network.`, and `backend.`",
-        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.`",
+        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, unsupported `source_anchor.` beyond `source_anchor.resolve`, `trusted_source.`, and `source_control.`",
         "Protocol schema hygiene rejects active message enum entries under generic `tool.`",
         "current `models.list` embedding model metadata",
         "current deterministic lexical `memory.list` query filter",
+        "current deterministic lexical `retrieval.query` document-index filter",
         "current `chat.sessions.list` `embedding_model_id` search hint",
         "The current implementation is deterministic lexical filtering",
         "separate `memory.search` command",
@@ -34848,9 +35257,9 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             )
 
     required_connection_overlay_snippets = (
-        "Future RAG/research action messages are intentionally reserved",
-        "`embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` message names must stay inactive",
-        "runtime-side embedding generation, retrieval, indexing, research, citation, trusted-source controls, source-control context, permissions, redaction, and audit semantics",
+        "Future RAG/research action messages are intentionally reserved beyond the current lexical document-index reads",
+        "`embeddings.`, unsupported `retrieval.` beyond active lexical `retrieval.query`, unsupported `index.` beyond the active read-only `index.documents.list` catalog, `research.`, `citation.`, `source_anchor.`, `trusted_source.`, and `source_control.` message names must stay inactive",
+        "runtime-side embedding generation, semantic retrieval, indexing, research, source-anchor resolver or approval flows, citation, trusted-source controls, source-control context, permissions, redaction, and audit semantics",
     )
     for snippet in required_connection_overlay_snippets:
         if snippet not in connection_overlay_text:
@@ -34897,6 +35306,22 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
     if "RuntimeDevServer reserved RAG/research namespace rejection" not in roadmap_text:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved RAG/research namespace rejection."
+        )
+    if "protocol reserved source-anchor/trusted-source namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved source-anchor/trusted-source namespace guard."
+        )
+    if "RuntimeDevServer source-anchor resolver" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer source-anchor resolver coverage."
+        )
+    if "RuntimeDevServer reserved source-anchor namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved source-anchor namespace rejection."
+        )
+    if "RuntimeDevServer reserved trusted-source namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved trusted-source namespace rejection."
         )
     if "protocol reserved private-overlay namespace guard" not in roadmap_text:
         failures.append(
@@ -34950,6 +35375,10 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer future route namespace rejection."
         )
+    if "Latest RuntimeDevServer seeded document catalog relay gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name seeded RuntimeDevServer document catalog relay gate."
+        )
     for path, text in (
         (progress_path, progress_text),
         (qa_evidence_path, qa_evidence_text),
@@ -35002,9 +35431,33 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record protocol reserved RAG/research namespace no-device gate."
             )
+        if "Runtime Document Retrieval Query Protocol No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record runtime document retrieval query protocol no-device gate."
+            )
+        if "RuntimeDevServer Seeded Document Catalog Relay No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record seeded RuntimeDevServer document catalog relay no-device gate."
+            )
         if "RuntimeDevServer Reserved RAG/Research Namespace Rejection No-Device Gate" not in text:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved RAG/research namespace rejection no-device gate."
+            )
+        if "Protocol Reserved Source-Anchor/Trusted-Source Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved source-anchor/trusted-source namespace no-device gate."
+            )
+        if "RuntimeDevServer Source-Anchor Resolver No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer source-anchor resolver no-device gate."
+            )
+        if "RuntimeDevServer Reserved Source-Anchor Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved source-anchor namespace rejection no-device gate."
+            )
+        if "RuntimeDevServer Reserved Trusted-Source Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved trusted-source namespace rejection no-device gate."
             )
         if "Protocol Reserved Private Overlay Namespace No-Device Gate" not in text:
             failures.append(
@@ -35046,9 +35499,49 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future runtime action messages."
             )
-        if "RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `retrieval.query`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status`" not in text:
+        if "RuntimeDevServer authenticated relay smoke accepts `retrieval.query`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer retrieval.query lexical smoke."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects oversized `retrieval.query` request text" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer retrieval.query request-bounds smoke."
+            )
+        if "RuntimeDevServer authenticated relay smoke accepts `index.documents.list` against a seeded runtime document index" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer index.documents.list seeded catalog smoke."
+            )
+        if "one bounded catalog row" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record the bounded seeded catalog-row proof."
+            )
+        if "RuntimeDevServer Seeded Document Retrieval Relay No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record seeded RuntimeDevServer document retrieval relay no-device gate."
+            )
+        if "seeded runtime document index" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record seeded runtime document index evidence."
+            )
+        if "one bounded lexical snippet" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record the bounded lexical snippet proof."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status`" not in text:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future RAG/research messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke accepts `source_anchor.resolve`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer source_anchor.resolve smoke."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `source_anchor.metadata.get`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future source-anchor messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `trusted_source.approve`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future trusted-source messages."
             )
         if "RuntimeDevServer authenticated relay smoke rejects `p2p.session.open`, `rendezvous.records.publish`, `bootstrap.records.lookup`, `dht.records.put`, `nat.candidates.gather`, `stun.binding.request`, and `turn.relay.allocate`" not in text:
             failures.append(
@@ -35412,6 +35905,1291 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
                 failures.append(
                     f"{path.relative_to(ROOT)}: Docs must record Android protocol model metadata parity "
                     f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_protocol_path = (
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
+    )
+    android_protocol_test_path = (
+        ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        android_protocol_path,
+        android_protocol_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for Android document retrieval payload guard.")
+            return failures
+
+    android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
+    android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_protocol_snippets = (
+        "data class IndexDocumentsListRequestPayload",
+        "data class IndexDocumentsListResultPayload",
+        "data class IndexDocumentsSummaryPayload",
+        "data class IndexDocumentsQualityCountsPayload",
+        "data class RuntimeDocumentIndexDocumentPayload",
+        "data class RetrievalQueryRequestPayload",
+        "data class RetrievalQueryResultPayload",
+        "data class RetrievalQueryResultItemPayload",
+        '@SerialName("display_name") val displayName: String',
+        '@SerialName("content_fingerprint") val contentFingerprint: String',
+        '@SerialName("extracted_character_count") val extractedCharacterCount: Int',
+        '@SerialName("quality_counts") val qualityCounts: IndexDocumentsQualityCountsPayload',
+        '@SerialName("max_snippet_characters") val maxSnippetCharacters: Int? = null',
+        '@SerialName("start_character_offset") val startCharacterOffset: Int',
+        '@SerialName("end_character_offset") val endCharacterOffset: Int',
+        '@SerialName("matched_terms") val matchedTerms: List<String>,',
+        'private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")',
+        "private object SourceAnchorIdSerializer",
+        "@Serializable(with = SourceAnchorIdSerializer::class)",
+        "source_anchor_id must match source_anchor_[16 lowercase hex]",
+    )
+    for snippet in required_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android document/retrieval payload DTO "
+                f"snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "indexDocumentsListPayloadUsesProtocolFieldNames",
+        "retrievalQueryPayloadUsesProtocolFieldNames",
+        "retrievalQueryResultRejectsMissingSourceAnchorId",
+        "retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
+        "retrievalQueryResultRejectsMissingMatchedTerms",
+        "sourceAnchorResolveRequestRejectsMissingRequiredField",
+        "sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
+        "sourceAnchorResolveResultRejectsMissingRequiredFields",
+        "sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+        "MessageType.IndexDocumentsList",
+        "MessageType.RetrievalQuery",
+        '"index.documents.list"',
+        '"retrieval.query"',
+        '"display_name"',
+        '"content_fingerprint"',
+        '"extracted_character_count"',
+        '"quality_counts"',
+        '"max_snippet_characters"',
+        '"start_character_offset"',
+        '"end_character_offset"',
+        '"matched_terms"',
+        '"chunk_summary"',
+        '"chunk_index"',
+        "assertSourceAnchorDecodeRejected",
+        "source_anchor_[16 lowercase hex]",
+        "source_anchor_0123456789ABCDEF",
+        "source_anchor_not_a_handle",
+        "Json.decodeFromString<SourceAnchorResolveResultPayload>",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android document/retrieval payload "
+                f"field-name regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.sourceAnchorResolvePayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField",
+        "ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
+        "ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields",
+        "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+        "ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId",
+        "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
+        "ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms",
+        "Android protocol document index, retrieval, and source-anchor resolver payload parity addendum",
+        "Android source-anchor resolver request required-field decode addendum",
+        "Android source-anchor resolver required-field decode addendum",
+        "Android retrieval source-anchor required decode addendum",
+        "Android source-anchor canonical decode addendum",
+        "Android retrieval matched-terms required decode addendum",
+        "Android SourceAnchorResolveResultPayload now rejects missing source_anchor_id, document, chunk_summary, and nested chunk_summary chunk_index, start_character_offset, end_character_offset, and character_count required fields",
+        "Android SourceAnchorResolveRequestPayload now rejects missing source_anchor_id during DTO decode",
+        "Android protocol DTO decode rejects noncanonical retrieval.query and source_anchor.resolve source_anchor_id values",
+        "Android ProtocolModels and ProtocolCodecTest serialize and decode index.documents.list catalog/summary payloads, retrieval.query lexical snippet payloads, and source_anchor.resolve redacted resolver payloads",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android document/retrieval "
+                f"payload parity; missing {snippet!r}."
+            )
+
+    if "Android protocol document index/retrieval payload parity" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name Android protocol "
+            "document index/retrieval payload parity."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Document Index/Retrieval Protocol Payload Parity No-Device Gate",
+            "Android Retrieval Source-Anchor Required Decode No-Device Gate",
+            "Android Source-Anchor Canonical Decode No-Device Gate",
+            "Android Retrieval Matched-Terms Required Decode No-Device Gate",
+            "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate",
+            "Android Source-Anchor Resolver Required-Field Decode No-Device Gate",
+            "ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames",
+            "ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames",
+            "ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId",
+            "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
+            "ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms",
+            "ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField",
+            "ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
+            "ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields",
+            "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+            "`index.documents.list` catalog/summary payloads",
+            "`retrieval.query` lexical snippet payloads",
+            "missing `source_anchor_id`",
+            "noncanonical `source_anchor_id`",
+            "missing `matched_terms`",
+            "missing `chunk_summary`",
+            "nested missing `start_character_offset`",
+            "nested missing `end_character_offset`",
+            "nested missing `character_count`",
+            "Android capabilities, ViewModel dispatch, UI consumption, chat context injection, citations, trusted-source review, and permission semantics out of scope",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android document/retrieval protocol payload "
+                    f"parity no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
+    failures: list[str] = []
+    viewmodel_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    ui_state_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt"
+    viewmodel_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        viewmodel_path,
+        ui_state_path,
+        viewmodel_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for Android document retrieval ViewModel guard.")
+            return failures
+
+    viewmodel_text = viewmodel_path.read_text(encoding="utf-8", errors="replace")
+    ui_state_text = ui_state_path.read_text(encoding="utf-8", errors="replace")
+    viewmodel_test_text = viewmodel_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_viewmodel_snippets = (
+        "MessageType.IndexDocumentsList,",
+        "MessageType.RetrievalQuery,",
+        "pendingDocumentCatalogRequestId",
+        "pendingDocumentSearchRequestId",
+        "fun refreshRuntimeDocumentCatalog()",
+        "fun searchRuntimeDocuments(query: String)",
+        "IndexDocumentsListRequestPayload(",
+        "RetrievalQueryRequestPayload(",
+        "handleIndexDocumentsList(envelope)",
+        "handleRetrievalQuery(envelope)",
+        "payload.documents.take(MAX_RUNTIME_DOCUMENT_CATALOG_ROWS).mapIndexed",
+        "payload.results.take(MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS).mapIndexed",
+        "document_catalog_load_failed",
+        "document_search_failed",
+        "MAX_RUNTIME_DOCUMENT_CATALOG_ROWS",
+        "MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS",
+        "MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS",
+        "normalizedQuery.length > MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS",
+        "MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS",
+        "toRuntimeDocumentIndexSummary",
+        "summary = payload.summary.toRuntimeDocumentIndexSummary()",
+        "RUNTIME_DOCUMENT_QUALITY_NO_USABLE_TEXT",
+        "canonicalRuntimeDocumentQualityForChunkCount",
+        "quality = canonicalRuntimeDocumentQualityForChunkCount(canonicalChunkCount)",
+        "MAX_RUNTIME_DOCUMENT_ID_LENGTH",
+        "MAX_RUNTIME_DOCUMENT_DISPLAY_NAME_LENGTH",
+        "canonicalRuntimeDocumentIdOrFallback",
+        "canonicalRuntimeDocumentDisplayNameOrFallback",
+        'RUNTIME_DOCUMENT_FALLBACK_DISPLAY_NAME = "untitled-document"',
+        "RUNTIME_DOCUMENT_MIME_TYPE_PATTERN",
+        "canonicalRuntimeDocumentMimeTypeOrFallback",
+        "mimeType = mimeType.canonicalRuntimeDocumentMimeTypeOrFallback()",
+        "MAX_RUNTIME_DOCUMENT_MATCHED_TERMS",
+        "canonicalRuntimeDocumentMatchedTerms",
+        "boundedRuntimeDocumentSnippet",
+        "rank = result.rank.coerceAtLeast(1)",
+        "endCharacterOffset = result.endCharacterOffset.coerceAtLeast(startCharacterOffset)",
+        "RUNTIME_DOCUMENT_CONTENT_FINGERPRINT_PATTERN",
+        "canonicalRuntimeDocumentContentFingerprintOrEmpty",
+        "contentFingerprint = contentFingerprint.canonicalRuntimeDocumentContentFingerprintOrEmpty()",
+    )
+    for snippet in required_viewmodel_snippets:
+        if snippet not in viewmodel_text:
+            failures.append(
+                f"{viewmodel_path.relative_to(ROOT)}: Missing Android document retrieval ViewModel wiring "
+                f"snippet {snippet!r}."
+            )
+
+    required_ui_state_snippets = (
+        "val documentCatalog: RuntimeDocumentCatalog = RuntimeDocumentCatalog()",
+        "val documentSearchQuery: String = \"\"",
+        "val documentSearchResults: List<RuntimeDocumentSearchResult> = emptyList()",
+        "val isLoadingDocumentCatalog: Boolean = false",
+        "val isSearchingDocuments: Boolean = false",
+        "data class RuntimeDocumentCatalog",
+        "data class RuntimeDocumentSearchResult",
+    )
+    for snippet in required_ui_state_snippets:
+        if snippet not in ui_state_text:
+            failures.append(
+                f"{ui_state_path.relative_to(ROOT)}: Missing transient Android document retrieval state "
+                f"snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage",
+        "runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
+        "runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
+        "runtimeDocumentResponsesCapTransientRowsToRequestLimits",
+        "runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+        "runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
+        "runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
+        "runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
+        "runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+        "runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
+        "runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
+        "runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+        "runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
+        "runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
+        "documentCount = -7",
+        "chunkCount = -3",
+        "extractedCharacterCount = -1200",
+        "qualityCounts = IndexDocumentsQualityCountsPayload(",
+        '"q".repeat(1025)',
+        "retrievalRequestsBefore",
+        '"query_too_long"',
+        "(0 until 105).map(::document)",
+        "assertEquals(100, catalog.documents.size)",
+        "(0 until 12).map { index ->",
+        "assertEquals(10, searchResults.size)",
+        'contentFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"',
+        'listOf("0123456789abcdef", "", "", "")',
+        'mimeType = "text/plain; charset=utf-8"',
+        '"text/" + "a".repeat(124)',
+        '"application/octet-stream"',
+        'quality = "future_trusted_source"',
+        'listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked")',
+        'id = "doc\\u0000control"',
+        'id = "d".repeat(129)',
+        'displayName = "d".repeat(257)',
+        '"doc-canonical-label",',
+        '"untitled-document"',
+        'val overlongSnippet = "s".repeat(600)',
+        'val overlongTerm = "t".repeat(65)',
+        'listOf("route") + (1..15).map { index -> "term$index" }',
+        'assertEquals("s".repeat(480), result.snippet)',
+        'fixture.viewModel.disconnect()',
+        "assertTrue(disconnectedState.documentCatalog.documents.isEmpty())",
+        "assertEquals(RuntimeDocumentIndexSummary(), disconnectedState.documentCatalog.summary)",
+        'assertEquals("", disconnectedState.documentSearchQuery)',
+        "assertTrue(disconnectedState.documentSearchResults.isEmpty())",
+        "runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
+        "SourceAnchorResolveResultPayload",
+        "assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.SourceAnchorResolve })",
+        'assertFalse(chatSendPayload.contains("chunk_summary"))',
+        "assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.IndexDocumentsList))",
+        "assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.RetrievalQuery))",
+        'assertFalse(chatSendPayload.contains("retrieval_context"))',
+        'assertFalse(chatSendPayload.contains("source_path"))',
+        'assertFalse(chatSendPayload.contains("trusted_source"))',
+    )
+    for snippet in required_test_snippets:
+        if snippet not in viewmodel_test_text:
+            failures.append(
+                f"{viewmodel_test_path.relative_to(ROOT)}: Missing Android document retrieval ViewModel "
+                f"regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage",
+        "RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
+        "RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
+        "RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits",
+        "RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+        "RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
+        "Android document index and retrieval transient ViewModel wiring addendum",
+        "Android document catalog disconnect transient clear addendum",
+        "Android document catalog summary transient-state bounds addendum",
+        "Android document content-fingerprint transient-state canonicality addendum",
+        "Android document MIME transient-state canonicality addendum",
+        "Android document quality/chunk-count transient-state consistency addendum",
+        "Android document id/display-name transient-state bounds addendum",
+        "Android retrieval query outbound bounds addendum",
+        "Android document response row transient-state cap addendum",
+        "Android retrieval lexical metadata transient-state bounds addendum",
+        "decodes catalog and lexical snippet responses into transient RuntimeUiState only",
+        "clears transient index.documents.list documentCatalog rows and summary values on explicit disconnect and receive failure",
+        "coerces index.documents.list summary document_count, chunk_count, extracted_character_count, and quality_counts",
+        "preserves only exact 16-lowercase-hex content_fingerprint values in transient document state",
+        "preserves only exact lowercase type/subtype MIME values up to 128 characters in transient document state",
+        "derives transient document quality from the nonnegative chunk_count envelope",
+        "keeps transient document ids nonblank, control-free, and within 128 characters",
+        "rejects document search queries longer than 1024 characters before emitting retrieval.query",
+        "clears pending retrieval.query request tracking when the user submits a blank or overlong document search",
+        "Android document search pending invalidation addendum",
+        "clears transient retrieval.query documentSearchQuery, documentSearchResults, and source_anchor_id values on explicit disconnect and receive failure",
+        "Android document search disconnect transient clear addendum",
+        "caps decoded index.documents.list catalog rows to 100 and retrieval.query search rows to 10",
+        "clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols",
+        "Android client capability future Workspace/RAG/source deny-list addendum",
+        "Android unsolicited source-anchor resolver boundary addendum",
+        "embeddings.create",
+        "source_anchor.resolve",
+        "projects.sessions.list",
+        "memory.search",
+        "route.candidates.exchange",
+        "coerces retrieval.query transient rank values to positive integers",
+        "keeps chat.send payloads free of retrieval_context, source paths, workspace/project IDs, citations, and trusted-source fields",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover Android document retrieval "
+                f"ViewModel wiring; missing {snippet!r}."
+            )
+
+    if "Android document index/retrieval transient ViewModel wiring" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name Android document index/retrieval transient "
+            "ViewModel wiring."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Document Index/Retrieval Transient ViewModel No-Device Gate",
+            "Android Document Catalog Disconnect Transient Clear No-Device Gate",
+            "Android Document Catalog Summary Transient-State No-Device Gate",
+            "Android Document Response Row Transient-State Cap No-Device Gate",
+            "Android Document Content-Fingerprint Transient-State No-Device Gate",
+            "Android Document MIME Transient-State No-Device Gate",
+            "Android Document Quality/Chunk-Count Transient-State No-Device Gate",
+            "Android Document ID/Display-Name Transient-State No-Device Gate",
+            "Android Retrieval Query Outbound Bounds No-Device Gate",
+            "Android Document Search Pending Invalidation No-Device Gate",
+            "Android Document Search Disconnect Transient Clear No-Device Gate",
+            "Android Retrieval Lexical Metadata Transient-State No-Device Gate",
+            "Android Client Capability Future Workspace/RAG/Source Deny-List No-Device Gate",
+            "Android Unsolicited Source-Anchor Resolver Boundary No-Device Gate",
+            "RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage",
+            "RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
+            "RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
+            "RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits",
+            "RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
+            "RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
+            "RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
+            "nonnegative transient catalog summary counts",
+            "explicit disconnect and receive failure clear `documentCatalog` rows and summary values",
+            "exact 16-character lowercase hex `content_fingerprint`",
+            "exact lowercase `type/subtype` MIME",
+            "`chunk_count`-derived document quality",
+            "bounded document `id` and `display_name` metadata",
+            "1024-character `retrieval.query` request ceiling",
+            "blank or overlong document search",
+            "stale runtime responses for superseded invalid searches",
+            "explicit disconnect and receive failure clear `documentSearchQuery`, `documentSearchResults`, and `source_anchor_id`",
+            "catalog rows at 100 and retrieval search rows at 10",
+            "future Workspace/RAG/source protocol capability strings",
+            "active `index.documents.list` and `retrieval.query` capabilities",
+            "unsolicited `source_anchor.resolve` result",
+            "does not advertise `source_anchor.resolve`",
+            "does not send resolver requests",
+            "positive `retrieval.query` rank values",
+            "transient RuntimeUiState only",
+            "`chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields",
+            "Compose UI consumption, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, and physical Android proof remain out of scope",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android document retrieval ViewModel no-device "
+                    f"evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_document_retrieval_compose_ui_guard_failures() -> list[str]:
+    failures: list[str] = []
+    client_screens_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        client_screens_path,
+        main_activity_path,
+        compose_test_path,
+        strings_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for Android document retrieval Compose UI guard.")
+            return failures
+
+    client_screens_text = client_screens_path.read_text(encoding="utf-8", errors="replace")
+    main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    strings_text = strings_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_ui_snippets = (
+        "internal fun DocumentIndexPanel(",
+        "RuntimeDocumentCatalog",
+        "RuntimeDocumentSearchResult",
+        "state.documentCatalog",
+        "state.documentSearchQuery",
+        "state.documentSearchResults",
+        "state.isLoadingDocumentCatalog",
+        "state.isSearchingDocuments",
+        "onRefreshDocuments",
+        "onSearchDocuments",
+        "DocumentIndexSummary(catalog)",
+        "DocumentCatalogRow(document)",
+        "DocumentSearchResultRow(result)",
+        "documentIndexActionsEnabled(state)",
+        "document_index_read_only_notice",
+        "DOCUMENT_INDEX_SEARCH_TEST_TAG",
+        "DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG",
+        "documentSearchSnippetTestTag",
+    )
+    for snippet in required_ui_snippets:
+        if snippet not in client_screens_text:
+            failures.append(
+                f"{client_screens_path.relative_to(ROOT)}: Missing Android document retrieval Compose UI "
+                f"snippet {snippet!r}."
+            )
+
+    required_main_snippets = (
+        "onRefreshDocuments = viewModel::refreshRuntimeDocumentCatalog",
+        "onSearchDocuments = viewModel::searchRuntimeDocuments",
+    )
+    for snippet in required_main_snippets:
+        if snippet not in main_activity_text:
+            failures.append(
+                f"{main_activity_path.relative_to(ROOT)}: Missing Android document retrieval callback "
+                f"wiring {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "settingsDocumentPanelShowsCatalogSummaryAndRows",
+        "settingsDocumentSearchCallsRuntimeQueryAndShowsResults",
+        "settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi",
+        "settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages",
+        "settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsDocumentIndexRowsNarrowRootTestTag",
+        "boundsOverlap(resultMetadataBounds, resultSnippetBounds)",
+        "compose.onNodeWithText(\"1111222233334444\")",
+        "compose.onNodeWithText(\"3333444455556666\")",
+        "source_anchor_android_ui_visible_canary",
+        "onAllNodesWithContentDescription(sourceAnchorCanary, substring = true, useUnmergedTree = true)",
+        "assertEquals(listOf(\"relay recovery\"), searchQueries)",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in compose_test_text:
+            failures.append(
+                f"{compose_test_path.relative_to(ROOT)}: Missing Android document retrieval Compose UI "
+                f"regression {snippet!r}."
+            )
+
+    for snippet in (
+        "document_index_title",
+        "document_index_summary",
+        "document_index_search_metadata",
+        "document_index_read_only_notice",
+        "error_document_search_runtime_required",
+    ):
+        if snippet not in strings_text:
+            failures.append(
+                f"{strings_path.relative_to(ROOT)}: Missing Android document retrieval UI string {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows",
+        "ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults",
+        "ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi",
+        "ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages",
+        "ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "Android document index and retrieval read-only Compose UI addendum",
+        "Android document retrieval source anchor hidden UI addendum",
+        "Android document index and retrieval compact layout addendum",
+        "keeps fingerprints, source paths, workspace/project IDs, retrieval_context, citations, trusted-source fields, local persistence, and chat context injection out of UI behavior",
+        "keeps transient retrieval.query source_anchor_id values out of visible text and accessibility content descriptions",
+        "Documents catalog and retrieval.query rows stay bounded at large font across supported app languages on compact width",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover Android document retrieval "
+                f"Compose UI; missing {snippet!r}."
+            )
+
+    if "Android document index/retrieval read-only Compose UI" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name Android document index/retrieval read-only "
+            "Compose UI."
+        )
+    if "Android document index/retrieval compact layout" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name Android document index/retrieval compact "
+            "layout."
+        )
+    if "Android document retrieval source anchor hidden UI" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name Android document retrieval source anchor hidden UI."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Document Index/Retrieval Read-Only Compose UI No-Device Gate",
+            "ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows",
+            "ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults",
+            "ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi",
+            "ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages",
+            "read-only Documents panel",
+            "explicit refresh/search callbacks only",
+            "chat context injection, source approval, citations, trusted-source review, permission/audit semantics, local persistence, and physical Android proof remain out of scope",
+            "Android Document Retrieval Source Anchor Hidden UI No-Device Gate",
+            "source_anchor_id values out of visible text and accessibility content descriptions",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android document retrieval Compose UI "
+                    f"no-device evidence; missing {snippet!r}."
+                )
+        for snippet in (
+            "Android Document Index/Retrieval Compact Layout No-Device Gate",
+            "ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "compact width",
+            "large-font",
+            "supported app languages",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android document retrieval compact layout "
+                    f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_document_retrieval_relay_integration_guard_failures() -> list[str]:
+    failures: list[str] = []
+    relay_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
+        "RuntimeClientViewModelRelayIntegrationTest.kt"
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        relay_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for Android relay document retrieval guard.")
+            return failures
+
+    relay_test_text = relay_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_test_snippets = (
+        "trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession",
+        "Direct TCP must not be used for private-overlay trusted relay reconnect",
+        "IndexDocumentsListRequestPayload.serializer()",
+        "RetrievalQueryRequestPayload.serializer()",
+        "ModelsResultPayload.serializer()",
+        "ChatSendPayload.serializer()",
+        "modelsListRequest",
+        "chatSendRequest",
+        "MessageType.IndexDocumentsList",
+        "MessageType.RetrievalQuery",
+        "MessageType.ModelsList",
+        "MessageType.ChatSend",
+        "assertEquals(\"relay document\", retrievalQueryRequest.query)",
+        "assertEquals(100, indexDocumentsRequest.limit)",
+        "assertEquals(10, retrievalQueryRequest.limit)",
+        "assertEquals(480, retrievalQueryRequest.maxSnippetCharacters)",
+        "assertEquals(\"ollama:relay-chat\", modelState.selectedModelId)",
+        "Document search state must stay out of chat.send payload",
+        '"retrieval_context"',
+        '"source_path"',
+        '"workspace_id"',
+        '"project_id"',
+        '"citation"',
+        '"trusted_source"',
+        '"relay-runtime-guide.md"',
+        '"Relay document search stays inside the authenticated runtime channel."',
+    )
+    for snippet in required_test_snippets:
+        if snippet not in relay_test_text:
+            failures.append(
+                f"{relay_test_path.relative_to(ROOT)}: Missing Android relay document retrieval integration "
+                f"regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession",
+        "Android trusted relay document index/retrieval integration addendum",
+        "carries index.documents.list and retrieval.query over RuntimeRelayTcpClient",
+        "keeps chat.send payloads free of retrieval_context, source paths, workspace/project IDs, citations, trusted-source fields, document filenames, and snippets",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover Android trusted relay "
+                f"document retrieval integration; missing {snippet!r}."
+            )
+
+    if "Android trusted relay document index/retrieval integration" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name Android trusted relay document "
+            "index/retrieval integration."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Trusted Relay Document Index/Retrieval Integration No-Device Gate",
+            "RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession",
+            "`index.documents.list`",
+            "`retrieval.query`",
+            "`models.list`",
+            "`chat.send`",
+            "`chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, trusted-source fields, document filenames, and retrieval snippets",
+            "the Android phone is disconnected",
+            "GPT-5.3-Codex-Spark was not used",
+            "GPT-5.5 explorer `Tesla the 2nd`",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android trusted relay document retrieval "
+                    f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def document_retrieval_source_anchor_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift",
+        "sqlite": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift",
+        "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "store_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift",
+        "sqlite_tests": ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift",
+        "router_tests": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
+        "android_protocol": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
+        "android_protocol_tests": ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt",
+        "android_state": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt",
+        "android_viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "android_viewmodel_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "android_relay_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelRelayIntegrationTest.kt",
+        "runtime_smoke": ROOT / "script/runtime_authenticated_mock_smoke.swift",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "schema_checker": ROOT / "script/check_protocol_schema.py",
+        "protocol_docs": ROOT / "docs/protocol.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa_evidence": ROOT / "docs/qa-evidence.md",
+    }
+    for path in paths.values():
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for document retrieval source-anchor guard.")
+            return failures
+
+    texts = {
+        name: path.read_text(encoding="utf-8", errors="replace")
+        for name, path in paths.items()
+    }
+    required_snippets = (
+        ("store", "public var sourceAnchorID: String", "Runtime search results must carry a source anchor."),
+        ("store", "public struct RuntimeDocumentSourceAnchor", "Runtime document indexing must keep a redacted source-anchor resolver envelope."),
+        ("store", "public func sourceAnchor(id sourceAnchorID: String) -> RuntimeDocumentSourceAnchor?", "In-memory store must resolve source anchors without protocol exposure."),
+        ("store", "func runtimeDocumentIndexCanonicalSourceAnchorID", "Runtime source-anchor lookup must canonicalize opaque anchor IDs."),
+        ("store", "guard trimmed == sourceAnchorID", "Runtime source-anchor canonicality must reject whitespace-mutated handles instead of trimming them."),
+        ("store", "func runtimeDocumentSourceAnchor(\n    sourceAnchorID: String", "Runtime source-anchor lookup must use the redacted source-anchor helper."),
+        ("sqlite", "public func sourceAnchor(id sourceAnchorID: String) throws -> RuntimeDocumentSourceAnchor?", "SQLite store must resolve source anchors without protocol exposure."),
+        ("sqlite", "private func sourceAnchorUnlocked", "SQLite store must keep source-anchor resolution internal to the store."),
+        ("sqlite", "length(c.text)", "SQLite source-anchor resolution must expose only chunk character counts, not chunk text."),
+        ("sqlite_tests", "testSQLiteSourceAnchorResolverMatchesRuntimeStoreAfterReopenWithoutTextOrFutureMetadata", "SQLite store tests must pin redacted source-anchor resolver parity."),
+        ("sqlite_tests", "PRIVATE_SQLITE_ANCHOR_SENTINEL", "SQLite resolver tests must prove body sentinels stay out of resolved metadata."),
+        ("sqlite_tests", "sourceAnchor(id: searchResult.sourceAnchorID)", "SQLite resolver tests must call the source-anchor resolver."),
+        ("sqlite_tests", "XCTAssertFalse(description.contains(\"retrieval_context\"))", "SQLite resolver tests must reject future retrieval metadata leakage."),
+        ("router_tests", "testChatSendRejectsSourceAnchorIDBeforeTrustedSourceSemanticsExist", "Router tests must reject source_anchor_id in chat.send before trusted-source semantics exist."),
+        ("router_tests", '"source_anchor_id": .string("source_anchor_0000000000000000")', "Router tests must exercise source_anchor_id as an unsupported chat.send field."),
+        ("router_tests", "errorMessage.contains(\"source_anchor_id\")", "Router tests must assert source_anchor_id is named in the invalid payload error."),
+        ("router_tests", "testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch", "Router tests must reject missing, blank, and non-string source_anchor.resolve handles before store dispatch."),
+        ("router_tests", '("missing", [:])', "Router tests must cover missing source_anchor_id on source_anchor.resolve requests."),
+        ("router_tests", '("blank", ["source_anchor_id": .string("   \\n  ")])', "Router tests must cover blank source_anchor_id on source_anchor.resolve requests."),
+        ("router_tests", '("non-string", ["source_anchor_id": .number(123)])', "Router tests must cover non-string source_anchor_id on source_anchor.resolve requests."),
+        ("store", "runtimeDocumentSourceAnchorID(document: document, chunk: chunk)", "Runtime search results must derive the source anchor from safe metadata."),
+        ("store", '"runtime-document-source-anchor-v1"', "Runtime source anchors must be versioned before future approval/citation use."),
+        ("sqlite_tests", "testSQLiteSourceAnchorResolverMatchesRuntimeStoreAfterReopenWithoutTextOrFutureMetadata", "SQLite store tests must assert source-anchor resolver parity."),
+        ("store_tests", "testSourceAnchorResolverReturnsRedactedEnvelopeWithoutTextOrFutureMetadata", "In-memory store tests must pin redacted source-anchor resolver metadata."),
+        ("store_tests", "PRIVATE_ANCHOR_BODY_SENTINEL", "In-memory resolver tests must prove body sentinels stay out of resolved metadata."),
+        ("store_tests", "sourceAnchor(id: searchResult.sourceAnchorID)", "In-memory resolver tests must call the source-anchor resolver."),
+        ("store_tests", "XCTAssertFalse(description.contains(\"retrieval_context\"))", "In-memory resolver tests must reject future retrieval metadata leakage."),
+        ("store_tests", "testSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDs", "In-memory store tests must reject whitespace-mutated source_anchor_id resolver inputs."),
+        ("store_tests", "sourceAnchor(id: \" \\(searchResult.sourceAnchorID)\")", "In-memory source-anchor canonicality tests must reject leading-space variants."),
+        ("store_tests", "runtimeDocumentIndexCanonicalSourceAnchorID(\" \\(searchResult.sourceAnchorID)\\n\")", "In-memory source-anchor canonicality tests must exercise canonicalizer rejection."),
+        ("store_tests", "testSourceAnchorResolverInvalidatesAnchorsAfterReplaceAndDelete", "In-memory store tests must invalidate stale source anchors after replace/delete."),
+        ("store_tests", "XCTAssertNil(store.sourceAnchor(id: firstAnchorID))", "In-memory lifecycle tests must reject stale pre-replacement source anchors."),
+        ("store_tests", "XCTAssertNil(store.sourceAnchor(id: replaced.sourceAnchorID))", "In-memory lifecycle tests must reject deleted source anchors."),
+        ("store_tests", "testSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletes", "In-memory store tests must invalidate source anchors after filtered maintenance deletes."),
+        ("store_tests", "displayanchorfilter", "In-memory filtered-delete lifecycle tests must cover display-name cleanup."),
+        ("store_tests", "mimeanchorfilter", "In-memory filtered-delete lifecycle tests must cover MIME cleanup."),
+        ("store_tests", "fingerprintanchorfilter", "In-memory filtered-delete lifecycle tests must cover content-fingerprint cleanup."),
+        ("store_tests", "qualityanchorfilter", "In-memory filtered-delete lifecycle tests must cover quality cleanup."),
+        ("store_tests", "clearallanchorfilter", "In-memory filtered-delete lifecycle tests must cover delete-all cleanup."),
+        ("sqlite_tests", "testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterReplaceDeleteAndReopen", "SQLite store tests must invalidate stale source anchors after replace/delete/reopen."),
+        ("sqlite_tests", "testSQLiteSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDsAfterReopen", "SQLite store tests must reject whitespace-mutated source_anchor_id resolver inputs after reopen."),
+        ("sqlite_tests", "sourceAnchor(id: \" \\(searchResult.sourceAnchorID)\")", "SQLite source-anchor canonicality tests must reject leading-space variants."),
+        ("sqlite_tests", "runtimeDocumentIndexCanonicalSourceAnchorID(\" \\(searchResult.sourceAnchorID)\\n\")", "SQLite source-anchor canonicality tests must exercise canonicalizer rejection."),
+        ("sqlite_tests", ".sourceAnchor(id: firstAnchorID)", "SQLite lifecycle tests must resolve and then reject stale pre-replacement source anchors."),
+        ("sqlite_tests", "ftsRowCount(in: databaseURL, documentID: \"anchor-lifecycle\")", "SQLite lifecycle tests must prove deleted anchors do not leave query rows behind."),
+        ("sqlite_tests", "testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletesAndReopen", "SQLite store tests must invalidate source anchors after filtered maintenance deletes and reopen."),
+        ("sqlite_tests", "ftsRowCount(in: displayDatabaseURL, documentID: \"display-anchor-filter\")", "SQLite filtered-delete lifecycle tests must prove display-name cleanup removes FTS rows."),
+        ("sqlite_tests", "ftsRowCount(in: mimeDatabaseURL, documentID: \"mime-anchor-filter\")", "SQLite filtered-delete lifecycle tests must prove MIME cleanup removes FTS rows."),
+        ("sqlite_tests", "ftsRowCount(in: fingerprintDatabaseURL, documentID: \"fingerprint-anchor-filter\")", "SQLite filtered-delete lifecycle tests must prove content-fingerprint cleanup removes FTS rows."),
+        ("sqlite_tests", "ftsRowCount(in: qualityDatabaseURL, documentID: \"quality-anchor-filter\")", "SQLite filtered-delete lifecycle tests must prove quality cleanup removes FTS rows."),
+        ("sqlite_tests", "ftsTotalRowCount(in: clearAllDatabaseURL)", "SQLite filtered-delete lifecycle tests must prove delete-all cleanup removes all FTS rows."),
+        ("router", '"source_anchor_id": .string(result.sourceAnchorID)', "Router must serialize source_anchor_id on retrieval.query results."),
+        ("router_tests", '"source_anchor_id": .string("source_anchor_0000000000000000")', "Router tests must reject client-supplied source_anchor_id in active requests."),
+        ("router_tests", "testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch", "Router tests must reject client-supplied source_anchor_id in retrieval.query before store dispatch."),
+        ("store_tests", "XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(first.sourceAnchorID), first.sourceAnchorID)", "In-memory store tests must assert exact source-anchor shape."),
+        ("store_tests", "XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(afterChange.sourceAnchorID), afterChange.sourceAnchorID)", "In-memory stability tests must assert rotated source anchors stay canonical."),
+        ("store_tests", "testSourceAnchorIDIsStableForSameChunkAndRotatesWhenContentChanges", "In-memory store tests must pin source-anchor stability and rotation semantics."),
+        ("store_tests", "XCTAssertNotEqual(first.sourceAnchorID, afterChange.sourceAnchorID)", "In-memory store tests must prove source anchors rotate when indexed content changes."),
+        ("store_tests", "testSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBounds", "In-memory store tests must pin source-anchor query-window invariance."),
+        ("store_tests", "anchoralpha anchorbeta", "In-memory query-window tests must use changed query terms."),
+        ("store_tests", "maxSnippetCharacters: 28", "In-memory query-window tests must use changed snippet bounds."),
+        ("store_tests", "XCTAssertNotEqual(multiTerm.rank, rankWindow.rank)", "In-memory query-window tests must prove rank can change while the anchor stays stable."),
+        ("store_tests", "XCTAssertEqual(targetOnly.sourceAnchorID, rankWindow.sourceAnchorID)", "In-memory query-window tests must keep source anchors stable across rank windows."),
+        ("sqlite_tests", "XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(first.sourceAnchorID), first.sourceAnchorID)", "SQLite store tests must assert exact source-anchor parity."),
+        ("sqlite_tests", "XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(afterChange.sourceAnchorID), afterChange.sourceAnchorID)", "SQLite stability tests must assert rotated source anchors stay canonical."),
+        ("sqlite_tests", "testSQLiteSourceAnchorIDIsStableAfterReopenAndRotatesWhenContentChanges", "SQLite store tests must pin source-anchor stability after reopen and rotation semantics."),
+        ("sqlite_tests", "XCTAssertNotEqual(first.sourceAnchorID, afterChange.sourceAnchorID)", "SQLite store tests must prove source anchors rotate when indexed content changes."),
+        ("sqlite_tests", "testSQLiteSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBoundsAfterReopen", "SQLite store tests must pin source-anchor query-window invariance after reopen."),
+        ("sqlite_tests", "maxSnippetCharacters: 28", "SQLite query-window tests must use changed snippet bounds after reopen."),
+        ("sqlite_tests", "XCTAssertNotEqual(multiTerm.rank, rankWindow.rank)", "SQLite query-window tests must prove rank can change while the anchor stays stable."),
+        ("sqlite_tests", "XCTAssertEqual(targetOnly.sourceAnchorID, rankWindow.sourceAnchorID)", "SQLite query-window tests must keep source anchors stable across rank windows after reopen."),
+        ("router_tests", "case .string(let sourceAnchorID)? = firstResult[\"source_anchor_id\"]", "Router tests must decode source_anchor_id."),
+        ("router_tests", "XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID), sourceAnchorID)", "Router tests must assert exact source-anchor shape."),
+        ("schema", '"source_anchor_id"', "Protocol schema must include source_anchor_id."),
+        ("schema", '"sourceAnchorID"', "Protocol schema must define a dedicated sourceAnchorID wire shape."),
+        ("schema", '"pattern": "^source_anchor_[0-9a-f]{16}$"', "Protocol schema must pin source-anchor IDs to 16 lowercase hex characters."),
+        ("schema", '"pattern": "^[0-9a-f]{16}$"', "Protocol schema must pin document content_fingerprint to 16 lowercase hex characters."),
+        ("android_protocol_tests", 'contentFingerprint = "0011223344556677"', "Android protocol tests must use a 16-lowercase-hex document content fingerprint sample."),
+        ("android_protocol_tests", 'assertEquals("0011223344556677", listedDocument?.get("content_fingerprint")?.jsonPrimitive?.content)', "Android protocol tests must assert the catalog content_fingerprint 16-hex wire value."),
+        ("android_protocol_tests", 'assertEquals("0011223344556677", document?.get("content_fingerprint")?.jsonPrimitive?.content)', "Android protocol tests must assert the retrieval nested document content_fingerprint 16-hex wire value."),
+        ("runtime_smoke", 'catalogContentFingerprint.range(of: #"^[0-9a-f]{16}$"#', "RuntimeDevServer smoke must require catalog content_fingerprint to match the 16-hex wire shape."),
+        ("runtime_smoke", '(retrievalDocument["content_fingerprint"] as? String)?.range(', "RuntimeDevServer smoke must require retrieval nested document content_fingerprint to be present."),
+        ("schema", '"maxLength": 128', "Protocol schema must cap document ids and MIME types."),
+        ("schema", '"maxLength": 256', "Protocol schema must cap document display names."),
+        ("schema", '"source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" }', "Protocol schema must wire retrieval.query source_anchor_id through sourceAnchorID."),
+        ("schema_checker", "check_retrieval_query_source_anchor_schema_contract", "Protocol schema checker must pin retrieval.query source-anchor shape."),
+        ("schema_checker", '"pattern": "^source_anchor_[0-9a-f]{16}$"', "Protocol schema checker must require the exact source-anchor regex."),
+        ("schema_checker", "accepted_source_anchor_samples", "Protocol schema checker must run accepted source-anchor samples."),
+        ("schema_checker", "rejected_source_anchor_samples", "Protocol schema checker must run rejected source-anchor samples."),
+        ("schema_checker", "compiled_source_anchor_pattern.fullmatch", "Protocol schema checker must fullmatch source-anchor sample values."),
+        ("schema_checker", "source_anchor_ffffffffffffffff", "Protocol schema checker must accept all-lowercase hex source-anchor samples."),
+        ("schema_checker", "source_anchor_0123456789ABCDEF", "Protocol schema checker must reject uppercase source-anchor samples."),
+        ("schema_checker", "source_anchor_0123456789abcdeg", "Protocol schema checker must reject exact-length non-hex source-anchor samples."),
+        ("schema_checker", "source_anchor_0123456789abcdef0", "Protocol schema checker must reject overlong source-anchor samples."),
+        ("schema_checker", "source_anchor_not_a_handle", "Protocol schema checker must reject non-hex source-anchor samples."),
+        ("schema_checker", "build_source_anchor_resolve_request_sample", "Protocol schema checker must build source_anchor.resolve request payload samples."),
+        ("schema_checker", "build_source_anchor_resolve_response_sample", "Protocol schema checker must build source_anchor.resolve response payload samples."),
+        ("schema_checker", "source_anchor.resolve request payload sample", "Protocol schema checker must validate source_anchor.resolve request payload samples."),
+        ("schema_checker", "source_anchor.resolve response payload sample", "Protocol schema checker must validate source_anchor.resolve response payload samples."),
+        ("schema_checker", "source_anchor.resolve chunk_summary.end_character_offset must be greater than or equal to start_character_offset", "Protocol schema checker must reject invalid resolver chunk_summary offsets."),
+        ("schema_checker", "check_index_documents_list_payload_schema_contract", "Protocol schema checker must pin index.documents.list request and response payload samples."),
+        ("schema_checker", "expected_index_document_property_schemas", "Protocol schema checker must pin index.documents.list document field schemas."),
+        ("schema_checker", '"id": {"allOf": [{"$ref": "#/$defs/nonEmptyString"}, {"maxLength": 128}]}', "Protocol schema checker must pin bounded document id shape."),
+        ("schema_checker", '"display_name": {"allOf": [{"$ref": "#/$defs/nonEmptyString"}, {"maxLength": 256}]}', "Protocol schema checker must pin bounded document display-name shape."),
+        ("schema_checker", '{"pattern": INDEX_DOCUMENT_MIME_TYPE_PATTERN}', "Protocol schema checker must pin bounded document MIME type shape."),
+        ("schema_checker", "schema_max_length", "Protocol schema checker must read nested maxLength schema fragments."),
+        ("schema_checker", '"content_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{16}$"}', "Protocol schema checker must pin document content_fingerprint wire shape."),
+        ("schema_checker", "expected_summary_property_schemas", "Protocol schema checker must pin index.documents.list summary field schemas."),
+        ("schema_checker", '"$defs.indexDocumentsListPayload request properties must stay limited to limit"', "Protocol schema checker must reject new index.documents.list request metadata fields."),
+        ("schema_checker", '"$defs.indexDocumentsListPayload response required must stay limited to documents and summary"', "Protocol schema checker must require index.documents.list response documents and summary."),
+        ("schema_checker", '"$defs.indexDocumentsListPayload response documents.items must use #/$defs/indexDocument"', "Protocol schema checker must require catalog rows to reference indexDocument."),
+        ("schema_checker", '"$defs.indexDocumentsListPayload response documents must set maxItems 100"', "Protocol schema checker must bound index.documents.list response document arrays."),
+        ("schema_checker", '"$defs.indexDocumentsListPayload response summary must use #/$defs/indexDocumentsSummary"', "Protocol schema checker must require catalog summary to reference indexDocumentsSummary."),
+        ("schema_checker", "build_index_documents_list_request_sample", "Protocol schema checker must build index.documents.list request payload samples."),
+        ("schema_checker", "index_documents_list_request_sample_failures", "Protocol schema checker must validate index.documents.list request payload samples."),
+        ("schema_checker", "canonical_index_documents_request_payload_samples", "Protocol schema checker must accept canonical index.documents.list request payload samples."),
+        ("schema_checker", "rejected_index_documents_request_payload_samples", "Protocol schema checker must reject invalid index.documents.list request payload samples."),
+        ("schema_checker", "response-documents", "Protocol schema checker must reject response-only documents in index.documents.list requests."),
+        ("schema_checker", "response-summary", "Protocol schema checker must reject response-only summary in index.documents.list requests."),
+        ("schema_checker", "unknown-request-metadata", "Protocol schema checker must reject future request metadata in index.documents.list requests."),
+        ("schema_checker", "build_index_documents_list_response_sample", "Protocol schema checker must build index.documents.list response payload samples."),
+        ("schema_checker", "index_documents_list_response_sample_failures", "Protocol schema checker must validate index.documents.list response payload samples."),
+        ("schema_checker", "canonical_index_documents_response_payload_sample", "Protocol schema checker must accept a complete canonical index.documents.list response payload sample."),
+        ("schema_checker", "rejected_index_documents_response_payload_samples", "Protocol schema checker must reject invalid index.documents.list response payload samples."),
+        ("schema_checker", "unknown-response-metadata", "Protocol schema checker must reject future top-level metadata in index.documents.list responses."),
+        ("schema_checker", "missing-documents", "Protocol schema checker must reject index.documents.list responses missing documents."),
+        ("schema_checker", "missing-summary", "Protocol schema checker must reject index.documents.list responses missing summary."),
+        ("schema_checker", "over-documents", "Protocol schema checker must reject oversized index.documents.list response arrays."),
+        ("schema_checker", "documents above maximum items", "Protocol schema checker must name oversized index.documents.list response arrays."),
+        ("schema_checker", "unknown-document-metadata", "Protocol schema checker must reject future catalog document metadata."),
+        ("schema_checker", "missing-document-quality", "Protocol schema checker must reject catalog documents missing quality."),
+        ("schema_checker", "empty-document-display-name", "Protocol schema checker must reject empty catalog display names."),
+        ("schema_checker", "overlong-document-id", "Protocol schema checker must reject overlong catalog document ids."),
+        ("schema_checker", "overlong-document-display-name", "Protocol schema checker must reject overlong catalog display names."),
+        ("schema_checker", "overlong-document-mime-type", "Protocol schema checker must reject overlong catalog MIME types."),
+        ("schema_checker", "above maximum length", "Protocol schema checker must name overlong document metadata samples."),
+        ("schema_checker", "empty-document-content-fingerprint", "Protocol schema checker must reject empty catalog content fingerprints."),
+        ("schema_checker", "whitespace-document-content-fingerprint", "Protocol schema checker must reject whitespace-mutated catalog content fingerprints."),
+        ("schema_checker", "uppercase-document-content-fingerprint", "Protocol schema checker must reject uppercase catalog content fingerprints."),
+        ("schema_checker", "short-document-content-fingerprint", "Protocol schema checker must reject short catalog content fingerprints."),
+        ("schema_checker", "long-document-content-fingerprint", "Protocol schema checker must reject long catalog content fingerprints."),
+        ("schema_checker", "nonhex-document-content-fingerprint", "Protocol schema checker must reject non-hex catalog content fingerprints."),
+        ("schema_checker", "content_fingerprint must match 16 lowercase hex", "Protocol schema checker must name malformed catalog content fingerprints."),
+        ("schema_checker", "invalid-document-quality", "Protocol schema checker must reject future catalog quality values."),
+        ("schema_checker", "expected_index_document_quality_chunk_count_consistency", "Protocol schema checker must pin indexDocument quality/chunk-count consistency."),
+        ("schema_checker", "zero-chunk-document-quality-mismatch", "Protocol schema checker must reject zero-chunk catalog quality mismatches."),
+        ("schema_checker", "single-chunk-document-quality-mismatch", "Protocol schema checker must reject single-chunk catalog quality mismatches."),
+        ("schema_checker", "multi-chunk-document-quality-mismatch", "Protocol schema checker must reject multi-chunk catalog quality mismatches."),
+        ("schema_checker", "quality must match chunk_count-derived document quality", "Protocol schema checker must name document quality/chunk-count mismatches."),
+        ("schema_checker", "string-document-chunk-count", "Protocol schema checker must reject non-integer catalog chunk counts."),
+        ("schema_checker", "negative-document-extracted-character-count", "Protocol schema checker must reject negative catalog character counts."),
+        ("schema_checker", "unknown-summary-metadata", "Protocol schema checker must reject future catalog summary metadata."),
+        ("schema_checker", "quality-counts-not-object", "Protocol schema checker must reject malformed catalog quality counts."),
+        ("schema_checker", "missing-no-usable-text-quality-count", "Protocol schema checker must reject missing no_usable_text quality counts."),
+        ("schema_checker", "missing-single-chunk-quality-count", "Protocol schema checker must reject missing single_chunk quality counts."),
+        ("schema_checker", "missing-chunked-quality-count", "Protocol schema checker must reject missing chunked quality counts."),
+        ("schema_checker", "quality_counts missing {field_name}", "Protocol schema checker must name missing catalog quality counts."),
+        ("schema_checker", "unknown-quality-count", "Protocol schema checker must reject future catalog quality-count fields."),
+        ("schema_checker", "string-quality-count", "Protocol schema checker must reject non-integer catalog quality counts."),
+        ("schema_checker", "negative-quality-count", "Protocol schema checker must reject negative catalog quality counts."),
+        ("schema_checker", "build_retrieval_query_request_source_anchor_sample", "Protocol schema checker must build retrieval.query request payload samples."),
+        ("schema_checker", "retrieval_query_request_source_anchor_sample_failures", "Protocol schema checker must validate retrieval.query request payload samples."),
+        ("schema_checker", "canonical_retrieval_query_request_payload_sample", "Protocol schema checker must accept a complete canonical retrieval.query request payload sample."),
+        ("schema_checker", "rejected_retrieval_query_request_payload_samples", "Protocol schema checker must reject invalid retrieval.query request payload samples."),
+        ("schema_checker", "source-anchor-id", "Protocol schema checker must reject request payload source_anchor_id samples."),
+        ("schema_checker", "allowed_request_properties = {\"query\", \"limit\", \"max_snippet_characters\"}", "Protocol schema checker must pin retrieval.query request property names."),
+        ("schema_checker", "request properties must stay limited to query, limit, and max_snippet_characters", "Protocol schema checker must reject new retrieval.query request metadata fields."),
+        ("schema_checker", "string-limit", "Protocol schema checker must reject string retrieval.query request limit samples."),
+        ("schema_checker", "float-limit", "Protocol schema checker must reject fractional retrieval.query request limit samples."),
+        ("schema_checker", "bool-limit", "Protocol schema checker must reject boolean retrieval.query request limit samples."),
+        ("schema_checker", "negative-limit", "Protocol schema checker must reject negative retrieval.query request limit samples."),
+        ("schema_checker", "over-limit", "Protocol schema checker must reject over-maximum retrieval.query request limit samples."),
+        ("schema_checker", "string-max-snippet-characters", "Protocol schema checker must reject string retrieval.query snippet-bound samples."),
+        ("schema_checker", "float-max-snippet-characters", "Protocol schema checker must reject fractional retrieval.query snippet-bound samples."),
+        ("schema_checker", "bool-max-snippet-characters", "Protocol schema checker must reject boolean retrieval.query snippet-bound samples."),
+        ("schema_checker", "negative-max-snippet-characters", "Protocol schema checker must reject negative retrieval.query snippet-bound samples."),
+        ("schema_checker", "over-max-snippet-characters", "Protocol schema checker must reject over-maximum retrieval.query snippet-bound samples."),
+        ("schema", '"maxLength": 1024', "Protocol schema must cap retrieval.query request text."),
+        ("schema_checker", "expected_query_schema", "Protocol schema checker must pin bounded retrieval.query request text."),
+        ("schema_checker", '"$defs.retrievalQueryPayload request query must use #/$defs/nonBlankString with maxLength 1024"', "Protocol schema checker must require bounded nonblank retrieval.query request text."),
+        ("schema_checker", "oversized-query", "Protocol schema checker must reject oversized retrieval.query request text samples."),
+        ("schema_checker", "query above maximum length", "Protocol schema checker must report oversized retrieval.query request text samples."),
+        ("schema_checker", "allowed_result_properties", "Protocol schema checker must pin retrieval.query result property names."),
+        ("schema_checker", "retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet", "Protocol schema checker must reject new retrieval.query result metadata fields."),
+        ("schema_checker", '"$defs.retrievalQueryResult.properties.document must use #/$defs/indexDocument"', "Protocol schema checker must require retrieval.query result documents to reuse indexDocument."),
+        ("schema_checker", "document_schema=index_document", "Protocol schema checker must pass indexDocument into retrieval.query response sample validation."),
+        ("schema_checker", '"$defs.retrievalQueryResult.properties.matched_terms must cap matched terms at 16 items of 64 characters"', "Protocol schema checker must bound retrieval.query matched_terms schema."),
+        ("schema_checker", '"$defs.retrievalQueryResult.properties.snippet must use nonEmptyString with maxLength 500"', "Protocol schema checker must bound retrieval.query response snippets."),
+        ("schema_checker", "expected_required_fields", "Protocol schema checker must pin retrieval.query result required fields."),
+        ("schema_checker", '"$defs.retrievalQueryResult additionalProperties must be false"', "Protocol schema checker must keep retrieval.query result rows closed."),
+        ("schema_checker", "rejected_retrieval_query_response_integer_payload_samples", "Protocol schema checker must reject malformed retrieval.query response integer samples."),
+        ("schema_checker", '"$defs.retrievalQueryPayload response results must set maxItems 100"', "Protocol schema checker must bound retrieval.query response result arrays."),
+        ("schema_checker", "max_results_count", "Protocol schema checker must pass retrieval.query response maxItems into sample validation."),
+        ("schema_checker", "unknown-result-metadata", "Protocol schema checker must reject future retrieval.query result metadata samples."),
+        ("schema_checker", "over-results", "Protocol schema checker must reject oversized retrieval.query response arrays."),
+        ("schema_checker", "results above maximum items", "Protocol schema checker must name oversized retrieval.query response arrays."),
+        ("schema_checker", "missing-rank", "Protocol schema checker must reject response result samples missing rank."),
+        ("schema_checker", "zero-rank", "Protocol schema checker must reject zero retrieval.query rank samples."),
+        ("schema_checker", '"rank": {"type": "integer", "minimum": 1}', "Protocol schema checker must pin retrieval.query rank to positive integers."),
+        ("schema_checker", "empty-snippet", "Protocol schema checker must reject empty retrieval.query snippet samples."),
+        ("schema_checker", "overlong-snippet", "Protocol schema checker must reject overlong retrieval.query snippet samples."),
+        ("schema_checker", "empty-matched-terms", "Protocol schema checker must reject empty retrieval.query matched_terms arrays."),
+        ("schema_checker", "empty-matched-term", "Protocol schema checker must reject empty retrieval.query matched-term samples."),
+        ("schema_checker", "over-matched-terms", "Protocol schema checker must reject oversized retrieval.query matched_terms arrays."),
+        ("schema_checker", "overlong-matched-term", "Protocol schema checker must reject overlong retrieval.query matched-term samples."),
+        ("schema_checker", "end-before-start-character-offset", "Protocol schema checker must reject end-before-start retrieval.query offset samples."),
+        ("schema_checker", "end_character_offset must be greater than or equal to start_character_offset", "Protocol schema checker must name end-before-start retrieval.query offsets."),
+        ("schema_checker", "INDEX_DOCUMENT_MIME_TYPE_PATTERN", "Protocol schema checker must pin the document MIME type wire-shape pattern."),
+        ("schema_checker", "mime_type must match lowercase type/subtype token", "Protocol schema checker must reject noncanonical document MIME type samples."),
+        ("schema_checker", "whitespace-document-mime-type", "Protocol schema checker must reject whitespace-mutated catalog document MIME types."),
+        ("schema_checker", "uppercase-document-mime-type", "Protocol schema checker must reject uppercase catalog document MIME types."),
+        ("schema_checker", "missing-slash-document-mime-type", "Protocol schema checker must reject catalog document MIME types without type/subtype separators."),
+        ("schema_checker", "parameterized-document-mime-type", "Protocol schema checker must reject parameterized catalog document MIME types."),
+        ("schema_checker", "url-shaped-document-mime-type", "Protocol schema checker must reject URL-shaped catalog document MIME types."),
+        ("schema_checker", "uppercase-result-document-mime-type", "Protocol schema checker must reject uppercase retrieval nested document MIME types."),
+        ("schema_checker", "parameterized-result-document-mime-type", "Protocol schema checker must reject parameterized retrieval nested document MIME types."),
+        ("schema_checker", "unknown-result-document-metadata", "Protocol schema checker must reject future retrieval.query nested document metadata."),
+        ("schema_checker", "missing-result-document-quality", "Protocol schema checker must reject retrieval.query nested documents missing quality."),
+        ("schema_checker", "zero-chunk-result-document-quality-mismatch", "Protocol schema checker must reject zero-chunk retrieval nested document quality mismatches."),
+        ("schema_checker", "single-chunk-result-document-quality-mismatch", "Protocol schema checker must reject single-chunk retrieval nested document quality mismatches."),
+        ("schema_checker", "multi-chunk-result-document-quality-mismatch", "Protocol schema checker must reject multi-chunk retrieval nested document quality mismatches."),
+        ("schema_checker", "overlong-result-document-id", "Protocol schema checker must reject overlong retrieval.query nested document ids."),
+        ("schema_checker", "uppercase-result-document-content-fingerprint", "Protocol schema checker must reject malformed retrieval.query nested document fingerprints."),
+        ("schema_checker", "string-result-document-chunk-count", "Protocol schema checker must reject non-integer retrieval.query nested document chunk counts."),
+        ("schema_checker", "negative-result-document-extracted-character-count", "Protocol schema checker must reject negative retrieval.query nested document character counts."),
+        ("schema_checker", "results[{index}].document", "Protocol schema checker must report retrieval.query nested document sample paths."),
+        ("schema_checker", "matched_terms below minimum items", "Protocol schema checker must name empty retrieval.query matched_terms arrays."),
+        ("schema_checker", "matched_terms above maximum items", "Protocol schema checker must name oversized retrieval.query matched_terms arrays."),
+        ("schema_checker", "matched_terms[{term_index}] above maximum length", "Protocol schema checker must name overlong retrieval.query matched terms."),
+        ("schema_checker", "snippet above maximum length", "Protocol schema checker must name overlong retrieval.query snippets."),
+        ("schema_checker", "results[{index}].{integer_field_name} must be an integer", "Protocol schema checker must reject non-integer retrieval.query result metadata samples."),
+        ("schema_checker", "results[{index}].{integer_field_name} below minimum", "Protocol schema checker must reject negative retrieval.query result metadata samples."),
+        ("schema_checker", '"$defs.retrievalQueryPayload request additionalProperties must be false"', "Protocol schema checker must keep retrieval.query request payload closed."),
+        ("schema_checker", "build_retrieval_query_response_source_anchor_sample", "Protocol schema checker must build retrieval.query response payload samples."),
+        ("schema_checker", "retrieval_query_response_source_anchor_sample_failures", "Protocol schema checker must validate retrieval.query response payload source anchors."),
+        ("schema_checker", "canonical_retrieval_query_response_payload_sample", "Protocol schema checker must accept a complete canonical retrieval.query response payload sample."),
+        ("schema_checker", "rejected_retrieval_query_response_payload_samples", "Protocol schema checker must reject noncanonical retrieval.query response payload samples."),
+        ("schema_checker", "missing-source-anchor", "Protocol schema checker must reject response payload results missing source_anchor_id."),
+        ("schema_checker", "results[].source_anchor_id", "Protocol schema checker must name response payload source-anchor sample failures."),
+        ("schema_checker", '"$defs.retrievalQueryPayload response results.items must use "', "Protocol schema checker must require response results to reference retrievalQueryResult."),
+        ("schema_checker", '"$defs.retrievalQueryPayload response additionalProperties must be false"', "Protocol schema checker must keep retrieval.query response payload closed."),
+        ("schema_checker", '"$defs.retrievalQueryResult.required must include source_anchor_id"', "Protocol schema checker must require source_anchor_id on results."),
+        ("schema_checker", '"$defs.retrievalQueryPayload request properties must not accept source_anchor_id"', "Protocol schema checker must keep source_anchor_id response-only."),
+        ("schema", '"minItems": 1', "Protocol schema must require non-empty retrieval.query matched_terms arrays."),
+        ("schema", '"required": ["no_usable_text", "single_chunk", "chunked"]', "Protocol schema must require complete catalog quality_counts."),
+        ("schema", '"maxItems": 16', "Protocol schema must cap retrieval.query matched_terms arrays."),
+        ("schema", '"maxLength": 64', "Protocol schema must cap retrieval.query matched term length."),
+        ("schema", '"maxLength": 500', "Protocol schema must cap retrieval.query response snippet length."),
+        ("schema", '"maxItems": 100', "Protocol schema must cap document catalog and retrieval response arrays."),
+        ("schema", '"rank": { "type": "integer", "minimum": 1 }', "Protocol schema must require positive retrieval.query result ranks."),
+        ("schema", '"quality": { "const": "no_usable_text" }', "Protocol schema must bind zero chunks to no_usable_text quality."),
+        ("schema", '"quality": { "const": "single_chunk" }', "Protocol schema must bind one chunk to single_chunk quality."),
+        ("schema", '"quality": { "const": "chunked" }', "Protocol schema must bind two or more chunks to chunked quality."),
+        ("schema", "\"pattern\": \"^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$\"", "Protocol schema must pin document MIME types to lowercase type/subtype tokens."),
+        ("android_protocol", '@SerialName("source_anchor_id") val sourceAnchorId: String,', "Android protocol DTO must require source_anchor_id during retrieval.query result decode."),
+        ("android_protocol", 'private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")', "Android protocol DTO decode must share the exact source-anchor wire shape."),
+        ("android_protocol", "private object SourceAnchorIdSerializer", "Android protocol DTO decode must reject noncanonical source anchors through a serializer."),
+        ("android_protocol", "@Serializable(with = SourceAnchorIdSerializer::class)", "Android protocol DTO source_anchor_id fields must use the source-anchor serializer."),
+        ("android_protocol", "source_anchor_id must match source_anchor_[16 lowercase hex]", "Android protocol DTO decode must explain the canonical source-anchor failure."),
+        ("android_protocol_tests", "assertFalse(requestJson.containsKey(\"source_anchor_id\"))", "Android protocol tests must keep source_anchor_id out of retrieval.query requests."),
+        ("android_protocol_tests", '"source_anchor_id"', "Android protocol tests must assert source_anchor_id wire name."),
+        ("android_protocol_tests", "decodedItem.sourceAnchorId", "Android protocol tests must assert decoded sourceAnchorId."),
+        ("android_protocol_tests", 'Regex("^source_anchor_[0-9a-f]{16}$")', "Android protocol tests must assert exact source-anchor wire shape."),
+        ("android_protocol_tests", "assertTrue(sourceAnchorWireShape.matches(decodedItem.sourceAnchorId))", "Android protocol tests must fail noncanonical source-anchor IDs."),
+        ("android_protocol_tests", "retrievalQueryResultRejectsNonCanonicalSourceAnchorIds", "Android protocol tests must reject noncanonical retrieval.query response source anchors."),
+        ("android_protocol_tests", "sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds", "Android protocol tests must reject noncanonical source_anchor.resolve request source anchors."),
+        ("android_protocol_tests", "sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds", "Android protocol tests must reject noncanonical source_anchor.resolve response source anchors."),
+        ("android_protocol_tests", "assertSourceAnchorDecodeRejected", "Android protocol tests must share the noncanonical source-anchor decode assertion."),
+        ("android_protocol_tests", "sourceAnchorResolveRequestRejectsMissingRequiredField", "Android protocol tests must reject source_anchor.resolve requests missing source_anchor_id."),
+        ("android_protocol_tests", "Json.decodeFromString<SourceAnchorResolveRequestPayload>(\"{}\")", "Android protocol tests must decode a missing source_anchor.resolve request through the real DTO."),
+        ("android_protocol_tests", "retrievalQueryResultRejectsMissingSourceAnchorId", "Android protocol tests must reject retrieval.query result rows missing source_anchor_id."),
+        ("android_protocol_tests", "Json.decodeFromString<RetrievalQueryResultPayload>(missingSourceAnchorResult)", "Android protocol tests must decode a missing-source-anchor sample through the real DTO."),
+        ("android_protocol_tests", "sourceAnchorResolveResultRejectsMissingRequiredFields", "Android protocol tests must reject source_anchor.resolve results missing required fields."),
+        ("android_protocol_tests", "Json.decodeFromString<SourceAnchorResolveResultPayload>", "Android protocol tests must decode missing required source_anchor.resolve samples through the real DTO."),
+        ("android_state", "val sourceAnchorId: String = \"\"", "Android transient search state must preserve sourceAnchorId."),
+        ("android_viewmodel", "RUNTIME_SOURCE_ANCHOR_ID_PATTERN = Regex(\"^source_anchor_[0-9a-f]{16}$\")", "Android ViewModel must pin transient source-anchor IDs to the exact wire shape."),
+        ("android_viewmodel", "canonicalRuntimeSourceAnchorIdOrEmpty", "Android ViewModel must canonicalize source-anchor IDs without whitespace normalization."),
+        ("android_viewmodel", "sourceAnchorId = result.sourceAnchorId.canonicalRuntimeSourceAnchorIdOrEmpty()", "Android ViewModel must preserve only exact canonical sourceAnchorId values."),
+        ("android_viewmodel", "documentSearchResults = emptyList()", "Android ViewModel disconnect cleanup must clear transient search rows and source anchors."),
+        ("android_viewmodel_tests", "assertEquals(\"source_anchor_8899aabbccddeeff\", result.sourceAnchorId)", "Android ViewModel tests must assert transient sourceAnchorId with canonical shape."),
+        ("android_viewmodel_tests", "runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState", "Android ViewModel tests must reject noncanonical sourceAnchorId wire values before transient state."),
+        ("android_viewmodel_tests", "runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting", "Android ViewModel tests must ignore unsolicited source-anchor resolver result frames."),
+        ("android_viewmodel_tests", "json.parseToJsonElement", "Android ViewModel tests must inject raw unsolicited source-anchor resolver payloads."),
+        ("android_viewmodel_tests", "\"trusted_source\": {\"id\": \"$resolvedTrustedSourceCanary\"}", "Android ViewModel tests must include future trusted-source metadata canaries."),
+        ("android_viewmodel_tests", "\"backend_url\": \"$resolvedBackendUrlCanary\"", "Android ViewModel tests must include backend URL canaries in unsolicited resolver payloads."),
+        ("android_viewmodel_tests", "assertFalse(chatSendPayload.contains(resolvedTrustedSourceCanary))", "Android ViewModel tests must keep future trusted-source metadata out of chat payloads."),
+        ("android_viewmodel_tests", "assertFalse(chatSendPayload.contains(resolvedBackendUrlCanary))", "Android ViewModel tests must keep backend URL metadata out of chat payloads."),
+        ("android_viewmodel_tests", "assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.SourceAnchorResolve })", "Android ViewModel tests must prove Android does not send resolver requests."),
+        ("android_viewmodel_tests", 'assertFalse(chatSendPayload.contains("chunk_summary"))', "Android ViewModel tests must keep resolver chunk summaries out of chat payloads."),
+        ("android_viewmodel_tests", "runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect", "Android ViewModel tests must clear source anchors on disconnect."),
+        ("android_viewmodel_tests", "assertTrue(disconnectedState.documentSearchResults.isEmpty())", "Android ViewModel disconnect tests must empty transient search results."),
+        ("android_viewmodel_tests", "Noncanonical source anchor must fail decode.", "Android ViewModel tests must cover malformed source-anchor decode failure."),
+        ("android_viewmodel_tests", "source_anchor_0123456789ABCDEF", "Android ViewModel tests must cover uppercase source anchors."),
+        ("android_viewmodel_tests", "assertEquals(\"invalid_payload\", rejectedState.error?.code)", "Android ViewModel tests must surface malformed source anchors as invalid payloads."),
+        ("android_viewmodel_tests", "assertTrue(rejectedState.documentSearchResults.isEmpty())", "Android ViewModel tests must keep malformed source-anchor results out of transient state."),
+        ("android_viewmodel_tests", "source_anchor_[16 lowercase hex]", "Android ViewModel tests must require the canonical source-anchor failure detail."),
+        ("android_relay_tests", "assertEquals(\"source_anchor_0011223344556677\", searchResult.sourceAnchorId)", "Android relay integration must prove canonical sourceAnchorId crosses the relay path."),
+        ("runtime_smoke", 'firstRetrievalResult["source_anchor_id"] as? String', "RuntimeDevServer smoke must require source_anchor_id."),
+        ("runtime_smoke", '#"^source_anchor_[0-9a-f]{16}$"#', "RuntimeDevServer smoke must assert exact source-anchor shape."),
+        ("runtime_smoke", "retrievalEndOffset >= retrievalStartOffset", "RuntimeDevServer smoke must assert retrieval offset ordering."),
+        ("store_tests", "testLexicalQueryAppliesLimitOffsetSanityAndDeterministicOrdering", "In-memory store tests must pin retrieval result limit, ordering, and offset sanity."),
+        ("store_tests", "store.query(\"target\", limit: 0", "In-memory store tests must prove zero retrieval limits return empty rows."),
+        ("store_tests", "previous.rank >= next.rank", "In-memory store tests must prove retrieval ranks are non-increasing."),
+        ("sqlite_tests", "reopened.query(\"retrieval runtime\", limit: 0", "SQLite store tests must prove zero retrieval limits return empty rows after reopen."),
+        ("router_tests", "XCTAssertGreaterThanOrEqual(end, start)", "Router tests must assert serialized retrieval offset ordering."),
+        ("router_tests", "XCTAssertGreaterThanOrEqual(previousRank, rank)", "Router tests must assert serialized retrieval rank ordering."),
+        ("router", "DocumentIngestionQuality.noUsableText.rawValue", "Runtime router must serialize no_usable_text quality counts explicitly."),
+        ("router", "DocumentIngestionQuality.singleChunk.rawValue", "Runtime router must serialize single_chunk quality counts explicitly."),
+        ("router", "DocumentIngestionQuality.chunked.rawValue", "Runtime router must serialize chunked quality counts explicitly."),
+        ("router", "summary.qualityCounts[.noUsableText, default: 0]", "Runtime router must default absent no_usable_text quality counts to zero."),
+        ("no_device", "Covered document retrieval source anchor addendum", "Default no-device gate must summarize source-anchor coverage."),
+        ("no_device", "Covered protocol source-anchor wire-shape addendum", "Default no-device gate must summarize source-anchor wire-shape coverage."),
+        ("no_device", "ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId", "Default no-device gate must run Android source-anchor required decode coverage."),
+        ("no_device", "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds", "Default no-device gate must run Android retrieval source-anchor canonical decode coverage."),
+        ("no_device", "Covered Android retrieval source-anchor required decode addendum", "Default no-device gate must summarize Android source-anchor required decode coverage."),
+        ("no_device", "Covered Android source-anchor canonical decode addendum", "Default no-device gate must summarize Android source-anchor canonical decode coverage."),
+        ("no_device", "Covered protocol source-anchor sample validation addendum", "Default no-device gate must summarize protocol source-anchor sample validation."),
+        ("no_device", "Covered protocol retrieval.query source-anchor request payload sample addendum", "Default no-device gate must summarize retrieval.query source-anchor request payload sample validation."),
+        ("no_device", "Covered protocol source-anchor resolver payload sample addendum", "Default no-device gate must summarize source_anchor.resolve payload sample validation."),
+        ("no_device", "Covered protocol retrieval.query request bounds sample addendum", "Default no-device gate must summarize retrieval.query request bounds sample validation."),
+        ("no_device", "Covered protocol retrieval.query query-length and response result sample addendum", "Default no-device gate must summarize retrieval.query query-length and response result sample validation."),
+        ("no_device", "Covered protocol retrieval.query positive-rank wire-shape addendum", "Default no-device gate must summarize retrieval.query positive-rank wire-shape validation."),
+        ("no_device", "Covered protocol retrieval.query result ordering and offset sanity addendum", "Default no-device gate must summarize retrieval.query result ordering and offset sanity."),
+        ("no_device", "Covered protocol index.documents.list request and response sample addendum", "Default no-device gate must summarize index.documents.list request and response sample validation."),
+        ("no_device", "Covered protocol index.documents.list quality-count completeness addendum", "Default no-device gate must summarize catalog quality-count completeness."),
+        ("no_device", "Covered protocol index.documents.list content-fingerprint wire-shape addendum", "Default no-device gate must summarize catalog content_fingerprint wire-shape validation."),
+        ("no_device", "Covered Android document content-fingerprint protocol parity addendum", "Default no-device gate must summarize Android content_fingerprint protocol parity."),
+        ("no_device", "LocalRuntimeMessageRouterTests/testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch", "Default no-device gate must run macOS source-anchor resolver required-field router coverage."),
+        ("no_device", "Covered macOS source-anchor resolver request required-field router addendum", "Default no-device gate must summarize macOS source-anchor resolver required-field router coverage."),
+        ("no_device", "Covered protocol document quality/chunk-count consistency addendum", "Default no-device gate must summarize document quality/chunk-count consistency."),
+        ("no_device", "Covered protocol document MIME type wire-shape addendum", "Default no-device gate must summarize document MIME type wire-shape validation."),
+        ("no_device", "Covered protocol document metadata string-bounds and retrieval nested-document parity addendum", "Default no-device gate must summarize bounded document metadata and nested retrieval document parity."),
+        ("no_device", "Covered protocol retrieval.query matched-terms bounds addendum", "Default no-device gate must summarize retrieval.query matched_terms bounds."),
+        ("no_device", "Covered protocol retrieval.query snippet bounds addendum", "Default no-device gate must summarize retrieval.query snippet bounds."),
+        ("no_device", "Covered protocol document retrieval response array bounds addendum", "Default no-device gate must summarize protocol response array bounds."),
+        ("no_device", "Covered protocol retrieval.query source-anchor response payload sample addendum", "Default no-device gate must summarize retrieval.query source-anchor response payload sample validation."),
+        ("no_device", "Covered macOS document retrieval source anchor exact-shape addendum", "Default no-device gate must summarize macOS source-anchor exact-shape coverage."),
+        ("no_device", "runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState", "Default no-device gate must run Android source-anchor transient-state canonicality coverage."),
+        ("no_device", "runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting", "Default no-device gate must run Android unsolicited source-anchor resolver boundary coverage."),
+        ("no_device", "ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField", "Default no-device gate must run Android source-anchor resolver request required-field decode coverage."),
+        ("no_device", "ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds", "Default no-device gate must run Android source-anchor resolver request canonical decode coverage."),
+        ("no_device", "ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields", "Default no-device gate must run Android source-anchor resolver required-field decode coverage."),
+        ("no_device", "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds", "Default no-device gate must run Android source-anchor resolver response canonical decode coverage."),
+        ("no_device", "runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect", "Default no-device gate must run Android source-anchor disconnect cleanup coverage."),
+        ("no_device", "Covered Android document retrieval source anchor canonical transient-state addendum", "Default no-device gate must summarize Android source-anchor transient-state canonicality."),
+        ("no_device", "Covered Android unsolicited source-anchor resolver boundary addendum", "Default no-device gate must summarize Android unsolicited source-anchor resolver boundary coverage."),
+        ("no_device", "Covered Android source-anchor resolver request required-field decode addendum", "Default no-device gate must summarize Android source-anchor resolver request required-field decode coverage."),
+        ("no_device", "Covered Android source-anchor resolver required-field decode addendum", "Default no-device gate must summarize Android source-anchor resolver required-field decode coverage."),
+        ("no_device", "Covered Android document search disconnect transient clear addendum", "Default no-device gate must summarize Android source-anchor disconnect cleanup."),
+        ("no_device", "Covered document retrieval source anchor stability addendum", "Default no-device gate must summarize source-anchor stability coverage."),
+        ("no_device", "Covered document retrieval source anchor query-window addendum", "Default no-device gate must summarize source-anchor query-window coverage."),
+        ("no_device", "Covered document retrieval source anchor canonicality addendum", "Default no-device gate must summarize source-anchor canonicality coverage."),
+        ("no_device", "RuntimeDocumentIndexStoreTests/testSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDs|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDsAfterReopen", "Default no-device gate must run source-anchor canonicality regressions."),
+        ("no_device", "Covered document retrieval source anchor resolver addendum", "Default no-device gate must summarize source-anchor resolver coverage."),
+        ("no_device", "Covered document retrieval source anchor lifecycle addendum", "Default no-device gate must summarize source-anchor lifecycle coverage."),
+        ("no_device", "Covered document retrieval source anchor filtered-delete lifecycle addendum", "Default no-device gate must summarize filtered-delete source-anchor lifecycle coverage."),
+        ("protocol_docs", "## Document Catalog And Retrieval Messages", "Protocol docs must describe active document catalog and retrieval messages."),
+        ("protocol_docs", "`index.documents.list` is the active read-only runtime document catalog message", "Protocol docs must describe active index.documents.list semantics."),
+        ("protocol_docs", "`documents` array capped at 100 rows", "Protocol docs must document the index.documents.list response row cap."),
+        ("protocol_docs", "`id` is capped at 128 characters and `display_name` is capped at 256 characters", "Protocol docs must document document metadata string bounds."),
+        ("protocol_docs", "`mime_type` as a runtime-canonical lowercase `type/subtype` token", "Protocol docs must document document MIME type wire shape."),
+        ("protocol_docs", "`content_fingerprint` as a 16-character lowercase hex value", "Protocol docs must document index.documents.list content_fingerprint shape."),
+        ("protocol_docs", "Document `quality` is derived from `chunk_count`", "Protocol docs must document document quality/chunk-count consistency."),
+        ("protocol_docs", "summary `quality_counts` object always contains `no_usable_text`, `single_chunk`, and `chunked` integer counts", "Protocol docs must document complete catalog quality_counts."),
+        ("protocol_docs", "`retrieval.query` is the active deterministic lexical document retrieval message", "Protocol docs must describe active retrieval.query semantics."),
+        ("protocol_docs", "request payload requires nonblank `query` text capped at 1024 characters", "Protocol docs must document retrieval.query request text bounds."),
+        ("protocol_docs", "response `results` array is capped at 100 rows", "Protocol docs must document the retrieval.query response row cap."),
+        ("protocol_docs", "Character offsets are zero-based half-open ranges", "Protocol docs must document retrieval.query character-offset semantics."),
+        ("protocol_docs", "positive integer `rank`", "Protocol docs must document positive retrieval.query rank values."),
+        ("protocol_docs", "clients must treat positive `rank` as implementation metadata", "Protocol docs must avoid presenting rank as semantic relevance."),
+        ("protocol_docs", "non-empty `matched_terms` capped at 16 terms of 64 characters each", "Protocol docs must document retrieval.query matched_terms bounds."),
+        ("protocol_docs", "non-empty response `snippet` capped at 500 characters", "Protocol docs must document retrieval.query snippet bounds."),
+        ("protocol_docs", "`source_anchor_id` computed from safe document/chunk metadata", "Protocol docs must describe source_anchor_id as safe metadata."),
+        ("roadmap", "Latest macOS document retrieval source anchor exact-shape no-device gate", "Roadmap must name the macOS source-anchor exact-shape gate."),
+        ("roadmap", "Latest Android retrieval source-anchor required decode no-device gate", "Roadmap must name the Android source-anchor required decode gate."),
+        ("roadmap", "Latest protocol document quality/chunk-count consistency no-device gate", "Roadmap must name the document quality/chunk-count consistency gate."),
+        ("roadmap", "Latest protocol retrieval.query positive-rank wire-shape no-device gate", "Roadmap must name the retrieval.query positive-rank wire-shape gate."),
+        ("roadmap", "Latest protocol document MIME type wire-shape no-device gate", "Roadmap must name the document MIME type wire-shape gate."),
+        ("roadmap", "Latest protocol retrieval.query result ordering and offset sanity no-device gate", "Roadmap must name retrieval.query result ordering and offset sanity gate."),
+        ("roadmap", "Latest protocol index.documents.list quality-count completeness no-device gate", "Roadmap must name the catalog quality-count completeness gate."),
+        ("roadmap", "Latest protocol document metadata string-bounds and retrieval nested-document parity no-device gate", "Roadmap must name the document metadata string-bounds and nested-document parity gate."),
+        ("roadmap", "Latest protocol index.documents.list content-fingerprint wire-shape no-device gate", "Roadmap must name the index.documents.list content_fingerprint wire-shape gate."),
+        ("roadmap", "Latest Android document content-fingerprint protocol parity no-device gate", "Roadmap must name the Android content_fingerprint protocol parity gate."),
+        ("roadmap", "Latest Android client capability future Workspace/RAG/source deny-list no-device gate", "Roadmap must name the Android future capability deny-list gate."),
+        ("roadmap", "Latest Android document search pending invalidation no-device gate", "Roadmap must name the Android document search pending invalidation gate."),
+        ("roadmap", "Latest Android document response row transient-state cap no-device gate", "Roadmap must name the Android document response row transient-state cap gate."),
+        ("roadmap", "Latest protocol retrieval.query snippet bounds no-device gate", "Roadmap must name the retrieval.query snippet bounds gate."),
+        ("roadmap", "Latest protocol retrieval.query matched-terms bounds no-device gate", "Roadmap must name the retrieval.query matched_terms bounds gate."),
+        ("roadmap", "Latest protocol document retrieval response array bounds no-device gate", "Roadmap must name the document retrieval response array bounds gate."),
+        ("roadmap", "Latest protocol index.documents.list request and response sample no-device gate", "Roadmap must name the index.documents.list request and response sample gate."),
+        ("roadmap", "Latest protocol retrieval.query query-length and response result sample no-device gate", "Roadmap must name the retrieval.query query-length and response result sample gate."),
+        ("roadmap", "Latest protocol retrieval.query request bounds sample no-device gate", "Roadmap must name the retrieval.query request bounds sample gate."),
+        ("roadmap", "Latest protocol source-anchor resolver payload sample no-device gate", "Roadmap must name the protocol source-anchor resolver payload sample gate."),
+        ("roadmap", "Latest macOS source-anchor resolver request required-field router no-device gate", "Roadmap must name the macOS source-anchor resolver required-field router gate."),
+        ("roadmap", "Latest protocol retrieval.query source-anchor request payload sample no-device gate", "Roadmap must name the retrieval.query source-anchor request payload sample gate."),
+        ("roadmap", "Latest protocol retrieval.query source-anchor response payload sample no-device gate", "Roadmap must name the retrieval.query source-anchor response payload sample gate."),
+        ("roadmap", "Latest Android source-anchor resolver request required-field decode no-device gate", "Roadmap must name the Android source-anchor resolver request required-field decode gate."),
+        ("roadmap", "Latest Android source-anchor resolver required-field decode no-device gate", "Roadmap must name the Android source-anchor resolver required-field decode gate."),
+        ("roadmap", "Latest Android source-anchor canonical decode no-device gate", "Roadmap must name the Android source-anchor canonical decode gate."),
+        ("roadmap", "Latest protocol source-anchor ID sample validation no-device gate", "Roadmap must name the protocol source-anchor sample validation gate."),
+        ("roadmap", "Latest Android document retrieval source anchor canonical transient-state no-device gate", "Roadmap must name the Android source-anchor transient-state gate."),
+        ("roadmap", "Latest Android document search disconnect transient clear no-device gate", "Roadmap must name the Android document search disconnect transient clear gate."),
+        ("roadmap", "Latest protocol source-anchor ID wire-shape no-device gate", "Roadmap must name the protocol source-anchor wire-shape gate."),
+        ("roadmap", "Latest document retrieval source anchor canonicality no-device gate", "Roadmap must name the source-anchor canonicality gate."),
+        ("roadmap", "Latest document retrieval source anchor query-window no-device gate", "Roadmap must name the source-anchor query-window gate."),
+        ("roadmap", "Latest document retrieval source anchor filtered-delete lifecycle no-device gate", "Roadmap must name the source-anchor filtered-delete lifecycle gate."),
+        ("roadmap", "Latest document retrieval source anchor lifecycle no-device gate", "Roadmap must name the source-anchor lifecycle gate."),
+        ("roadmap", "Latest document retrieval source anchor resolver no-device gate", "Roadmap must name the source-anchor resolver gate."),
+        ("roadmap", "Latest document retrieval source anchor stability no-device gate", "Roadmap must name the source-anchor stability gate."),
+        ("roadmap", "Latest document retrieval source anchor no-device gate", "Roadmap must name the source-anchor gate."),
+        ("progress", "Document Retrieval Source Anchor Canonicality No-Device Gate", "Progress docs must record source-anchor canonicality evidence."),
+        ("progress", "Document Retrieval Source Anchor Query-Window No-Device Gate", "Progress docs must record source-anchor query-window evidence."),
+        ("progress", "Document Retrieval Source Anchor Filtered-Delete Lifecycle No-Device Gate", "Progress docs must record source-anchor filtered-delete lifecycle evidence."),
+        ("progress", "Document Retrieval Source Anchor Lifecycle No-Device Gate", "Progress docs must record source-anchor lifecycle evidence."),
+        ("progress", "Document Retrieval Source Anchor Resolver No-Device Gate", "Progress docs must record source-anchor resolver evidence."),
+        ("progress", "Document Retrieval Source Anchor Stability No-Device Gate", "Progress docs must record source-anchor stability evidence."),
+        ("progress", "Document Retrieval Source Anchor No-Device Gate", "Progress docs must record source-anchor evidence."),
+        ("progress", "Protocol Source-Anchor ID Wire-Shape No-Device Gate", "Progress docs must record source-anchor wire-shape evidence."),
+        ("progress", "Protocol Source-Anchor ID Sample Validation No-Device Gate", "Progress docs must record source-anchor sample validation evidence."),
+        ("progress", "Protocol Document Quality/Chunk-Count Consistency No-Device Gate", "Progress docs must record document quality/chunk-count consistency evidence."),
+        ("progress", "Protocol Retrieval Query Positive Rank Wire-Shape No-Device Gate", "Progress docs must record retrieval.query positive-rank wire-shape evidence."),
+        ("progress", "Protocol Retrieval Query Result Ordering And Offset Sanity No-Device Gate", "Progress docs must record retrieval.query result ordering and offset sanity evidence."),
+        ("progress", "Protocol Index Documents List Quality-Count Completeness No-Device Gate", "Progress docs must record catalog quality-count completeness evidence."),
+        ("progress", "Protocol Document Metadata String-Bounds And Retrieval Nested-Document Parity No-Device Gate", "Progress docs must record document metadata string-bounds and nested-document parity evidence."),
+        ("progress", "Protocol Index Documents List Content-Fingerprint Wire-Shape No-Device Gate", "Progress docs must record index.documents.list content_fingerprint wire-shape evidence."),
+        ("progress", "Android Document Content-Fingerprint Protocol Parity No-Device Gate", "Progress docs must record Android content_fingerprint protocol parity evidence."),
+        ("progress", "Android Client Capability Future Workspace/RAG/Source Deny-List No-Device Gate", "Progress docs must record Android future capability deny-list evidence."),
+        ("progress", "Android Document Search Pending Invalidation No-Device Gate", "Progress docs must record Android document search pending invalidation evidence."),
+        ("progress", "Android Document Search Disconnect Transient Clear No-Device Gate", "Progress docs must record Android document search disconnect cleanup evidence."),
+        ("progress", "Android Document Response Row Transient-State Cap No-Device Gate", "Progress docs must record Android document response row transient-state cap evidence."),
+        ("progress", "Protocol Retrieval Query Snippet Bounds No-Device Gate", "Progress docs must record retrieval.query snippet bounds evidence."),
+        ("progress", "Protocol Retrieval Query Matched-Terms Bounds No-Device Gate", "Progress docs must record retrieval.query matched_terms bounds evidence."),
+        ("progress", "Protocol Document Retrieval Response Array Bounds No-Device Gate", "Progress docs must record document retrieval response array bounds evidence."),
+        ("progress", "Protocol Index Documents List Request And Response Sample No-Device Gate", "Progress docs must record index.documents.list request and response sample evidence."),
+        ("progress", "Protocol Retrieval Query Query-Length And Response Result Sample No-Device Gate", "Progress docs must record retrieval.query query-length and response result sample evidence."),
+        ("progress", "Protocol Retrieval Query Request Bounds Sample No-Device Gate", "Progress docs must record retrieval.query request bounds sample evidence."),
+        ("progress", "Protocol Source-Anchor Resolver Payload Sample No-Device Gate", "Progress docs must record source-anchor resolver payload sample evidence."),
+        ("progress", "macOS Source-Anchor Resolver Request Required-Field Router No-Device Gate", "Progress docs must record macOS source-anchor resolver required-field router evidence."),
+        ("progress", "Protocol Retrieval Query Source-Anchor Request Payload Sample No-Device Gate", "Progress docs must record retrieval.query source-anchor request payload sample evidence."),
+        ("progress", "Protocol Retrieval Query Source-Anchor Response Payload Sample No-Device Gate", "Progress docs must record retrieval.query source-anchor response payload sample evidence."),
+        ("progress", "Protocol Document MIME Type Wire-Shape No-Device Gate", "Progress docs must record document MIME type wire-shape evidence."),
+        ("progress", "Android Document Retrieval Source Anchor Canonical Transient-State No-Device Gate", "Progress docs must record Android source-anchor transient-state canonicality evidence."),
+        ("progress", "Android Retrieval Source-Anchor Required Decode No-Device Gate", "Progress docs must record Android source-anchor required decode evidence."),
+        ("progress", "Android Source-Anchor Canonical Decode No-Device Gate", "Progress docs must record Android source-anchor canonical decode evidence."),
+        ("progress", "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate", "Progress docs must record Android source-anchor resolver request required-field decode evidence."),
+        ("progress", "Android Source-Anchor Resolver Required-Field Decode No-Device Gate", "Progress docs must record Android source-anchor resolver required-field decode evidence."),
+        ("progress", "macOS Document Retrieval Source Anchor Exact-Shape No-Device Gate", "Progress docs must record macOS source-anchor exact-shape evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Canonicality No-Device Gate", "QA evidence must record source-anchor canonicality evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Query-Window No-Device Gate", "QA evidence must record source-anchor query-window evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Filtered-Delete Lifecycle No-Device Gate", "QA evidence must record source-anchor filtered-delete lifecycle evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Lifecycle No-Device Gate", "QA evidence must record source-anchor lifecycle evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Resolver No-Device Gate", "QA evidence must record source-anchor resolver evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor Stability No-Device Gate", "QA evidence must record source-anchor stability evidence."),
+        ("qa_evidence", "Document Retrieval Source Anchor No-Device Gate", "QA evidence must record source-anchor evidence."),
+        ("qa_evidence", "Protocol Source-Anchor ID Wire-Shape No-Device Gate", "QA evidence must record source-anchor wire-shape evidence."),
+        ("qa_evidence", "Protocol Source-Anchor ID Sample Validation No-Device Gate", "QA evidence must record source-anchor sample validation evidence."),
+        ("qa_evidence", "Protocol Document Quality/Chunk-Count Consistency No-Device Gate", "QA evidence must record document quality/chunk-count consistency evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Positive Rank Wire-Shape No-Device Gate", "QA evidence must record retrieval.query positive-rank wire-shape evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Result Ordering And Offset Sanity No-Device Gate", "QA evidence must record retrieval.query result ordering and offset sanity evidence."),
+        ("qa_evidence", "Protocol Index Documents List Quality-Count Completeness No-Device Gate", "QA evidence must record catalog quality-count completeness evidence."),
+        ("qa_evidence", "Protocol Document Metadata String-Bounds And Retrieval Nested-Document Parity No-Device Gate", "QA evidence must record document metadata string-bounds and nested-document parity evidence."),
+        ("qa_evidence", "Protocol Index Documents List Content-Fingerprint Wire-Shape No-Device Gate", "QA evidence must record index.documents.list content_fingerprint wire-shape evidence."),
+        ("qa_evidence", "Android Document Content-Fingerprint Protocol Parity No-Device Gate", "QA evidence must record Android content_fingerprint protocol parity evidence."),
+        ("qa_evidence", "Android Client Capability Future Workspace/RAG/Source Deny-List No-Device Gate", "QA evidence must record Android future capability deny-list evidence."),
+        ("qa_evidence", "Android Document Search Pending Invalidation No-Device Gate", "QA evidence must record Android document search pending invalidation evidence."),
+        ("qa_evidence", "Android Document Search Disconnect Transient Clear No-Device Gate", "QA evidence must record Android document search disconnect cleanup evidence."),
+        ("qa_evidence", "Android Document Response Row Transient-State Cap No-Device Gate", "QA evidence must record Android document response row transient-state cap evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Snippet Bounds No-Device Gate", "QA evidence must record retrieval.query snippet bounds evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Matched-Terms Bounds No-Device Gate", "QA evidence must record retrieval.query matched_terms bounds evidence."),
+        ("qa_evidence", "Protocol Document Retrieval Response Array Bounds No-Device Gate", "QA evidence must record document retrieval response array bounds evidence."),
+        ("qa_evidence", "Protocol Index Documents List Request And Response Sample No-Device Gate", "QA evidence must record index.documents.list request and response sample evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Query-Length And Response Result Sample No-Device Gate", "QA evidence must record retrieval.query query-length and response result sample evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Request Bounds Sample No-Device Gate", "QA evidence must record retrieval.query request bounds sample evidence."),
+        ("qa_evidence", "Protocol Source-Anchor Resolver Payload Sample No-Device Gate", "QA evidence must record source-anchor resolver payload sample evidence."),
+        ("qa_evidence", "macOS Source-Anchor Resolver Request Required-Field Router No-Device Gate", "QA evidence must record macOS source-anchor resolver required-field router evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Source-Anchor Request Payload Sample No-Device Gate", "QA evidence must record retrieval.query source-anchor request payload sample evidence."),
+        ("qa_evidence", "Protocol Retrieval Query Source-Anchor Response Payload Sample No-Device Gate", "QA evidence must record retrieval.query source-anchor response payload sample evidence."),
+        ("qa_evidence", "Protocol Document MIME Type Wire-Shape No-Device Gate", "QA evidence must record document MIME type wire-shape evidence."),
+        ("qa_evidence", "Android Document Retrieval Source Anchor Canonical Transient-State No-Device Gate", "QA evidence must record Android source-anchor transient-state canonicality evidence."),
+        ("qa_evidence", "Android Retrieval Source-Anchor Required Decode No-Device Gate", "QA evidence must record Android source-anchor required decode evidence."),
+        ("qa_evidence", "Android Source-Anchor Canonical Decode No-Device Gate", "QA evidence must record Android source-anchor canonical decode evidence."),
+        ("qa_evidence", "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate", "QA evidence must record Android source-anchor resolver request required-field decode evidence."),
+        ("qa_evidence", "Android Source-Anchor Resolver Required-Field Decode No-Device Gate", "QA evidence must record Android source-anchor resolver required-field decode evidence."),
+        ("qa_evidence", "macOS Document Retrieval Source Anchor Exact-Shape No-Device Gate", "QA evidence must record macOS source-anchor exact-shape evidence."),
+    )
+    for name, snippet, guidance in required_snippets:
+        if snippet not in texts[name]:
+            failures.append(f"{paths[name].relative_to(ROOT)}: {guidance} Missing {snippet!r}.")
+
+    for name in ("progress", "qa_evidence", "roadmap"):
+        for forbidden_absence in (
+            "does not add source approval",
+            "citations",
+            "trusted-source review",
+            "physical Android proof",
+            "real different-network",
+        ):
+            if forbidden_absence not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)}: Source-anchor docs must keep proof-boundary wording; "
+                    f"missing {forbidden_absence!r}."
                 )
 
     return failures
@@ -36485,6 +38263,43 @@ def main() -> int:
     if android_protocol_model_metadata_failures:
         print("Android protocol model metadata guard failed:", file=sys.stderr)
         for failure in android_protocol_model_metadata_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_document_retrieval_payload_failures = android_protocol_document_retrieval_payload_guard_failures()
+    if android_document_retrieval_payload_failures:
+        print("Android document/retrieval payload guard failed:", file=sys.stderr)
+        for failure in android_document_retrieval_payload_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_document_retrieval_viewmodel_failures = android_document_retrieval_viewmodel_guard_failures()
+    if android_document_retrieval_viewmodel_failures:
+        print("Android document/retrieval ViewModel guard failed:", file=sys.stderr)
+        for failure in android_document_retrieval_viewmodel_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_document_retrieval_compose_ui_failures = android_document_retrieval_compose_ui_guard_failures()
+    if android_document_retrieval_compose_ui_failures:
+        print("Android document/retrieval Compose UI guard failed:", file=sys.stderr)
+        for failure in android_document_retrieval_compose_ui_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_document_retrieval_relay_integration_failures = (
+        android_document_retrieval_relay_integration_guard_failures()
+    )
+    if android_document_retrieval_relay_integration_failures:
+        print("Android document/retrieval relay integration guard failed:", file=sys.stderr)
+        for failure in android_document_retrieval_relay_integration_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    document_retrieval_source_anchor_failures = document_retrieval_source_anchor_guard_failures()
+    if document_retrieval_source_anchor_failures:
+        print("Document retrieval source anchor guard failed:", file=sys.stderr)
+        for failure in document_retrieval_source_anchor_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

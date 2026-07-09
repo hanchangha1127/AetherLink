@@ -38,6 +38,8 @@ RESERVED_PREFIXES = (
     "index.",
     "research.",
     "citation.",
+    "source_anchor.",
+    "trusted_source.",
     "source_control.",
     "p2p.",
     "rendezvous.",
@@ -65,8 +67,15 @@ ALLOWED_MEMORY_TYPES = {
 ALLOWED_INDEX_TYPES = {
     "index.documents.list",
 }
+ALLOWED_RETRIEVAL_TYPES = {
+    "retrieval.query",
+}
+ALLOWED_SOURCE_ANCHOR_TYPES = {
+    "source_anchor.resolve",
+}
 ALLOWED_TOOL_TYPES = frozenset()
 ALLOWED_ROUTE_TYPES = {"route.refresh"}
+INDEX_DOCUMENT_MIME_TYPE_PATTERN = r"^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$"
 REQUIRED_RELAY_QR_FIELDS = {
     "relay_host",
     "relay_port",
@@ -267,6 +276,8 @@ def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) ->
         for message_type in message_types
         if message_type.startswith(RESERVED_PREFIXES)
         and message_type not in ALLOWED_INDEX_TYPES
+        and message_type not in ALLOWED_RETRIEVAL_TYPES
+        and message_type not in ALLOWED_SOURCE_ANCHOR_TYPES
     ]
 
 
@@ -297,10 +308,12 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "backend.call",
         "backend.configure",
         "embeddings.create",
-        "retrieval.query",
         "index.build",
         "research.brief.create",
         "citation.sources.list",
+        "source_anchor.resolve",
+        "source_anchor.metadata.get",
+        "trusted_source.approve",
         "source_control.status",
         "p2p.session.open",
         "rendezvous.records.publish",
@@ -339,10 +352,11 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "backend.call",
         "backend.configure",
         "embeddings.create",
-        "retrieval.query",
         "index.build",
         "research.brief.create",
         "citation.sources.list",
+        "source_anchor.metadata.get",
+        "trusted_source.approve",
         "source_control.status",
         "p2p.session.open",
         "rendezvous.records.publish",
@@ -363,8 +377,9 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         failures.append(
             "reserved protocol namespace guard must reject skills.*, mcp.*, web_search.*, "
             "python.*, projects.*, automation.*, permission.*, approval.*, audit.*, "
-            "file.*, terminal.*, network.*, backend.*, embeddings.*, retrieval.*, "
-            "unsupported index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*, "
+            "file.*, terminal.*, network.*, backend.*, embeddings.*, "
+            "unsupported retrieval.* beyond retrieval.query, unsupported index.*, "
+            "research.*, citation.*, unsupported source_anchor.* beyond source_anchor.resolve, trusted_source.*, source_control.*, p2p.*, rendezvous.*, "
             "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*, "
             "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names"
         )
@@ -483,6 +498,2494 @@ def check_chat_attachment_schema_contract(schema: dict[str, object]) -> list[str
             )
     if chat_attachment.get("additionalProperties") is not False:
         failures.append("$defs.chatAttachment.additionalProperties must be false")
+    return failures
+
+
+def schema_max_length(schema: object) -> int | None:
+    if not isinstance(schema, dict):
+        return None
+    direct_max_length = schema.get("maxLength")
+    if isinstance(direct_max_length, int) and not isinstance(direct_max_length, bool):
+        return direct_max_length
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for schema_part in all_of:
+            nested_max_length = schema_max_length(schema_part)
+            if nested_max_length is not None:
+                return nested_max_length
+    return None
+
+
+def schema_pattern(schema: object) -> str | None:
+    if not isinstance(schema, dict):
+        return None
+    direct_pattern = schema.get("pattern")
+    if isinstance(direct_pattern, str):
+        return direct_pattern
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        for schema_part in all_of:
+            nested_pattern = schema_pattern(schema_part)
+            if nested_pattern is not None:
+                return nested_pattern
+    return None
+
+
+def check_index_documents_list_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include indexDocumentsListPayload schema"]
+
+    index_document = defs.get("indexDocument")
+    if not isinstance(index_document, dict):
+        failures.append("$defs.indexDocument schema is missing")
+    else:
+        document_properties = index_document.get("properties")
+        allowed_index_document_properties = {
+            "id",
+            "display_name",
+            "mime_type",
+            "content_fingerprint",
+            "extracted_character_count",
+            "chunk_count",
+            "quality",
+        }
+        expected_index_document_property_schemas = {
+            "id": {"allOf": [{"$ref": "#/$defs/nonEmptyString"}, {"maxLength": 128}]},
+            "display_name": {"allOf": [{"$ref": "#/$defs/nonEmptyString"}, {"maxLength": 256}]},
+            "mime_type": {
+                "allOf": [
+                    {"$ref": "#/$defs/nonEmptyString"},
+                    {"maxLength": 128},
+                    {"pattern": INDEX_DOCUMENT_MIME_TYPE_PATTERN},
+                ]
+            },
+            "content_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+            "extracted_character_count": {"type": "integer", "minimum": 0},
+            "chunk_count": {"type": "integer", "minimum": 0},
+            "quality": {"enum": ["no_usable_text", "single_chunk", "chunked"]},
+        }
+        if not isinstance(document_properties, dict):
+            failures.append("$defs.indexDocument.properties must be an object")
+        else:
+            if set(document_properties.keys()) != allowed_index_document_properties:
+                failures.append(
+                    "$defs.indexDocument properties must stay limited to id, display_name, mime_type, content_fingerprint, extracted_character_count, chunk_count, and quality"
+                )
+            for field_name, expected_schema in expected_index_document_property_schemas.items():
+                if document_properties.get(field_name) != expected_schema:
+                    failures.append(f"$defs.indexDocument.properties.{field_name} has drifted")
+
+        document_required = index_document.get("required")
+        if not isinstance(document_required, list):
+            failures.append("$defs.indexDocument.required must be a list")
+        elif set(document_required) != allowed_index_document_properties:
+            failures.append(
+                "$defs.indexDocument.required must stay limited to id, display_name, mime_type, content_fingerprint, extracted_character_count, chunk_count, and quality"
+            )
+        expected_index_document_quality_chunk_count_consistency = [
+            {
+                "if": {
+                    "properties": {"chunk_count": {"const": 0}},
+                    "required": ["chunk_count"],
+                },
+                "then": {
+                    "properties": {"quality": {"const": "no_usable_text"}},
+                },
+            },
+            {
+                "if": {
+                    "properties": {"chunk_count": {"const": 1}},
+                    "required": ["chunk_count"],
+                },
+                "then": {
+                    "properties": {"quality": {"const": "single_chunk"}},
+                },
+            },
+            {
+                "if": {
+                    "properties": {"chunk_count": {"type": "integer", "minimum": 2}},
+                    "required": ["chunk_count"],
+                },
+                "then": {
+                    "properties": {"quality": {"const": "chunked"}},
+                },
+            },
+        ]
+        if index_document.get("allOf") != expected_index_document_quality_chunk_count_consistency:
+            failures.append(
+                "$defs.indexDocument allOf must bind chunk_count 0/1/2+ to no_usable_text/single_chunk/chunked quality"
+            )
+        if index_document.get("additionalProperties") is not False:
+            failures.append("$defs.indexDocument additionalProperties must be false")
+
+    index_summary = defs.get("indexDocumentsSummary")
+    if not isinstance(index_summary, dict):
+        failures.append("$defs.indexDocumentsSummary schema is missing")
+    else:
+        summary_properties = index_summary.get("properties")
+        allowed_summary_properties = {
+            "document_count",
+            "chunk_count",
+            "extracted_character_count",
+            "quality_counts",
+        }
+        expected_quality_counts_schema = {
+            "type": "object",
+            "required": ["no_usable_text", "single_chunk", "chunked"],
+            "properties": {
+                "no_usable_text": {"type": "integer", "minimum": 0},
+                "single_chunk": {"type": "integer", "minimum": 0},
+                "chunked": {"type": "integer", "minimum": 0},
+            },
+            "additionalProperties": False,
+        }
+        expected_summary_property_schemas = {
+            "document_count": {"type": "integer", "minimum": 0},
+            "chunk_count": {"type": "integer", "minimum": 0},
+            "extracted_character_count": {"type": "integer", "minimum": 0},
+            "quality_counts": expected_quality_counts_schema,
+        }
+        if not isinstance(summary_properties, dict):
+            failures.append("$defs.indexDocumentsSummary.properties must be an object")
+        else:
+            if set(summary_properties.keys()) != allowed_summary_properties:
+                failures.append(
+                    "$defs.indexDocumentsSummary properties must stay limited to document_count, chunk_count, extracted_character_count, and quality_counts"
+                )
+            for field_name, expected_schema in expected_summary_property_schemas.items():
+                if summary_properties.get(field_name) != expected_schema:
+                    failures.append(f"$defs.indexDocumentsSummary.properties.{field_name} has drifted")
+
+        summary_required = index_summary.get("required")
+        if not isinstance(summary_required, list):
+            failures.append("$defs.indexDocumentsSummary.required must be a list")
+        elif set(summary_required) != allowed_summary_properties:
+            failures.append(
+                "$defs.indexDocumentsSummary.required must stay limited to document_count, chunk_count, extracted_character_count, and quality_counts"
+            )
+        if index_summary.get("additionalProperties") is not False:
+            failures.append("$defs.indexDocumentsSummary additionalProperties must be false")
+
+    index_payload = defs.get("indexDocumentsListPayload")
+    if not isinstance(index_payload, dict):
+        failures.append("$defs.indexDocumentsListPayload schema is missing")
+    else:
+        variants = index_payload.get("oneOf")
+        if not isinstance(variants, list) or len(variants) != 2:
+            failures.append("$defs.indexDocumentsListPayload must keep separate request and response variants")
+        else:
+            request_variant = variants[0]
+            if not isinstance(request_variant, dict):
+                failures.append("$defs.indexDocumentsListPayload request variant must be an object")
+            else:
+                request_properties = request_variant.get("properties")
+                if not isinstance(request_properties, dict):
+                    failures.append("$defs.indexDocumentsListPayload request properties must be an object")
+                else:
+                    allowed_index_request_properties = {"limit"}
+                    if set(request_properties.keys()) != allowed_index_request_properties:
+                        failures.append(
+                            "$defs.indexDocumentsListPayload request properties must stay limited to limit"
+                        )
+                    if request_properties.get("limit") != {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                    }:
+                        failures.append(
+                            "$defs.indexDocumentsListPayload request limit must be an integer between 0 and 100"
+                        )
+                    if "documents" in request_properties or "summary" in request_properties:
+                        failures.append(
+                            "$defs.indexDocumentsListPayload request properties must not accept response-only catalog fields"
+                        )
+
+                    canonical_index_documents_request_payload_samples = (
+                        ("empty-request", build_index_documents_list_request_sample(include_limit=False)),
+                        ("bounded-limit", build_index_documents_list_request_sample(limit=25)),
+                    )
+                    for label, payload_sample in canonical_index_documents_request_payload_samples:
+                        for sample_failure in index_documents_list_request_sample_failures(
+                            payload_sample,
+                            request_variant,
+                        ):
+                            failures.append(
+                                "$defs.indexDocumentsListPayload request sample must accept "
+                                f"{label}: {sample_failure}"
+                            )
+
+                    rejected_index_documents_request_payload_samples = (
+                        ("string-limit", build_index_documents_list_request_sample(limit="25")),
+                        ("float-limit", build_index_documents_list_request_sample(limit=25.5)),
+                        ("bool-limit", build_index_documents_list_request_sample(limit=True)),
+                        ("negative-limit", build_index_documents_list_request_sample(limit=-1)),
+                        ("over-limit", build_index_documents_list_request_sample(limit=101)),
+                        (
+                            "response-documents",
+                            build_index_documents_list_request_sample(
+                                extra_fields={"documents": []}
+                            ),
+                        ),
+                        (
+                            "response-summary",
+                            build_index_documents_list_request_sample(
+                                extra_fields={"summary": build_index_documents_summary_sample()}
+                            ),
+                        ),
+                        (
+                            "unknown-request-metadata",
+                            build_index_documents_list_request_sample(
+                                extra_fields={"source_path": "/private/source.txt"}
+                            ),
+                        ),
+                    )
+                    for label, payload_sample in rejected_index_documents_request_payload_samples:
+                        if not index_documents_list_request_sample_failures(
+                            payload_sample,
+                            request_variant,
+                        ):
+                            failures.append(
+                                "$defs.indexDocumentsListPayload request sample must reject "
+                                f"{label}"
+                            )
+
+                if request_variant.get("additionalProperties") is not False:
+                    failures.append(
+                        "$defs.indexDocumentsListPayload request additionalProperties must be false"
+                    )
+
+            response_variant = variants[1]
+            if not isinstance(response_variant, dict):
+                failures.append("$defs.indexDocumentsListPayload response variant must be an object")
+            else:
+                response_required = response_variant.get("required")
+                if not isinstance(response_required, list):
+                    failures.append("$defs.indexDocumentsListPayload response required must be a list")
+                elif set(response_required) != {"documents", "summary"}:
+                    failures.append(
+                        "$defs.indexDocumentsListPayload response required must stay limited to documents and summary"
+                    )
+
+                response_properties = response_variant.get("properties")
+                if not isinstance(response_properties, dict):
+                    failures.append("$defs.indexDocumentsListPayload response properties must be an object")
+                else:
+                    if set(response_properties.keys()) != {"documents", "summary"}:
+                        failures.append(
+                            "$defs.indexDocumentsListPayload response properties must stay limited to documents and summary"
+                        )
+                    documents_schema = response_properties.get("documents")
+                    if not isinstance(documents_schema, dict):
+                        failures.append(
+                            "$defs.indexDocumentsListPayload response properties.documents must be an object"
+                        )
+                    else:
+                        if documents_schema.get("type") != "array":
+                            failures.append(
+                                "$defs.indexDocumentsListPayload response documents must be an array"
+                            )
+                        if documents_schema.get("maxItems") != 100:
+                            failures.append(
+                                "$defs.indexDocumentsListPayload response documents must set maxItems 100"
+                            )
+                        if documents_schema.get("items") != {"$ref": "#/$defs/indexDocument"}:
+                            failures.append(
+                                "$defs.indexDocumentsListPayload response documents.items must use #/$defs/indexDocument"
+                            )
+                    if response_properties.get("summary") != {
+                        "$ref": "#/$defs/indexDocumentsSummary"
+                    }:
+                        failures.append(
+                            "$defs.indexDocumentsListPayload response summary must use #/$defs/indexDocumentsSummary"
+                        )
+
+                if response_variant.get("additionalProperties") is not False:
+                    failures.append(
+                        "$defs.indexDocumentsListPayload response additionalProperties must be false"
+                    )
+
+                if isinstance(index_document, dict) and isinstance(index_summary, dict):
+                    canonical_index_documents_response_payload_sample = (
+                        build_index_documents_list_response_sample()
+                    )
+                    for sample_failure in index_documents_list_response_sample_failures(
+                        canonical_index_documents_response_payload_sample,
+                        response_variant,
+                        index_document,
+                        index_summary,
+                    ):
+                        failures.append(
+                            "$defs.indexDocumentsListPayload response sample must accept "
+                            f"canonical catalog payload: {sample_failure}"
+                        )
+
+                    rejected_index_documents_response_payload_samples = (
+                        (
+                            "unknown-response-metadata",
+                            build_index_documents_list_response_sample(
+                                payload_overrides={"embedding_model_id": "future-embedder"}
+                            ),
+                        ),
+                        (
+                            "missing-documents",
+                            build_index_documents_list_response_sample(
+                                omit_payload_fields=("documents",)
+                            ),
+                        ),
+                        (
+                            "missing-summary",
+                            build_index_documents_list_response_sample(
+                                omit_payload_fields=("summary",)
+                            ),
+                        ),
+                        (
+                            "documents-not-array",
+                            build_index_documents_list_response_sample(
+                                payload_overrides={"documents": "not-array"}
+                            ),
+                        ),
+                        (
+                            "over-documents",
+                            build_index_documents_list_response_sample(document_count=101),
+                        ),
+                        (
+                            "unknown-document-metadata",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"source_path": "/private/source.txt"}
+                            ),
+                        ),
+                        (
+                            "missing-document-quality",
+                            build_index_documents_list_response_sample(
+                                omit_document_fields=("quality",)
+                            ),
+                        ),
+                        (
+                            "empty-document-display-name",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"display_name": ""}
+                            ),
+                        ),
+                        (
+                            "overlong-document-id",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"id": "d" * 129}
+                            ),
+                        ),
+                        (
+                            "overlong-document-display-name",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"display_name": "d" * 257}
+                            ),
+                        ),
+                        (
+                            "overlong-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"mime_type": "text/" + ("a" * 124)}
+                            ),
+                        ),
+                        (
+                            "whitespace-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"mime_type": " text/plain\n"}
+                            ),
+                        ),
+                        (
+                            "uppercase-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"mime_type": "Text/markdown"}
+                            ),
+                        ),
+                        (
+                            "missing-slash-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"mime_type": "textplain"}
+                            ),
+                        ),
+                        (
+                            "parameterized-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"mime_type": "text/plain; charset=utf-8"}
+                            ),
+                        ),
+                        (
+                            "url-shaped-document-mime-type",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "mime_type": "https://example.invalid/text/plain"
+                                }
+                            ),
+                        ),
+                        (
+                            "empty-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"content_fingerprint": ""}
+                            ),
+                        ),
+                        (
+                            "whitespace-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "content_fingerprint": " 0011223344556677\n"
+                                }
+                            ),
+                        ),
+                        (
+                            "uppercase-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"content_fingerprint": "001122334455667A"}
+                            ),
+                        ),
+                        (
+                            "short-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"content_fingerprint": "001122334455667"}
+                            ),
+                        ),
+                        (
+                            "long-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"content_fingerprint": "00112233445566770"}
+                            ),
+                        ),
+                        (
+                            "nonhex-document-content-fingerprint",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"content_fingerprint": "001122334455667g"}
+                            ),
+                        ),
+                        (
+                            "invalid-document-quality",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"quality": "trusted_source"}
+                            ),
+                        ),
+                        (
+                            "zero-chunk-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 0,
+                                    "quality": "chunked",
+                                }
+                            ),
+                        ),
+                        (
+                            "zero-chunk-single-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 0,
+                                    "quality": "single_chunk",
+                                }
+                            ),
+                        ),
+                        (
+                            "single-chunk-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 1,
+                                    "quality": "no_usable_text",
+                                }
+                            ),
+                        ),
+                        (
+                            "single-chunk-chunked-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 1,
+                                    "quality": "chunked",
+                                }
+                            ),
+                        ),
+                        (
+                            "multi-chunk-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 2,
+                                    "quality": "single_chunk",
+                                }
+                            ),
+                        ),
+                        (
+                            "multi-chunk-no-usable-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 2,
+                                    "quality": "no_usable_text",
+                                }
+                            ),
+                        ),
+                        (
+                            "three-chunk-single-document-quality-mismatch",
+                            build_index_documents_list_response_sample(
+                                document_overrides={
+                                    "chunk_count": 3,
+                                    "quality": "single_chunk",
+                                }
+                            ),
+                        ),
+                        (
+                            "string-document-chunk-count",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"chunk_count": "1"}
+                            ),
+                        ),
+                        (
+                            "negative-document-extracted-character-count",
+                            build_index_documents_list_response_sample(
+                                document_overrides={"extracted_character_count": -1}
+                            ),
+                        ),
+                        (
+                            "unknown-summary-metadata",
+                            build_index_documents_list_response_sample(
+                                summary_overrides={"retrieval_context": "future context"}
+                            ),
+                        ),
+                        (
+                            "string-summary-document-count",
+                            build_index_documents_list_response_sample(
+                                summary_overrides={"document_count": "1"}
+                            ),
+                        ),
+                        (
+                            "negative-summary-chunk-count",
+                            build_index_documents_list_response_sample(
+                                summary_overrides={"chunk_count": -1}
+                            ),
+                        ),
+                        (
+                            "quality-counts-not-object",
+                            build_index_documents_list_response_sample(
+                                summary_overrides={"quality_counts": "not-object"}
+                            ),
+                        ),
+                        (
+                            "missing-no-usable-text-quality-count",
+                            build_index_documents_list_response_sample(
+                                omit_quality_counts_fields=("no_usable_text",)
+                            ),
+                        ),
+                        (
+                            "missing-single-chunk-quality-count",
+                            build_index_documents_list_response_sample(
+                                omit_quality_counts_fields=("single_chunk",)
+                            ),
+                        ),
+                        (
+                            "missing-chunked-quality-count",
+                            build_index_documents_list_response_sample(
+                                omit_quality_counts_fields=("chunked",)
+                            ),
+                        ),
+                        (
+                            "unknown-quality-count",
+                            build_index_documents_list_response_sample(
+                                quality_counts_overrides={"trusted_source": 1}
+                            ),
+                        ),
+                        (
+                            "string-quality-count",
+                            build_index_documents_list_response_sample(
+                                quality_counts_overrides={"chunked": "1"}
+                            ),
+                        ),
+                        (
+                            "negative-quality-count",
+                            build_index_documents_list_response_sample(
+                                quality_counts_overrides={"single_chunk": -1}
+                            ),
+                        ),
+                    )
+                    for label, payload_sample in rejected_index_documents_response_payload_samples:
+                        if not index_documents_list_response_sample_failures(
+                            payload_sample,
+                            response_variant,
+                            index_document,
+                            index_summary,
+                        ):
+                            failures.append(
+                                "$defs.indexDocumentsListPayload response sample must reject "
+                                f"{label}"
+                            )
+
+    return failures
+
+
+def build_index_documents_list_request_sample(
+    *,
+    include_limit: bool = True,
+    limit: object = 25,
+    extra_fields: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    if include_limit:
+        payload["limit"] = limit
+    if extra_fields is not None:
+        payload.update(extra_fields)
+    return payload
+
+
+def build_index_document_sample(
+    *,
+    document_overrides: dict[str, object] | None = None,
+    omit_document_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    document: dict[str, object] = {
+        "id": "protocol-index-sample",
+        "display_name": "Protocol Index Sample",
+        "mime_type": "text/plain",
+        "content_fingerprint": "0011223344556677",
+        "extracted_character_count": 64,
+        "chunk_count": 2,
+        "quality": "chunked",
+    }
+    if document_overrides is not None:
+        document.update(document_overrides)
+    for field_name in omit_document_fields:
+        document.pop(field_name, None)
+    return document
+
+
+def build_index_documents_summary_sample(
+    *,
+    summary_overrides: dict[str, object] | None = None,
+    quality_counts_overrides: dict[str, object] | None = None,
+    omit_quality_counts_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    quality_counts: dict[str, object] = {
+        "no_usable_text": 0,
+        "single_chunk": 0,
+        "chunked": 1,
+    }
+    if quality_counts_overrides is not None:
+        quality_counts.update(quality_counts_overrides)
+    for field_name in omit_quality_counts_fields:
+        quality_counts.pop(field_name, None)
+    summary: dict[str, object] = {
+        "document_count": 1,
+        "chunk_count": 2,
+        "extracted_character_count": 64,
+        "quality_counts": quality_counts,
+    }
+    if summary_overrides is not None:
+        summary.update(summary_overrides)
+    return summary
+
+
+def build_index_documents_list_response_sample(
+    *,
+    payload_overrides: dict[str, object] | None = None,
+    document_overrides: dict[str, object] | None = None,
+    summary_overrides: dict[str, object] | None = None,
+    quality_counts_overrides: dict[str, object] | None = None,
+    omit_quality_counts_fields: tuple[str, ...] = (),
+    omit_payload_fields: tuple[str, ...] = (),
+    omit_document_fields: tuple[str, ...] = (),
+    document_count: int = 1,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "documents": [
+            build_index_document_sample(
+                document_overrides=document_overrides,
+                omit_document_fields=omit_document_fields,
+            )
+            for _ in range(document_count)
+        ],
+        "summary": build_index_documents_summary_sample(
+            summary_overrides=summary_overrides,
+            quality_counts_overrides=quality_counts_overrides,
+            omit_quality_counts_fields=omit_quality_counts_fields,
+        ),
+    }
+    if payload_overrides is not None:
+        payload.update(payload_overrides)
+    for field_name in omit_payload_fields:
+        payload.pop(field_name, None)
+    return payload
+
+
+def index_documents_list_request_sample_failures(
+    payload: object,
+    request_variant: dict[str, object],
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["index.documents.list request payload sample must be an object"]
+
+    properties = request_variant.get("properties")
+    if not isinstance(properties, dict):
+        return ["index.documents.list request variant properties must be an object"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(payload) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "index.documents.list request payload sample includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    if "limit" in payload:
+        value = payload.get("limit")
+        if not isinstance(value, int) or isinstance(value, bool):
+            failures.append("index.documents.list request payload sample limit must be an integer")
+        else:
+            limit_schema = properties.get("limit")
+            if isinstance(limit_schema, dict):
+                minimum = limit_schema.get("minimum")
+                if isinstance(minimum, int) and value < minimum:
+                    failures.append("index.documents.list request payload sample limit below minimum")
+                maximum = limit_schema.get("maximum")
+                if isinstance(maximum, int) and value > maximum:
+                    failures.append("index.documents.list request payload sample limit above maximum")
+
+    return failures
+
+
+def index_documents_list_response_sample_failures(
+    payload: object,
+    response_variant: dict[str, object],
+    document_schema: dict[str, object],
+    summary_schema: dict[str, object],
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["index.documents.list response payload sample must be an object"]
+
+    response_properties = response_variant.get("properties")
+    if not isinstance(response_properties, dict):
+        return ["index.documents.list response variant properties must be an object"]
+
+    response_required = response_variant.get("required")
+    if not isinstance(response_required, list):
+        return ["index.documents.list response variant required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(payload) - set(response_properties))
+    if unknown_fields:
+        failures.append(
+            "index.documents.list response payload sample includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in response_required:
+        if isinstance(field_name, str) and field_name not in payload:
+            failures.append(f"index.documents.list response payload sample missing {field_name}")
+
+    documents = payload.get("documents")
+    if "documents" in payload:
+        if not isinstance(documents, list):
+            failures.append("index.documents.list response payload sample documents must be an array")
+        else:
+            documents_schema = response_properties.get("documents")
+            documents_max_items = (
+                documents_schema.get("maxItems")
+                if isinstance(documents_schema, dict)
+                and isinstance(documents_schema.get("maxItems"), int)
+                else None
+            )
+            if isinstance(documents_max_items, int) and len(documents) > documents_max_items:
+                failures.append(
+                    "index.documents.list response payload sample documents above maximum items"
+                )
+            for index, document in enumerate(documents):
+                failures.extend(index_document_sample_failures(document, document_schema, index))
+
+    summary = payload.get("summary")
+    if "summary" in payload:
+        failures.extend(index_documents_summary_sample_failures(summary, summary_schema))
+
+    return failures
+
+
+def index_document_sample_failures(
+    document: object,
+    document_schema: dict[str, object],
+    index: int,
+    *,
+    path: str | None = None,
+) -> list[str]:
+    document_path = path or f"documents[{index}]"
+    if not isinstance(document, dict):
+        return [f"{document_path} must be an object"]
+
+    properties = document_schema.get("properties")
+    if not isinstance(properties, dict):
+        return ["index.documents.list document schema properties must be an object"]
+
+    required = document_schema.get("required")
+    if not isinstance(required, list):
+        return ["index.documents.list document schema required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(document) - set(properties))
+    if unknown_fields:
+        failures.append(
+            f"{document_path} includes unknown fields: " + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in document:
+            failures.append(f"{document_path} missing {field_name}")
+
+    for string_field_name in ("id", "display_name", "mime_type", "content_fingerprint"):
+        if string_field_name not in document:
+            continue
+        value = document.get(string_field_name)
+        if not isinstance(value, str) or not value:
+            failures.append(f"{document_path}.{string_field_name} must be a non-empty string")
+            continue
+        max_length = schema_max_length(properties.get(string_field_name))
+        if (
+            string_field_name in {"id", "display_name", "mime_type"}
+            and isinstance(max_length, int)
+            and len(value) > max_length
+        ):
+            failures.append(f"{document_path}.{string_field_name} above maximum length")
+        if string_field_name == "mime_type":
+            mime_type_pattern = schema_pattern(properties.get("mime_type"))
+            if isinstance(mime_type_pattern, str):
+                try:
+                    compiled_mime_type_pattern = re.compile(mime_type_pattern)
+                except re.error:
+                    failures.append("index.documents.list document mime_type pattern is invalid")
+                else:
+                    if not compiled_mime_type_pattern.fullmatch(value):
+                        failures.append(
+                            f"{document_path}.mime_type must match lowercase type/subtype token"
+                        )
+
+    content_fingerprint = document.get("content_fingerprint")
+    if isinstance(content_fingerprint, str) and content_fingerprint:
+        content_fingerprint_schema = properties.get("content_fingerprint")
+        content_fingerprint_pattern = (
+            content_fingerprint_schema.get("pattern")
+            if isinstance(content_fingerprint_schema, dict)
+            and isinstance(content_fingerprint_schema.get("pattern"), str)
+            else None
+        )
+        if isinstance(content_fingerprint_pattern, str):
+            try:
+                compiled_content_fingerprint_pattern = re.compile(content_fingerprint_pattern)
+            except re.error:
+                failures.append("index.documents.list document content_fingerprint pattern is invalid")
+            else:
+                if not compiled_content_fingerprint_pattern.fullmatch(content_fingerprint):
+                    failures.append(
+                        f"{document_path}.content_fingerprint must match 16 lowercase hex"
+                    )
+
+    for integer_field_name in ("extracted_character_count", "chunk_count"):
+        if integer_field_name not in document:
+            continue
+        value = document.get(integer_field_name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            failures.append(f"{document_path}.{integer_field_name} must be an integer")
+            continue
+        field_schema = properties.get(integer_field_name)
+        if isinstance(field_schema, dict):
+            minimum = field_schema.get("minimum")
+            if isinstance(minimum, int) and value < minimum:
+                failures.append(f"{document_path}.{integer_field_name} below minimum")
+
+    if "quality" in document:
+        quality = document.get("quality")
+        quality_schema = properties.get("quality")
+        allowed_quality_values = (
+            quality_schema.get("enum")
+            if isinstance(quality_schema, dict) and isinstance(quality_schema.get("enum"), list)
+            else []
+        )
+        if quality not in allowed_quality_values:
+            failures.append(f"{document_path}.quality must be a known document quality")
+        chunk_count = document.get("chunk_count")
+        if (
+            isinstance(chunk_count, int)
+            and not isinstance(chunk_count, bool)
+            and chunk_count >= 0
+            and quality in allowed_quality_values
+        ):
+            expected_quality = (
+                "no_usable_text"
+                if chunk_count == 0
+                else "single_chunk"
+                if chunk_count == 1
+                else "chunked"
+            )
+            if quality != expected_quality:
+                failures.append(
+                    f"{document_path}.quality must match chunk_count-derived document quality"
+                )
+
+    return failures
+
+
+def index_documents_summary_sample_failures(
+    summary: object,
+    summary_schema: dict[str, object],
+) -> list[str]:
+    if not isinstance(summary, dict):
+        return ["index.documents.list response payload sample summary must be an object"]
+
+    properties = summary_schema.get("properties")
+    if not isinstance(properties, dict):
+        return ["index.documents.list summary schema properties must be an object"]
+
+    required = summary_schema.get("required")
+    if not isinstance(required, list):
+        return ["index.documents.list summary schema required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(summary) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "index.documents.list summary includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in summary:
+            failures.append(f"index.documents.list summary missing {field_name}")
+
+    for integer_field_name in ("document_count", "chunk_count", "extracted_character_count"):
+        if integer_field_name not in summary:
+            continue
+        value = summary.get(integer_field_name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            failures.append(f"index.documents.list summary {integer_field_name} must be an integer")
+            continue
+        field_schema = properties.get(integer_field_name)
+        if isinstance(field_schema, dict):
+            minimum = field_schema.get("minimum")
+            if isinstance(minimum, int) and value < minimum:
+                failures.append(f"index.documents.list summary {integer_field_name} below minimum")
+
+    quality_counts = summary.get("quality_counts")
+    if "quality_counts" in summary:
+        quality_counts_schema = properties.get("quality_counts")
+        if not isinstance(quality_counts_schema, dict):
+            failures.append("index.documents.list summary quality_counts schema must be an object")
+        elif not isinstance(quality_counts, dict):
+            failures.append("index.documents.list summary quality_counts must be an object")
+        else:
+            quality_count_properties = quality_counts_schema.get("properties")
+            if not isinstance(quality_count_properties, dict):
+                failures.append(
+                    "index.documents.list summary quality_counts properties must be an object"
+                )
+            else:
+                unknown_quality_counts = sorted(set(quality_counts) - set(quality_count_properties))
+                if unknown_quality_counts:
+                    failures.append(
+                        "index.documents.list summary quality_counts includes unknown fields: "
+                        + ", ".join(unknown_quality_counts)
+                    )
+                required_quality_counts = quality_counts_schema.get("required")
+                if not isinstance(required_quality_counts, list):
+                    failures.append(
+                        "index.documents.list summary quality_counts required fields must be a list"
+                    )
+                else:
+                    for field_name in required_quality_counts:
+                        if isinstance(field_name, str) and field_name not in quality_counts:
+                            failures.append(
+                                f"index.documents.list summary quality_counts missing {field_name}"
+                            )
+                for field_name, value in quality_counts.items():
+                    if field_name not in quality_count_properties:
+                        continue
+                    if not isinstance(value, int) or isinstance(value, bool):
+                        failures.append(
+                            f"index.documents.list summary quality_counts.{field_name} must be an integer"
+                        )
+                        continue
+                    field_schema = quality_count_properties.get(field_name)
+                    if isinstance(field_schema, dict):
+                        minimum = field_schema.get("minimum")
+                        if isinstance(minimum, int) and value < minimum:
+                            failures.append(
+                                f"index.documents.list summary quality_counts.{field_name} below minimum"
+                            )
+
+    return failures
+
+
+def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include retrievalQueryResult schema"]
+
+    index_document = defs.get("indexDocument")
+    retrieval_result = defs.get("retrievalQueryResult")
+    source_anchor_id = defs.get("sourceAnchorID")
+    if source_anchor_id != {
+        "type": "string",
+        "pattern": "^source_anchor_[0-9a-f]{16}$",
+    }:
+        failures.append(
+            "$defs.sourceAnchorID must pin retrieval.query response anchors to source_anchor_[16 lowercase hex]"
+        )
+    source_anchor_pattern = (
+        source_anchor_id.get("pattern")
+        if isinstance(source_anchor_id, dict) and isinstance(source_anchor_id.get("pattern"), str)
+        else None
+    )
+    retrieval_response_results_max_items: int | None = None
+    if source_anchor_pattern is not None:
+        try:
+            compiled_source_anchor_pattern = re.compile(source_anchor_pattern)
+        except re.error as error:
+            failures.append(f"$defs.sourceAnchorID.pattern must compile: {error}")
+        else:
+            accepted_source_anchor_samples = (
+                "source_anchor_0000000000000000",
+                "source_anchor_0123456789abcdef",
+                "source_anchor_ffffffffffffffff",
+            )
+            rejected_source_anchor_samples = (
+                " source_anchor_0123456789abcdef",
+                "source_anchor_0123456789abcdef ",
+                "source_anchor_0123456789abcdef\n",
+                "source_anchor_0123456789ABCDEF",
+                "source_anchor_0123456789abcde",
+                "source_anchor_0123456789abcdeg",
+                "source_anchor_0123456789abcdef0",
+                "source_anchor_not_a_handle",
+                "sourceanchor_0123456789abcdef",
+                "",
+            )
+            for sample in accepted_source_anchor_samples:
+                if not compiled_source_anchor_pattern.fullmatch(sample):
+                    failures.append(
+                        f"$defs.sourceAnchorID.pattern must accept canonical sample {sample!r}"
+                    )
+            for sample in rejected_source_anchor_samples:
+                if compiled_source_anchor_pattern.fullmatch(sample):
+                    failures.append(
+                        f"$defs.sourceAnchorID.pattern must reject noncanonical sample {sample!r}"
+                    )
+            canonical_retrieval_query_response_payload_sample = (
+                build_retrieval_query_response_source_anchor_sample(
+                    "source_anchor_0123456789abcdef"
+                )
+            )
+            for sample_failure in retrieval_query_response_source_anchor_sample_failures(
+                canonical_retrieval_query_response_payload_sample,
+                compiled_source_anchor_pattern,
+                retrieval_result if isinstance(retrieval_result, dict) else {},
+                document_schema=index_document if isinstance(index_document, dict) else None,
+            ):
+                failures.append(
+                    "$defs.retrievalQueryPayload response sample must accept canonical "
+                    f"source_anchor_id: {sample_failure}"
+                )
+            rejected_retrieval_query_response_payload_samples = (
+                ("missing-source-anchor", None),
+                ("whitespace-source-anchor", " source_anchor_0123456789abcdef"),
+                ("uppercase-source-anchor", "source_anchor_0123456789ABCDEF"),
+                ("short-source-anchor", "source_anchor_0123456789abcde"),
+                ("long-source-anchor", "source_anchor_0123456789abcdef0"),
+                ("nonhex-source-anchor", "source_anchor_0123456789abcdeg"),
+                ("empty-source-anchor", ""),
+            )
+            for label, source_anchor_sample in rejected_retrieval_query_response_payload_samples:
+                payload_sample = build_retrieval_query_response_source_anchor_sample(
+                    source_anchor_sample
+                )
+                if not retrieval_query_response_source_anchor_sample_failures(
+                    payload_sample,
+                    compiled_source_anchor_pattern,
+                    retrieval_result if isinstance(retrieval_result, dict) else {},
+                    document_schema=index_document if isinstance(index_document, dict) else None,
+                ):
+                    failures.append(
+                        "$defs.retrievalQueryPayload response sample must reject "
+                        f"{label} in results[].source_anchor_id"
+                    )
+
+    if not isinstance(retrieval_result, dict):
+        failures.append("$defs.retrievalQueryResult schema is missing")
+    else:
+        result_properties = retrieval_result.get("properties")
+        if not isinstance(result_properties, dict):
+            failures.append("$defs.retrievalQueryResult.properties must be an object")
+        else:
+            allowed_result_properties = {
+                "document",
+                "source_anchor_id",
+                "chunk_index",
+                "start_character_offset",
+                "end_character_offset",
+                "rank",
+                "matched_terms",
+                "snippet",
+            }
+            if set(result_properties.keys()) != allowed_result_properties:
+                failures.append(
+                    "$defs.retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet"
+                )
+            if result_properties.get("document") != {"$ref": "#/$defs/indexDocument"}:
+                failures.append(
+                    "$defs.retrievalQueryResult.properties.document must use #/$defs/indexDocument"
+                )
+            if result_properties.get("source_anchor_id") != {"$ref": "#/$defs/sourceAnchorID"}:
+                failures.append(
+                    "$defs.retrievalQueryResult.properties.source_anchor_id must use #/$defs/sourceAnchorID"
+                )
+            expected_result_integer_schemas = {
+                "chunk_index": {"type": "integer", "minimum": 0},
+                "start_character_offset": {"type": "integer", "minimum": 0},
+                "end_character_offset": {"type": "integer", "minimum": 0},
+                "rank": {"type": "integer", "minimum": 1},
+            }
+            for field_name, expected_schema in expected_result_integer_schemas.items():
+                if result_properties.get(field_name) != expected_schema:
+                    failures.append(
+                        f"$defs.retrievalQueryResult.properties.{field_name} must use {expected_schema}"
+                    )
+            expected_matched_terms_schema = {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                    "allOf": [
+                        {"$ref": "#/$defs/nonEmptyString"},
+                        {"maxLength": 64},
+                    ]
+                },
+            }
+            if result_properties.get("matched_terms") != expected_matched_terms_schema:
+                failures.append(
+                    "$defs.retrievalQueryResult.properties.matched_terms must cap matched terms at 16 items of 64 characters"
+                )
+            expected_snippet_schema = {
+                "allOf": [
+                    {"$ref": "#/$defs/nonEmptyString"},
+                    {"maxLength": 500},
+                ],
+            }
+            if result_properties.get("snippet") != expected_snippet_schema:
+                failures.append(
+                    "$defs.retrievalQueryResult.properties.snippet must use nonEmptyString with maxLength 500"
+                )
+        required_fields = retrieval_result.get("required")
+        if not isinstance(required_fields, list):
+            failures.append("$defs.retrievalQueryResult.required must be a list")
+        else:
+            if "source_anchor_id" not in required_fields:
+                failures.append("$defs.retrievalQueryResult.required must include source_anchor_id")
+            expected_required_fields = {
+                "document",
+                "source_anchor_id",
+                "chunk_index",
+                "start_character_offset",
+                "end_character_offset",
+                "rank",
+                "matched_terms",
+                "snippet",
+            }
+            if set(required_fields) != expected_required_fields:
+                failures.append(
+                    "$defs.retrievalQueryResult.required must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet"
+                )
+        if retrieval_result.get("additionalProperties") is not False:
+            failures.append("$defs.retrievalQueryResult additionalProperties must be false")
+
+    retrieval_payload = defs.get("retrievalQueryPayload")
+    if not isinstance(retrieval_payload, dict):
+        failures.append("$defs.retrievalQueryPayload schema is missing")
+    else:
+        variants = retrieval_payload.get("oneOf")
+        if not isinstance(variants, list) or len(variants) != 2:
+            failures.append("$defs.retrievalQueryPayload must keep separate request and response variants")
+        else:
+            request_variant = variants[0]
+            if not isinstance(request_variant, dict):
+                failures.append("$defs.retrievalQueryPayload request variant must be an object")
+            else:
+                request_required = request_variant.get("required")
+                if not isinstance(request_required, list):
+                    failures.append("$defs.retrievalQueryPayload request required must be a list")
+                elif "query" not in request_required:
+                    failures.append("$defs.retrievalQueryPayload request required must include query")
+
+                request_properties = request_variant.get("properties")
+                if not isinstance(request_properties, dict):
+                    failures.append("$defs.retrievalQueryPayload request properties must be an object")
+                else:
+                    allowed_request_properties = {"query", "limit", "max_snippet_characters"}
+                    if set(request_properties.keys()) != allowed_request_properties:
+                        failures.append(
+                            "$defs.retrievalQueryPayload request properties must stay limited to query, limit, and max_snippet_characters"
+                        )
+                    expected_query_schema = {
+                        "allOf": [
+                            {"$ref": "#/$defs/nonBlankString"},
+                            {"maxLength": 1024},
+                        ]
+                    }
+                    if request_properties.get("query") != expected_query_schema:
+                        failures.append(
+                            "$defs.retrievalQueryPayload request query must use #/$defs/nonBlankString with maxLength 1024"
+                        )
+                    if "source_anchor_id" in request_properties:
+                        failures.append(
+                            "$defs.retrievalQueryPayload request properties must not accept source_anchor_id"
+                        )
+
+                    canonical_retrieval_query_request_payload_sample = (
+                        build_retrieval_query_request_source_anchor_sample()
+                    )
+                    for sample_failure in retrieval_query_request_source_anchor_sample_failures(
+                        canonical_retrieval_query_request_payload_sample,
+                        request_variant,
+                    ):
+                        failures.append(
+                            "$defs.retrievalQueryPayload request sample must accept canonical "
+                            f"query payload: {sample_failure}"
+                        )
+                    rejected_retrieval_query_request_payload_samples = (
+                        (
+                            "missing-query",
+                            build_retrieval_query_request_source_anchor_sample(include_query=False),
+                        ),
+                        (
+                            "blank-query",
+                            build_retrieval_query_request_source_anchor_sample(query="   "),
+                        ),
+                        (
+                            "non-string-query",
+                            build_retrieval_query_request_source_anchor_sample(query=42),
+                        ),
+                        (
+                            "oversized-query",
+                            build_retrieval_query_request_source_anchor_sample(query="a" * 1025),
+                        ),
+                        (
+                            "source-anchor-id",
+                            build_retrieval_query_request_source_anchor_sample(
+                                source_anchor_id="source_anchor_0123456789abcdef"
+                            ),
+                        ),
+                        (
+                            "string-limit",
+                            build_retrieval_query_request_source_anchor_sample(limit="3"),
+                        ),
+                        (
+                            "float-limit",
+                            build_retrieval_query_request_source_anchor_sample(limit=1.5),
+                        ),
+                        (
+                            "bool-limit",
+                            build_retrieval_query_request_source_anchor_sample(limit=True),
+                        ),
+                        (
+                            "negative-limit",
+                            build_retrieval_query_request_source_anchor_sample(limit=-1),
+                        ),
+                        (
+                            "over-limit",
+                            build_retrieval_query_request_source_anchor_sample(limit=101),
+                        ),
+                        (
+                            "string-max-snippet-characters",
+                            build_retrieval_query_request_source_anchor_sample(
+                                max_snippet_characters="160"
+                            ),
+                        ),
+                        (
+                            "float-max-snippet-characters",
+                            build_retrieval_query_request_source_anchor_sample(
+                                max_snippet_characters=160.5
+                            ),
+                        ),
+                        (
+                            "bool-max-snippet-characters",
+                            build_retrieval_query_request_source_anchor_sample(
+                                max_snippet_characters=True
+                            ),
+                        ),
+                        (
+                            "negative-max-snippet-characters",
+                            build_retrieval_query_request_source_anchor_sample(
+                                max_snippet_characters=-1
+                            ),
+                        ),
+                        (
+                            "over-max-snippet-characters",
+                            build_retrieval_query_request_source_anchor_sample(
+                                max_snippet_characters=501
+                            ),
+                        ),
+                    )
+                    for label, payload_sample in rejected_retrieval_query_request_payload_samples:
+                        if not retrieval_query_request_source_anchor_sample_failures(
+                            payload_sample,
+                            request_variant,
+                        ):
+                            failures.append(
+                                "$defs.retrievalQueryPayload request sample must reject "
+                                f"{label}"
+                            )
+
+                if request_variant.get("additionalProperties") is not False:
+                    failures.append(
+                        "$defs.retrievalQueryPayload request additionalProperties must be false"
+                    )
+            response_variant = variants[1]
+            if not isinstance(response_variant, dict):
+                failures.append("$defs.retrievalQueryPayload response variant must be an object")
+            else:
+                response_required = response_variant.get("required")
+                if not isinstance(response_required, list):
+                    failures.append("$defs.retrievalQueryPayload response required must be a list")
+                elif "results" not in response_required:
+                    failures.append("$defs.retrievalQueryPayload response required must include results")
+
+                response_properties = response_variant.get("properties")
+                if not isinstance(response_properties, dict):
+                    failures.append("$defs.retrievalQueryPayload response properties must be an object")
+                else:
+                    results_schema = response_properties.get("results")
+                    if not isinstance(results_schema, dict):
+                        failures.append(
+                            "$defs.retrievalQueryPayload response properties.results must be an object"
+                        )
+                    else:
+                        if results_schema.get("type") != "array":
+                            failures.append(
+                                "$defs.retrievalQueryPayload response results must be an array"
+                            )
+                        if results_schema.get("maxItems") != 100:
+                            failures.append(
+                                "$defs.retrievalQueryPayload response results must set maxItems 100"
+                            )
+                        elif isinstance(results_schema.get("maxItems"), int):
+                            retrieval_response_results_max_items = results_schema.get("maxItems")
+                        if results_schema.get("items") != {"$ref": "#/$defs/retrievalQueryResult"}:
+                            failures.append(
+                                "$defs.retrievalQueryPayload response results.items must use "
+                                "#/$defs/retrievalQueryResult"
+                            )
+                if response_variant.get("additionalProperties") is not False:
+                    failures.append(
+                        "$defs.retrievalQueryPayload response additionalProperties must be false"
+                    )
+
+    if source_anchor_pattern is not None and isinstance(retrieval_result, dict):
+        try:
+            compiled_source_anchor_pattern = re.compile(source_anchor_pattern)
+        except re.error:
+            compiled_source_anchor_pattern = None
+        if compiled_source_anchor_pattern is not None:
+            rejected_retrieval_query_response_integer_payload_samples = []
+            for integer_field_name in (
+                "chunk_index",
+                "start_character_offset",
+                "end_character_offset",
+                "rank",
+            ):
+                rejected_retrieval_query_response_integer_payload_samples.extend(
+                    (
+                        (
+                            f"string-{integer_field_name.replace('_', '-')}",
+                            build_retrieval_query_response_source_anchor_sample(
+                                "source_anchor_0123456789abcdef",
+                                result_overrides={integer_field_name: "1"},
+                            ),
+                        ),
+                        (
+                            f"float-{integer_field_name.replace('_', '-')}",
+                            build_retrieval_query_response_source_anchor_sample(
+                                "source_anchor_0123456789abcdef",
+                                result_overrides={integer_field_name: 1.5},
+                            ),
+                        ),
+                        (
+                            f"bool-{integer_field_name.replace('_', '-')}",
+                            build_retrieval_query_response_source_anchor_sample(
+                                "source_anchor_0123456789abcdef",
+                                result_overrides={integer_field_name: True},
+                            ),
+                        ),
+                        (
+                            f"negative-{integer_field_name.replace('_', '-')}",
+                            build_retrieval_query_response_source_anchor_sample(
+                                "source_anchor_0123456789abcdef",
+                                result_overrides={integer_field_name: -1},
+                            ),
+                        ),
+                    )
+                )
+
+            rejected_retrieval_query_response_result_shape_samples = (
+                (
+                    "unknown-result-metadata",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"retrieval_context": "future semantic context"},
+                    ),
+                ),
+                (
+                    "over-results",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_count=101,
+                    ),
+                ),
+                (
+                    "missing-rank",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        omit_result_fields=("rank",),
+                    ),
+                ),
+                (
+                    "zero-rank",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"rank": 0},
+                    ),
+                ),
+                (
+                    "empty-snippet",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"snippet": ""},
+                    ),
+                ),
+                (
+                    "overlong-snippet",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"snippet": "a" * 501},
+                    ),
+                ),
+                (
+                    "empty-matched-terms",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"matched_terms": []},
+                    ),
+                ),
+                (
+                    "empty-matched-term",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"matched_terms": [""]},
+                    ),
+                ),
+                (
+                    "over-matched-terms",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={
+                            "matched_terms": [f"term{index}" for index in range(17)]
+                        },
+                    ),
+                ),
+                (
+                    "overlong-matched-term",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"matched_terms": ["a" * 65]},
+                    ),
+                ),
+                (
+                    "end-before-start-character-offset",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={
+                            "start_character_offset": 42,
+                            "end_character_offset": 7,
+                        },
+                    ),
+                ),
+                (
+                    "unknown-result-document-metadata",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"source_path": "/private/source.txt"},
+                    ),
+                ),
+                (
+                    "missing-result-document-quality",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        omit_document_fields=("quality",),
+                    ),
+                ),
+                (
+                    "zero-chunk-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 0,
+                            "quality": "chunked",
+                        },
+                    ),
+                ),
+                (
+                    "zero-chunk-single-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 0,
+                            "quality": "single_chunk",
+                        },
+                    ),
+                ),
+                (
+                    "single-chunk-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 1,
+                            "quality": "no_usable_text",
+                        },
+                    ),
+                ),
+                (
+                    "single-chunk-chunked-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 1,
+                            "quality": "chunked",
+                        },
+                    ),
+                ),
+                (
+                    "multi-chunk-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 2,
+                            "quality": "single_chunk",
+                        },
+                    ),
+                ),
+                (
+                    "multi-chunk-no-usable-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 2,
+                            "quality": "no_usable_text",
+                        },
+                    ),
+                ),
+                (
+                    "three-chunk-single-result-document-quality-mismatch",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={
+                            "chunk_count": 3,
+                            "quality": "single_chunk",
+                        },
+                    ),
+                ),
+                (
+                    "overlong-result-document-id",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"id": "d" * 129},
+                    ),
+                ),
+                (
+                    "uppercase-result-document-mime-type",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"mime_type": "Text/markdown"},
+                    ),
+                ),
+                (
+                    "parameterized-result-document-mime-type",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"mime_type": "text/plain; charset=utf-8"},
+                    ),
+                ),
+                (
+                    "uppercase-result-document-content-fingerprint",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"content_fingerprint": "001122334455667A"},
+                    ),
+                ),
+                (
+                    "string-result-document-chunk-count",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"chunk_count": "1"},
+                    ),
+                ),
+                (
+                    "negative-result-document-extracted-character-count",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        document_overrides={"extracted_character_count": -1},
+                    ),
+                ),
+            )
+            for label, payload_sample in (
+                *rejected_retrieval_query_response_integer_payload_samples,
+                *rejected_retrieval_query_response_result_shape_samples,
+            ):
+                if not retrieval_query_response_source_anchor_sample_failures(
+                    payload_sample,
+                    compiled_source_anchor_pattern,
+                    retrieval_result,
+                    max_results_count=retrieval_response_results_max_items,
+                    document_schema=index_document if isinstance(index_document, dict) else None,
+                ):
+                    failures.append(
+                        "$defs.retrievalQueryPayload response result sample must reject "
+                        f"{label}"
+                    )
+
+    return failures
+
+
+def check_source_anchor_resolve_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include sourceAnchorResolvePayload schema"]
+
+    source_anchor_id = defs.get("sourceAnchorID")
+    if source_anchor_id != {
+        "type": "string",
+        "pattern": "^source_anchor_[0-9a-f]{16}$",
+    }:
+        failures.append(
+            "$defs.sourceAnchorID must pin source_anchor.resolve handles to source_anchor_[16 lowercase hex]"
+        )
+    compiled_source_anchor_pattern: re.Pattern[str] | None = None
+    if isinstance(source_anchor_id, dict) and isinstance(source_anchor_id.get("pattern"), str):
+        try:
+            compiled_source_anchor_pattern = re.compile(source_anchor_id["pattern"])
+        except re.error:
+            failures.append("$defs.sourceAnchorID pattern must compile")
+
+    chunk_summary = defs.get("sourceAnchorChunkSummary")
+    if not isinstance(chunk_summary, dict):
+        failures.append("$defs.sourceAnchorChunkSummary schema is missing")
+    else:
+        chunk_required = chunk_summary.get("required")
+        expected_chunk_fields = {
+            "chunk_index",
+            "start_character_offset",
+            "end_character_offset",
+            "character_count",
+        }
+        if not isinstance(chunk_required, list):
+            failures.append("$defs.sourceAnchorChunkSummary.required must be a list")
+        elif set(chunk_required) != expected_chunk_fields:
+            failures.append(
+                "$defs.sourceAnchorChunkSummary.required must stay limited to chunk_index, start_character_offset, end_character_offset, and character_count"
+            )
+        chunk_properties = chunk_summary.get("properties")
+        if not isinstance(chunk_properties, dict):
+            failures.append("$defs.sourceAnchorChunkSummary.properties must be an object")
+        else:
+            if set(chunk_properties.keys()) != expected_chunk_fields:
+                failures.append(
+                    "$defs.sourceAnchorChunkSummary properties must stay limited to chunk_index, start_character_offset, end_character_offset, and character_count"
+                )
+            for field_name in expected_chunk_fields:
+                if chunk_properties.get(field_name) != {"type": "integer", "minimum": 0}:
+                    failures.append(
+                        f"$defs.sourceAnchorChunkSummary.properties.{field_name} must be a nonnegative integer"
+                    )
+        if chunk_summary.get("additionalProperties") is not False:
+            failures.append("$defs.sourceAnchorChunkSummary additionalProperties must be false")
+
+    source_anchor_payload = defs.get("sourceAnchorResolvePayload")
+    if not isinstance(source_anchor_payload, dict):
+        failures.append("$defs.sourceAnchorResolvePayload schema is missing")
+        return failures
+
+    variants = source_anchor_payload.get("oneOf")
+    if not isinstance(variants, list) or len(variants) != 2:
+        failures.append("$defs.sourceAnchorResolvePayload must keep separate request and response variants")
+        return failures
+
+    request_variant = variants[0]
+    if not isinstance(request_variant, dict):
+        failures.append("$defs.sourceAnchorResolvePayload request variant must be an object")
+    else:
+        request_required = request_variant.get("required")
+        if not isinstance(request_required, list):
+            failures.append("$defs.sourceAnchorResolvePayload request required must be a list")
+        elif set(request_required) != {"source_anchor_id"}:
+            failures.append(
+                "$defs.sourceAnchorResolvePayload request required must stay limited to source_anchor_id"
+            )
+        request_properties = request_variant.get("properties")
+        if not isinstance(request_properties, dict):
+            failures.append("$defs.sourceAnchorResolvePayload request properties must be an object")
+        else:
+            if set(request_properties.keys()) != {"source_anchor_id"}:
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload request properties must stay limited to source_anchor_id"
+                )
+            if request_properties.get("source_anchor_id") != {"$ref": "#/$defs/sourceAnchorID"}:
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload request source_anchor_id must use #/$defs/sourceAnchorID"
+                )
+        if request_variant.get("additionalProperties") is not False:
+            failures.append("$defs.sourceAnchorResolvePayload request additionalProperties must be false")
+
+        canonical_source_anchor_request_sample = build_source_anchor_resolve_request_sample()
+        for sample_failure in source_anchor_resolve_request_sample_failures(
+            canonical_source_anchor_request_sample,
+            request_variant,
+            compiled_source_anchor_pattern,
+        ):
+            failures.append(
+                "$defs.sourceAnchorResolvePayload request sample must accept canonical request: "
+                + sample_failure
+            )
+        for label, payload_sample in (
+            (
+                "missing-source-anchor",
+                build_source_anchor_resolve_request_sample(source_anchor_id=None),
+            ),
+            (
+                "uppercase-source-anchor",
+                build_source_anchor_resolve_request_sample(
+                    source_anchor_id="source_anchor_0123456789ABCDEF"
+                ),
+            ),
+            (
+                "non-string-source-anchor",
+                build_source_anchor_resolve_request_sample(source_anchor_id=1234),
+            ),
+            (
+                "response-document",
+                build_source_anchor_resolve_request_sample(
+                    extra_fields={"document": build_index_document_sample()}
+                ),
+            ),
+            (
+                "response-chunk-summary",
+                build_source_anchor_resolve_request_sample(
+                    extra_fields={"chunk_summary": build_source_anchor_chunk_summary_sample()}
+                ),
+            ),
+            (
+                "future-request-metadata",
+                build_source_anchor_resolve_request_sample(
+                    extra_fields={
+                        "source_path": "/private/source.md",
+                        "citation": "future citation",
+                        "trusted_source": True,
+                    }
+                ),
+            ),
+        ):
+            if not source_anchor_resolve_request_sample_failures(
+                payload_sample,
+                request_variant,
+                compiled_source_anchor_pattern,
+            ):
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload request sample must reject "
+                    f"{label}"
+                )
+
+    response_variant = variants[1]
+    if not isinstance(response_variant, dict):
+        failures.append("$defs.sourceAnchorResolvePayload response variant must be an object")
+    else:
+        response_required = response_variant.get("required")
+        expected_response_fields = {"source_anchor_id", "document", "chunk_summary"}
+        if not isinstance(response_required, list):
+            failures.append("$defs.sourceAnchorResolvePayload response required must be a list")
+        elif set(response_required) != expected_response_fields:
+            failures.append(
+                "$defs.sourceAnchorResolvePayload response required must stay limited to source_anchor_id, document, and chunk_summary"
+            )
+        response_properties = response_variant.get("properties")
+        if not isinstance(response_properties, dict):
+            failures.append("$defs.sourceAnchorResolvePayload response properties must be an object")
+        else:
+            if set(response_properties.keys()) != expected_response_fields:
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload response properties must stay limited to source_anchor_id, document, and chunk_summary"
+                )
+            expected_refs = {
+                "source_anchor_id": {"$ref": "#/$defs/sourceAnchorID"},
+                "document": {"$ref": "#/$defs/indexDocument"},
+                "chunk_summary": {"$ref": "#/$defs/sourceAnchorChunkSummary"},
+            }
+            for field_name, expected_ref in expected_refs.items():
+                if response_properties.get(field_name) != expected_ref:
+                    failures.append(
+                        f"$defs.sourceAnchorResolvePayload response {field_name} must use {expected_ref}"
+                    )
+            forbidden_response_fields = {
+                "chunk_text",
+                "snippet",
+                "source_path",
+                "workspace_id",
+                "project_id",
+                "retrieval_context",
+                "embedding",
+                "citation",
+                "trusted_source",
+                "approval",
+            }
+            leaked_fields = sorted(set(response_properties) & forbidden_response_fields)
+            if leaked_fields:
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload response properties include future/private metadata "
+                    f"{leaked_fields}"
+                )
+        if response_variant.get("additionalProperties") is not False:
+            failures.append("$defs.sourceAnchorResolvePayload response additionalProperties must be false")
+
+        index_document = defs.get("indexDocument")
+        if isinstance(chunk_summary, dict) and isinstance(index_document, dict):
+            canonical_source_anchor_response_sample = build_source_anchor_resolve_response_sample()
+            for sample_failure in source_anchor_resolve_response_sample_failures(
+                canonical_source_anchor_response_sample,
+                response_variant,
+                compiled_source_anchor_pattern,
+                index_document,
+                chunk_summary,
+            ):
+                failures.append(
+                    "$defs.sourceAnchorResolvePayload response sample must accept canonical response: "
+                    + sample_failure
+                )
+            for label, payload_sample in (
+                (
+                    "missing-source-anchor",
+                    build_source_anchor_resolve_response_sample(omit_payload_fields=("source_anchor_id",)),
+                ),
+                (
+                    "missing-document",
+                    build_source_anchor_resolve_response_sample(omit_payload_fields=("document",)),
+                ),
+                (
+                    "missing-chunk-summary",
+                    build_source_anchor_resolve_response_sample(omit_payload_fields=("chunk_summary",)),
+                ),
+                (
+                    "uppercase-source-anchor",
+                    build_source_anchor_resolve_response_sample(
+                        source_anchor_id="source_anchor_0123456789ABCDEF"
+                    ),
+                ),
+                (
+                    "unknown-response-metadata",
+                    build_source_anchor_resolve_response_sample(
+                        payload_overrides={
+                            "chunk_text": "future full chunk text",
+                            "snippet": "future snippet",
+                            "source_path": "/private/source.md",
+                            "retrieval_context": "future retrieval context",
+                            "citation": "future citation",
+                            "trusted_source": True,
+                            "approval": "future approval",
+                        }
+                    ),
+                ),
+                (
+                    "unknown-document-metadata",
+                    build_source_anchor_resolve_response_sample(
+                        document_overrides={"source_path": "/private/source.md"}
+                    ),
+                ),
+                (
+                    "missing-chunk-index",
+                    build_source_anchor_resolve_response_sample(
+                        omit_chunk_summary_fields=("chunk_index",)
+                    ),
+                ),
+                (
+                    "string-chunk-index",
+                    build_source_anchor_resolve_response_sample(
+                        chunk_summary_overrides={"chunk_index": "0"}
+                    ),
+                ),
+                (
+                    "bool-character-count",
+                    build_source_anchor_resolve_response_sample(
+                        chunk_summary_overrides={"character_count": True}
+                    ),
+                ),
+                (
+                    "negative-character-count",
+                    build_source_anchor_resolve_response_sample(
+                        chunk_summary_overrides={"character_count": -1}
+                    ),
+                ),
+                (
+                    "end-before-start-character-offset",
+                    build_source_anchor_resolve_response_sample(
+                        chunk_summary_overrides={
+                            "start_character_offset": 10,
+                            "end_character_offset": 3,
+                        }
+                    ),
+                ),
+                (
+                    "unknown-chunk-summary-metadata",
+                    build_source_anchor_resolve_response_sample(
+                        chunk_summary_overrides={"chunk_text": "future chunk text"}
+                    ),
+                ),
+            ):
+                if not source_anchor_resolve_response_sample_failures(
+                    payload_sample,
+                    response_variant,
+                    compiled_source_anchor_pattern,
+                    index_document,
+                    chunk_summary,
+                ):
+                    failures.append(
+                        "$defs.sourceAnchorResolvePayload response sample must reject "
+                        f"{label}"
+                    )
+
+    return failures
+
+
+def build_source_anchor_chunk_summary_sample(
+    *,
+    chunk_summary_overrides: dict[str, object] | None = None,
+    omit_chunk_summary_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    chunk_summary: dict[str, object] = {
+        "chunk_index": 0,
+        "start_character_offset": 0,
+        "end_character_offset": 42,
+        "character_count": 42,
+    }
+    if chunk_summary_overrides is not None:
+        chunk_summary.update(chunk_summary_overrides)
+    for field_name in omit_chunk_summary_fields:
+        chunk_summary.pop(field_name, None)
+    return chunk_summary
+
+
+def build_source_anchor_resolve_request_sample(
+    *,
+    source_anchor_id: object | None = "source_anchor_0123456789abcdef",
+    extra_fields: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    if source_anchor_id is not None:
+        payload["source_anchor_id"] = source_anchor_id
+    if extra_fields is not None:
+        payload.update(extra_fields)
+    return payload
+
+
+def build_source_anchor_resolve_response_sample(
+    *,
+    source_anchor_id: object | None = "source_anchor_0123456789abcdef",
+    payload_overrides: dict[str, object] | None = None,
+    document_overrides: dict[str, object] | None = None,
+    omit_document_fields: tuple[str, ...] = (),
+    chunk_summary_overrides: dict[str, object] | None = None,
+    omit_chunk_summary_fields: tuple[str, ...] = (),
+    omit_payload_fields: tuple[str, ...] = (),
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "document": build_index_document_sample(
+            document_overrides=document_overrides,
+            omit_document_fields=omit_document_fields,
+        ),
+        "chunk_summary": build_source_anchor_chunk_summary_sample(
+            chunk_summary_overrides=chunk_summary_overrides,
+            omit_chunk_summary_fields=omit_chunk_summary_fields,
+        ),
+    }
+    if source_anchor_id is not None:
+        payload["source_anchor_id"] = source_anchor_id
+    if payload_overrides is not None:
+        payload.update(payload_overrides)
+    for field_name in omit_payload_fields:
+        payload.pop(field_name, None)
+    return payload
+
+
+def source_anchor_resolve_request_sample_failures(
+    payload: object,
+    request_variant: dict[str, object],
+    compiled_source_anchor_pattern: re.Pattern[str] | None,
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["source_anchor.resolve request payload sample must be an object"]
+
+    properties = request_variant.get("properties")
+    if not isinstance(properties, dict):
+        return ["source_anchor.resolve request variant properties must be an object"]
+
+    required = request_variant.get("required")
+    if not isinstance(required, list):
+        return ["source_anchor.resolve request variant required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(payload) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "source_anchor.resolve request payload sample includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in payload:
+            failures.append(f"source_anchor.resolve request payload sample missing {field_name}")
+
+    source_anchor_id = payload.get("source_anchor_id")
+    if "source_anchor_id" in payload:
+        if not isinstance(source_anchor_id, str):
+            failures.append("source_anchor.resolve request source_anchor_id must be a string")
+        elif compiled_source_anchor_pattern is not None and not compiled_source_anchor_pattern.fullmatch(source_anchor_id):
+            failures.append(
+                "source_anchor.resolve request source_anchor_id must match source_anchor_[16 lowercase hex]"
+            )
+
+    return failures
+
+
+def source_anchor_resolve_response_sample_failures(
+    payload: object,
+    response_variant: dict[str, object],
+    compiled_source_anchor_pattern: re.Pattern[str] | None,
+    document_schema: dict[str, object],
+    chunk_summary_schema: dict[str, object],
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["source_anchor.resolve response payload sample must be an object"]
+
+    properties = response_variant.get("properties")
+    if not isinstance(properties, dict):
+        return ["source_anchor.resolve response variant properties must be an object"]
+
+    required = response_variant.get("required")
+    if not isinstance(required, list):
+        return ["source_anchor.resolve response variant required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(payload) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "source_anchor.resolve response payload sample includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in payload:
+            failures.append(f"source_anchor.resolve response payload sample missing {field_name}")
+
+    source_anchor_id = payload.get("source_anchor_id")
+    if "source_anchor_id" in payload:
+        if not isinstance(source_anchor_id, str):
+            failures.append("source_anchor.resolve response source_anchor_id must be a string")
+        elif compiled_source_anchor_pattern is not None and not compiled_source_anchor_pattern.fullmatch(source_anchor_id):
+            failures.append(
+                "source_anchor.resolve response source_anchor_id must match source_anchor_[16 lowercase hex]"
+            )
+
+    document = payload.get("document")
+    if "document" in payload:
+        failures.extend(
+            index_document_sample_failures(
+                document,
+                document_schema,
+                0,
+                path="source_anchor.resolve.document",
+            )
+        )
+
+    chunk_summary = payload.get("chunk_summary")
+    if "chunk_summary" in payload:
+        failures.extend(
+            source_anchor_chunk_summary_sample_failures(
+                chunk_summary,
+                chunk_summary_schema,
+            )
+        )
+
+    return failures
+
+
+def source_anchor_chunk_summary_sample_failures(
+    chunk_summary: object,
+    chunk_summary_schema: dict[str, object],
+) -> list[str]:
+    if not isinstance(chunk_summary, dict):
+        return ["source_anchor.resolve chunk_summary must be an object"]
+
+    properties = chunk_summary_schema.get("properties")
+    if not isinstance(properties, dict):
+        return ["sourceAnchorChunkSummary properties must be an object"]
+
+    required = chunk_summary_schema.get("required")
+    if not isinstance(required, list):
+        return ["sourceAnchorChunkSummary required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(chunk_summary) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "source_anchor.resolve chunk_summary includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in chunk_summary:
+            failures.append(f"source_anchor.resolve chunk_summary missing {field_name}")
+
+    for integer_field_name in (
+        "chunk_index",
+        "start_character_offset",
+        "end_character_offset",
+        "character_count",
+    ):
+        if integer_field_name not in chunk_summary:
+            continue
+        value = chunk_summary.get(integer_field_name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            failures.append(f"source_anchor.resolve chunk_summary.{integer_field_name} must be an integer")
+            continue
+        field_schema = properties.get(integer_field_name)
+        if not isinstance(field_schema, dict):
+            continue
+        minimum = field_schema.get("minimum")
+        if isinstance(minimum, int) and value < minimum:
+            failures.append(f"source_anchor.resolve chunk_summary.{integer_field_name} below minimum")
+
+    start_character_offset = chunk_summary.get("start_character_offset")
+    end_character_offset = chunk_summary.get("end_character_offset")
+    if (
+        isinstance(start_character_offset, int)
+        and not isinstance(start_character_offset, bool)
+        and isinstance(end_character_offset, int)
+        and not isinstance(end_character_offset, bool)
+        and end_character_offset < start_character_offset
+    ):
+        failures.append(
+            "source_anchor.resolve chunk_summary.end_character_offset must be greater than or equal to start_character_offset"
+        )
+
+    return failures
+
+
+def build_retrieval_query_response_source_anchor_sample(
+    source_anchor_id: object | None,
+    *,
+    document_overrides: dict[str, object] | None = None,
+    omit_document_fields: tuple[str, ...] = (),
+    result_overrides: dict[str, object] | None = None,
+    omit_result_fields: tuple[str, ...] = (),
+    result_count: int = 1,
+) -> dict[str, object]:
+    document: dict[str, object] = {
+        "id": "protocol-source-anchor-sample",
+        "display_name": "Protocol Source Anchor Sample",
+        "mime_type": "text/plain",
+        "content_fingerprint": "0011223344556677",
+        "extracted_character_count": 42,
+        "chunk_count": 1,
+        "quality": "single_chunk",
+    }
+    if document_overrides is not None:
+        document.update(document_overrides)
+    for field_name in omit_document_fields:
+        document.pop(field_name, None)
+
+    result: dict[str, object] = {
+        "document": document,
+        "chunk_index": 0,
+        "start_character_offset": 0,
+        "end_character_offset": 42,
+        "rank": 101,
+        "matched_terms": ["protocol"],
+        "snippet": "protocol source anchor sample",
+    }
+    if source_anchor_id is not None:
+        result["source_anchor_id"] = source_anchor_id
+    if result_overrides is not None:
+        result.update(result_overrides)
+    for field_name in omit_result_fields:
+        result.pop(field_name, None)
+    return {"results": [dict(result) for _ in range(result_count)]}
+
+
+def build_retrieval_query_request_source_anchor_sample(
+    *,
+    include_query: bool = True,
+    query: object = "protocol source anchor",
+    limit: object = 3,
+    max_snippet_characters: object = 160,
+    source_anchor_id: object | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "limit": limit,
+        "max_snippet_characters": max_snippet_characters,
+    }
+    if include_query:
+        payload["query"] = query
+    if source_anchor_id is not None:
+        payload["source_anchor_id"] = source_anchor_id
+    return payload
+
+
+def retrieval_query_request_source_anchor_sample_failures(
+    payload: object,
+    request_variant: dict[str, object],
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["retrieval.query request payload sample must be an object"]
+
+    properties = request_variant.get("properties")
+    if not isinstance(properties, dict):
+        return ["retrieval.query request variant properties must be an object"]
+
+    required = request_variant.get("required")
+    if not isinstance(required, list):
+        return ["retrieval.query request variant required fields must be a list"]
+
+    failures: list[str] = []
+    unknown_fields = sorted(set(payload) - set(properties))
+    if unknown_fields:
+        failures.append(
+            "retrieval.query request payload sample includes unknown fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    for field_name in required:
+        if isinstance(field_name, str) and field_name not in payload:
+            failures.append(f"retrieval.query request payload sample missing {field_name}")
+
+    query = payload.get("query")
+    if not isinstance(query, str):
+        failures.append("retrieval.query request payload sample query must be a string")
+    elif not query.strip():
+        failures.append("retrieval.query request payload sample query must be nonblank")
+    else:
+        query_schema = properties.get("query")
+        query_max_length: object | None = None
+        if isinstance(query_schema, dict):
+            direct_max_length = query_schema.get("maxLength")
+            if isinstance(direct_max_length, int):
+                query_max_length = direct_max_length
+            all_of = query_schema.get("allOf")
+            if isinstance(all_of, list):
+                for schema_part in all_of:
+                    if not isinstance(schema_part, dict):
+                        continue
+                    nested_max_length = schema_part.get("maxLength")
+                    if isinstance(nested_max_length, int):
+                        query_max_length = nested_max_length
+        if isinstance(query_max_length, int) and len(query) > query_max_length:
+            failures.append("retrieval.query request payload sample query above maximum length")
+
+    for integer_field_name in ("limit", "max_snippet_characters"):
+        if integer_field_name not in payload:
+            continue
+        value = payload.get(integer_field_name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            failures.append(
+                f"retrieval.query request payload sample {integer_field_name} must be an integer"
+            )
+            continue
+
+        field_schema = properties.get(integer_field_name)
+        if not isinstance(field_schema, dict):
+            continue
+        minimum = field_schema.get("minimum")
+        if isinstance(minimum, int) and value < minimum:
+            failures.append(
+                f"retrieval.query request payload sample {integer_field_name} below minimum"
+            )
+        maximum = field_schema.get("maximum")
+        if isinstance(maximum, int) and value > maximum:
+            failures.append(
+                f"retrieval.query request payload sample {integer_field_name} above maximum"
+            )
+
+    return failures
+
+
+def retrieval_query_response_source_anchor_sample_failures(
+    payload: object,
+    compiled_source_anchor_pattern: re.Pattern[str],
+    result_schema: dict[str, object],
+    max_results_count: int | None = None,
+    document_schema: dict[str, object] | None = None,
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return ["retrieval.query response payload sample must be an object"]
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return ["retrieval.query response payload sample must include results array"]
+
+    properties = result_schema.get("properties")
+    if not isinstance(properties, dict):
+        return ["retrieval.query result schema properties must be an object"]
+
+    required = result_schema.get("required")
+    if not isinstance(required, list):
+        return ["retrieval.query result schema required fields must be a list"]
+
+    failures: list[str] = []
+    if isinstance(max_results_count, int) and len(results) > max_results_count:
+        failures.append("retrieval.query response payload sample results above maximum items")
+
+    for index, result in enumerate(results):
+        if not isinstance(result, dict):
+            failures.append(f"results[{index}] must be an object")
+            continue
+
+        unknown_fields = sorted(set(result) - set(properties))
+        if unknown_fields:
+            failures.append(
+                f"results[{index}] includes unknown fields: " + ", ".join(unknown_fields)
+            )
+
+        for field_name in required:
+            if isinstance(field_name, str) and field_name not in result:
+                failures.append(f"results[{index}] missing {field_name}")
+
+        document = result.get("document")
+        if not isinstance(document, dict):
+            failures.append(f"results[{index}].document must be an object")
+        elif isinstance(document_schema, dict):
+            failures.extend(
+                index_document_sample_failures(
+                    document,
+                    document_schema,
+                    index,
+                    path=f"results[{index}].document",
+                )
+            )
+
+        if "source_anchor_id" not in result:
+            failures.append(f"results[{index}].source_anchor_id is required")
+        else:
+            source_anchor_id = result.get("source_anchor_id")
+            if not isinstance(source_anchor_id, str):
+                failures.append(f"results[{index}].source_anchor_id must be a string")
+            elif not compiled_source_anchor_pattern.fullmatch(source_anchor_id):
+                failures.append(
+                    f"results[{index}].source_anchor_id must match source_anchor_[16 lowercase hex]"
+                )
+
+        for integer_field_name in (
+            "chunk_index",
+            "start_character_offset",
+            "end_character_offset",
+            "rank",
+        ):
+            if integer_field_name not in result:
+                continue
+            value = result.get(integer_field_name)
+            if not isinstance(value, int) or isinstance(value, bool):
+                failures.append(f"results[{index}].{integer_field_name} must be an integer")
+                continue
+
+            field_schema = properties.get(integer_field_name)
+            if not isinstance(field_schema, dict):
+                continue
+            minimum = field_schema.get("minimum")
+            if isinstance(minimum, int) and value < minimum:
+                failures.append(f"results[{index}].{integer_field_name} below minimum")
+
+        start_character_offset = result.get("start_character_offset")
+        end_character_offset = result.get("end_character_offset")
+        if (
+            isinstance(start_character_offset, int)
+            and not isinstance(start_character_offset, bool)
+            and isinstance(end_character_offset, int)
+            and not isinstance(end_character_offset, bool)
+            and end_character_offset < start_character_offset
+        ):
+            failures.append(
+                f"results[{index}].end_character_offset must be greater than or equal to start_character_offset"
+            )
+
+        matched_terms = result.get("matched_terms")
+        if "matched_terms" in result:
+            if not isinstance(matched_terms, list):
+                failures.append(f"results[{index}].matched_terms must be an array")
+            else:
+                matched_terms_schema = properties.get("matched_terms")
+                matched_terms_max_items = (
+                    matched_terms_schema.get("maxItems")
+                    if isinstance(matched_terms_schema, dict)
+                    and isinstance(matched_terms_schema.get("maxItems"), int)
+                    else None
+                )
+                matched_terms_min_items = (
+                    matched_terms_schema.get("minItems")
+                    if isinstance(matched_terms_schema, dict)
+                    and isinstance(matched_terms_schema.get("minItems"), int)
+                    else None
+                )
+                matched_term_max_length: object | None = None
+                matched_terms_items = (
+                    matched_terms_schema.get("items")
+                    if isinstance(matched_terms_schema, dict)
+                    else None
+                )
+                if isinstance(matched_terms_items, dict):
+                    direct_max_length = matched_terms_items.get("maxLength")
+                    if isinstance(direct_max_length, int):
+                        matched_term_max_length = direct_max_length
+                    all_of = matched_terms_items.get("allOf")
+                    if isinstance(all_of, list):
+                        for schema_part in all_of:
+                            if not isinstance(schema_part, dict):
+                                continue
+                            nested_max_length = schema_part.get("maxLength")
+                            if isinstance(nested_max_length, int):
+                                matched_term_max_length = nested_max_length
+                if isinstance(matched_terms_min_items, int) and len(matched_terms) < matched_terms_min_items:
+                    failures.append(f"results[{index}].matched_terms below minimum items")
+                if isinstance(matched_terms_max_items, int) and len(matched_terms) > matched_terms_max_items:
+                    failures.append(f"results[{index}].matched_terms above maximum items")
+                for term_index, matched_term in enumerate(matched_terms):
+                    if not isinstance(matched_term, str) or not matched_term:
+                        failures.append(
+                            f"results[{index}].matched_terms[{term_index}] must be a non-empty string"
+                        )
+                    elif (
+                        isinstance(matched_term_max_length, int)
+                        and len(matched_term) > matched_term_max_length
+                    ):
+                        failures.append(
+                            f"results[{index}].matched_terms[{term_index}] above maximum length"
+                        )
+
+        snippet = result.get("snippet")
+        if "snippet" in result and (not isinstance(snippet, str) or not snippet):
+            failures.append(f"results[{index}].snippet must be a non-empty string")
+        elif isinstance(snippet, str):
+            snippet_schema = properties.get("snippet")
+            snippet_max_length: object | None = None
+            if isinstance(snippet_schema, dict):
+                direct_max_length = snippet_schema.get("maxLength")
+                if isinstance(direct_max_length, int):
+                    snippet_max_length = direct_max_length
+                all_of = snippet_schema.get("allOf")
+                if isinstance(all_of, list):
+                    for schema_part in all_of:
+                        if not isinstance(schema_part, dict):
+                            continue
+                        nested_max_length = schema_part.get("maxLength")
+                        if isinstance(nested_max_length, int):
+                            snippet_max_length = nested_max_length
+            if isinstance(snippet_max_length, int) and len(snippet) > snippet_max_length:
+                failures.append(f"results[{index}].snippet above maximum length")
     return failures
 
 
@@ -1471,6 +3974,9 @@ def main() -> int:
         failures.extend(check_memory_list_payload_schema_contract(schema))
         failures.extend(check_memory_upsert_payload_schema_contract(schema))
         failures.extend(check_memory_delete_payload_schema_contract(schema))
+        failures.extend(check_index_documents_list_payload_schema_contract(schema))
+        failures.extend(check_retrieval_query_source_anchor_schema_contract(schema))
+        failures.extend(check_source_anchor_resolve_payload_schema_contract(schema))
         failures.extend(check_chat_send_payload_schema_contract(schema))
         failures.extend(check_chat_title_request_payload_schema_contract(schema))
         failures.extend(check_chat_message_schema_contract(schema))

@@ -15,6 +15,10 @@ import com.localagentbridge.android.core.protocol.ChatSessionSearchPayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsQualityCountsPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
@@ -34,7 +38,11 @@ import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
+import com.localagentbridge.android.core.protocol.RetrievalQueryResultItemPayload
+import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
+import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyPayload
@@ -8828,6 +8836,1483 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            val requestPayload = json.decodeFromJsonElement(
+                IndexDocumentsListRequestPayload.serializer(),
+                catalogRequest.payload,
+            )
+            assertEquals(100, requestPayload.limit)
+            assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(
+                            RuntimeDocumentIndexDocumentPayload(
+                                id = "doc-1",
+                                displayName = "Runtime Notes.md",
+                                mimeType = "text/markdown",
+                                contentFingerprint = "0123456789abcdef",
+                                extractedCharacterCount = 1200,
+                                chunkCount = 3,
+                                quality = "chunked",
+                            ),
+                        ),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 3,
+                            extractedCharacterCount = 1200,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 0,
+                                chunked = 1,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val catalog = fixture.viewModel.state.value.documentCatalog
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertEquals(1, catalog.summary.documentCount)
+            assertEquals(3, catalog.summary.chunkCount)
+            assertEquals(1, catalog.summary.qualityCounts.chunked)
+            assertEquals("Runtime Notes.md", catalog.documents.single().displayName)
+            assertEquals("text/markdown", catalog.documents.single().mimeType)
+            assertEquals("0123456789abcdef", catalog.documents.single().contentFingerprint)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.none { it.title.contains("Runtime Notes") })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentCatalogClearsTransientRowsOnDisconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(
+                            RuntimeDocumentIndexDocumentPayload(
+                                id = "doc-disconnect-catalog",
+                                displayName = "Disconnect Catalog.md",
+                                mimeType = "text/markdown",
+                                contentFingerprint = "1122334455667788",
+                                extractedCharacterCount = 2048,
+                                chunkCount = 2,
+                                quality = "chunked",
+                            ),
+                        ),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 2,
+                            extractedCharacterCount = 2048,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 0,
+                                chunked = 1,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val connectedCatalog = fixture.viewModel.state.value.documentCatalog
+            assertEquals("Disconnect Catalog.md", connectedCatalog.documents.single().displayName)
+            assertEquals(1, connectedCatalog.summary.documentCount)
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+
+            val disconnectedState = fixture.viewModel.state.value
+            assertFalse(disconnectedState.isConnected)
+            assertEquals("disconnected", disconnectedState.runtimeStatus)
+            assertTrue(disconnectedState.documentCatalog.documents.isEmpty())
+            assertEquals(RuntimeDocumentIndexSummary(), disconnectedState.documentCatalog.summary)
+            assertFalse(disconnectedState.isLoadingDocumentCatalog)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(
+                            RuntimeDocumentIndexDocumentPayload(
+                                id = "doc-summary-bounds",
+                                displayName = "Summary Bounds.md",
+                                mimeType = "text/markdown",
+                                contentFingerprint = "bbbbaaaa99998888",
+                                extractedCharacterCount = 128,
+                                chunkCount = 1,
+                                quality = "single_chunk",
+                            ),
+                        ),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = -7,
+                            chunkCount = -3,
+                            extractedCharacterCount = -1200,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = -1,
+                                singleChunk = -2,
+                                chunked = -3,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val catalog = fixture.viewModel.state.value.documentCatalog
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertEquals(0, catalog.summary.documentCount)
+            assertEquals(0, catalog.summary.chunkCount)
+            assertEquals(0, catalog.summary.extractedCharacterCount)
+            assertEquals(0, catalog.summary.qualityCounts.noUsableText)
+            assertEquals(0, catalog.summary.qualityCounts.singleChunk)
+            assertEquals(0, catalog.summary.qualityCounts.chunked)
+            assertEquals("Summary Bounds.md", catalog.documents.single().displayName)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentResponsesCapTransientRowsToRequestLimits() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fun fingerprint(index: Int): String = index.toString(16).padStart(16, '0')
+
+            fun document(index: Int): RuntimeDocumentIndexDocumentPayload {
+                return RuntimeDocumentIndexDocumentPayload(
+                    id = "doc-$index",
+                    displayName = "Document $index.md",
+                    mimeType = "text/markdown",
+                    contentFingerprint = fingerprint(index),
+                    extractedCharacterCount = 100 + index,
+                    chunkCount = 2,
+                    quality = "chunked",
+                )
+            }
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = (0 until 105).map(::document),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 105,
+                            chunkCount = 210,
+                            extractedCharacterCount = 15000,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 0,
+                                chunked = 105,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val catalog = fixture.viewModel.state.value.documentCatalog
+            assertEquals(100, catalog.documents.size)
+            assertEquals("doc-0", catalog.documents.first().id)
+            assertEquals("doc-99", catalog.documents.last().id)
+            assertEquals(105, catalog.summary.documentCount)
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+
+            fixture.viewModel.searchRuntimeDocuments("bounded rows")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = (0 until 12).map { index ->
+                            RetrievalQueryResultItemPayload(
+                                document = document(index),
+                                chunkIndex = index,
+                                startCharacterOffset = index * 10,
+                                endCharacterOffset = index * 10 + 5,
+                                rank = index + 1,
+                                matchedTerms = listOf("bounded", "rows"),
+                                snippet = "Bounded document row $index.",
+                                sourceAnchorId = "source_anchor_${fingerprint(index)}",
+                            )
+                        },
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val searchResults = fixture.viewModel.state.value.documentSearchResults
+            assertEquals(10, searchResults.size)
+            assertEquals("doc-0", searchResults.first().document.id)
+            assertEquals("doc-9", searchResults.last().document.id)
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.none { it.title.contains("Document") })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val canonicalDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-canonical",
+                displayName = "Canonical Fingerprint.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "0123456789abcdef",
+                extractedCharacterCount = 128,
+                chunkCount = 1,
+                quality = "single_chunk",
+            )
+            val whitespaceFingerprintDocument = canonicalDocument.copy(
+                id = "doc-whitespace-fingerprint",
+                contentFingerprint = " 0123456789abcdef",
+            )
+            val uppercaseFingerprintDocument = canonicalDocument.copy(
+                id = "doc-uppercase-fingerprint",
+                contentFingerprint = "0123456789ABCDEF",
+            )
+            val overlongFingerprintDocument = canonicalDocument.copy(
+                id = "doc-overlong-fingerprint",
+                contentFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(
+                            canonicalDocument,
+                            whitespaceFingerprintDocument,
+                            uppercaseFingerprintDocument,
+                            overlongFingerprintDocument,
+                        ),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 4,
+                            chunkCount = 4,
+                            extractedCharacterCount = 512,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 4,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val catalogDocuments = fixture.viewModel.state.value.documentCatalog.documents
+            assertEquals(
+                listOf("0123456789abcdef", "", "", ""),
+                catalogDocuments.map { it.contentFingerprint },
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("fingerprint")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            canonicalDocument,
+                            whitespaceFingerprintDocument,
+                            uppercaseFingerprintDocument,
+                            overlongFingerprintDocument,
+                        ).mapIndexed { index, document ->
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = index,
+                                startCharacterOffset = index * 10,
+                                endCharacterOffset = index * 10 + 8,
+                                rank = index + 1,
+                                matchedTerms = listOf("fingerprint"),
+                                snippet = "Fingerprint metadata stays runtime-owned.",
+                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
+                            )
+                        },
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("0123456789abcdef", "", "", ""),
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.contentFingerprint },
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val canonicalDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-canonical-mime",
+                displayName = "Canonical MIME.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "1234567890abcdef",
+                extractedCharacterCount = 128,
+                chunkCount = 1,
+                quality = "single_chunk",
+            )
+            val whitespaceMimeDocument = canonicalDocument.copy(
+                id = "doc-whitespace-mime",
+                mimeType = " text/markdown\n",
+            )
+            val uppercaseMimeDocument = canonicalDocument.copy(
+                id = "doc-uppercase-mime",
+                mimeType = "Text/Markdown",
+            )
+            val parameterizedMimeDocument = canonicalDocument.copy(
+                id = "doc-parameterized-mime",
+                mimeType = "text/plain; charset=utf-8",
+            )
+            val urlMimeDocument = canonicalDocument.copy(
+                id = "doc-url-mime",
+                mimeType = "https://example.invalid/text/plain",
+            )
+            val overlongMimeDocument = canonicalDocument.copy(
+                id = "doc-overlong-mime",
+                mimeType = "text/" + "a".repeat(124),
+            )
+            val documents = listOf(
+                canonicalDocument,
+                whitespaceMimeDocument,
+                uppercaseMimeDocument,
+                parameterizedMimeDocument,
+                urlMimeDocument,
+                overlongMimeDocument,
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = documents,
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = documents.size,
+                            chunkCount = documents.size,
+                            extractedCharacterCount = documents.sumOf { it.extractedCharacterCount },
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = documents.size,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val expectedMimeTypes = listOf(
+                "text/markdown",
+                "application/octet-stream",
+                "application/octet-stream",
+                "application/octet-stream",
+                "application/octet-stream",
+                "application/octet-stream",
+            )
+            assertEquals(
+                expectedMimeTypes,
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.mimeType },
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("mime")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = documents.mapIndexed { index, document ->
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = index,
+                                startCharacterOffset = index * 10,
+                                endCharacterOffset = index * 10 + 8,
+                                rank = index + 1,
+                                matchedTerms = listOf("mime"),
+                                snippet = "MIME metadata stays runtime-owned.",
+                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
+                            )
+                        },
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expectedMimeTypes,
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.mimeType },
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val negativeChunkDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-negative-chunk-quality",
+                displayName = "Negative Chunk Quality.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "1111222233334444",
+                extractedCharacterCount = 128,
+                chunkCount = -7,
+                quality = "chunked",
+            )
+            val zeroChunkDocument = negativeChunkDocument.copy(
+                id = "doc-zero-chunk-quality",
+                contentFingerprint = "2222333344445555",
+                chunkCount = 0,
+                quality = "single_chunk",
+            )
+            val singleChunkDocument = negativeChunkDocument.copy(
+                id = "doc-single-chunk-quality",
+                contentFingerprint = "3333444455556666",
+                chunkCount = 1,
+                quality = "CHUNKED",
+            )
+            val chunkedDocument = negativeChunkDocument.copy(
+                id = "doc-multi-chunk-quality",
+                contentFingerprint = "4444555566667777",
+                chunkCount = 2,
+                quality = "future_trusted_source",
+            )
+            val documents = listOf(
+                negativeChunkDocument,
+                zeroChunkDocument,
+                singleChunkDocument,
+                chunkedDocument,
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = documents,
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = documents.size,
+                            chunkCount = 3,
+                            extractedCharacterCount = documents.sumOf { it.extractedCharacterCount },
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 2,
+                                singleChunk = 1,
+                                chunked = 1,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(0, 0, 1, 2),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.chunkCount },
+            )
+            assertEquals(
+                listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked"),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.quality },
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("quality")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = documents.mapIndexed { index, document ->
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = index,
+                                startCharacterOffset = index * 10,
+                                endCharacterOffset = index * 10 + 8,
+                                rank = index + 1,
+                                matchedTerms = listOf("quality"),
+                                snippet = "Quality metadata is derived from chunk count.",
+                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
+                            )
+                        },
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(0, 0, 1, 2),
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.chunkCount },
+            )
+            assertEquals(
+                listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked"),
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.quality },
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val canonicalDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-canonical-label",
+                displayName = "Canonical Label.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "5555666677778888",
+                extractedCharacterCount = 128,
+                chunkCount = 1,
+                quality = "single_chunk",
+            )
+            val pathDisplayDocument = canonicalDocument.copy(
+                id = " doc-trimmed ",
+                displayName = " /safe/path/Runtime Notes.md ",
+                contentFingerprint = "6666777788889999",
+            )
+            val blankDocument = canonicalDocument.copy(
+                id = "   ",
+                displayName = "   ",
+                contentFingerprint = "777788889999aaaa",
+            )
+            val controlIdDocument = canonicalDocument.copy(
+                id = "doc\u0000control",
+                displayName = "folder\\Nested.pdf",
+                contentFingerprint = "88889999aaaabbbb",
+            )
+            val overlongIdDocument = canonicalDocument.copy(
+                id = "d".repeat(129),
+                displayName = ".",
+                contentFingerprint = "9999aaaabbbbcccc",
+            )
+            val overlongDisplayDocument = canonicalDocument.copy(
+                id = "doc-overlong-display",
+                displayName = "d".repeat(257),
+                contentFingerprint = "aaaabbbbccccdddd",
+            )
+            val documents = listOf(
+                canonicalDocument,
+                pathDisplayDocument,
+                blankDocument,
+                controlIdDocument,
+                overlongIdDocument,
+                overlongDisplayDocument,
+            )
+            val expectedIds = listOf(
+                "doc-canonical-label",
+                "doc-trimmed",
+                "document_3",
+                "document_4",
+                "document_5",
+                "doc-overlong-display",
+            )
+            val expectedDisplayNames = listOf(
+                "Canonical Label.md",
+                "Runtime Notes.md",
+                "untitled-document",
+                "Nested.pdf",
+                "untitled-document",
+                "untitled-document",
+            )
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = documents,
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = documents.size,
+                            chunkCount = documents.size,
+                            extractedCharacterCount = documents.sumOf { it.extractedCharacterCount },
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = documents.size,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = catalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expectedIds,
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.id },
+            )
+            assertEquals(
+                expectedDisplayNames,
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.displayName },
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("labels")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = documents.mapIndexed { index, document ->
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = index,
+                                startCharacterOffset = index * 10,
+                                endCharacterOffset = index * 10 + 8,
+                                rank = index + 1,
+                                matchedTerms = listOf("labels"),
+                                snippet = "Document labels stay bounded.",
+                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
+                            )
+                        },
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                expectedIds,
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.id },
+            )
+            assertEquals(
+                expectedDisplayNames,
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.displayName },
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("  relay recovery  ")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val searchPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                searchRequest.payload,
+            )
+            assertEquals("relay recovery", searchPayload.query)
+            assertEquals(10, searchPayload.limit)
+            assertEquals(480, searchPayload.maxSnippetCharacters)
+            assertEquals("relay recovery", fixture.viewModel.state.value.documentSearchQuery)
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+
+            val document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-relay",
+                displayName = "Relay Recovery.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "abcdef0123456789",
+                extractedCharacterCount = 2048,
+                chunkCount = 4,
+                quality = "chunked",
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = 2,
+                                startCharacterOffset = 120,
+                                endCharacterOffset = 360,
+                                rank = 1,
+                                matchedTerms = listOf("relay", "recovery", "relay", " "),
+                                snippet = "Use the latest QR route before retrying relay recovery.",
+                                sourceAnchorId = "source_anchor_8899aabbccddeeff",
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val result = fixture.viewModel.state.value.documentSearchResults.single()
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("Relay Recovery.md", result.document.displayName)
+            assertEquals("abcdef0123456789", result.document.contentFingerprint)
+            assertEquals(2, result.chunkIndex)
+            assertEquals(listOf("relay", "recovery"), result.matchedTerms)
+            assertEquals("Use the latest QR route before retrying relay recovery.", result.snippet)
+            assertEquals("source_anchor_8899aabbccddeeff", result.sourceAnchorId)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+
+            fixture.viewModel.updateChatInput("Summarize current runtime state")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val chatSendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val chatSendPayload = chatSendEnvelope.payload.toString()
+            assertFalse(chatSendPayload.contains("retrieval_context"))
+            assertFalse(chatSendPayload.contains("source_path"))
+            assertFalse(chatSendPayload.contains("workspace_id"))
+            assertFalse(chatSendPayload.contains("project_id"))
+            assertFalse(chatSendPayload.contains("citation"))
+            assertFalse(chatSendPayload.contains("trusted_source"))
+            assertFalse(chatSendPayload.contains("source_anchor_id"))
+            assertFalse(chatSendPayload.contains("source_anchor_8899aabbccddeeff"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val retrievalRequestsBefore = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.RetrievalQuery
+            }
+
+            fixture.viewModel.searchRuntimeDocuments("q".repeat(1025))
+            advanceUntilIdle()
+
+            assertEquals(
+                retrievalRequestsBefore,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("", fixture.viewModel.state.value.documentSearchQuery)
+            assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals("query_too_long", fixture.viewModel.state.value.error?.technicalDetail)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("route")
+            advanceUntilIdle()
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+
+            fixture.viewModel.searchRuntimeDocuments("   ")
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.documentSearchQuery)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+
+            val document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-stale-search",
+                displayName = "Stale Search.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "0011223344556677",
+                extractedCharacterCount = 120,
+                chunkCount = 1,
+                quality = "single_chunk",
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 32,
+                                rank = 1,
+                                matchedTerms = listOf("route"),
+                                snippet = "This stale route result must not reappear.",
+                                sourceAnchorId = "source_anchor_0011223344556677",
+                            ),
+                        ),
+                    ),
+                    requestId = firstRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.documentSearchQuery)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+
+            fixture.viewModel.searchRuntimeDocuments("fresh qr")
+            advanceUntilIdle()
+            val secondRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val secondPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                secondRequest.payload,
+            )
+            assertEquals("fresh qr", secondPayload.query)
+
+            fixture.viewModel.searchRuntimeDocuments("q".repeat(1025))
+            advanceUntilIdle()
+
+            assertEquals(
+                2,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+            assertEquals("", fixture.viewModel.state.value.documentSearchQuery)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals("query_too_long", fixture.viewModel.state.value.error?.technicalDetail)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document.copy(id = "doc-overlong-stale"),
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 24,
+                                rank = 1,
+                                matchedTerms = listOf("fresh"),
+                                snippet = "Overlong rejection should also ignore stale responses.",
+                                sourceAnchorId = "source_anchor_8899aabbccddeeff",
+                            ),
+                        ),
+                    ),
+                    requestId = secondRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.searchRuntimeDocuments("after invalid")
+            advanceUntilIdle()
+            val thirdRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val thirdPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                thirdRequest.payload,
+            )
+            assertEquals("after invalid", thirdPayload.query)
+            assertEquals(
+                3,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-lexical-bounds",
+                displayName = "Lexical Bounds.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "fedcba9876543210",
+                extractedCharacterCount = 1000,
+                chunkCount = 2,
+                quality = "chunked",
+            )
+            val overlongSnippet = "s".repeat(600)
+            val overlongTerm = "t".repeat(65)
+            val matchedTerms = listOf(" route ", "", "route", overlongTerm) +
+                (1..20).map { index -> "term$index" }
+
+            fixture.viewModel.searchRuntimeDocuments("route")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = -5,
+                                startCharacterOffset = -10,
+                                endCharacterOffset = -20,
+                                rank = 0,
+                                matchedTerms = matchedTerms,
+                                snippet = overlongSnippet,
+                                sourceAnchorId = "source_anchor_fedcba9876543210",
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val result = fixture.viewModel.state.value.documentSearchResults.single()
+            assertEquals(0, result.chunkIndex)
+            assertEquals(0, result.startCharacterOffset)
+            assertEquals(0, result.endCharacterOffset)
+            assertEquals(1, result.rank)
+            assertEquals(
+                listOf("route") + (1..15).map { index -> "term$index" },
+                result.matchedTerms,
+            )
+            assertEquals("s".repeat(480), result.snippet)
+            assertEquals("source_anchor_fedcba9876543210", result.sourceAnchorId)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-source-anchor-uppercase",
+                                    "display_name": "Source Anchor Notes.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "abcdef0123456789",
+                                    "extracted_character_count": 4096,
+                                    "chunk_count": 6,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 120,
+                                  "rank": 1,
+                                  "matched_terms": ["source", "anchor"],
+                                  "snippet": "Noncanonical source anchor must fail decode.",
+                                  "source_anchor_id": "source_anchor_0123456789ABCDEF"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertFalse(rejectedState.isSearchingDocuments)
+            assertTrue(rejectedState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(
+                rejectedState.error?.technicalDetail.orEmpty().contains("source_anchor_id"),
+            )
+            assertTrue(
+                rejectedState.error?.technicalDetail.orEmpty().contains("source_anchor_[16 lowercase hex]"),
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor retry")
+            advanceUntilIdle()
+
+            val retryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = RuntimeDocumentIndexDocumentPayload(
+                                    id = "doc-source-anchor-retry",
+                                    displayName = "Source Anchor Retry.md",
+                                    mimeType = "text/markdown",
+                                    contentFingerprint = "abcdef0123456789",
+                                    extractedCharacterCount = 4096,
+                                    chunkCount = 6,
+                                    quality = "chunked",
+                                ),
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 120,
+                                rank = 1,
+                                matchedTerms = listOf("source", "anchor"),
+                                snippet = "Canonical source anchor remains available for future review.",
+                                sourceAnchorId = "source_anchor_0123456789abcdef",
+                            ),
+                        ),
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val results = fixture.viewModel.state.value.documentSearchResults
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals(1, results.size)
+            assertEquals("Canonical source anchor remains available for future review.", results.single().snippet)
+            assertEquals("source_anchor_0123456789abcdef", results.single().sourceAnchorId)
+            assertEquals("abcdef0123456789", results.single().document.contentFingerprint)
+            assertNull(fixture.viewModel.state.value.error)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            assertFalse(runtimeClientCapabilities(authenticatedRouteRefreshEnabled = false).contains(MessageType.SourceAnchorResolve))
+            assertFalse(runtimeClientCapabilities(authenticatedRouteRefreshEnabled = true).contains(MessageType.SourceAnchorResolve))
+
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val searchDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-source-anchor-boundary",
+                displayName = "Source Anchor Boundary.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "1234567890abcdef",
+                extractedCharacterCount = 2048,
+                chunkCount = 3,
+                quality = "chunked",
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = searchDocument,
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 128,
+                                rank = 1,
+                                matchedTerms = listOf("source", "anchor"),
+                                snippet = "Search can keep an opaque source anchor without resolving it on Android.",
+                                sourceAnchorId = "source_anchor_1234567890abcdef",
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val beforeResolverState = fixture.viewModel.state.value
+            val beforeResolverStore = fixture.localStore.data
+            assertEquals("source_anchor_1234567890abcdef", beforeResolverState.documentSearchResults.single().sourceAnchorId)
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.SourceAnchorResolve })
+
+            val resolvedDocumentNameCanary = "Resolved Private Source.md"
+            val resolvedFingerprintCanary = "fedcba9876543210"
+            val resolvedAnchorCanary = "source_anchor_fedcba9876543210"
+            val resolvedChunkTextCanary = "private chunk text must stay unavailable"
+            val resolvedSnippetCanary = "private resolver snippet must stay unavailable"
+            val resolvedSourcePathCanary = "/Users/runtime/private/source.md"
+            val resolvedRetrievalContextCanary = "private retrieval context must stay unavailable"
+            val resolvedCitationCanary = "citation-source-canary"
+            val resolvedTrustedSourceCanary = "trusted-source-canary"
+            val resolvedApprovalStateCanary = "approval-state-canary"
+            val resolvedBackendUrlCanary = "http://127.0.0.1:11434/private"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.SourceAnchorResolve,
+                    requestId = "unsolicited-source-anchor-resolve",
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "source_anchor_id": "$resolvedAnchorCanary",
+                              "document": {
+                                "id": "doc-resolved-private",
+                                "display_name": "$resolvedDocumentNameCanary",
+                                "mime_type": "text/markdown",
+                                "content_fingerprint": "$resolvedFingerprintCanary",
+                                "extracted_character_count": 8192,
+                                "chunk_count": 8,
+                                "quality": "chunked",
+                                "source_path": "$resolvedSourcePathCanary",
+                                "backend_url": "$resolvedBackendUrlCanary"
+                              },
+                              "chunk_summary": {
+                                "chunk_index": 7,
+                                "start_character_offset": 700,
+                                "end_character_offset": 900,
+                                "character_count": 200,
+                                "snippet": "$resolvedSnippetCanary"
+                              },
+                              "chunk_text": "$resolvedChunkTextCanary",
+                              "snippet": "$resolvedSnippetCanary",
+                              "source_path": "$resolvedSourcePathCanary",
+                              "retrieval_context": "$resolvedRetrievalContextCanary",
+                              "citations": [{"source": "$resolvedCitationCanary"}],
+                              "trusted_source": {"id": "$resolvedTrustedSourceCanary"},
+                              "approval_state": "$resolvedApprovalStateCanary",
+                              "backend_url": "$resolvedBackendUrlCanary"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val afterResolverState = fixture.viewModel.state.value
+            assertEquals(beforeResolverState.documentCatalog, afterResolverState.documentCatalog)
+            assertEquals(beforeResolverState.documentSearchQuery, afterResolverState.documentSearchQuery)
+            assertEquals(beforeResolverState.documentSearchResults, afterResolverState.documentSearchResults)
+            assertEquals(beforeResolverState.isSearchingDocuments, afterResolverState.isSearchingDocuments)
+            assertEquals(beforeResolverState.error, afterResolverState.error)
+            assertEquals(beforeResolverStore, fixture.localStore.data)
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.SourceAnchorResolve })
+
+            fixture.viewModel.updateChatInput("Summarize visible document search state")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val chatSendPayload = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }.payload.toString()
+            assertFalse(chatSendPayload.contains("source_anchor_id"))
+            assertFalse(chatSendPayload.contains("source_anchor_1234567890abcdef"))
+            assertFalse(chatSendPayload.contains(resolvedAnchorCanary))
+            assertFalse(chatSendPayload.contains(resolvedDocumentNameCanary))
+            assertFalse(chatSendPayload.contains(resolvedFingerprintCanary))
+            assertFalse(chatSendPayload.contains("chunk_summary"))
+            assertFalse(chatSendPayload.contains(resolvedChunkTextCanary))
+            assertFalse(chatSendPayload.contains(resolvedSnippetCanary))
+            assertFalse(chatSendPayload.contains(resolvedSourcePathCanary))
+            assertFalse(chatSendPayload.contains(resolvedRetrievalContextCanary))
+            assertFalse(chatSendPayload.contains(resolvedCitationCanary))
+            assertFalse(chatSendPayload.contains(resolvedTrustedSourceCanary))
+            assertFalse(chatSendPayload.contains(resolvedApprovalStateCanary))
+            assertFalse(chatSendPayload.contains(resolvedBackendUrlCanary))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-disconnect-source-anchor",
+                displayName = "Disconnect Source Anchor.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "aabbccddeeff0011",
+                extractedCharacterCount = 4096,
+                chunkCount = 6,
+                quality = "chunked",
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document,
+                                chunkIndex = 1,
+                                startCharacterOffset = 80,
+                                endCharacterOffset = 180,
+                                rank = 1,
+                                matchedTerms = listOf("source", "anchor"),
+                                snippet = "Disconnect must clear transient source anchors.",
+                                sourceAnchorId = "source_anchor_aabbccddeeff0011",
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val connectedState = fixture.viewModel.state.value
+            assertEquals("source anchor", connectedState.documentSearchQuery)
+            assertEquals("source_anchor_aabbccddeeff0011", connectedState.documentSearchResults.single().sourceAnchorId)
+            assertFalse(connectedState.isSearchingDocuments)
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+
+            val disconnectedState = fixture.viewModel.state.value
+            assertFalse(disconnectedState.isConnected)
+            assertEquals("disconnected", disconnectedState.runtimeStatus)
+            assertEquals("", disconnectedState.documentSearchQuery)
+            assertTrue(disconnectedState.documentSearchResults.isEmpty())
+            assertFalse(disconnectedState.isSearchingDocuments)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchErrorClearsPendingAndAllowsRetry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("route")
+            advanceUntilIdle()
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "runtime_document_index_unavailable",
+                        message = "Document index unavailable",
+                        retryable = false,
+                    ),
+                    requestId = firstRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.searchRuntimeDocuments("fresh qr")
+            advanceUntilIdle()
+
+            val searchRequests = fixture.channel.sentEnvelopes.filter { it.type == MessageType.RetrievalQuery }
+            val retryPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                searchRequests.last().payload,
+            )
+            assertEquals(2, searchRequests.size)
+            assertEquals("fresh qr", retryPayload.query)
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -11752,6 +13237,48 @@ class RuntimeClientViewModelTest {
             activeRouteKind = RuntimeActiveRouteKind.Relay,
             runtimeStatus = "connected",
             messages = listOf(userMessage, blankAssistant),
+            documentCatalog = RuntimeDocumentCatalog(
+                documents = listOf(
+                    RuntimeDocumentIndexDocument(
+                        id = "doc-receive-failure-catalog",
+                        displayName = "Receive Failure Catalog.md",
+                        mimeType = "text/markdown",
+                        contentFingerprint = "bbccddeeff001122",
+                        extractedCharacterCount = 240,
+                        chunkCount = 2,
+                        quality = "chunked",
+                    ),
+                ),
+                summary = RuntimeDocumentIndexSummary(
+                    documentCount = 1,
+                    chunkCount = 2,
+                    extractedCharacterCount = 240,
+                    qualityCounts = RuntimeDocumentQualityCounts(chunked = 1),
+                ),
+            ),
+            documentSearchQuery = "source anchor",
+            documentSearchResults = listOf(
+                RuntimeDocumentSearchResult(
+                    document = RuntimeDocumentIndexDocument(
+                        id = "doc-receive-failure",
+                        displayName = "Receive Failure.md",
+                        mimeType = "text/markdown",
+                        contentFingerprint = "aabbccddeeff0011",
+                        extractedCharacterCount = 120,
+                        chunkCount = 1,
+                        quality = "single_chunk",
+                    ),
+                    chunkIndex = 0,
+                    startCharacterOffset = 0,
+                    endCharacterOffset = 40,
+                    rank = 1,
+                    matchedTerms = listOf("source", "anchor"),
+                    snippet = "Receive failure must clear stale source anchors.",
+                    sourceAnchorId = "source_anchor_aabbccddeeff0011",
+                ),
+            ),
+            isLoadingDocumentCatalog = true,
+            isSearchingDocuments = true,
         )
 
         val afterBlankFailure = blankState.withRuntimeReceiveFailure("socket closed")
@@ -11760,6 +13287,12 @@ class RuntimeClientViewModelTest {
         assertFalse(afterBlankFailure.isStreaming)
         assertNull(afterBlankFailure.installingModelId)
         assertNull(afterBlankFailure.activeRequestId)
+        assertTrue(afterBlankFailure.documentCatalog.documents.isEmpty())
+        assertEquals(RuntimeDocumentIndexSummary(), afterBlankFailure.documentCatalog.summary)
+        assertFalse(afterBlankFailure.isLoadingDocumentCatalog)
+        assertEquals("", afterBlankFailure.documentSearchQuery)
+        assertTrue(afterBlankFailure.documentSearchResults.isEmpty())
+        assertFalse(afterBlankFailure.isSearchingDocuments)
         assertNull(afterBlankFailure.activeRouteKind)
         assertEquals("disconnected", afterBlankFailure.runtimeStatus)
         assertEquals(listOf(userMessage), afterBlankFailure.messages)
@@ -15121,6 +16654,8 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.ChatSessionArchive))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.ChatSessionRestore))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.ChatSessionDelete))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.IndexDocumentsList))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.RetrievalQuery))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryList))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryUpsert))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryDelete))
@@ -15128,6 +16663,57 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftApprove))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftDismiss))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains("chat.attachments"))
+    }
+
+    @Test
+    fun clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols() {
+        val reservedFutureCapabilities = listOf(
+            "embeddings.create",
+            "index.build",
+            "research.brief.create",
+            "citation.sources.list",
+            "source_anchor.resolve",
+            "trusted_source.approve",
+            "source_control.status",
+            "projects.sessions.list",
+            "automation.runs.create",
+            "tool.call",
+            "tool.result",
+            "tool.run",
+            "skills.run",
+            "mcp.tool.call",
+            "web_search.query",
+            "python.run",
+            "python.exec",
+            "permission.request",
+            "approval.prompt",
+            "audit.events.list",
+            "file.read",
+            "file.write",
+            "file.index",
+            "terminal.exec",
+            "terminal.kill",
+            "network.request",
+            "network.open",
+            "backend.call",
+            "backend.configure",
+            "memory.search",
+            "route.candidates.exchange",
+            "route.diagnostics.report",
+            "route.allocation.status",
+            "route.failure.report",
+        )
+
+        val defaultCapabilities = runtimeClientCapabilities(authenticatedRouteRefreshEnabled = false)
+        val diagnosticCapabilities = runtimeClientCapabilities(authenticatedRouteRefreshEnabled = true)
+
+        reservedFutureCapabilities.forEach { capability ->
+            assertFalse("Default hello must not advertise $capability", defaultCapabilities.contains(capability))
+            assertFalse("Diagnostic hello must not advertise $capability", diagnosticCapabilities.contains(capability))
+        }
+        assertTrue(defaultCapabilities.contains(MessageType.IndexDocumentsList))
+        assertTrue(defaultCapabilities.contains(MessageType.RetrievalQuery))
+        assertTrue(diagnosticCapabilities.contains(MessageType.RouteRefresh))
     }
 
     private fun <T> envelope(

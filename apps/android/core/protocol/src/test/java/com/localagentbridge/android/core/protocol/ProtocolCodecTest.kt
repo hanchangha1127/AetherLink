@@ -9,11 +9,22 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class ProtocolCodecTest {
+    private val nonCanonicalSourceAnchorIds = listOf(
+        " source_anchor_0123456789abcdef",
+        "source_anchor_0123456789ABCDEF",
+        "source_anchor_not_a_handle",
+        "source_anchor_0123456789abcde",
+        "source_anchor_0123456789abcdef0",
+        "",
+    )
+
     @Test
     fun encodesAndDecodesLengthPrefixedFrame() {
         val codec = ProtocolCodec()
@@ -410,6 +421,370 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun indexDocumentsListPayloadUsesProtocolFieldNames() {
+        val request = IndexDocumentsListRequestPayload(limit = 25)
+        val document = RuntimeDocumentIndexDocumentPayload(
+            id = "doc-1",
+            displayName = "runtime-notes.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "0011223344556677",
+            extractedCharacterCount = 2048,
+            chunkCount = 3,
+            quality = "chunked",
+        )
+        val result = IndexDocumentsListResultPayload(
+            documents = listOf(document),
+            summary = IndexDocumentsSummaryPayload(
+                documentCount = 1,
+                chunkCount = 3,
+                extractedCharacterCount = 2048,
+                qualityCounts = IndexDocumentsQualityCountsPayload(
+                    noUsableText = 0,
+                    singleChunk = 0,
+                    chunked = 1,
+                ),
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(Json.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<IndexDocumentsListResultPayload>(Json.encodeToString(result))
+
+        assertEquals(MessageType.IndexDocumentsList, "index.documents.list")
+        assertEquals("25", requestJson["limit"]?.jsonPrimitive?.content)
+        val listedDocument = resultJson["documents"]?.jsonArray?.first()?.jsonObject
+        assertEquals("doc-1", listedDocument?.get("id")?.jsonPrimitive?.content)
+        assertEquals("runtime-notes.md", listedDocument?.get("display_name")?.jsonPrimitive?.content)
+        assertEquals("text/markdown", listedDocument?.get("mime_type")?.jsonPrimitive?.content)
+        assertEquals("0011223344556677", listedDocument?.get("content_fingerprint")?.jsonPrimitive?.content)
+        assertEquals("2048", listedDocument?.get("extracted_character_count")?.jsonPrimitive?.content)
+        assertEquals("3", listedDocument?.get("chunk_count")?.jsonPrimitive?.content)
+        assertEquals("chunked", listedDocument?.get("quality")?.jsonPrimitive?.content)
+        val summary = resultJson["summary"]?.jsonObject
+        assertEquals("1", summary?.get("document_count")?.jsonPrimitive?.content)
+        assertEquals("3", summary?.get("chunk_count")?.jsonPrimitive?.content)
+        assertEquals("2048", summary?.get("extracted_character_count")?.jsonPrimitive?.content)
+        val qualityCounts = summary?.get("quality_counts")?.jsonObject
+        assertEquals("0", qualityCounts?.get("no_usable_text")?.jsonPrimitive?.content)
+        assertEquals("0", qualityCounts?.get("single_chunk")?.jsonPrimitive?.content)
+        assertEquals("1", qualityCounts?.get("chunked")?.jsonPrimitive?.content)
+        assertEquals("runtime-notes.md", decoded.documents.single().displayName)
+        assertEquals("text/markdown", decoded.documents.single().mimeType)
+        assertEquals("0011223344556677", decoded.documents.single().contentFingerprint)
+        assertEquals(2048, decoded.documents.single().extractedCharacterCount)
+        assertEquals(3, decoded.documents.single().chunkCount)
+        assertEquals("chunked", decoded.documents.single().quality)
+        assertEquals(1, decoded.summary.documentCount)
+        assertEquals(1, decoded.summary.qualityCounts.chunked)
+    }
+
+    @Test
+    fun retrievalQueryPayloadUsesProtocolFieldNames() {
+        val request = RetrievalQueryRequestPayload(
+            query = "relay route",
+            limit = 5,
+            maxSnippetCharacters = 120,
+        )
+        val result = RetrievalQueryResultPayload(
+            results = listOf(
+                RetrievalQueryResultItemPayload(
+                    document = RuntimeDocumentIndexDocumentPayload(
+                        id = "doc-1",
+                        displayName = "runtime-notes.md",
+                        mimeType = "text/markdown",
+                        contentFingerprint = "0011223344556677",
+                        extractedCharacterCount = 2048,
+                        chunkCount = 3,
+                        quality = "chunked",
+                    ),
+                    chunkIndex = 1,
+                    startCharacterOffset = 120,
+                    endCharacterOffset = 240,
+                    rank = 2,
+                    matchedTerms = listOf("relay", "route"),
+                    snippet = "Runtime document snippet matched relay route.",
+                    sourceAnchorId = "source_anchor_0123456789abcdef",
+                ),
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(Json.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<RetrievalQueryResultPayload>(Json.encodeToString(result))
+        val sourceAnchorWireShape = Regex("^source_anchor_[0-9a-f]{16}$")
+
+        assertEquals(MessageType.RetrievalQuery, "retrieval.query")
+        assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)
+        assertEquals("5", requestJson["limit"]?.jsonPrimitive?.content)
+        assertEquals("120", requestJson["max_snippet_characters"]?.jsonPrimitive?.content)
+        assertFalse(requestJson.containsKey("source_anchor_id"))
+        val item = resultJson["results"]?.jsonArray?.first()?.jsonObject
+        val document = item?.get("document")?.jsonObject
+        assertEquals("doc-1", document?.get("id")?.jsonPrimitive?.content)
+        assertEquals("runtime-notes.md", document?.get("display_name")?.jsonPrimitive?.content)
+        assertEquals("text/markdown", document?.get("mime_type")?.jsonPrimitive?.content)
+        assertEquals("0011223344556677", document?.get("content_fingerprint")?.jsonPrimitive?.content)
+        assertEquals("2048", document?.get("extracted_character_count")?.jsonPrimitive?.content)
+        assertEquals("3", document?.get("chunk_count")?.jsonPrimitive?.content)
+        assertEquals("chunked", document?.get("quality")?.jsonPrimitive?.content)
+        assertEquals("1", item?.get("chunk_index")?.jsonPrimitive?.content)
+        assertEquals("120", item?.get("start_character_offset")?.jsonPrimitive?.content)
+        assertEquals("240", item?.get("end_character_offset")?.jsonPrimitive?.content)
+        assertEquals("2", item?.get("rank")?.jsonPrimitive?.content)
+        assertEquals("source_anchor_0123456789abcdef", item?.get("source_anchor_id")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("relay", "route"),
+            item?.get("matched_terms")?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        assertEquals("Runtime document snippet matched relay route.", item?.get("snippet")?.jsonPrimitive?.content)
+        val decodedItem = decoded.results.single()
+        assertEquals("runtime-notes.md", decodedItem.document.displayName)
+        assertEquals(1, decodedItem.chunkIndex)
+        assertEquals(120, decodedItem.startCharacterOffset)
+        assertEquals(240, decodedItem.endCharacterOffset)
+        assertEquals(2, decodedItem.rank)
+        assertEquals("source_anchor_0123456789abcdef", decodedItem.sourceAnchorId)
+        assertTrue(sourceAnchorWireShape.matches(decodedItem.sourceAnchorId))
+        assertEquals(listOf("relay", "route"), decodedItem.matchedTerms)
+        assertEquals("Runtime document snippet matched relay route.", decodedItem.snippet)
+    }
+
+    @Test
+    fun sourceAnchorResolvePayloadUsesProtocolFieldNames() {
+        val request = SourceAnchorResolveRequestPayload(
+            sourceAnchorId = "source_anchor_0123456789abcdef",
+        )
+        val result = SourceAnchorResolveResultPayload(
+            sourceAnchorId = "source_anchor_0123456789abcdef",
+            document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-1",
+                displayName = "runtime-notes.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "0011223344556677",
+                extractedCharacterCount = 2048,
+                chunkCount = 3,
+                quality = "chunked",
+            ),
+            chunkSummary = SourceAnchorChunkSummaryPayload(
+                chunkIndex = 1,
+                startCharacterOffset = 120,
+                endCharacterOffset = 240,
+                characterCount = 120,
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(Json.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<SourceAnchorResolveResultPayload>(Json.encodeToString(result))
+        val sourceAnchorWireShape = Regex("^source_anchor_[0-9a-f]{16}$")
+
+        assertEquals(MessageType.SourceAnchorResolve, "source_anchor.resolve")
+        assertEquals("source_anchor_0123456789abcdef", requestJson["source_anchor_id"]?.jsonPrimitive?.content)
+        assertFalse(requestJson.containsKey("document"))
+        assertFalse(requestJson.containsKey("chunk_summary"))
+        assertEquals("source_anchor_0123456789abcdef", resultJson["source_anchor_id"]?.jsonPrimitive?.content)
+        val document = resultJson["document"]?.jsonObject
+        assertEquals("doc-1", document?.get("id")?.jsonPrimitive?.content)
+        assertEquals("runtime-notes.md", document?.get("display_name")?.jsonPrimitive?.content)
+        assertEquals("text/markdown", document?.get("mime_type")?.jsonPrimitive?.content)
+        assertEquals("0011223344556677", document?.get("content_fingerprint")?.jsonPrimitive?.content)
+        assertEquals("2048", document?.get("extracted_character_count")?.jsonPrimitive?.content)
+        assertEquals("3", document?.get("chunk_count")?.jsonPrimitive?.content)
+        assertEquals("chunked", document?.get("quality")?.jsonPrimitive?.content)
+        val chunkSummary = resultJson["chunk_summary"]?.jsonObject
+        assertEquals("1", chunkSummary?.get("chunk_index")?.jsonPrimitive?.content)
+        assertEquals("120", chunkSummary?.get("start_character_offset")?.jsonPrimitive?.content)
+        assertEquals("240", chunkSummary?.get("end_character_offset")?.jsonPrimitive?.content)
+        assertEquals("120", chunkSummary?.get("character_count")?.jsonPrimitive?.content)
+        assertFalse(resultJson.containsKey("chunk_text"))
+        assertFalse(resultJson.containsKey("snippet"))
+        assertFalse(resultJson.containsKey("source_path"))
+        assertEquals("source_anchor_0123456789abcdef", decoded.sourceAnchorId)
+        assertTrue(sourceAnchorWireShape.matches(decoded.sourceAnchorId))
+        assertEquals("runtime-notes.md", decoded.document.displayName)
+        assertEquals(1, decoded.chunkSummary.chunkIndex)
+        assertEquals(120, decoded.chunkSummary.characterCount)
+    }
+
+    @Test
+    fun sourceAnchorResolveRequestRejectsMissingRequiredField() {
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<SourceAnchorResolveRequestPayload>("{}")
+        }
+
+        assertTrue(
+            "Expected missing source_anchor_id decode error to name the field, got ${error.message}",
+            error.message.orEmpty().contains("source_anchor_id"),
+        )
+    }
+
+    @Test
+    fun sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds() {
+        nonCanonicalSourceAnchorIds.forEach { sourceAnchorId ->
+            assertSourceAnchorDecodeRejected(sourceAnchorId) {
+                Json.decodeFromString<SourceAnchorResolveRequestPayload>(
+                    """{"source_anchor_id": "$sourceAnchorId"}""",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun sourceAnchorResolveResultRejectsMissingRequiredFields() {
+        val canonicalResult = """
+            {
+              "source_anchor_id": "source_anchor_0123456789abcdef",
+              "document": {
+                "id": "doc-1",
+                "display_name": "runtime-notes.md",
+                "mime_type": "text/markdown",
+                "content_fingerprint": "0011223344556677",
+                "extracted_character_count": 2048,
+                "chunk_count": 3,
+                "quality": "chunked"
+              },
+              "chunk_summary": {
+                "chunk_index": 1,
+                "start_character_offset": 120,
+                "end_character_offset": 240,
+                "character_count": 120
+              }
+            }
+        """.trimIndent()
+        val missingRequiredFieldSamples = listOf(
+            "source_anchor_id" to canonicalResult.replace(
+                Regex("""\s+"source_anchor_id": "source_anchor_0123456789abcdef",\n"""),
+                "",
+            ),
+            "document" to canonicalResult.replace(
+                Regex(
+                    """(?s),\n\s+"document": \{\n.*?\n\s+\}(?=,\n\s+"chunk_summary")""",
+                ),
+                "",
+            ),
+            "chunk_summary" to canonicalResult.replace(
+                Regex("""(?s),\n\s+"chunk_summary": \{\n.*?\n\s+\}\n\s*(?=\})"""),
+                "",
+            ),
+            "chunk_index" to canonicalResult.replace(
+                Regex("""\s+"chunk_index": 1,\n"""),
+                "",
+            ),
+            "start_character_offset" to canonicalResult.replace(
+                Regex("""\s+"start_character_offset": 120,\n"""),
+                "",
+            ),
+            "end_character_offset" to canonicalResult.replace(
+                Regex("""\s+"end_character_offset": 240,\n"""),
+                "",
+            ),
+            "character_count" to canonicalResult.replace(
+                Regex("""\s+"end_character_offset": 240,\n\s+"character_count": 120\n"""),
+                "\n                \"end_character_offset\": 240\n",
+            ),
+        )
+
+        missingRequiredFieldSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<SourceAnchorResolveResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected missing $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds() {
+        nonCanonicalSourceAnchorIds.forEach { sourceAnchorId ->
+            assertSourceAnchorDecodeRejected(sourceAnchorId) {
+                Json.decodeFromString<SourceAnchorResolveResultPayload>(
+                    sourceAnchorResolveResultJsonWithSourceAnchor(sourceAnchorId),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun retrievalQueryResultRejectsMissingSourceAnchorId() {
+        val missingSourceAnchorResult = """
+            {
+              "results": [
+                {
+                  "document": {
+                    "id": "doc-1",
+                    "display_name": "runtime-notes.md",
+                    "mime_type": "text/markdown",
+                    "content_fingerprint": "0011223344556677",
+                    "extracted_character_count": 2048,
+                    "chunk_count": 3,
+                    "quality": "chunked"
+                  },
+                  "chunk_index": 1,
+                  "start_character_offset": 120,
+                  "end_character_offset": 240,
+                  "rank": 2,
+                  "matched_terms": ["relay", "route"],
+                  "snippet": "Runtime document snippet matched relay route."
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<RetrievalQueryResultPayload>(missingSourceAnchorResult)
+        }
+
+        assertTrue(error.message.orEmpty().contains("source_anchor_id"))
+    }
+
+    @Test
+    fun retrievalQueryResultRejectsNonCanonicalSourceAnchorIds() {
+        nonCanonicalSourceAnchorIds.forEach { sourceAnchorId ->
+            assertSourceAnchorDecodeRejected(sourceAnchorId) {
+                Json.decodeFromString<RetrievalQueryResultPayload>(
+                    retrievalQueryResultJsonWithSourceAnchor(sourceAnchorId),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun retrievalQueryResultRejectsMissingMatchedTerms() {
+        val missingMatchedTermsResult = """
+            {
+              "results": [
+                {
+                  "document": {
+                    "id": "doc-1",
+                    "display_name": "runtime-notes.md",
+                    "mime_type": "text/markdown",
+                    "content_fingerprint": "0011223344556677",
+                    "extracted_character_count": 2048,
+                    "chunk_count": 3,
+                    "quality": "chunked"
+                  },
+                  "chunk_index": 1,
+                  "start_character_offset": 120,
+                  "end_character_offset": 240,
+                  "rank": 2,
+                  "snippet": "Runtime document snippet matched relay route.",
+                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<RetrievalQueryResultPayload>(missingMatchedTermsResult)
+        }
+
+        assertTrue(error.message.orEmpty().contains("matched_terms"))
+    }
+
+    @Test
     fun chatHistoryMessagePayloadsUseProtocolFieldNames() {
         val request = ChatMessagesListRequestPayload(sessionId = "session-1", limit = 200)
         val result = ChatMessagesListResultPayload(
@@ -742,5 +1117,71 @@ class ProtocolCodecTest {
         assertEquals("long-inactivity:session-1:1000:6", decoded.draftId)
         assertEquals("dismissed", decoded.status)
         assertEquals("2026-06-25T05:26:00Z", decoded.dismissedAt)
+    }
+
+    private fun assertSourceAnchorDecodeRejected(sourceAnchorId: String, decode: () -> Unit) {
+        val error = assertThrows(Exception::class.java) {
+            decode()
+        }
+        val message = error.message.orEmpty()
+
+        assertTrue(
+            "Expected noncanonical $sourceAnchorId decode error to name source_anchor_id, got $message",
+            message.contains("source_anchor_id"),
+        )
+        assertTrue(
+            "Expected noncanonical $sourceAnchorId decode error to name canonical source-anchor shape, got $message",
+            message.contains("source_anchor_[16 lowercase hex]"),
+        )
+    }
+
+    private fun retrievalQueryResultJsonWithSourceAnchor(sourceAnchorId: String): String {
+        return """
+            {
+              "results": [
+                {
+                  "document": {
+                    "id": "doc-1",
+                    "display_name": "runtime-notes.md",
+                    "mime_type": "text/markdown",
+                    "content_fingerprint": "0011223344556677",
+                    "extracted_character_count": 2048,
+                    "chunk_count": 3,
+                    "quality": "chunked"
+                  },
+                  "chunk_index": 1,
+                  "start_character_offset": 120,
+                  "end_character_offset": 240,
+                  "rank": 2,
+                  "matched_terms": ["relay", "route"],
+                  "snippet": "Runtime document snippet matched relay route.",
+                  "source_anchor_id": "$sourceAnchorId"
+                }
+              ]
+            }
+        """.trimIndent()
+    }
+
+    private fun sourceAnchorResolveResultJsonWithSourceAnchor(sourceAnchorId: String): String {
+        return """
+            {
+              "source_anchor_id": "$sourceAnchorId",
+              "document": {
+                "id": "doc-1",
+                "display_name": "runtime-notes.md",
+                "mime_type": "text/markdown",
+                "content_fingerprint": "0011223344556677",
+                "extracted_character_count": 2048,
+                "chunk_count": 3,
+                "quality": "chunked"
+              },
+              "chunk_summary": {
+                "chunk_index": 1,
+                "start_character_offset": 120,
+                "end_character_offset": 240,
+                "character_count": 120
+              }
+            }
+        """.trimIndent()
     }
 }

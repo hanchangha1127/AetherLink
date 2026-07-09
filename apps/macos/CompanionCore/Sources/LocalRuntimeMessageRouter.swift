@@ -16,7 +16,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let trustedDeviceStore: TrustedDeviceStore
     private let chatEventStore: any RuntimeChatEventStore
     private let memoryStore: any RuntimeMemoryStore
-    private let documentIndexStore: any RuntimeDocumentIndexCatalogReading
+    private let documentIndexStore: any RuntimeDocumentIndexReading
     private let memorySummaryPolicy: @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy
     private let routeRefresher: (any RuntimeRouteRefreshing)?
     private let runtimeChallengeSigner: (any RuntimeChallengeSigning)?
@@ -36,7 +36,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
-        documentIndexStore: any RuntimeDocumentIndexCatalogReading = SQLiteRuntimeDocumentIndexStore(),
+        documentIndexStore: any RuntimeDocumentIndexReading = SQLiteRuntimeDocumentIndexStore(),
         memorySummaryPolicy: @escaping @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy = {
             RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: $0)
         },
@@ -137,6 +137,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.indexDocumentsList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleIndexDocumentsList(envelope, sink: sink)
+        case MessageType.retrievalQuery:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleRetrievalQuery(envelope, sink: sink)
+        case MessageType.sourceAnchorResolve:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleSourceAnchorResolve(envelope, sink: sink)
         case MessageType.memoryList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryList(envelope, sink: sink)
@@ -1338,6 +1344,94 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func handleRetrievalQuery(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedRetrievalQueryPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "retrieval.query payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
+        do {
+            let query = try requiredNonBlankString("query", in: envelope.payload)
+            guard query.count <= runtimeDocumentIndexQueryTextCharacterLimitCeiling else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field query must be at most \(runtimeDocumentIndexQueryTextCharacterLimitCeiling) characters"
+                )
+            }
+            let limit = boundedWindowLimit(
+                try optionalRequestInt("limit", in: envelope.payload),
+                defaultLimit: 10,
+                maxLimit: runtimeDocumentIndexQueryLimitCeiling
+            )
+            let snippetLimit = boundedWindowLimit(
+                try optionalRequestInt("max_snippet_characters", in: envelope.payload),
+                defaultLimit: 160,
+                maxLimit: runtimeDocumentIndexSnippetCharacterLimitCeiling
+            )
+            let results = try documentIndexStore.query(
+                query,
+                limit: limit,
+                maxSnippetCharacters: snippetLimit
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.retrievalQuery,
+                requestID: envelope.requestID,
+                payload: [
+                    "results": .array(results.map { .object(runtimeDocumentSearchResultPayload($0)) })
+                ]
+            ))
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.documentIndexUnavailable(error.localizedDescription)
+            ))
+        }
+    }
+
+    private func handleSourceAnchorResolve(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedSourceAnchorResolvePayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "source_anchor.resolve payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
+        do {
+            let sourceAnchorID = try requiredNonBlankString("source_anchor_id", in: envelope.payload)
+            guard runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) == sourceAnchorID else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field source_anchor_id must match source_anchor_[16 lowercase hex]"
+                )
+            }
+            guard let anchor = try documentIndexStore.sourceAnchor(id: sourceAnchorID) else {
+                throw LocalRuntimeRouterError.sourceAnchorNotFound(sourceAnchorID)
+            }
+            sink.send(ProtocolEnvelope(
+                type: MessageType.sourceAnchorResolve,
+                requestID: envelope.requestID,
+                payload: runtimeDocumentSourceAnchorPayload(anchor)
+            ))
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.documentIndexUnavailable(error.localizedDescription)
+            ))
+        }
+    }
+
     private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryUpsertPayloadKeys)
@@ -1406,15 +1500,49 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func runtimeDocumentIndexSummaryPayload(_ summary: RuntimeDocumentIndexSummary) -> [String: JSONValue] {
-        [
+        let qualityCounts: [String: JSONValue] = [
+            DocumentIngestionQuality.noUsableText.rawValue:
+                .number(Double(summary.qualityCounts[.noUsableText, default: 0])),
+            DocumentIngestionQuality.singleChunk.rawValue:
+                .number(Double(summary.qualityCounts[.singleChunk, default: 0])),
+            DocumentIngestionQuality.chunked.rawValue:
+                .number(Double(summary.qualityCounts[.chunked, default: 0]))
+        ]
+        return [
             "document_count": .number(Double(summary.documentCount)),
             "chunk_count": .number(Double(summary.chunkCount)),
             "extracted_character_count": .number(Double(summary.extractedCharacterCount)),
-            "quality_counts": .object(Dictionary(
-                uniqueKeysWithValues: summary.qualityCounts.map { quality, count in
-                    (quality.rawValue, JSONValue.number(Double(count)))
-                }
-            ))
+            "quality_counts": .object(qualityCounts)
+        ]
+    }
+
+    private func runtimeDocumentSearchResultPayload(_ result: RuntimeDocumentSearchResult) -> [String: JSONValue] {
+        [
+            "document": .object(runtimeDocumentPayload(result.document)),
+            "source_anchor_id": .string(result.sourceAnchorID),
+            "chunk_index": .number(Double(result.chunk.chunkIndex)),
+            "start_character_offset": .number(Double(result.chunk.startCharacterOffset)),
+            "end_character_offset": .number(Double(result.chunk.endCharacterOffset)),
+            "rank": .number(Double(result.rank)),
+            "matched_terms": .array(result.matchedTerms.map { .string($0) }),
+            "snippet": .string(result.snippet)
+        ]
+    }
+
+    private func runtimeDocumentSourceAnchorPayload(_ anchor: RuntimeDocumentSourceAnchor) -> [String: JSONValue] {
+        [
+            "source_anchor_id": .string(anchor.sourceAnchorID),
+            "document": .object(runtimeDocumentPayload(anchor.document)),
+            "chunk_summary": .object(runtimeDocumentChunkSummaryPayload(anchor.chunkSummary))
+        ]
+    }
+
+    private func runtimeDocumentChunkSummaryPayload(_ chunkSummary: RuntimeDocumentIndexChunkSummary) -> [String: JSONValue] {
+        [
+            "chunk_index": .number(Double(chunkSummary.chunkIndex)),
+            "start_character_offset": .number(Double(chunkSummary.startCharacterOffset)),
+            "end_character_offset": .number(Double(chunkSummary.endCharacterOffset)),
+            "character_count": .number(Double(chunkSummary.characterCount))
         ]
     }
 
@@ -2710,6 +2838,7 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
     case chatSessionMustBeRestoredBeforeSend(String)
     case chatStoreUnavailable(String)
     case documentIndexUnavailable(String)
+    case sourceAnchorNotFound(String)
     case memoryStoreUnavailable(String)
     case memorySummaryDraftUnavailable(String)
     case memorySummaryDraftStale(String)
@@ -2734,6 +2863,8 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "chat_store_unavailable"
         case .documentIndexUnavailable:
             return "document_index_unavailable"
+        case .sourceAnchorNotFound:
+            return "source_anchor_not_found"
         case .memoryStoreUnavailable:
             return "memory_store_unavailable"
         case .memorySummaryDraftUnavailable:
@@ -2762,6 +2893,8 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "The runtime could not access chat history on this host: \(message)"
         case .documentIndexUnavailable(let message):
             return "The runtime could not access the document index on this host: \(message)"
+        case .sourceAnchorNotFound(let sourceAnchorID):
+            return "Source anchor not found in AetherLink Runtime: \(sourceAnchorID)"
         case .memoryStoreUnavailable(let message):
             return "The runtime could not access memory on this host: \(message)"
         case .memorySummaryDraftUnavailable:
@@ -2849,6 +2982,16 @@ private let allowedMemoryListPayloadKeys: Set<String> = [
 
 private let allowedIndexDocumentsListPayloadKeys: Set<String> = [
     "limit",
+]
+
+private let allowedRetrievalQueryPayloadKeys: Set<String> = [
+    "query",
+    "limit",
+    "max_snippet_characters",
+]
+
+private let allowedSourceAnchorResolvePayloadKeys: Set<String> = [
+    "source_anchor_id",
 ]
 
 private let memoryListQueryMaxCharacters = 256

@@ -2,11 +2,36 @@ package com.localagentbridge.android.core.protocol
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 import java.util.UUID
 
 const val PROTOCOL_VERSION = 1
+
+private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
+
+private object SourceAnchorIdSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("SourceAnchorId", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(SOURCE_ANCHOR_ID_PATTERN.matches(value)) {
+            "source_anchor_id must match source_anchor_[16 lowercase hex]"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
 
 @Serializable
 data class ProtocolEnvelope(
@@ -41,6 +66,8 @@ object MessageType {
     const val ChatSessionRestore = "chat.session.restore"
     const val ChatSessionDelete = "chat.session.delete"
     const val IndexDocumentsList = "index.documents.list"
+    const val RetrievalQuery = "retrieval.query"
+    const val SourceAnchorResolve = "source_anchor.resolve"
     const val MemoryList = "memory.list"
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"
@@ -243,6 +270,90 @@ data class ChatSessionSearchPayload(
     val rank: Int,
     val snippet: String,
     @SerialName("matched_fields") val matchedFields: List<String> = emptyList(),
+)
+
+@Serializable
+data class IndexDocumentsListRequestPayload(
+    val limit: Int? = null,
+)
+
+@Serializable
+data class IndexDocumentsListResultPayload(
+    val documents: List<RuntimeDocumentIndexDocumentPayload>,
+    val summary: IndexDocumentsSummaryPayload,
+)
+
+@Serializable
+data class IndexDocumentsSummaryPayload(
+    @SerialName("document_count") val documentCount: Int,
+    @SerialName("chunk_count") val chunkCount: Int,
+    @SerialName("extracted_character_count") val extractedCharacterCount: Int,
+    @SerialName("quality_counts") val qualityCounts: IndexDocumentsQualityCountsPayload,
+)
+
+@Serializable
+data class IndexDocumentsQualityCountsPayload(
+    @SerialName("no_usable_text") val noUsableText: Int,
+    @SerialName("single_chunk") val singleChunk: Int,
+    val chunked: Int,
+)
+
+@Serializable
+data class RetrievalQueryRequestPayload(
+    val query: String,
+    val limit: Int? = null,
+    @SerialName("max_snippet_characters") val maxSnippetCharacters: Int? = null,
+)
+
+@Serializable
+data class RetrievalQueryResultPayload(
+    val results: List<RetrievalQueryResultItemPayload>,
+)
+
+@Serializable
+data class RetrievalQueryResultItemPayload(
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("chunk_index") val chunkIndex: Int,
+    @SerialName("start_character_offset") val startCharacterOffset: Int,
+    @SerialName("end_character_offset") val endCharacterOffset: Int,
+    val rank: Int,
+    @SerialName("matched_terms") val matchedTerms: List<String>,
+    val snippet: String,
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+)
+
+@Serializable
+data class SourceAnchorResolveRequestPayload(
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+)
+
+@Serializable
+data class SourceAnchorResolveResultPayload(
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("chunk_summary") val chunkSummary: SourceAnchorChunkSummaryPayload,
+)
+
+@Serializable
+data class SourceAnchorChunkSummaryPayload(
+    @SerialName("chunk_index") val chunkIndex: Int,
+    @SerialName("start_character_offset") val startCharacterOffset: Int,
+    @SerialName("end_character_offset") val endCharacterOffset: Int,
+    @SerialName("character_count") val characterCount: Int,
+)
+
+@Serializable
+data class RuntimeDocumentIndexDocumentPayload(
+    val id: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("content_fingerprint") val contentFingerprint: String,
+    @SerialName("extracted_character_count") val extractedCharacterCount: Int,
+    @SerialName("chunk_count") val chunkCount: Int,
+    val quality: String,
 )
 
 @Serializable

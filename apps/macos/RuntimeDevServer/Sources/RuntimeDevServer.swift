@@ -2,6 +2,7 @@ import struct BridgeProtocol.ProtocolEnvelope
 import CompanionCore
 import Darwin
 import Dispatch
+import DocumentIngestion
 import Foundation
 import struct OllamaBackend.BackendError
 import class LMStudioBackend.LMStudioBackend
@@ -38,6 +39,7 @@ struct RuntimeDevServer {
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
         let runtimeChatEventStore = Self.runtimeChatEventStore(environment: environment)
         let runtimeMemoryStore = Self.runtimeMemoryStore(environment: environment)
+        let runtimeDocumentIndexStore = Self.runtimeDocumentIndexStore(environment: environment)
         let runtimeMemorySummaryPolicy = Self.runtimeMemorySummaryPolicy(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
         let server = LocalPeerServer()
@@ -88,6 +90,7 @@ struct RuntimeDevServer {
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
             memoryStore: runtimeMemoryStore,
+            documentIndexStore: runtimeDocumentIndexStore,
             memorySummaryPolicy: runtimeMemorySummaryPolicy,
             routeRefresher: routeRefresher,
             runtimeChallengeSigner: identity.signer,
@@ -186,6 +189,54 @@ struct RuntimeDevServer {
             return JSONLRuntimeMemoryStore()
         }
         return JSONLRuntimeMemoryStore(fileURL: URL(fileURLWithPath: path))
+    }
+
+    private static func runtimeDocumentIndexStore(environment: [String: String]) -> any RuntimeDocumentIndexReading {
+        let store: SQLiteRuntimeDocumentIndexStore
+        if let path = environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE"]?.takeIfNotEmpty {
+            store = SQLiteRuntimeDocumentIndexStore(databaseURL: URL(fileURLWithPath: path))
+        } else {
+            store = SQLiteRuntimeDocumentIndexStore()
+        }
+        if environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE"] == "1" {
+            do {
+                try seedDevelopmentDocumentIndex(store)
+            } catch {
+                print("[runtime] document index seed failed: \(error.localizedDescription)")
+            }
+        }
+        return store
+    }
+
+    private static func seedDevelopmentDocumentIndex(_ store: SQLiteRuntimeDocumentIndexStore) throws {
+        let ingestor = DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
+            maxCharacters: 120,
+            overlapCharacters: 8,
+            minChunkCharacters: 24
+        )))
+        try store.replaceDocument(
+            result: ingestor.ingest(extractedDocument: ExtractedDocument(
+                fileName: "runtime-retrieval-smoke.md",
+                mimeType: "text/markdown",
+                text: [
+                    "Seeded runtime retrieval smoke proves document index results stay bounded for authenticated relay clients.",
+                    "Lexical retrieval should return this snippet before semantic embeddings, citations, or trusted-source review exist.",
+                    "AETHERLINK_SMOKE_RETRIEVAL_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+                ].joined(separator: " ")
+            )),
+            documentID: "smoke-retrieval-doc"
+        )
+        try store.replaceDocument(
+            result: ingestor.ingest(extractedDocument: ExtractedDocument(
+                fileName: "runtime-memory-smoke.md",
+                mimeType: "text/markdown",
+                text: [
+                    "Runtime memory search is adjacent but this document is not the lexical document-index match.",
+                    "AETHERLINK_SMOKE_RETRIEVAL_SECONDARY_BODY_SHOULD_NOT_APPEAR"
+                ].joined(separator: " ")
+            )),
+            documentID: "smoke-memory-doc"
+        )
     }
 
     private static func runtimeMemorySummaryPolicy(

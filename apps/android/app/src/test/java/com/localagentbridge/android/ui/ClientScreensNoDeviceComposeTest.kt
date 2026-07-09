@@ -144,6 +144,11 @@ import com.localagentbridge.android.runtime.MODEL_KIND_EMBEDDING
 import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeChatSession
+import com.localagentbridge.android.runtime.RuntimeDocumentCatalog
+import com.localagentbridge.android.runtime.RuntimeDocumentIndexDocument
+import com.localagentbridge.android.runtime.RuntimeDocumentIndexSummary
+import com.localagentbridge.android.runtime.RuntimeDocumentQualityCounts
+import com.localagentbridge.android.runtime.RuntimeDocumentSearchResult
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeMemoryEntrySource
@@ -6429,17 +6434,17 @@ class ClientScreensNoDeviceComposeTest {
                     onArchiveAllChatSessions = {},
                     onPermanentlyDeleteArchivedChatSessions = {},
                     showDeveloperDiagnostics = true,
+                    modifier = Modifier.testTag(settingsTroubleshootingListTestTag),
                 )
             }
         }
 
-        repeat(2) {
-            compose.onRoot().performTouchInput { swipeUp() }
-            compose.waitForIdle()
-        }
-        compose.onNodeWithText("Troubleshooting")
-            .assertIsDisplayed()
-            .performClick()
+        expandSettingsSection(
+            listTag = settingsTroubleshootingListTestTag,
+            titleRes = R.string.advanced_connection,
+        )
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasTestTag(DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG))
 
         compose.onNodeWithText("Connection troubleshooting").assertIsDisplayed()
         compose.onNodeWithContentDescription("Connection troubleshooting", useUnmergedTree = true)
@@ -6467,8 +6472,8 @@ class ClientScreensNoDeviceComposeTest {
         assertNoVisibleText("Connection address")
         assertNoVisibleText("Connection port")
 
-        compose.onRoot().performTouchInput { swipeUp() }
-        compose.waitForIdle()
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasTestTag(ENDPOINT_PANEL_TOGGLE_ROW_TEST_TAG))
         val endpointToggle = compose.onNode(
             hasContentDescription("Connection troubleshooting") and
                 hasStateDescription("Collapsed") and
@@ -6480,15 +6485,23 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
 
         compose.waitForIdle()
-        compose.onNode(
-            hasContentDescription("Connection troubleshooting") and
-                hasStateDescription("Expanded") and
-                hasClickAction() and
-                hasClickActionLabel("Hide troubleshooting"),
-        ).assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        compose.onNodeWithTag(ENDPOINT_PANEL_TOGGLE_ROW_TEST_TAG)
+            .assert(hasContentDescription("Connection troubleshooting"))
+            .assert(hasStateDescription("Expanded"))
+            .assert(hasClickAction())
+            .assert(hasClickActionLabel("Hide troubleshooting"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasText("USB connection"))
         compose.onNodeWithText("USB connection").assertIsDisplayed()
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasText("Emulator connection"))
         compose.onNodeWithText("Emulator connection").assertIsDisplayed()
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasText("Connection address"))
         compose.onNodeWithText("Connection address").assertIsDisplayed()
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasText("Connection port"))
         compose.onNodeWithText("Connection port").assertIsDisplayed()
     }
 
@@ -6530,25 +6543,25 @@ class ClientScreensNoDeviceComposeTest {
                     onArchiveAllChatSessions = {},
                     onPermanentlyDeleteArchivedChatSessions = {},
                     showDeveloperDiagnostics = true,
+                    modifier = Modifier.testTag(settingsTroubleshootingListTestTag),
                 )
             }
         }
 
-        repeat(2) {
-            compose.onRoot().performTouchInput { swipeUp() }
-            compose.waitForIdle()
-        }
-        compose.onNodeWithText("Troubleshooting")
-            .assertIsDisplayed()
-            .performClick()
+        expandSettingsSection(
+            listTag = settingsTroubleshootingListTestTag,
+            titleRes = R.string.advanced_connection,
+        )
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasTestTag(DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG))
         compose.onNodeWithTag(DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG).performClick()
         compose.waitForIdle()
-        compose.onNode(
-            hasText("Diagnostic QR text") and
-                hasContentDescription("Open diagnostic QR text") and
-                hasClickActionLabel("Open diagnostic QR text"),
-        )
-            .performScrollTo()
+        compose.onNodeWithTag(settingsTroubleshootingListTestTag)
+            .performScrollToNode(hasTestTag(MANUAL_QR_PAYLOAD_OPEN_TEST_TAG))
+        compose.onNodeWithTag(MANUAL_QR_PAYLOAD_OPEN_TEST_TAG)
+            .assert(hasText("Diagnostic QR text"))
+            .assert(hasContentDescription("Open diagnostic QR text"))
+            .assert(hasClickActionLabel("Open diagnostic QR text"))
             .assertIsDisplayed()
             .performClick()
 
@@ -7235,6 +7248,7 @@ class ClientScreensNoDeviceComposeTest {
                             onArchiveAllChatSessions = {},
                             onPermanentlyDeleteArchivedChatSessions = {},
                             showDeveloperDiagnostics = true,
+                            modifier = Modifier.testTag(settingsTroubleshootingListTestTag),
                         )
                     }
                 }
@@ -7247,19 +7261,13 @@ class ClientScreensNoDeviceComposeTest {
                 isDiscovering.value = false
             }
             compose.waitForIdle()
-            scrollUntilTextIsVisible(expected.troubleshootingTitle)
-            compose.onNode(
-                hasText(expected.troubleshootingTitle) and
-                    hasClickActionLabel(expected.expandSectionAction),
+            expandSettingsSection(
+                listTag = settingsTroubleshootingListTestTag,
+                titleRes = R.string.advanced_connection,
             )
-                .performScrollTo()
-                .performClick()
             compose.waitForIdle()
-            compose.onNode(
-                hasText(expected.troubleshootingTitle) and
-                    hasClickActionLabel(expected.collapseSectionAction),
-            )
-                .performScrollTo()
+            compose.onNodeWithTag(settingsExpandableSectionHeaderTestTag(R.string.advanced_connection))
+                .assert(hasClickActionLabel(expected.collapseSectionAction))
                 .assertIsDisplayed()
             compose.onNode(
                 hasText(expected.startLabel) and
@@ -19766,6 +19774,550 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsDocumentPanelShowsCatalogSummaryAndRows() {
+        val catalog = RuntimeDocumentCatalog(
+            documents = listOf(
+                RuntimeDocumentIndexDocument(
+                    id = "doc-relay",
+                    displayName = "Relay Recovery Notes.pdf",
+                    mimeType = "application/pdf",
+                    contentFingerprint = "1111222233334444",
+                    extractedCharacterCount = 1_204,
+                    chunkCount = 3,
+                    quality = "chunked",
+                ),
+                RuntimeDocumentIndexDocument(
+                    id = "doc-empty",
+                    displayName = "Empty Scan.txt",
+                    mimeType = "text/plain",
+                    contentFingerprint = "2222333344445555",
+                    extractedCharacterCount = 0,
+                    chunkCount = 0,
+                    quality = "no_usable_text",
+                ),
+            ),
+            summary = RuntimeDocumentIndexSummary(
+                documentCount = 2,
+                chunkCount = 3,
+                extractedCharacterCount = 1_204,
+                qualityCounts = RuntimeDocumentQualityCounts(
+                    noUsableText = 1,
+                    singleChunk = 0,
+                    chunked = 1,
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(760.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        DocumentIndexPanel(
+                            catalog = catalog,
+                            searchQuery = "",
+                            searchResults = emptyList(),
+                            isLoadingCatalog = false,
+                            isSearchingDocuments = false,
+                            actionsEnabled = true,
+                            onRefreshDocuments = {},
+                            onSearchDocuments = {},
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithText("Documents: 2", substring = true, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertTextContains("Chunks: 3", substring = true)
+            .assertTextContains("Quality:", substring = true)
+        compose.onNodeWithTag(documentCatalogRowTestTag("doc-relay"), useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(documentCatalogMetadataTestTag("doc-relay"), useUnmergedTree = true)
+            .assertTextContains("application/pdf", substring = true)
+            .assertTextContains("3 chunks", substring = true)
+            .assertTextContains("Chunked", substring = true)
+        compose.onNodeWithText("1111222233334444")
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun settingsDocumentSearchCallsRuntimeQueryAndShowsResults() {
+        val searchQueries = mutableListOf<String>()
+        val sourceAnchorCanary = "source_anchor_android_ui_hidden_canary"
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-route",
+            displayName = "Route Planning.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "3333444455556666",
+            extractedCharacterCount = 980,
+            chunkCount = 2,
+            quality = "chunked",
+        )
+        val result = RuntimeDocumentSearchResult(
+            document = document,
+            chunkIndex = 1,
+            startCharacterOffset = 24,
+            endCharacterOffset = 180,
+            rank = 1,
+            matchedTerms = listOf("relay", "recovery"),
+            snippet = "Generate the latest QR before using relay recovery.",
+            sourceAnchorId = sourceAnchorCanary,
+        )
+        val panelState = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                documentCatalog = RuntimeDocumentCatalog(
+                    documents = listOf(document),
+                    summary = RuntimeDocumentIndexSummary(
+                        documentCount = 1,
+                        chunkCount = 2,
+                        extractedCharacterCount = 980,
+                        qualityCounts = RuntimeDocumentQualityCounts(chunked = 1),
+                    ),
+                ),
+            )
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                val state = panelState.value
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(760.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        DocumentIndexPanel(
+                            catalog = state.documentCatalog,
+                            searchQuery = state.documentSearchQuery,
+                            searchResults = state.documentSearchResults,
+                            isLoadingCatalog = state.isLoadingDocumentCatalog,
+                            isSearchingDocuments = state.isSearchingDocuments,
+                            actionsEnabled = documentIndexActionsEnabled(state),
+                            onRefreshDocuments = {},
+                            onSearchDocuments = { query ->
+                                searchQueries += query
+                                panelState.value = panelState.value.copy(
+                                    documentSearchQuery = query,
+                                    documentSearchResults = listOf(result),
+                                )
+                            },
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(DOCUMENT_INDEX_SEARCH_TEST_TAG)
+            .assertIsDisplayed()
+            .performTextInput("  relay recovery  ")
+        compose.onNodeWithTag(DOCUMENT_INDEX_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+            .performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("relay recovery"), searchQueries)
+        compose.onNodeWithTag(DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG, useUnmergedTree = true)
+            .assertTextContains("relay recovery", substring = true)
+        compose.onNodeWithTag(documentSearchResultRowTestTag("doc-route", 1), useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(documentSearchMetadataTestTag("doc-route", 1), useUnmergedTree = true)
+            .assertTextContains("Match 1", substring = true)
+            .assertTextContains("Chunk 2", substring = true)
+            .assertTextContains("relay, recovery", substring = true)
+        compose.onNodeWithTag(documentSearchSnippetTestTag("doc-route", 1), useUnmergedTree = true)
+            .assertTextContains("latest QR", substring = true)
+        compose.onNodeWithText("3333444455556666")
+            .assertDoesNotExist()
+        compose.onAllNodesWithText(sourceAnchorCanary, substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithContentDescription(sourceAnchorCanary, substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi() {
+        val sourceAnchorCanary = "source_anchor_android_ui_visible_canary"
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-hidden-anchor",
+            displayName = "Source Anchor Boundary.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "4444555566667777",
+            extractedCharacterCount = 640,
+            chunkCount = 2,
+            quality = "chunked",
+        )
+        val result = RuntimeDocumentSearchResult(
+            document = document,
+            chunkIndex = 0,
+            startCharacterOffset = 0,
+            endCharacterOffset = 128,
+            rank = 1,
+            matchedTerms = listOf("anchor", "runtime"),
+            snippet = "Runtime document search renders snippets without exposing opaque handles.",
+            sourceAnchorId = sourceAnchorCanary,
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(760.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        DocumentIndexPanel(
+                            catalog = RuntimeDocumentCatalog(
+                                documents = listOf(document),
+                                summary = RuntimeDocumentIndexSummary(
+                                    documentCount = 1,
+                                    chunkCount = 2,
+                                    extractedCharacterCount = 640,
+                                    qualityCounts = RuntimeDocumentQualityCounts(chunked = 1),
+                                ),
+                            ),
+                            searchQuery = "anchor",
+                            searchResults = listOf(result),
+                            isLoadingCatalog = false,
+                            isSearchingDocuments = false,
+                            actionsEnabled = true,
+                            onRefreshDocuments = {},
+                            onSearchDocuments = {},
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(documentSearchResultRowTestTag("doc-hidden-anchor", 1), useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(documentSearchMetadataTestTag("doc-hidden-anchor", 1), useUnmergedTree = true)
+            .assertTextContains("Match 1", substring = true)
+            .assertTextContains("anchor, runtime", substring = true)
+        compose.onNodeWithTag(documentSearchSnippetTestTag("doc-hidden-anchor", 1), useUnmergedTree = true)
+            .assertTextContains("opaque handles", substring = true)
+        compose.onAllNodesWithText(sourceAnchorCanary, substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithContentDescription(sourceAnchorCanary, substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages() {
+        data class ExpectedDocumentRefreshState(
+            val languageTag: String,
+            val connected: Boolean,
+            val streaming: Boolean,
+            val stateDescriptionRes: Int,
+            val enabled: Boolean,
+        )
+
+        val expectedStates = listOf(
+            ExpectedDocumentRefreshState("en", connected = false, streaming = false, R.string.document_index_connect_to_load, false),
+            ExpectedDocumentRefreshState("en", connected = true, streaming = false, R.string.document_index_refresh_state_ready, true),
+            ExpectedDocumentRefreshState("en", connected = true, streaming = true, R.string.document_index_action_state_wait_for_stream, false),
+            ExpectedDocumentRefreshState("ko", connected = false, streaming = false, R.string.document_index_connect_to_load, false),
+            ExpectedDocumentRefreshState("ko", connected = true, streaming = false, R.string.document_index_refresh_state_ready, true),
+            ExpectedDocumentRefreshState("ko", connected = true, streaming = true, R.string.document_index_action_state_wait_for_stream, false),
+            ExpectedDocumentRefreshState("ja", connected = false, streaming = false, R.string.document_index_connect_to_load, false),
+            ExpectedDocumentRefreshState("ja", connected = true, streaming = false, R.string.document_index_refresh_state_ready, true),
+            ExpectedDocumentRefreshState("ja", connected = true, streaming = true, R.string.document_index_action_state_wait_for_stream, false),
+            ExpectedDocumentRefreshState("zh-CN", connected = false, streaming = false, R.string.document_index_connect_to_load, false),
+            ExpectedDocumentRefreshState("zh-CN", connected = true, streaming = false, R.string.document_index_refresh_state_ready, true),
+            ExpectedDocumentRefreshState("zh-CN", connected = true, streaming = true, R.string.document_index_action_state_wait_for_stream, false),
+            ExpectedDocumentRefreshState("fr", connected = false, streaming = false, R.string.document_index_connect_to_load, false),
+            ExpectedDocumentRefreshState("fr", connected = true, streaming = false, R.string.document_index_refresh_state_ready, true),
+            ExpectedDocumentRefreshState("fr", connected = true, streaming = true, R.string.document_index_action_state_wait_for_stream, false),
+        )
+        val currentState = mutableStateOf(expectedStates.first())
+        var refreshClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                val expected = currentState.value
+                LocalizedTestContent(languageTag = expected.languageTag) {
+                    key(expected.languageTag, expected.connected, expected.streaming) {
+                        val state = RuntimeUiState(
+                            isConnected = expected.connected,
+                            isStreaming = expected.streaming,
+                            runtimeStatus = if (expected.connected) "authenticated" else "disconnected",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            selectedLanguageTag = expected.languageTag,
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .width(360.dp)
+                                .height(520.dp),
+                        ) {
+                            DocumentIndexPanel(
+                                catalog = state.documentCatalog,
+                                searchQuery = state.documentSearchQuery,
+                                searchResults = state.documentSearchResults,
+                                isLoadingCatalog = state.isLoadingDocumentCatalog,
+                                isSearchingDocuments = state.isSearchingDocuments,
+                                actionsEnabled = documentIndexActionsEnabled(state),
+                                actionsDisabledReasonRes = documentIndexLockNoticeTextRes(
+                                    state = state,
+                                    hasDocuments = state.documentCatalog.documents.isNotEmpty(),
+                                ),
+                                onRefreshDocuments = { refreshClicks += 1 },
+                                onSearchDocuments = {},
+                                showHeader = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        expectedStates.forEach { expected ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val refreshLabel = localizedContext.getString(R.string.document_index_refresh)
+            val stateDescription = localizedContext.getString(expected.stateDescriptionRes)
+
+            compose.runOnUiThread {
+                currentState.value = expected
+            }
+            compose.waitForIdle()
+
+            val refreshNode = compose.onNodeWithTag(DOCUMENT_INDEX_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(refreshLabel))
+                .assert(hasStateDescription(stateDescription))
+            if (expected.enabled) {
+                refreshNode.assertIsEnabled().performClick()
+            } else {
+                refreshNode.assertIsNotEnabled()
+            }
+        }
+
+        assertEquals(expectedStates.count { it.enabled }, refreshClicks)
+    }
+
+    @Test
+    fun settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val showSearchResults = mutableStateOf(false)
+        val fontScale = 1.5f
+        val searchQuery = "fresh qr"
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-runtime-route",
+            displayName = "Runtime route recovery planning notes with a long document name.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "5555666677778888",
+            extractedCharacterCount = 2_048,
+            chunkCount = 12,
+            quality = "chunked",
+        )
+        val catalog = RuntimeDocumentCatalog(
+            documents = listOf(document),
+            summary = RuntimeDocumentIndexSummary(
+                documentCount = 1,
+                chunkCount = 12,
+                extractedCharacterCount = 2_048,
+                qualityCounts = RuntimeDocumentQualityCounts(chunked = 1),
+            ),
+        )
+        val searchResult = RuntimeDocumentSearchResult(
+            document = document,
+            chunkIndex = 4,
+            startCharacterOffset = 128,
+            endCharacterOffset = 384,
+            rank = 1,
+            matchedTerms = listOf("fresh", "qr", "route"),
+            snippet = "Generate a fresh QR route before retrying remote relay recovery on a narrow device.",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value, showSearchResults.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(820.dp)
+                                .testTag(settingsDocumentIndexRowsNarrowRootTestTag),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState()),
+                            ) {
+                                DocumentIndexPanel(
+                                    catalog = catalog,
+                                    searchQuery = if (showSearchResults.value) searchQuery else "",
+                                    searchResults = if (showSearchResults.value) {
+                                        listOf(searchResult)
+                                    } else {
+                                        emptyList()
+                                    },
+                                    isLoadingCatalog = false,
+                                    isSearchingDocuments = false,
+                                    actionsEnabled = true,
+                                    onRefreshDocuments = {},
+                                    onSearchDocuments = {},
+                                    showHeader = true,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        fun rootBounds(): DpRect {
+            return compose.onNodeWithTag(settingsDocumentIndexRowsNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+        }
+
+        fun assertTagInsideRoot(languageTag: String, tag: String, label: String): DpRect {
+            val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$languageTag document-index $label", bounds, rootBounds())
+            return bounds
+        }
+
+        fun assertTextInsideRoot(languageTag: String, text: String, label: String): DpRect {
+            val bounds = compose.onNodeWithText(text, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$languageTag document-index $label", bounds, rootBounds())
+            return bounds
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag, fontScale = fontScale)
+            val summaryText = localizedContext.getString(
+                R.string.document_index_summary,
+                catalog.summary.documentCount,
+                catalog.summary.chunkCount,
+                catalog.summary.extractedCharacterCount,
+                catalog.summary.qualityCounts.noUsableText,
+                catalog.summary.qualityCounts.singleChunk,
+                catalog.summary.qualityCounts.chunked,
+            )
+            val searchSummaryText = localizedContext.getString(
+                R.string.document_index_search_result_summary,
+                searchQuery,
+                1,
+            )
+
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+                showSearchResults.value = false
+            }
+            compose.waitForIdle()
+
+            val summaryBounds = assertTagInsideRoot(
+                languageTag,
+                DOCUMENT_INDEX_SUMMARY_TEST_TAG,
+                "catalog summary",
+            )
+            compose.onNodeWithTag(DOCUMENT_INDEX_SUMMARY_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(summaryText))
+            val catalogRowBounds = assertTagInsideRoot(
+                languageTag,
+                documentCatalogRowTestTag(document.id),
+                "catalog row",
+            )
+            val catalogTitleBounds = assertTextInsideRoot(
+                languageTag,
+                document.displayName,
+                "catalog title",
+            )
+            val catalogMetadataBounds = assertTagInsideRoot(
+                languageTag,
+                documentCatalogMetadataTestTag(document.id),
+                "catalog metadata",
+            )
+            assertBoundsInside("$languageTag document-index catalog title in row", catalogTitleBounds, catalogRowBounds)
+            assertBoundsInside("$languageTag document-index catalog metadata in row", catalogMetadataBounds, catalogRowBounds)
+            assertFalse(
+                "$languageTag document-index catalog title and metadata should not overlap.",
+                boundsOverlap(catalogTitleBounds, catalogMetadataBounds),
+            )
+            assertFalse(
+                "$languageTag document-index summary and catalog row should not overlap.",
+                boundsOverlap(summaryBounds, catalogRowBounds),
+            )
+
+            compose.runOnUiThread {
+                showSearchResults.value = true
+            }
+            compose.waitForIdle()
+
+            assertTagInsideRoot(languageTag, DOCUMENT_INDEX_SEARCH_TEST_TAG, "search field")
+            val resultSummaryBounds = assertTagInsideRoot(
+                languageTag,
+                DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG,
+                "search result summary",
+            )
+            compose.onNodeWithTag(DOCUMENT_INDEX_SEARCH_RESULT_SUMMARY_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(searchSummaryText))
+            val resultRowBounds = assertTagInsideRoot(
+                languageTag,
+                documentSearchResultRowTestTag(document.id, searchResult.rank),
+                "search result row",
+            )
+            val resultTitleBounds = assertTextInsideRoot(
+                languageTag,
+                document.displayName,
+                "search result title",
+            )
+            val resultMetadataBounds = assertTagInsideRoot(
+                languageTag,
+                documentSearchMetadataTestTag(document.id, searchResult.rank),
+                "search result metadata",
+            )
+            val resultSnippetBounds = assertTagInsideRoot(
+                languageTag,
+                documentSearchSnippetTestTag(document.id, searchResult.rank),
+                "search result snippet",
+            )
+            assertBoundsInside("$languageTag document-index search title in row", resultTitleBounds, resultRowBounds)
+            assertBoundsInside("$languageTag document-index search metadata in row", resultMetadataBounds, resultRowBounds)
+            assertBoundsInside("$languageTag document-index search snippet in row", resultSnippetBounds, resultRowBounds)
+            assertFalse(
+                "$languageTag document-index search title and metadata should not overlap.",
+                boundsOverlap(resultTitleBounds, resultMetadataBounds),
+            )
+            assertFalse(
+                "$languageTag document-index search metadata and snippet should not overlap.",
+                boundsOverlap(resultMetadataBounds, resultSnippetBounds),
+            )
+            assertFalse(
+                "$languageTag document-index search summary and result row should not overlap.",
+                boundsOverlap(resultSummaryBounds, resultRowBounds),
+            )
+        }
+    }
+
+    @Test
     fun settingsMemoryPanelShowsSummaryDraftApprovalAction() {
         val draft = RuntimeMemorySummaryDraft(
             id = "draft-1",
@@ -26155,6 +26707,8 @@ class ClientScreensNoDeviceComposeTest {
         "settings_discovery_actions_narrow_root"
     private val settingsDiscoveryActionsListTestTag =
         "settings_discovery_actions_list"
+    private val settingsTroubleshootingListTestTag =
+        "settings_troubleshooting_list"
     private val settingsAutoReconnectRowNarrowRootTestTag =
         "settings_auto_reconnect_row_narrow_root"
     private val settingsConnectionStatusTalkBackOrderNarrowRootTestTag =
@@ -26187,6 +26741,8 @@ class ClientScreensNoDeviceComposeTest {
         "settings_qr_pairing_panel_narrow_root"
     private val settingsChatHistoryRuntimeSearchNarrowRootTestTag =
         "settings_chat_history_runtime_search_narrow_root"
+    private val settingsDocumentIndexRowsNarrowRootTestTag =
+        "settings_document_index_rows_narrow_root"
 
     private fun hasPoliteLiveRegion(): SemanticsMatcher {
         return SemanticsMatcher.expectValue(
@@ -26225,12 +26781,29 @@ class ClientScreensNoDeviceComposeTest {
             ?.toString()
     }
 
-    private fun scrollUntilTextIsVisible(text: String, maxSwipes: Int = 8) {
+    private fun scrollUntilTextIsVisible(text: String, maxSwipes: Int = 12) {
         repeat(maxSwipes) {
-            if (compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) return
+            if (compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) {
+                runCatching {
+                    compose.onNodeWithText(text).assertIsDisplayed()
+                }.onSuccess {
+                    return
+                }
+            }
             compose.onRoot().performTouchInput { swipeUp() }
             compose.waitForIdle()
         }
+    }
+
+    private fun expandSettingsSection(listTag: String, titleRes: Int) {
+        val headerTag = settingsExpandableSectionHeaderTestTag(titleRes)
+        compose.onNodeWithTag(listTag)
+            .performScrollToNode(hasTestTag(headerTag))
+        compose.waitForIdle()
+        compose.onNodeWithTag(headerTag)
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
     }
 
     private fun testLocalMillis(

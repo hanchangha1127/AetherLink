@@ -72,6 +72,7 @@ let package = Package(
             name: "RuntimeDevServer",
             dependencies: [
                 "CompanionCore",
+                "DocumentIngestion",
                 "LMStudioBackend",
                 "OllamaBackend",
                 "Transport"

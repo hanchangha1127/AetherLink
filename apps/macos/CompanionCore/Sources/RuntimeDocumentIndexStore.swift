@@ -32,9 +32,16 @@ public struct RuntimeDocumentIndexChunkSummary: Equatable, Sendable {
     public var characterCount: Int
 }
 
+public struct RuntimeDocumentSourceAnchor: Equatable, Sendable {
+    public var sourceAnchorID: String
+    public var document: RuntimeDocumentIndexDocument
+    public var chunkSummary: RuntimeDocumentIndexChunkSummary
+}
+
 public struct RuntimeDocumentSearchResult: Equatable, Sendable {
     public var document: RuntimeDocumentIndexDocument
     public var chunk: RuntimeDocumentIndexChunk
+    public var sourceAnchorID: String
     public var rank: Int
     public var matchedTerms: [String]
     public var snippet: String
@@ -51,6 +58,20 @@ public protocol RuntimeDocumentIndexCatalogReading {
     func documents(limit: Int) throws -> [RuntimeDocumentIndexDocument]
     func summary() throws -> RuntimeDocumentIndexSummary
 }
+
+public protocol RuntimeDocumentIndexSearchReading {
+    func query(
+        _ query: String,
+        limit: Int,
+        maxSnippetCharacters: Int
+    ) throws -> [RuntimeDocumentSearchResult]
+}
+
+public protocol RuntimeDocumentSourceAnchorReading {
+    func sourceAnchor(id sourceAnchorID: String) throws -> RuntimeDocumentSourceAnchor?
+}
+
+public protocol RuntimeDocumentIndexReading: RuntimeDocumentIndexCatalogReading, RuntimeDocumentIndexSearchReading, RuntimeDocumentSourceAnchorReading {}
 
 struct RuntimeDocumentIndexChunkEnvelope: Equatable, Sendable {
     var chunkIndex: Int
@@ -72,6 +93,7 @@ let runtimeDocumentIndexUnknownDisplayName = "untitled-document"
 let runtimeDocumentIndexQueryTextCharacterLimitCeiling = 1_024
 let runtimeDocumentIndexQueryTermLimitCeiling = 16
 let runtimeDocumentIndexQueryTermCharacterLimitCeiling = 64
+let runtimeDocumentSourceAnchorPrefix = "source_anchor_"
 
 public final class RuntimeDocumentIndexStore {
     private var documentsByID: [String: RuntimeDocumentIndexDocument] = [:]
@@ -214,6 +236,20 @@ public final class RuntimeDocumentIndexStore {
         return runtimeDocumentIndexChunkSummaries(chunks, limit: effectiveLimit)
     }
 
+    public func sourceAnchor(id sourceAnchorID: String) -> RuntimeDocumentSourceAnchor? {
+        guard let sourceAnchorID = runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) else { return nil }
+        let snapshot = lock.withLock {
+            chunksByDocumentID
+                .values
+                .flatMap { $0 }
+                .compactMap { chunk -> (RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunkSummary)? in
+                    guard let document = documentsByID[chunk.documentID] else { return nil }
+                    return (document, runtimeDocumentIndexChunkSummary(chunk))
+                }
+        }
+        return runtimeDocumentSourceAnchor(sourceAnchorID: sourceAnchorID, from: snapshot)
+    }
+
     public func documents(limit: Int = 100) -> [RuntimeDocumentIndexDocument] {
         guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
             limit,
@@ -352,7 +388,7 @@ public final class RuntimeDocumentIndexStore {
     }
 }
 
-extension RuntimeDocumentIndexStore: RuntimeDocumentIndexCatalogReading {}
+extension RuntimeDocumentIndexStore: RuntimeDocumentIndexReading {}
 
 func runtimeDocumentIndexDocument(
     for result: DocumentIngestionResult,
@@ -550,6 +586,19 @@ func runtimeDocumentIndexCanonicalContentFingerprint(_ contentFingerprint: Strin
     return trimmed
 }
 
+func runtimeDocumentIndexCanonicalSourceAnchorID(_ sourceAnchorID: String?) -> String? {
+    guard let sourceAnchorID else { return nil }
+    let trimmed = sourceAnchorID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed == sourceAnchorID,
+          sourceAnchorID.hasPrefix(runtimeDocumentSourceAnchorPrefix) else { return nil }
+    let digest = String(sourceAnchorID.dropFirst(runtimeDocumentSourceAnchorPrefix.count))
+    guard digest.count == runtimeDocumentIndexContentFingerprintCharacterCount,
+          digest.utf8.allSatisfy({ byte in
+            (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
+          }) else { return nil }
+    return sourceAnchorID
+}
+
 func runtimeDocumentIndexEffectiveMimeType(_ mimeType: String?) -> String {
     runtimeDocumentIndexCanonicalMimeType(mimeType) ?? runtimeDocumentIndexUnknownMimeType
 }
@@ -599,17 +648,34 @@ func runtimeDocumentIndexChunkSummaries(
     return chunks
         .sorted { lhs, rhs in lhs.chunkIndex < rhs.chunkIndex }
         .prefix(effectiveLimit)
-        .map { chunk in
-            RuntimeDocumentIndexChunkSummary(
-                documentID: chunk.documentID,
-                documentDisplayName: chunk.documentDisplayName,
-                documentMimeType: chunk.documentMimeType,
-                chunkIndex: chunk.chunkIndex,
-                startCharacterOffset: chunk.startCharacterOffset,
-                endCharacterOffset: chunk.endCharacterOffset,
-                characterCount: chunk.text.count
+        .map(runtimeDocumentIndexChunkSummary)
+}
+
+func runtimeDocumentIndexChunkSummary(_ chunk: RuntimeDocumentIndexChunk) -> RuntimeDocumentIndexChunkSummary {
+    RuntimeDocumentIndexChunkSummary(
+        documentID: chunk.documentID,
+        documentDisplayName: chunk.documentDisplayName,
+        documentMimeType: chunk.documentMimeType,
+        chunkIndex: chunk.chunkIndex,
+        startCharacterOffset: chunk.startCharacterOffset,
+        endCharacterOffset: chunk.endCharacterOffset,
+        characterCount: chunk.text.count
+    )
+}
+
+func runtimeDocumentSourceAnchor(
+    sourceAnchorID: String,
+    from snapshot: [(RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunkSummary)]
+) -> RuntimeDocumentSourceAnchor? {
+    snapshot
+        .map { document, chunkSummary in
+            RuntimeDocumentSourceAnchor(
+                sourceAnchorID: runtimeDocumentSourceAnchorID(document: document, chunkSummary: chunkSummary),
+                document: document,
+                chunkSummary: chunkSummary
             )
         }
+        .first { $0.sourceAnchorID == sourceAnchorID }
 }
 
 func runtimeDocumentIndexChunksForRead(
@@ -729,6 +795,7 @@ private func runtimeDocumentSearchResults(
         return RuntimeDocumentSearchResult(
             document: document,
             chunk: chunk,
+            sourceAnchorID: runtimeDocumentSourceAnchorID(document: document, chunk: chunk),
             rank: rank,
             matchedTerms: matchedTerms,
             snippet: boundedSnippet(from: chunk.text, terms: matchedTerms, maxCharacters: effectiveSnippetLimit)
@@ -743,6 +810,28 @@ private func runtimeDocumentSearchResults(
     }
     .prefix(effectiveLimit)
     .map { $0 }
+}
+
+func runtimeDocumentSourceAnchorID(
+    document: RuntimeDocumentIndexDocument,
+    chunk: RuntimeDocumentIndexChunk
+) -> String {
+    runtimeDocumentSourceAnchorID(document: document, chunkSummary: runtimeDocumentIndexChunkSummary(chunk))
+}
+
+func runtimeDocumentSourceAnchorID(
+    document: RuntimeDocumentIndexDocument,
+    chunkSummary: RuntimeDocumentIndexChunkSummary
+) -> String {
+    let digest = stableHexDigest([
+        "runtime-document-source-anchor-v1",
+        document.id,
+        document.contentFingerprint,
+        String(chunkSummary.chunkIndex),
+        String(chunkSummary.startCharacterOffset),
+        String(chunkSummary.endCharacterOffset)
+    ])
+    return "\(runtimeDocumentSourceAnchorPrefix)\(digest)"
 }
 
 func runtimeDocumentIndexEffectiveLimit(_ requestedLimit: Int, ceiling: Int) -> Int? {

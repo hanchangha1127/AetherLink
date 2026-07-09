@@ -31,6 +31,9 @@ import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryDeletePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
 import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
@@ -51,7 +54,10 @@ import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
+import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
+import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
@@ -417,6 +423,8 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.ChatSessionArchive,
     MessageType.ChatSessionRestore,
     MessageType.ChatSessionDelete,
+    MessageType.IndexDocumentsList,
+    MessageType.RetrievalQuery,
     MessageType.MemoryList,
     MessageType.MemoryUpsert,
     MessageType.MemoryDelete,
@@ -524,6 +532,8 @@ class RuntimeClientViewModel internal constructor(
     private var pendingTitleSessionId: String? = null
     private var pendingMemoryListRequestId: String? = null
     private var pendingMemorySummaryDraftsRequestId: String? = null
+    private var pendingDocumentCatalogRequestId: String? = null
+    private var pendingDocumentSearchRequestId: String? = null
     private val pendingMemorySummaryDraftApprovalDraftIdsByRequestId = mutableMapOf<String, String>()
     private val pendingMemorySummaryDraftDismissalDraftIdsByRequestId = mutableMapOf<String, String>()
     private var pendingRouteRefreshRequestId: String? = null
@@ -1086,6 +1096,55 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         requestRuntimeMemorySummaryDrafts()
+    }
+
+    fun refreshRuntimeDocumentCatalog() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        requestRuntimeDocumentCatalog()
+    }
+
+    fun searchRuntimeDocuments(query: String) {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) {
+            pendingDocumentSearchRequestId = null
+            mutableState.update {
+                it.copy(
+                    documentSearchQuery = "",
+                    documentSearchResults = emptyList(),
+                    isSearchingDocuments = false,
+                    error = null,
+                )
+            }
+            return
+        }
+        if (normalizedQuery.length > MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS) {
+            pendingDocumentSearchRequestId = null
+            mutableState.update {
+                it.copy(
+                    documentSearchQuery = "",
+                    documentSearchResults = emptyList(),
+                    isSearchingDocuments = false,
+                    error = runtimeUiError("document_search_failed", "query_too_long"),
+                )
+            }
+            return
+        }
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        requestRuntimeDocumentSearch(normalizedQuery)
     }
 
     fun approveMemorySummaryDraft(draftId: String) {
@@ -1745,6 +1804,7 @@ class RuntimeClientViewModel internal constructor(
         pendingModelPullRequestId = null
         pendingMemoryListRequestId = null
         pendingMemorySummaryDraftsRequestId = null
+        clearPendingRuntimeDocumentRequests()
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.clear()
         pendingMemorySummaryDraftDismissalDraftIdsByRequestId.clear()
         pendingRouteRefreshRequestId = null
@@ -1767,6 +1827,11 @@ class RuntimeClientViewModel internal constructor(
                 memorySummaryDrafts = emptyList(),
                 approvingMemorySummaryDraftIds = emptySet(),
                 dismissingMemorySummaryDraftIds = emptySet(),
+                documentCatalog = RuntimeDocumentCatalog(),
+                isLoadingDocumentCatalog = false,
+                documentSearchQuery = "",
+                documentSearchResults = emptyList(),
+                isSearchingDocuments = false,
                 runtimeStatus = "disconnected",
                 activeRouteKind = null,
                 routeRefreshNoticeRuntimeName = null,
@@ -1891,6 +1956,55 @@ class RuntimeClientViewModel internal constructor(
                 serializer = MemorySummaryDraftsListRequestPayload.serializer(),
                 payload = MemorySummaryDraftsListRequestPayload(
                     limit = MAX_RUNTIME_MEMORY_SUMMARY_DRAFTS,
+                ),
+            )
+        )
+    }
+
+    private fun requestRuntimeDocumentCatalog() {
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (pendingDocumentCatalogRequestId != null) return
+        val requestId = UUID.randomUUID().toString()
+        pendingDocumentCatalogRequestId = requestId
+        mutableState.update {
+            it.copy(
+                isLoadingDocumentCatalog = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.IndexDocumentsList,
+                requestId = requestId,
+                serializer = IndexDocumentsListRequestPayload.serializer(),
+                payload = IndexDocumentsListRequestPayload(
+                    limit = MAX_RUNTIME_DOCUMENT_CATALOG_ROWS,
+                ),
+            )
+        )
+    }
+
+    private fun requestRuntimeDocumentSearch(query: String) {
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (pendingDocumentSearchRequestId != null) return
+        val requestId = UUID.randomUUID().toString()
+        pendingDocumentSearchRequestId = requestId
+        mutableState.update {
+            it.copy(
+                documentSearchQuery = query,
+                isSearchingDocuments = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.RetrievalQuery,
+                requestId = requestId,
+                serializer = RetrievalQueryRequestPayload.serializer(),
+                payload = RetrievalQueryRequestPayload(
+                    query = query,
+                    limit = MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS,
+                    maxSnippetCharacters = MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS,
                 ),
             )
         )
@@ -2487,6 +2601,7 @@ class RuntimeClientViewModel internal constructor(
                             clearPendingRuntimeHistoryRequests()
                             pendingMemoryListRequestId = null
                             pendingMemorySummaryDraftsRequestId = null
+                            clearPendingRuntimeDocumentRequests()
                             pendingRouteRefreshRequestId = null
                             pendingPairingRequestPayload = null
                             cancelRuntimeRouteRefreshLease()
@@ -2500,6 +2615,9 @@ class RuntimeClientViewModel internal constructor(
                             }
                             val updatedState = current.withRuntimeReceiveFailure(
                                 uiError,
+                            ).copy(
+                                isLoadingDocumentCatalog = false,
+                                isSearchingDocuments = false,
                             ).let { failedState ->
                                 trustedRuntimeWithoutFailedRelay?.let { runtime ->
                                     failedState.withTrustedRuntimeRouteFields(runtime, runtime.endpointHint)
@@ -2570,6 +2688,8 @@ class RuntimeClientViewModel internal constructor(
             MessageType.ChatSessionArchive,
             MessageType.ChatSessionRestore,
             MessageType.ChatSessionDelete -> handleChatSessionLifecycle(envelope)
+            MessageType.IndexDocumentsList -> handleIndexDocumentsList(envelope)
+            MessageType.RetrievalQuery -> handleRetrievalQuery(envelope)
             MessageType.MemoryList -> handleMemoryList(envelope)
             MessageType.MemorySummaryDraftsList -> handleMemorySummaryDraftsList(envelope)
             MessageType.MemorySummaryDraftApprove -> handleMemorySummaryDraftApprove(envelope)
@@ -3115,6 +3235,55 @@ class RuntimeClientViewModel internal constructor(
         requestRuntimeChatSessions()
     }
 
+    private fun handleIndexDocumentsList(envelope: ProtocolEnvelope) {
+        if (pendingDocumentCatalogRequestId != envelope.requestId) return
+        pendingDocumentCatalogRequestId = null
+        val payload = decodePayload(IndexDocumentsListResultPayload.serializer(), envelope.payload) ?: run {
+            mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+            return
+        }
+        mutableState.update {
+            it.copy(
+                documentCatalog = RuntimeDocumentCatalog(
+                    documents = payload.documents.take(MAX_RUNTIME_DOCUMENT_CATALOG_ROWS).mapIndexed { index, document ->
+                        document.toRuntimeDocumentIndexDocument(index)
+                    },
+                    summary = payload.summary.toRuntimeDocumentIndexSummary(),
+                ),
+                isLoadingDocumentCatalog = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleRetrievalQuery(envelope: ProtocolEnvelope) {
+        if (pendingDocumentSearchRequestId != envelope.requestId) return
+        pendingDocumentSearchRequestId = null
+        val payload = decodePayload(RetrievalQueryResultPayload.serializer(), envelope.payload) ?: run {
+            mutableState.update { it.copy(isSearchingDocuments = false) }
+            return
+        }
+        mutableState.update {
+            it.copy(
+                documentSearchResults = payload.results.take(MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS).mapIndexed { index, result ->
+                    val startCharacterOffset = result.startCharacterOffset.coerceAtLeast(0)
+                    RuntimeDocumentSearchResult(
+                        document = result.document.toRuntimeDocumentIndexDocument(index),
+                        chunkIndex = result.chunkIndex.coerceAtLeast(0),
+                        startCharacterOffset = startCharacterOffset,
+                        endCharacterOffset = result.endCharacterOffset.coerceAtLeast(startCharacterOffset),
+                        rank = result.rank.coerceAtLeast(1),
+                        matchedTerms = result.matchedTerms.canonicalRuntimeDocumentMatchedTerms(),
+                        snippet = result.snippet.boundedRuntimeDocumentSnippet(),
+                        sourceAnchorId = result.sourceAnchorId.canonicalRuntimeSourceAnchorIdOrEmpty(),
+                    )
+                },
+                isSearchingDocuments = false,
+                error = null,
+            )
+        }
+    }
+
     private fun handleMemoryList(envelope: ProtocolEnvelope) {
         if (pendingMemoryListRequestId == envelope.requestId) {
             pendingMemoryListRequestId = null
@@ -3264,6 +3433,20 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_summary_drafts_load_failed", payload?.message)
             return
         }
+        if (pendingDocumentCatalogRequestId == envelope.requestId) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            pendingDocumentCatalogRequestId = null
+            mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+            showError("document_catalog_load_failed", payload?.message)
+            return
+        }
+        if (pendingDocumentSearchRequestId == envelope.requestId) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            pendingDocumentSearchRequestId = null
+            mutableState.update { it.copy(isSearchingDocuments = false) }
+            showError("document_search_failed", payload?.message)
+            return
+        }
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)?.let { draftId ->
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             mutableState.update {
@@ -3371,6 +3554,10 @@ class RuntimeClientViewModel internal constructor(
                     pendingMemoryListRequestId == envelope.requestId
                 val isMemorySummaryDraftsRequest = envelope.type == MessageType.MemorySummaryDraftsList &&
                     pendingMemorySummaryDraftsRequestId == envelope.requestId
+                val isDocumentCatalogRequest = envelope.type == MessageType.IndexDocumentsList &&
+                    pendingDocumentCatalogRequestId == envelope.requestId
+                val isDocumentSearchRequest = envelope.type == MessageType.RetrievalQuery &&
+                    pendingDocumentSearchRequestId == envelope.requestId
                 val memorySummaryDraftApprovalId =
                     if (envelope.type == MessageType.MemorySummaryDraftApprove) {
                         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
@@ -3409,6 +3596,18 @@ class RuntimeClientViewModel internal constructor(
                 if (isMemorySummaryDraftsRequest) {
                     pendingMemorySummaryDraftsRequestId = null
                     showError("memory_summary_drafts_load_failed", error.message)
+                    return@onFailure
+                }
+                if (isDocumentCatalogRequest) {
+                    pendingDocumentCatalogRequestId = null
+                    mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+                    showError("document_catalog_load_failed", error.message)
+                    return@onFailure
+                }
+                if (isDocumentSearchRequest) {
+                    pendingDocumentSearchRequestId = null
+                    mutableState.update { it.copy(isSearchingDocuments = false) }
+                    showError("document_search_failed", error.message)
                     return@onFailure
                 }
                 if (memorySummaryDraftApprovalId != null) {
@@ -3566,6 +3765,11 @@ class RuntimeClientViewModel internal constructor(
         clearChatMessagesLoading(loadingSessionId)
     }
 
+    private fun clearPendingRuntimeDocumentRequests() {
+        pendingDocumentCatalogRequestId = null
+        pendingDocumentSearchRequestId = null
+    }
+
     private fun clearChatMessagesLoading(sessionId: String?) {
         if (sessionId == null) return
         mutableState.update { current ->
@@ -3582,6 +3786,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun canSendRuntimeChatHistoryCommand(): Boolean {
+        return isSessionAuthenticated && activeChannel?.isConnected == true
+    }
+
+    private fun canSendRuntimeDocumentSearchCommand(): Boolean {
         return isSessionAuthenticated && activeChannel?.isConnected == true
     }
 
@@ -3769,6 +3977,10 @@ class RuntimeClientViewModel internal constructor(
         const val MAX_RUNTIME_CHAT_SESSIONS = 100
         const val MAX_RUNTIME_CHAT_MESSAGES = 200
         const val MAX_RUNTIME_MEMORY_SUMMARY_DRAFTS = 5
+        const val MAX_RUNTIME_DOCUMENT_CATALOG_ROWS = 100
+        const val MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS = 10
+        const val MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS = 1024
+        const val MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS = 480
         const val ATTACHMENT_TYPE_IMAGE = "image"
         const val ATTACHMENT_TYPE_DOCUMENT = "document"
         val CLIENT_CAPABILITIES = RUNTIME_CLIENT_CAPABILITIES
@@ -3776,6 +3988,107 @@ class RuntimeClientViewModel internal constructor(
         val ACCEPTED_PULL_STATUSES = setOf("accepted", "queued", "pending", "started", "pulling", "downloading", "installing", "in_progress")
         val FAILED_PULL_STATUSES = setOf("failed", "failure", "error", "cancelled", "canceled")
     }
+}
+
+private fun RuntimeDocumentIndexDocumentPayload.toRuntimeDocumentIndexDocument(index: Int): RuntimeDocumentIndexDocument {
+    val canonicalChunkCount = chunkCount.coerceAtLeast(0)
+    return RuntimeDocumentIndexDocument(
+        id = id.canonicalRuntimeDocumentIdOrFallback(index),
+        displayName = displayName.canonicalRuntimeDocumentDisplayNameOrFallback(),
+        mimeType = mimeType.canonicalRuntimeDocumentMimeTypeOrFallback(),
+        contentFingerprint = contentFingerprint.canonicalRuntimeDocumentContentFingerprintOrEmpty(),
+        extractedCharacterCount = extractedCharacterCount.coerceAtLeast(0),
+        chunkCount = canonicalChunkCount,
+        quality = canonicalRuntimeDocumentQualityForChunkCount(canonicalChunkCount),
+    )
+}
+
+private fun IndexDocumentsSummaryPayload.toRuntimeDocumentIndexSummary(): RuntimeDocumentIndexSummary {
+    return RuntimeDocumentIndexSummary(
+        documentCount = documentCount.coerceAtLeast(0),
+        chunkCount = chunkCount.coerceAtLeast(0),
+        extractedCharacterCount = extractedCharacterCount.coerceAtLeast(0),
+        qualityCounts = RuntimeDocumentQualityCounts(
+            noUsableText = qualityCounts.noUsableText.coerceAtLeast(0),
+            singleChunk = qualityCounts.singleChunk.coerceAtLeast(0),
+            chunked = qualityCounts.chunked.coerceAtLeast(0),
+        ),
+    )
+}
+
+private const val RUNTIME_DOCUMENT_QUALITY_NO_USABLE_TEXT = "no_usable_text"
+private const val RUNTIME_DOCUMENT_QUALITY_SINGLE_CHUNK = "single_chunk"
+private const val RUNTIME_DOCUMENT_QUALITY_CHUNKED = "chunked"
+private const val MAX_RUNTIME_DOCUMENT_ID_LENGTH = 128
+private const val MAX_RUNTIME_DOCUMENT_DISPLAY_NAME_LENGTH = 256
+private const val MAX_RUNTIME_DOCUMENT_MIME_TYPE_LENGTH = 128
+private const val MAX_RUNTIME_DOCUMENT_MATCHED_TERMS = 16
+private const val MAX_RUNTIME_DOCUMENT_MATCHED_TERM_LENGTH = 64
+private const val MAX_RUNTIME_DOCUMENT_TRANSIENT_SNIPPET_CHARACTERS = 480
+private const val RUNTIME_DOCUMENT_FALLBACK_DISPLAY_NAME = "untitled-document"
+private const val RUNTIME_DOCUMENT_UNKNOWN_MIME_TYPE = "application/octet-stream"
+private val RUNTIME_DOCUMENT_MIME_TYPE_PATTERN = Regex("^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$")
+private val RUNTIME_DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")
+private val RUNTIME_SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
+
+private fun canonicalRuntimeDocumentQualityForChunkCount(chunkCount: Int): String {
+    return when {
+        chunkCount <= 0 -> RUNTIME_DOCUMENT_QUALITY_NO_USABLE_TEXT
+        chunkCount == 1 -> RUNTIME_DOCUMENT_QUALITY_SINGLE_CHUNK
+        else -> RUNTIME_DOCUMENT_QUALITY_CHUNKED
+    }
+}
+
+private fun String.canonicalRuntimeDocumentIdOrFallback(index: Int): String {
+    val trimmed = trim()
+    return trimmed.takeIf { value ->
+        value.isNotBlank() &&
+            value.length <= MAX_RUNTIME_DOCUMENT_ID_LENGTH &&
+            value.none { character -> character.isISOControl() }
+    } ?: "document_${index + 1}"
+}
+
+private fun String.canonicalRuntimeDocumentDisplayNameOrFallback(): String {
+    val lastComponent = trim()
+        .replace('\\', '/')
+        .split('/')
+        .lastOrNull { component -> component.isNotBlank() }
+        ?.trim()
+        .orEmpty()
+    return lastComponent.takeIf { value ->
+        value.isNotBlank() &&
+            value != "." &&
+            value != ".." &&
+            value.length <= MAX_RUNTIME_DOCUMENT_DISPLAY_NAME_LENGTH &&
+            value.none { character -> character.isISOControl() }
+    } ?: RUNTIME_DOCUMENT_FALLBACK_DISPLAY_NAME
+}
+
+private fun String.canonicalRuntimeDocumentMimeTypeOrFallback(): String {
+    return takeIf {
+        it.length in 1..MAX_RUNTIME_DOCUMENT_MIME_TYPE_LENGTH &&
+            RUNTIME_DOCUMENT_MIME_TYPE_PATTERN.matches(it)
+    } ?: RUNTIME_DOCUMENT_UNKNOWN_MIME_TYPE
+}
+
+private fun List<String>.canonicalRuntimeDocumentMatchedTerms(): List<String> {
+    return mapNotNull { term ->
+        term.trim().takeIf { trimmed ->
+            trimmed.isNotBlank() && trimmed.length <= MAX_RUNTIME_DOCUMENT_MATCHED_TERM_LENGTH
+        }
+    }.distinct().take(MAX_RUNTIME_DOCUMENT_MATCHED_TERMS)
+}
+
+private fun String.boundedRuntimeDocumentSnippet(): String {
+    return take(MAX_RUNTIME_DOCUMENT_TRANSIENT_SNIPPET_CHARACTERS)
+}
+
+private fun String.canonicalRuntimeDocumentContentFingerprintOrEmpty(): String {
+    return takeIf { RUNTIME_DOCUMENT_CONTENT_FINGERPRINT_PATTERN.matches(it) }.orEmpty()
+}
+
+private fun String.canonicalRuntimeSourceAnchorIdOrEmpty(): String {
+    return takeIf { RUNTIME_SOURCE_ANCHOR_ID_PATTERN.matches(it) }.orEmpty()
 }
 
 private fun runtimeMemorySummaryDrafts(
@@ -5343,6 +5656,11 @@ internal fun RuntimeUiState.withRuntimeReceiveFailure(error: RuntimeUiError): Ru
         isStreaming = false,
         installingModelId = null,
         activeRequestId = null,
+        documentCatalog = RuntimeDocumentCatalog(),
+        isLoadingDocumentCatalog = false,
+        documentSearchQuery = "",
+        documentSearchResults = emptyList(),
+        isSearchingDocuments = false,
         runtimeStatus = "disconnected",
         activeRouteKind = null,
         messages = if (activeRequestId != null) {

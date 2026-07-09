@@ -780,6 +780,8 @@ private fun LocalAgentBridgeApp(
                                     onSearchMemory = { query ->
                                         viewModel.refreshRuntimeMemory(query)
                                     },
+                                    onRefreshDocuments = viewModel::refreshRuntimeDocumentCatalog,
+                                    onSearchDocuments = viewModel::searchRuntimeDocuments,
                                     onRefreshChatHistory = { query ->
                                         viewModel.refreshRuntimeChatHistory(query)
                                     },

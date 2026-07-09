@@ -42,6 +42,11 @@ data class RuntimeUiState(
     val memorySummaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
     val approvingMemorySummaryDraftIds: Set<String> = emptySet(),
     val dismissingMemorySummaryDraftIds: Set<String> = emptySet(),
+    val documentCatalog: RuntimeDocumentCatalog = RuntimeDocumentCatalog(),
+    val documentSearchQuery: String = "",
+    val documentSearchResults: List<RuntimeDocumentSearchResult> = emptyList(),
+    val isLoadingDocumentCatalog: Boolean = false,
+    val isSearchingDocuments: Boolean = false,
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val selectedLanguageSource: String = APP_LANGUAGE_SOURCE_DEFAULT,
     val selectedTheme: RuntimeAppTheme = RuntimeAppTheme.System,
@@ -284,6 +289,45 @@ data class RuntimeMemorySummaryDraftSourcePointer(
     val role: String,
     val createdAtMillis: Long?,
     val excerpt: String,
+)
+
+data class RuntimeDocumentCatalog(
+    val documents: List<RuntimeDocumentIndexDocument> = emptyList(),
+    val summary: RuntimeDocumentIndexSummary = RuntimeDocumentIndexSummary(),
+)
+
+data class RuntimeDocumentIndexSummary(
+    val documentCount: Int = 0,
+    val chunkCount: Int = 0,
+    val extractedCharacterCount: Int = 0,
+    val qualityCounts: RuntimeDocumentQualityCounts = RuntimeDocumentQualityCounts(),
+)
+
+data class RuntimeDocumentQualityCounts(
+    val noUsableText: Int = 0,
+    val singleChunk: Int = 0,
+    val chunked: Int = 0,
+)
+
+data class RuntimeDocumentIndexDocument(
+    val id: String,
+    val displayName: String,
+    val mimeType: String,
+    val contentFingerprint: String,
+    val extractedCharacterCount: Int,
+    val chunkCount: Int,
+    val quality: String,
+)
+
+data class RuntimeDocumentSearchResult(
+    val document: RuntimeDocumentIndexDocument,
+    val chunkIndex: Int,
+    val startCharacterOffset: Int,
+    val endCharacterOffset: Int,
+    val rank: Int,
+    val matchedTerms: List<String>,
+    val snippet: String,
+    val sourceAnchorId: String = "",
 )
 
 data class RuntimeUiError(

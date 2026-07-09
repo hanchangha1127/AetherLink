@@ -1,6 +1,6 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-08 KST.
+Last updated: 2026-07-09 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
@@ -31,6 +31,1185 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
+
+### 2026-07-09 Android Source-Anchor Canonical Decode No-Device Gate
+
+- Scope: tighten Android protocol DTO decode so active source-anchor-bearing payloads reject malformed handles before Android transient state or resolver dispatch can observe them.
+- Result: `ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds`, `ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds`, and `ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds` decode real `RetrievalQueryResultPayload`, `SourceAnchorResolveRequestPayload`, and `SourceAnchorResolveResultPayload` samples through Kotlin serialization and reject noncanonical `source_anchor_id` values against `source_anchor_[16 lowercase hex]`.
+- Guardrail: this keeps `source_anchor_id` canonical at DTO decode for `retrieval.query` and `source_anchor.resolve` without adding Android resolver dispatch, UI consumption, source approval, citations, trusted-source review, permission/audit semantics, local persistence, semantic retrieval, or chat context injection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Beauvoir the 2nd` confirmed the DTO decode breakpoints and test-update scope.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 macOS Source-Anchor Resolver Request Required-Field Router No-Device Gate
+
+- Scope: tighten the active macOS `source_anchor.resolve` router request gate so malformed required fields fail before source-anchor store dispatch.
+- Result: `LocalRuntimeMessageRouterTests/testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch` now sends missing, empty, whitespace-only, and non-string `source_anchor_id` request payloads through `LocalRuntimeMessageRouter` and verifies `invalid_payload` responses that name `source_anchor_id`.
+- Guardrail: this keeps `source_anchor.resolve` narrowly read-only and request-only at the router boundary. It does not add source approval, citations, trusted-source review, permission/audit semantics, Android UI resolver consumption, local persistence, chat context injection, or semantic retrieval.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/router evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Erdos the 2nd` reviewed the adjacent Android DTO canonical decode candidate; this macOS router slice was implemented locally.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate
+
+- Scope: tighten Android protocol DTO fail-closed behavior for active `source_anchor.resolve` requests without opening Android resolver dispatch.
+- Result: `ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField` now decodes an empty `SourceAnchorResolveRequestPayload` sample through Kotlin serialization and rejects missing `source_anchor_id` with an error that names the field.
+- Guardrail: this keeps Android source-anchor resolver request support at DTO parity only; Android still does not advertise, send, persist, consume, or display `source_anchor.resolve` requests.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. The slice was implemented locally while GPT-5.5 explorer `Herschel the 2nd` reviewed the next roadmap candidate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Source-Anchor Resolver Required-Field Decode No-Device Gate
+
+- Scope: tighten Android protocol DTO fail-closed behavior for active `source_anchor.resolve` responses without adding Android UI resolver consumption or chat-context use.
+- Result: `ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields` now decodes canonical and malformed `SourceAnchorResolveResultPayload` samples through Kotlin serialization and rejects missing `source_anchor_id`, missing `document`, missing `chunk_summary`, nested missing `chunk_index`, nested missing `start_character_offset`, nested missing `end_character_offset`, and nested missing `character_count`.
+- Guardrail: this keeps Android source-anchor resolver support at DTO parity only; it does not add Android capability advertisement, ViewModel dispatch, UI consumption, local persistence, chat context injection, citations, trusted-source review, source approval, permission, or audit semantics.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Descartes the 2nd` recommended this Android resolver required-field gate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Source-Anchor Resolver Payload Sample No-Device Gate
+
+- Scope: extend protocol schema hygiene from isolated source-anchor IDs to complete active `source_anchor.resolve` request and response payload samples.
+- Result: `script/check_protocol_schema.py` now accepts a canonical resolver request with only `source_anchor_id`, rejects response-only request fields, non-string handles, noncanonical handles, and future resolver metadata, then accepts a canonical resolver response with `source_anchor_id`, `document`, and `chunk_summary` while rejecting missing required fields, unknown resolver/document/chunk metadata, invalid integer fields, negative counts, and end-before-start offsets.
+- Guardrail: resolver payload samples keep the active read-only resolver closed and redacted before Android UI consumption, local persistence, chat context injection, source approval, citation, trusted-source review, permission, or audit semantics exist.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. The schema slice was implemented locally after the GPT-5.5 roadmap read.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 RuntimeDevServer Reserved Source-Anchor Namespace Rejection No-Device Gate
+
+- Scope: keep `source_anchor.resolve` as the only active read-only `source_anchor.` runtime message while reserving every other `source_anchor.*` command until future source-anchor metadata, approval, citation, trusted-source review, permission, and audit semantics exist.
+- Result: protocol schema hygiene now uses `source_anchor.metadata.get` as a synthetic unsupported source-anchor canary, and RuntimeDevServer authenticated relay smoke rejects `source_anchor.metadata.get` with `unknown_message_type` while still accepting `source_anchor.resolve` for a seeded retrieval source anchor.
+- Guardrail: this proves the active resolver did not accidentally open the wider `source_anchor.*` namespace. Android still keeps resolver support at DTO parity and does not advertise, send, persist, or consume resolver frames in UI.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/RuntimeDevServer evidence only. No physical Android install, optical QR scan, live pairing, or live-provider chat/cancel was attempted.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hegel the 2nd` recommended this reserved source-anchor namespace canary as the next smallest roadmap-aligned no-device slice and did not edit files.
+- Caveat: this is not physical Android proof and does not add source approval, citations, trusted-source review, permission/audit semantics, semantic retrieval, Android UI resolver consumption, local persistence, chat context injection, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_protocol_schema.py script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Unsolicited Source-Anchor Resolver Boundary No-Device Gate
+
+- Scope: keep Android `source_anchor.resolve` coverage at protocol DTO parity only until Android UI/client resolver consumption has product surface, approval, citation, trusted-source review, permission, and audit semantics.
+- Result: `RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting` proves Android does not advertise `source_anchor.resolve` in default or diagnostic `client_capabilities`, does not send resolver requests, ignores an unsolicited `source_anchor.resolve` result, preserves existing transient `retrieval.query` rows, leaves local persistence unchanged, and keeps resolver document metadata, `chunk_summary`, and `source_anchor_id` values out of later `chat.send` payloads.
+- Guardrail: Android still preserves only canonical `retrieval.query` search `source_anchor_id` values as transient search-row metadata. It does not resolve those handles, persist resolver output, inject resolver output into chat context, or expose resolver details in UI.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only. No physical Android install, optical QR scan, live pairing, or live-provider chat/cancel was attempted.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Turing the 2nd` recommended holding Android UI resolver consumption until product surface, approval, citation, permission, and audit semantics exist.
+- Caveat: this is not physical Android proof and does not add source approval, citations, trusted-source review, permission/audit semantics, semantic retrieval, Android UI consumption, local persistence, chat context injection, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Source Anchor Resolve Protocol No-Device Gate
+
+- Scope: promote the runtime-local source-anchor resolver from store-only support to a minimal authenticated read-only protocol message without adding source approval, citations, trusted-source review, permission, audit, semantic retrieval, Android UI consumption, local persistence, or chat context injection.
+- Result: `source_anchor.resolve` is now an active runtime command in the Swift protocol envelope, macOS router, shared JSON schema, Android protocol DTOs, and RuntimeDevServer authenticated relay smoke. Requests accept only `source_anchor_id`; responses return only `source_anchor_id`, safe `document` metadata, and `chunk_summary` offsets/counts. Malformed handles return `invalid_payload`, stale canonical handles return `source_anchor_not_found`, and unknown/private resolver metadata is rejected before store dispatch.
+- Guardrail: `LocalRuntimeMessageRouterTests/testSourceAnchorResolve*` proves successful redacted resolution, unknown metadata rejection before store dispatch, malformed-anchor rejection before store dispatch, and stale canonical anchor not-found behavior. RuntimeDevServer relay smoke exercises the same resolver path against a seeded runtime document index and keeps chunk text, snippets, source paths, workspace/project IDs, `retrieval_context`, embeddings, citations, trusted-source fields, approval state, backend URLs, and route material out of the resolver response. Android protocol coverage is DTO-only; Android still does not advertise `source_anchor.resolve` in `client_capabilities` or consume it in UI.
+- RuntimeDevServer Source-Anchor Resolver No-Device Gate: RuntimeDevServer authenticated relay smoke accepts `source_anchor.resolve` for a seeded `retrieval.query` source anchor and validates the redacted resolver response.
+- RuntimeDevServer Reserved Trusted-Source Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `trusted_source.approve` with `unknown_message_type` before source approval, citation, trusted-source review, permission, or audit semantics exist.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/schema/Android JVM/RuntimeDevServer evidence only. No physical Android install, optical QR scan, live pairing, or live-provider chat/cancel was attempted.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Nash the 2nd` confirmed `source_anchor.resolve` was the right next minimal no-device roadmap slice and did not edit files.
+- Caveat: this is not physical Android proof and does not add source approval, citations, trusted-source review, permission/audit semantics, semantic retrieval, Android UI consumption, local persistence, chat context injection, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testSourceAnchorResolve'`
+- `python3 script/check_protocol_schema.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolvePayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 RuntimeDevServer Retrieval Query Request Bounds Relay No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol alignment by making the authenticated RuntimeDevServer relay smoke exercise the same active `retrieval.query` request text ceiling already enforced by the shared schema and macOS router.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `smoke-retrieval-query-oversized-query` with a 1025-character `query` before the normal seeded `retrieval.query` read. RuntimeDevServer authenticated relay smoke rejects oversized `retrieval.query` request text with `invalid_payload`, preserves the request id, keeps the error non-retryable, and verifies the error payload names the `query` / `1024` ceiling before the seeded document-index retrieval path runs.
+- Guardrail: `script/check_no_device_quality.sh` already runs `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`, so this request-bounds assertion is part of the full no-device relay smoke instead of being a standalone unit-only proof. `script/check_copy_hygiene.py` now requires the oversized request id, 1025-character input, error-context string, no-device summary, and docs language.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device RuntimeDevServer/script evidence only. No physical Android install, optical QR scan, live pairing, or live-provider chat/cancel was attempted.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Banach the 2nd` confirmed the current worktree contains the RuntimeDevServer oversized-query smoke and recommended limiting the remaining slice to documentation/hygiene recognition.
+- Caveat: this is not physical Android proof and does not add semantic retrieval, embeddings, resolver protocol exposure, source approval, citations, trusted-source review, permission/audit semantics, Android UI consumption, local persistence, chat context injection, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 macOS Retrieval Query Request Bounds No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol alignment by making authenticated `retrieval.query` request text bounds fail closed at the runtime router boundary before document-index store dispatch.
+- Result: `LocalRuntimeMessageRouter` now rejects `retrieval.query` request `query` text longer than `runtimeDocumentIndexQueryTextCharacterLimitCeiling` / 1024 characters with `invalid_payload`. Overlong active retrieval requests no longer fall through to `RuntimeDocumentIndexStore` as empty lexical result windows.
+- Guardrail: `LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch` builds a 1025-character `retrieval.query` request, expects `invalid_payload`, and proves `documentIndexStore.queryCallCount` stays `0`. Existing router and schema tests still cover bounded lexical responses, unknown future metadata rejection, and the shared request ceiling.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only. No physical Android install, optical QR scan, live pairing, or live-provider chat/cancel was attempted.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Gauss the 2nd` independently confirmed the remaining gate/docs wiring for this request-bounds slice and did not modify files.
+- Caveat: this is not physical Android proof and does not add semantic retrieval, embeddings, resolver protocol exposure, source approval, citations, trusted-source review, permission/audit semantics, Android UI consumption, local persistence, chat context injection, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch`
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Catalog Disconnect Transient Clear No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by making runtime document catalog rows connection-scoped transient state during runtime disconnect cleanup.
+- Result: `RuntimeClientViewModel` now clears transient `index.documents.list` `documentCatalog` rows and summary values on explicit disconnect and receive failure. Already-rendered runtime document catalog metadata can no longer survive a closed authenticated runtime session as stale document UI state.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect` proves a runtime-owned catalog row and summary are present before disconnect and that explicit disconnect and receive failure clear `documentCatalog` rows and summary values after the runtime session closes. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Russell the 2nd` independently identified a separate macOS `retrieval.query` request-length router guard follow-up and did not modify files; the Android catalog disconnect gap was found during local inspection.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureClearsStreamingAndRemovesOnlyBlankAssistantPlaceholder -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Search Disconnect Transient Clear No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by making document-search source anchors connection-scoped transient state during runtime disconnect cleanup.
+- Result: `RuntimeClientViewModel` now clears transient `retrieval.query` `documentSearchQuery`, `documentSearchResults`, and `source_anchor_id` values on explicit disconnect and receive failure. Already-rendered document search rows can no longer survive a closed authenticated runtime session with stale source-anchor handles.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect` proves a canonical `source_anchor_[16 lowercase hex]` search result is present before disconnect and that explicit disconnect and receive failure clear `documentSearchQuery`, `documentSearchResults`, and `source_anchor_id` after the runtime session closes. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Mendel the 2nd` confirmed the disconnect/receive-failure stale source-anchor gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureClearsStreamingAndRemovesOnlyBlankAssistantPlaceholder -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval Matched-Terms Required Decode No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG lexical retrieval path by aligning Android DTO decode with the shared `retrieval.query` result schema, which requires `matched_terms` on every result row.
+- Result: `RetrievalQueryResultItemPayload.matchedTerms` no longer has an empty-list compatibility default. Android `Json.decodeFromString<RetrievalQueryResultPayload>` now rejects a `retrieval.query` result row missing `matched_terms` before the value can enter transient RuntimeUiState or be canonicalized into an empty matched-term list.
+- Guardrail: `ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms` decodes a complete `retrieval.query` response sample with only `results[0].matched_terms` omitted and asserts the DTO decode fails with `matched_terms` named in the error. Existing lexical metadata tests still prove transient rank, offsets, matched terms, snippets, and source anchors are bounded after valid DTO decode, and `chat.send` remains free of retrieval context, source paths, citations, trusted-source fields, document filenames, snippets, and source-anchor handles.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Laplace the 2nd` identified a separate connection-scoped source-anchor cleanup follow-up and did not modify files; the matched-terms decode gap was found during local inspection.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, resolver protocol exposure, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval Source-Anchor Required Decode No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by aligning Android DTO decode with the shared `retrieval.query` result schema, which requires response-only `source_anchor_id` on every result row.
+- Result: `RetrievalQueryResultItemPayload.sourceAnchorId` no longer has an empty-string compatibility default. Android `Json.decodeFromString<RetrievalQueryResultPayload>` now rejects a `retrieval.query` result row missing `source_anchor_id` before the value can enter transient RuntimeUiState or be normalized into an empty source-anchor handle.
+- Guardrail: `ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId` decodes a complete `retrieval.query` response sample with only `results[0].source_anchor_id` omitted and asserts the DTO decode fails with `source_anchor_id` named in the error. Existing source-anchor tests still prove requests do not serialize `source_anchor_id`, present response anchors match `source_anchor_[16 lowercase hex]`, noncanonical source anchors fail DTO decode, and `chat.send` remains free of source-anchor fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Aristotle the 2nd` confirmed the missing-source-anchor DTO decode gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, resolver protocol exposure, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Search Pending Invalidation No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by making invalid document-search input cancel the pending Android `retrieval.query` response slot instead of leaving stale runtime responses able to repopulate transient state.
+- Result: `RuntimeClientViewModel.searchRuntimeDocuments` now clears pending `retrieval.query` request tracking when the user submits a blank or overlong document search. Blank search input clears the query/results and overlong input reports `document_search_failed` with `query_too_long`; in both cases, stale runtime responses for superseded invalid searches are ignored and a fresh bounded search can be sent immediately.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses` proves a blank search invalidates a pending request, ignores the late stale response, allows a fresh search, then proves an overlong search invalidates that second pending request, ignores its stale response, and allows a third bounded search. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Godel the 2nd` suggested a separate Android protocol `source_anchor_id` decode-boundary candidate and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Client Capability Future Workspace/RAG/Source Deny-List No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by pinning the Android hello capability contract so active document messages remain advertised while future protocol families stay unclaimed.
+- Result: `runtimeClientCapabilities` continues to include the active `index.documents.list` and `retrieval.query` capabilities, and diagnostic mode still adds only the explicitly enabled `route.refresh`. Android does not advertise future Workspace/RAG/source protocol capability strings such as `embeddings.create`, `index.build`, `research.brief.create`, `citation.sources.list`, `source_anchor.resolve`, `trusted_source.approve`, `source_control.status`, `projects.sessions.list`, `memory.search`, or `route.candidates.exchange`.
+- Guardrail: `RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols` checks both default and diagnostic hello capability lists against the future Workspace/RAG/source, tool, permission/audit, memory-search, backend/network/file/terminal, and route-diagnostics deny-list while positively asserting active `index.documents.list`, active `retrieval.query`, and diagnostic-only `route.refresh` behavior.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Locke the 2nd` identified the broader reserved future capability set and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Response Row Transient-State Cap No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by carrying the document retrieval response-array bound into Android transient state, not just the shared schema/runtime response contract.
+- Result: `RuntimeClientViewModel` now caps decoded `index.documents.list` catalog rows at 100 and decoded `retrieval.query` search rows at 10 before they reach transient `RuntimeUiState`. The cap matches Android's explicit request limits, so malformed-but-decodable oversized runtime responses cannot inflate the Android Settings document catalog or search state; catalog rows at 100 and retrieval search rows at 10 stay the Android transient-state ceiling.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits` proves a 105-row catalog response is trimmed to 100 rows while preserving the bounded summary, and a 12-row retrieval response is trimmed to 10 search results. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Schrodinger the 2nd` identified a separate future-capability deny-list candidate while local inspection found and implemented this row-cap transient-state gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval Query Outbound Bounds No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning Android outbound document search requests with the shared 1024-character `retrieval.query` request ceiling.
+- Result: `RuntimeClientViewModel` now rejects document search queries longer than 1024 characters before emitting `retrieval.query`, so oversized Android input cannot cross the relay/runtime boundary before schema validation or runtime document-index resource guards run.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest` proves a 1025-character trimmed query leaves the `RetrievalQuery` envelope count unchanged, clears the searching state, and reports `document_search_failed` with `query_too_long`. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Mill the 2nd` identified this outbound `retrieval.query` query-length gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Catalog Summary Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by making catalog summary transient-state bounds explicit after the row-level document metadata gates.
+- Result: `RuntimeClientViewModel` now maps `index.documents.list` summary payloads through an explicit summary canonicalizer, keeping `document_count`, `chunk_count`, `extracted_character_count`, and `quality_counts` as nonnegative transient catalog summary counts before they reach Android UI state.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses` proves malformed-but-decodable negative catalog summary and quality-count values become zero while the catalog document row remains usable and no runtime-owned document metadata is written to local memory or chat session storage. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. The summary bounds gap was found during local inspection while GPT-5.5 explorer `Mill the 2nd` audited a separate outbound query gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document ID/Display-Name Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning app transient document id and display-name metadata with the shared safe document string-bounds schema and macOS runtime document-index label canonicality.
+- Result: `RuntimeClientViewModel` now keeps transient document ids nonblank, control-free, and within 128 characters, using response-local `document_N` fallbacks for malformed ids. Display names are reduced to bounded final path components or `untitled-document`, so blank, path-shaped, dot-component, control-character, and overlong display names cannot render as raw runtime metadata for either `index.documents.list` catalog rows or `retrieval.query` result documents.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState` proves bounded document `id` and `display_name` metadata for catalog and search state while keeping document rows/snippets available. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Planck the 2nd` identified this document id/display-name transient-state bounds gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Quality/Chunk-Count Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning app transient document quality metadata with the shared quality/chunk-count schema and macOS runtime document-index derived-quality contract.
+- Result: `RuntimeClientViewModel` now derives transient document quality from the nonnegative `chunk_count` envelope instead of trusting runtime-provided quality strings. Zero or negative chunks map to `no_usable_text`, one chunk maps to `single_chunk`, and two or more chunks map to `chunked` for both `index.documents.list` catalog rows and `retrieval.query` result documents.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState` proves mismatched, uppercase, and future-looking quality strings are replaced by `chunk_count`-derived document quality before reaching Android transient state. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Planck the 2nd` identified a separate document id/display-name transient-state bounds candidate while local inspection found this quality/chunk-count transient-state gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval Lexical Metadata Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning app transient `retrieval.query` lexical metadata with the shared schema and runtime lexical result contract after the protocol snippet/matched-term/rank gates.
+- Result: `RuntimeClientViewModel` now coerces transient retrieval rank values to positive integers, so Android state keeps positive `retrieval.query` rank values, keeps offsets nonnegative and ordered, caps snippets at 480 characters, and keeps matched terms to 16 distinct trimmed nonblank strings of 64 characters or less. These bounds apply only to transient document search rows and do not add local persistence, chat context injection, semantic retrieval, resolver protocol, source approval, citations, trusted-source review, permission, or audit behavior.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses` proves malformed-but-decodable runtime responses with zero rank, negative/end-before-start offsets, duplicate/blank/overlong/17+ matched terms, and overlong snippets are bounded before reaching Android transient state. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Leibniz the 2nd` identified this retrieval lexical metadata bounds gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document MIME Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning app transient document MIME metadata with the shared safe document wire shape and macOS runtime document-index fallback contract.
+- Result: `RuntimeClientViewModel` now maps runtime document payloads into transient `RuntimeUiState` with only exact lowercase `type/subtype` MIME values up to 128 characters preserved. Whitespace-mutated, uppercase, parameterized, URL-shaped, and overlong MIME values are replaced with `application/octet-stream` for both `index.documents.list` catalog rows and `retrieval.query` result documents, while the rows/snippets remain available.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState` proves catalog and search state preserve canonical MIME values and replace noncanonical values with the runtime unknown-MIME fallback. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Leibniz the 2nd` identified a separate retrieval lexical metadata bounds candidate while local inspection found this MIME transient-state gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Content-Fingerprint Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android parity path by aligning app transient document state with the shared safe document `content_fingerprint` wire shape after the protocol DTO parity pass.
+- Result: `RuntimeClientViewModel` now maps runtime document payloads into transient `RuntimeUiState` with only exact 16-character lowercase hex `content_fingerprint` values preserved. Whitespace-mutated, uppercase, and overlong fingerprints are cleared for both `index.documents.list` catalog rows and `retrieval.query` result documents, while the rows/snippets remain available.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState` proves catalog and search state preserve canonical fingerprints and clear noncanonical values. Existing document retrieval ViewModel tests still prove transient RuntimeUiState only and keep `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/Compose/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Fermat the 2nd` identified the Android app transient-state fingerprint parity gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Content-Fingerprint Protocol Parity No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by aligning Android protocol DTO fixtures with the shared safe document `content_fingerprint` wire shape.
+- Result: Android `ProtocolCodecTest` now serializes and decodes `index.documents.list` catalog documents and nested `retrieval.query` result documents with a 16-character lowercase hex `content_fingerprint` sample. RuntimeDevServer relay smoke now requires seeded catalog and retrieval document fingerprints to match the same 16-lowercase-hex regex.
+- Guardrail: `script/check_copy_hygiene.py` now pins the Android 16-hex fixture, RuntimeDevServer fingerprint regex checks, the no-device gate label, and this progress/QA/roadmap evidence so Android DTO parity cannot drift back to the previous 64-character fixture while the shared schema remains 16-hex.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/protocol-smoke/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Curie the 2nd` identified the Android 64-character fixture as the remaining parity gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Document Quality/Chunk-Count Consistency No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by binding safe document `quality` metadata to the runtime-derived `chunk_count` envelope for both active document protocol response paths.
+- Result: `packages/protocol-schema/protocol.schema.json` now uses `indexDocument.allOf` conditionals so `chunk_count: 0` requires `quality: no_usable_text`, `chunk_count: 1` requires `quality: single_chunk`, and `chunk_count >= 2` requires `quality: chunked`. Because both `index.documents.list` catalog rows and nested `retrieval.query` result documents reference `#/$defs/indexDocument`, the consistency rule applies to both wire paths.
+- Guardrail: `script/check_protocol_schema.py` now pins the exact `indexDocument.allOf` shape and rejects catalog plus nested retrieval response samples with zero-chunk, single-chunk, and multi-chunk quality mismatches. This closes the protocol wire contract around the runtime index store's derived document quality without adding semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Raman the 2nd` confirmed this was not fully covered as a durable gate and recommended checker hardening around `indexDocument.allOf` plus mismatch samples.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Positive Rank Wire-Shape No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by pinning active lexical `retrieval.query` result rank metadata to the runtime-generated positive-rank envelope.
+- Result: `packages/protocol-schema/protocol.schema.json` now requires `retrievalQueryResult.rank` to be an integer with `minimum: 1`. `script/check_protocol_schema.py` now pins the exact result integer schemas, uses positive-rank canonical response samples, and rejects zero-rank response samples alongside missing, string, fractional, boolean, and negative rank values.
+- Guardrail: the runtime lexical scorer only emits result rows when matched terms exist and computes rank from matched-term and occurrence counts, so this closes the wire contract without changing runtime scoring, semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Bacon the 2nd` recommended the document quality/chunk-count consistency gate as a next candidate and did not modify files; this pass closed the smaller positive-rank wire-shape gap found during local inspection.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testLexicalQueryAppliesLimitOffsetSanityAndDeterministicOrdering|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen|LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata'`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Document MIME Type Wire-Shape No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by pinning safe document `mime_type` metadata to the same runtime-owned canonical MIME envelope already used by the document index store.
+- Result: `packages/protocol-schema/protocol.schema.json` now requires `indexDocument.mime_type` to be a non-empty lowercase `type/subtype` token capped at 128 characters. The same `indexDocument` contract is shared by `index.documents.list` catalog rows and nested `retrieval.query` result documents.
+- Guardrail: `script/check_protocol_schema.py` now pins the exact MIME pattern and rejects complete catalog/retrieval response samples with whitespace-mutated, uppercase, missing-slash, parameterized, URL-shaped, and overlong MIME values. Existing RuntimeDocumentIndexStore and SQLiteRuntimeDocumentIndexStore MIME canonicality coverage remains the runtime proof that malformed stored MIME metadata normalizes to `application/octet-stream` before catalog/search exposure.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script/runtime-store evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Poincare the 2nd` recommended the source-anchor/trusted-source namespace closure gate; current tree already has reserved source-anchor/trusted-source schema and RuntimeDevServer rejection coverage, so this pass closed the document MIME wire-shape gap found during local inspection.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testListsDocumentsByMimeTypeWithoutContentOrFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreListsDocumentsByMimeTypeAfterReopen'`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Result Ordering And Offset Sanity No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by pinning current lexical `retrieval.query` result-window and offset sanity without introducing semantic retrieval or source approval semantics.
+- Result: `RuntimeDocumentIndexStoreTests/testLexicalQueryAppliesLimitOffsetSanityAndDeterministicOrdering` now proves `limit: 0` returns an empty result window, positive limits cap result rows, result order follows descending deterministic lexical rank with stable display-name/chunk-index tie-breakers, and every returned chunk keeps `end_character_offset >= start_character_offset`. SQLite query parity now checks the same offset and rank-order invariants after reopen, and `LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata` validates serialized multi-row retrieval responses for result count, non-increasing rank, and safe offsets.
+- Guardrail: `script/check_protocol_schema.py` now rejects end-before-start complete response samples, `script/runtime_authenticated_mock_smoke.swift` requires seeded RuntimeDevServer retrieval offsets to remain ordered, and protocol docs describe offsets as zero-based half-open ranges while keeping rank as implementation metadata. This keeps current lexical retrieval metadata deterministic before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/router/store/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Dewey the 2nd` recommended the result ordering and offset/count sanity gate and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testLexicalQueryAppliesLimitOffsetSanityAndDeterministicOrdering|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen|LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata'`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Index Documents List Quality-Count Completeness No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by making `index.documents.list` summary quality counts complete at the wire boundary while preserving sparse internal document-index summaries.
+- Result: macOS `LocalRuntimeMessageRouter` now serializes `summary.quality_counts` with `no_usable_text`, `single_chunk`, and `chunked` keys every time, defaulting absent internal counts to `0`. `packages/protocol-schema/protocol.schema.json` now requires those exact nested quality-count keys, `script/check_protocol_schema.py` pins the schema shape, and catalog response samples reject missing, future, non-integer, and negative quality counts.
+- Guardrail: this keeps Android protocol DTO decoding, macOS router output, RuntimeDevServer smoke expectations, and shared schema validation aligned without changing `RuntimeDocumentIndexSummary.qualityCounts` sparse store semantics. It does not expose semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/router/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Bohr the 2nd` recommended the wire-only quality-count completeness gate and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swift test --filter LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Document Metadata String-Bounds And Retrieval Nested-Document Parity No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by bounding safe document metadata strings and making `retrieval.query` nested result documents reuse the same `indexDocument` sample validation path as `index.documents.list`.
+- Result: `packages/protocol-schema/protocol.schema.json` now caps document `id` and `mime_type` at 128 characters and `display_name` at 256 characters. `script/check_protocol_schema.py` now requires those exact `indexDocument` field schemas, rejects overlong catalog document id/display-name/MIME samples, requires `retrievalQueryResult.properties.document` to reference `#/$defs/indexDocument`, and validates nested retrieval result documents with the shared document helper.
+- Guardrail: retrieval result documents now fail schema hygiene when they carry future metadata, miss required `quality`, use overlong ids, carry malformed content fingerprints, expose non-integer chunk counts, or report negative extracted-character counts. This keeps catalog and retrieval document metadata bounded and parity-checked before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Nietzsche the 2nd` identified the retrieval nested-document sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Index Documents List Content-Fingerprint Wire-Shape No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by pinning `index.documents.list` catalog document `content_fingerprint` values to the runtime-owned content fingerprint envelope.
+- Result: `packages/protocol-schema/protocol.schema.json` now requires catalog `content_fingerprint` values to match 16 lowercase hex characters. `script/check_protocol_schema.py` now requires that exact schema shape and rejects complete response samples with empty, whitespace-mutated, uppercase, short, long, and non-hex content fingerprints.
+- Guardrail: catalog content-fingerprint wire-shape validation keeps safe document identity metadata canonical before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Galileo the 2nd` confirmed the content-fingerprint schema gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Snippet Bounds No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by bounding `retrieval.query` response `snippet` excerpts at the shared runtime-owned snippet ceiling.
+- Result: `packages/protocol-schema/protocol.schema.json` now requires each response `snippet` to be non-empty and capped at 500 characters. `script/check_protocol_schema.py` now requires that exact schema shape and rejects complete response samples with 501-character snippets through an explicit maximum-length failure.
+- Guardrail: snippet bounds keep lexical retrieval excerpts schema-owned and aligned with the runtime `max_snippet_characters` ceiling before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Boyle the 2nd` was used for read-only candidate selection and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Matched-Terms Bounds No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by bounding `retrieval.query` response `matched_terms` rows to the runtime-owned lexical query-term envelope.
+- Result: `packages/protocol-schema/protocol.schema.json` now requires non-empty `matched_terms`, caps each result row at 16 matched terms, and caps each matched term at 64 characters. `script/check_protocol_schema.py` now requires that exact schema shape and rejects complete response samples with empty `matched_terms`, empty terms, 17-term arrays, and overlong matched terms.
+- Guardrail: matched-term bounds keep lexical retrieval response metadata schema-owned and aligned with `runtimeDocumentIndexQueryTermLimitCeiling` before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Huygens the 2nd` confirmed the matched-terms min/max item gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Document Retrieval Response Array Bounds No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by bounding active document retrieval response arrays at the schema layer, matching the 100-row request-limit ceiling already used for `index.documents.list` and `retrieval.query`.
+- Result: `packages/protocol-schema/protocol.schema.json` now caps `index.documents.list` response `documents` and `retrieval.query` response `results` with `maxItems: 100`. `script/check_protocol_schema.py` now requires both caps and rejects 101-row complete response samples through `over-documents` and `over-results`, including explicit above-maximum item failures.
+- Guardrail: response array bounds keep catalog and lexical retrieval responses schema-owned and bounded before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Kant the 2nd` confirmed the remaining durability/doc gap after the schema/checker update and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Index Documents List Request And Response Sample No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by making `index.documents.list` request and response sample validation exercise the catalog payload shape directly, not only runtime/router smoke behavior.
+- Result: `script/check_protocol_schema.py` now pins the complete `indexDocument`, `indexDocumentsSummary`, and `indexDocumentsListPayload` field sets and schema fragments. Empty catalog requests and bounded `limit` requests pass; string, fractional, boolean, negative, and over-maximum `limit` samples fail, and request samples carrying response-only `documents` or `summary` fields or unknown `source_path` metadata fail. Complete response samples now validate document metadata, summary totals, and quality-count entries, while rejecting unknown top-level response metadata, missing `documents` or `summary`, malformed document arrays, future document metadata, missing or invalid document quality, empty display names, non-integer or negative document counts, future summary metadata, malformed quality counts, future quality-count keys, and non-integer or negative quality-count values.
+- Guardrail: catalog request/response samples keep `index.documents.list` metadata-only and schema-owned before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Goodall the 2nd` confirmed the `index.documents.list` request/response sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Query-Length And Response Result Sample No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by bounding `retrieval.query` request text at the protocol schema layer and making response result samples validate the full safe lexical row shape, not only response-only source anchors.
+- Result: `packages/protocol-schema/protocol.schema.json` now caps request `query` at 1024 characters while preserving nonblank text, matching the runtime document-index query text ceiling before store dispatch. `script/check_protocol_schema.py` now rejects an oversized complete request payload sample, pins the complete `retrievalQueryResult` property and required-field set, keeps result rows closed to unknown metadata, and rejects complete response samples with unknown `retrieval_context`, missing `rank`, empty `snippet`, empty `matched_terms`, and string, fractional, boolean, or negative `chunk_index`, `start_character_offset`, `end_character_offset`, and `rank` values.
+- Guardrail: query-length and result-row samples keep lexical retrieval request text and response metadata schema-owned and bounded before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Arendt the 2nd` confirmed the request query-length gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Request Bounds Sample No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol hygiene path by making `retrieval.query` request sample validation exercise the bounded request-window fields, not only query/source-anchor separation.
+- Result: `script/check_protocol_schema.py` now pins the request property set to exactly `query`, `limit`, and `max_snippet_characters`, rejects any schema expansion that adds new request metadata, and adds complete rejected request payload samples for string, fractional, boolean, negative, and over-maximum `limit` values. The same sample coverage now applies to `max_snippet_characters`, including the `501` over-maximum case.
+- Guardrail: request bounds samples keep lexical retrieval request windows schema-owned and bounded before semantic retrieval, resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Euclid the 2nd` confirmed the request bounds sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Source-Anchor Request Payload Sample No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by extending protocol schema hygiene from response payload samples to complete `retrieval.query` request payload samples.
+- Result: `script/check_protocol_schema.py` now builds a canonical `retrieval.query` request payload sample, validates that `query` remains required and nonblank, checks bounded integer `limit` and `max_snippet_characters` values when present, keeps the request variant closed to unknown fields, and rejects request samples with missing, blank, non-string, or response-only `source_anchor_id` fields. The checker also pins the request variant shape: `query` must use `#/$defs/nonBlankString` and request `additionalProperties` must remain false.
+- Guardrail: request payload samples keep `source_anchor_id` response-only for `retrieval.query` before source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, semantic retrieval, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Linnaeus the 2nd` confirmed the request payload sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Retrieval Query Source-Anchor Response Payload Sample No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by extending protocol schema hygiene from isolated `sourceAnchorID` regex samples to complete `retrieval.query` response payload samples.
+- Result: `script/check_protocol_schema.py` now builds a canonical `retrieval.query` response payload sample with `results[].source_anchor_id`, validates the payload-level source-anchor requirement, and rejects response samples with missing, whitespace-mutated, uppercase, short, long, exact-length non-hex, or empty `source_anchor_id` values. The checker also pins the response variant shape: `results` is required, `results.items` references `retrievalQueryResult`, and response payload additional properties remain closed.
+- Guardrail: response payload samples keep `retrieval.query` `source_anchor_id` response-only and exact before source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, semantic retrieval, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hilbert the 2nd` confirmed the complete response payload sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Source-Anchor ID Sample Validation No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by making the protocol schema hygiene script execute accepted and rejected `source_anchor_id` samples against the exact `source_anchor_[16 lowercase hex]` contract, instead of relying only on structural pattern checks.
+- Result: `script/check_protocol_schema.py` now compiles the dedicated `$defs.sourceAnchorID.pattern` and uses `fullmatch` to accept canonical lowercase 16-hex handles while rejecting leading/trailing whitespace, newline, uppercase hex, short handles, long handles, exact-length non-hex handles, missing-prefix handles, and the empty string. The existing `retrieval.query` request-side rejection remains in place.
+- Guardrail: this keeps response-only source anchors exact at the schema hygiene layer before resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, semantic retrieval, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Meitner the 2nd` confirmed the sample-validation gap and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 macOS Document Retrieval Source Anchor Exact-Shape No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by tightening macOS runtime and router test evidence from prefix-only source-anchor checks to the same exact identity contract used by the protocol schema, Android transient state, and source-anchor resolver.
+- Result: `RuntimeDocumentIndexStoreTests/testLexicalQueryRanksAndReturnsBoundedSnippets`, `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen`, and `LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata` now assert generated and serialized `source_anchor_id` values pass `runtimeDocumentIndexCanonicalSourceAnchorID` instead of only checking the `source_anchor_` prefix. Source-anchor rotation tests also assert changed-content anchors remain canonical.
+- Guardrail: macOS runtime-generated anchors and router `retrieval.query` responses now stay pinned to exact `source_anchor_[16 lowercase hex]` evidence before any resolver protocol, source approval, citation, trusted-source review, permission/audit, Android UI, local persistence, or chat context behavior exists.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Sagan the 2nd` confirmed the three prefix-only macOS source-anchor checks and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testLexicalQueryRanksAndReturnsBoundedSnippets|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen|LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Retrieval Source Anchor Canonical Transient-State No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by making Android transient document search state honor the same exact source-anchor identity contract as the protocol schema and macOS resolver, without adding approval, citation, trusted-source review, or chat context behavior.
+- Result: `RuntimeClientViewModel` now accepts only exact `source_anchor_[16 lowercase hex]` values for `RuntimeDocumentSearchResult.sourceAnchorId`; malformed wire values fail DTO decode as `invalid_payload` before transient rows are published. `RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState` proves an uppercase handle is rejected, no malformed rows enter transient state, and a later canonical retry can still populate search results.
+- Guardrail: malformed source anchors cannot become future approval/citation handles on Android, but this pass keeps document search read-only and transient. It does not add source approval, citations, trusted-source review, permission/audit semantics, local persistence, semantic retrieval, Android UI source-anchor display, or chat context injection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Lovelace the 2nd` recommended this source-anchor transient-state slice and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Source-Anchor ID Wire-Shape No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by pinning the protocol wire shape for response-only `retrieval.query` `source_anchor_id` handles before any resolver protocol, source approval, citation, trusted-source review, or permission/audit workflow exists.
+- Result: `packages/protocol-schema/protocol.schema.json` now defines `sourceAnchorID` as `^source_anchor_[0-9a-f]{16}$` and uses it for `retrievalQueryResult.source_anchor_id`; `script/check_protocol_schema.py` enforces the dedicated definition, required result field, response-only request boundary, and exact regex. Android protocol fixtures and RuntimeDevServer future namespace smoke fixtures now use canonical IDs, Android `ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames` asserts the decoded ID matches the same shape, and RuntimeDevServer authenticated relay smoke checks the exact regex.
+- Guardrail: `source_anchor_id` stays response metadata only for `retrieval.query` requests. Requests still cannot carry it, and this pass does not add Android UI resolver consumption, source approval, citations, trusted-source review, permission/audit semantics, semantic retrieval, Android UI behavior, or chat context injection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device schema/script/JVM/smoke evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Rawls the 2nd` reviewed the wire-shape candidate and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames -Pkotlin.incremental=false`
+- `script/runtime_authenticated_mock_smoke.swift`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Retrieval Source Anchor Hidden UI No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by proving Android Settings Documents can render transient retrieval results without exposing opaque `source_anchor_id` handles as visible or accessibility text.
+- Result: `ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi` seeds a `RuntimeDocumentSearchResult` with a `source_anchor_id` canary and verifies the row still renders document title, match/rank/chunk metadata, matched terms, and snippet text while keeping `source_anchor_id` values out of visible text and accessibility content descriptions.
+- Guardrail: Android may preserve `sourceAnchorId` in transient runtime search state for future approval/citation workflows, but the read-only Documents panel must not turn it into user-visible copy, accessibility copy, local persistence, chat context, source approval, citations, trusted-source review, or permission/audit behavior.
+- UI boundary: source_anchor_id values out of visible text and accessibility content descriptions.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Compose/JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Heisenberg the 2nd` separately recommended a follow-up protocol source-anchor wire-shape gate and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Protocol Reserved Source-Anchor/Trusted-Source Namespace No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by making unsupported source-anchor and trusted-source protocol names explicit reserved namespaces before any source approval, citation, trusted-source review, permission, or audit semantics exist.
+- Result: `script/check_protocol_schema.py` now reserves unsupported `source_anchor.*` active message names beyond the active read-only `source_anchor.resolve` resolver plus `trusted_source.` active message names, and the authenticated RuntimeDevServer relay smoke rejects a future source-anchor metadata canary and `trusted_source.approve` with `unknown_message_type`. `retrieval.query` remains the only active document retrieval message and its `source_anchor_id` stays response metadata only outside the explicit resolver.
+- Guardrail: this is a protocol reserved source-anchor/trusted-source namespace guard plus RuntimeDevServer reserved source-anchor/trusted-source namespace rejection only. It does not add source approval, citations, trusted-source review, permission/audit semantics, semantic retrieval, Android UI, or chat context injection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device script/schema/smoke evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Chandrasekhar the 2nd` recommended this exact reserved namespace slice and did not modify files.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+RuntimeDevServer Reserved Source-Anchor/Trusted-Source Namespace Rejection No-Device Gate:
+
+- RuntimeDevServer authenticated relay smoke accepts the active `source_anchor.resolve` resolver but rejects unsupported future source-anchor metadata and `trusted_source.approve` messages with `unknown_message_type` before source approval, citation, trusted-source review, permission, or audit semantics exist.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor Canonicality No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by making runtime-local `source_anchor_id` resolver inputs exact-match handles before any source approval, citation, trusted-source review, Android UI exposure, or permission/audit semantics exist.
+- Result: `RuntimeDocumentIndexStoreTests/testSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDs` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDsAfterReopen` prove the resolver accepts the exact runtime-derived anchor but rejects leading-space, trailing-space, tab-prefixed, newline-suffixed, uppercase, malformed, and missing-anchor variants. SQLite coverage runs through a reopened store.
+- Guardrail: `runtimeDocumentIndexCanonicalSourceAnchorID` no longer trims whitespace-mutated source anchors into valid handles. This keeps future approval/citation handles pairwise exact without exposing `sourceAnchor(id:)` over the active protocol or changing `retrieval.query`, `chat.send`, Android UI, or trusted-source semantics.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Aquinas the 2nd` was asked to review next no-device roadmap candidates while this local canonicality gap was implemented.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDs|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDsAfterReopen'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor Query-Window No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by proving retrieval query shape does not affect an opaque source anchor for the same runtime-owned chunk, without adding resolver protocol exposure, source approval, citations, trusted-source review, Android UI exposure, or permission/audit semantics.
+- Result: `RuntimeDocumentIndexStoreTests/testSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBounds` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBoundsAfterReopen` prove `source_anchor_id` stays stable for the same safe document/chunk envelope when query terms, result limits, rank windows, and snippet bounds vary. The tests also prove rank, matched terms, and snippets can change while the anchor still derives only from the document id, content fingerprint, chunk index, and character offsets.
+- Guardrail: this keeps `source_anchor_id` suitable as a future approval/citation handle without making snippets, ranks, query terms, or result-window position part of the identity. SQLite coverage runs the variant queries through reopened stores.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Pascal the 2nd` cross-checked the query-window invariance test shape and recommended avoiding assertions that ranks, snippets, or matched terms remain equal.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBounds|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBoundsAfterReopen'`
+- `swift test --filter RuntimeDocumentIndexStoreTests`
+- `swift test --filter SQLiteRuntimeDocumentIndexStoreTests`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor Filtered-Delete Lifecycle No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by proving runtime-owned anchors do not survive broader document-index maintenance deletes, without adding resolver protocol exposure, source approval, citations, trusted-source review, Android UI exposure, or permission/audit semantics.
+- Result: `RuntimeDocumentIndexStoreTests/testSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletes` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletesAndReopen` prove `source_anchor_id` handles stop resolving after display-name, MIME-type, content-fingerprint, quality, and delete-all maintenance deletes. The SQLite coverage exercises reopened resolver/query paths and verifies matching FTS rows are removed, including delete-all cleanup.
+- Guardrail: this extends the existing runtime-local source-anchor lifecycle checks without exposing `sourceAnchor(id:)` over the active protocol and without changing `retrieval.query`, `chat.send`, Android UI, or trusted-source semantics.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Noether the 2nd` reviewed the next source-anchor candidates and left query-window invariance as a future follow-up; this pass closed the more direct filtered-delete stale-anchor gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletes|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletesAndReopen'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor Lifecycle No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG source-anchor path by proving runtime-owned anchors do not outlive the document version or deletion that created them, without adding resolver protocol exposure, source approval, citations, trusted-source review, Android UI exposure, or permission/audit semantics.
+- Result: `RuntimeDocumentIndexStoreTests/testSourceAnchorResolverInvalidatesAnchorsAfterReplaceAndDelete` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterReplaceDeleteAndReopen` prove stale `source_anchor_id` handles stop resolving after same-id document replacement and document deletion. The SQLite coverage reopens the store between operations and verifies the deleted document leaves no FTS rows.
+- Guardrail: `LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch` now includes client-supplied `source_anchor_id` in a `retrieval.query` request and proves the request is rejected before document-index store dispatch. Android `ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames` asserts retrieval requests do not serialize `source_anchor_id`, while retrieval results still decode it as response-only metadata.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/Android JVM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Carson the 2nd` recommended pinning source-anchor protocol non-exposure before source approval, citations, trusted-source review, or permission/audit semantics.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorResolverInvalidatesAnchorsAfterReplaceAndDelete|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterReplaceDeleteAndReopen|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch'`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+
+### 2026-07-09 Document Retrieval Source Anchor Resolver No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG path by making the opaque `source_anchor_id` useful to runtime-owned future review code without adding source approval, citations, trusted-source review, protocol expansion, Android UI exposure, or permission/audit semantics.
+- Result: `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` now expose `sourceAnchor(id:)`, returning a redacted `RuntimeDocumentSourceAnchor` envelope with the original source anchor id, safe document catalog metadata, chunk index, start/end character offsets, and character count. SQLite resolution matches the in-memory store after reopen and reads only chunk character counts for the returned envelope.
+- Guardrail: `RuntimeDocumentIndexStoreTests/testSourceAnchorResolverReturnsRedactedEnvelopeWithoutTextOrFutureMetadata` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverMatchesRuntimeStoreAfterReopenWithoutTextOrFutureMetadata` prove the resolver omits chunk text, snippets, source paths, workspace/project IDs, `retrieval_context`, citations, trusted-source fields, approval state, and body sentinels. `LocalRuntimeMessageRouterTests/testChatSendRejectsSourceAnchorIDBeforeTrustedSourceSemanticsExist` proves `chat.send` still rejects client-supplied `source_anchor_id` before trusted-source, citation, permission, and audit semantics exist.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Copernicus the 2nd` recommended the runtime-local redacted source-anchor resolver before source approval, citations, or trusted-source review.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorResolverReturnsRedactedEnvelopeWithoutTextOrFutureMetadata|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorResolverMatchesRuntimeStoreAfterReopenWithoutTextOrFutureMetadata|LocalRuntimeMessageRouterTests/testChatSendRejectsSourceAnchorIDBeforeTrustedSourceSemanticsExist'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor Stability No-Device Gate
+
+- Scope: harden the new `source_anchor_id` as an opaque future approval/citation handle before adding source approval, citations, trusted-source review, protocol expansion, or permission/audit semantics.
+- Result: `RuntimeDocumentIndexStoreTests/testSourceAnchorIDIsStableForSameChunkAndRotatesWhenContentChanges` and `SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorIDIsStableAfterReopenAndRotatesWhenContentChanges` prove anchors stay stable for the same safe document id, content fingerprint, chunk index, and character offsets across repeated query, same-content reindex, and SQLite reopen paths, then rotate when the same requested document id is reindexed with changed content.
+- Guardrail: the focused tests assert the anchor remains opaque and does not contain file names, body sentinels, workspace/project markers, source paths, snippets, citations, trusted-source fields, or `retrieval_context`. `script/check_no_device_quality.sh` runs the focused regressions and reports the source-anchor stability addendum, while `script/check_copy_hygiene.py` pins the tests, no-device phrase, and docs.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/script evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Feynman the 2nd` recommended source-anchor stability hardening before adding source approval, citations, or trusted-source review.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RuntimeDocumentIndexStoreTests/testSourceAnchorIDIsStableForSameChunkAndRotatesWhenContentChanges|SQLiteRuntimeDocumentIndexStoreTests/testSQLiteSourceAnchorIDIsStableAfterReopenAndRotatesWhenContentChanges'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Document Retrieval Source Anchor No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG path by adding a stable, non-sensitive `source_anchor_id` to lexical `retrieval.query` results. This is a future source approval/citation handle only; it does not add source approval, citations, trusted-source review, chat context injection, or a permission/audit model.
+- Result: `RuntimeDocumentIndexStore` now derives `sourceAnchorID` from document id, content fingerprint, chunk index, and character offsets; `LocalRuntimeMessageRouter` serializes it as `source_anchor_id`; the shared protocol schema requires it on `retrieval.query` result rows; Android protocol DTOs and `RuntimeUiState` decode and preserve it transiently.
+- Guardrail: Swift in-memory/SQLite/router tests prove anchor generation/parity and bounded retrieval response metadata; RuntimeDevServer authenticated relay smoke requires the seeded retrieval result to include a `source_anchor_id`; Android `ProtocolCodecTest`, `RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext`, and `RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession` prove the anchor crosses protocol/ViewModel/trusted-relay paths without entering `chat.send`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device SwiftPM/RuntimeDevServer/Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Cicero the 2nd` recommended adding a safe `source_anchor_id` before source approval, citations, or trusted-source review.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter RuntimeDocumentIndexStoreTests/testLexicalQueryRanksAndReturnsBoundedSnippets`
+- `swift test --filter SQLiteRuntimeDocumentIndexStoreTests/testSQLiteStoreQueryMatchesRuntimeIndexStoreAfterReopen`
+- `swift test --filter LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata`
+- `./script/runtime_authenticated_mock_smoke.swift`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain'`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession -Pkotlin.incremental=false --console=plain'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Trusted Relay Document Index/Retrieval Integration No-Device Gate
+
+- Scope: tighten the Android client-side document catalog/search path over the authenticated trusted relay reconnect path. This remains transient runtime-owned document state, not chat context injection, not source approval, not citations, not trusted-source review, and not a permission/audit model.
+- Result: `RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession` now proves an authenticated trusted private-overlay relay reconnect carries `index.documents.list` and `retrieval.query` over `RuntimeRelayTcpClient`, trims the search query, preserves bounded request limits, decodes catalog and lexical snippet responses into transient state, requests `models.list`, and sends `chat.send` only after selecting a local runtime-host model.
+- Guardrail: the same test rejects direct TCP fallback for trusted relay reconnect and checks `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, trusted-source fields, document filenames, and retrieval snippets after search results exist in memory.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Tesla the 2nd` recommended this relay integration proof before moving into source approval, citations, or trusted-source work.
+- Caveat: this does not prove physical Android rendering, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession -Pkotlin.incremental=false --console=plain'`
+
+### 2026-07-09 RuntimeDevServer Seeded Document Catalog Relay No-Device Gate
+
+- Scope: extend the seeded RuntimeDevServer document-index smoke from lexical retrieval to the read-only `index.documents.list` catalog path. This remains catalog metadata only, not chunk text, not source paths, not workspace/project registration, not semantic retrieval, not embeddings, not citations, not trusted-source review, not Android chat context injection, and not a permission/audit model.
+- Result: RuntimeDevServer authenticated relay smoke accepts `index.documents.list` against a seeded runtime document index with one bounded catalog row plus summary metadata, document metadata, and quality counts. The smoke uses the same dev-only per-run SQLite document-index path and smoke seed as the retrieval relay gate.
+- Guardrail: `script/runtime_authenticated_mock_smoke.swift` rejects response-only `documents`/`summary` payloads and future `embedding_model_id`, `retrieval_context`, `source_path`, workspace, citation, trusted-source, and backend metadata before document-index dispatch. The seeded catalog smoke also fails if private body canaries, secondary document canaries, chunk IDs, chunk text, source paths, workspace/project IDs, retrieval context, embeddings, citations, or trusted-source fields appear in the catalog response payload.
+- Device state: no-device SwiftPM/RuntimeDevServer evidence only. The Android phone is disconnected; no install, optical QR scan, physical rendering, Ollama, or LM Studio provider behavior was exercised.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Averroes the 2nd` recommended stabilizing the current seeded retrieval/documents change set before opening broader source approval or trusted-source work.
+- Caveat: this proves only seeded development RuntimeDevServer catalog listing over the authenticated relay smoke. It does not prove runtime file access, semantic retrieval, embedding generation, trusted-source review, citations, source approval, project/workspace registration, Android UI behavior, physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift build --product RuntimeDevServer`
+- `./script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-09 RuntimeDevServer Seeded Document Retrieval Relay No-Device Gate
+
+- Scope: raise the RuntimeDevServer authenticated relay smoke from an empty document-index response to a deterministic seeded `retrieval.query` result. This keeps the document-index path read-only and lexical, not semantic retrieval, not embeddings, not source approval, not citations, not trusted-source review, not Android chat context injection, and not a permission/audit model.
+- Result: RuntimeDevServer now accepts a dev-only per-run SQLite document-index path through `AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE`, seeds smoke-only documents when `AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE=1`, and RuntimeDevServer authenticated relay smoke accepts `retrieval.query` against a seeded runtime document index with one bounded lexical snippet, document metadata, rank, `matched_terms`, chunk index, and character offsets.
+- Guardrail: `script/runtime_authenticated_mock_smoke.swift` rejects response-only retrieval fields and future `embedding_model_id`, `retrieval_context`, `source_path`, workspace/project, citation, trusted-source, and backend metadata before document-index dispatch. The seeded result smoke also fails if private body canaries, secondary document canaries, full chunk text, chunk IDs, source paths, workspace/project IDs, retrieval context, embeddings, citations, or trusted-source fields appear in the response payload.
+- Device state: no-device SwiftPM/RuntimeDevServer evidence only. The Android phone is disconnected; no install, optical QR scan, physical rendering, Ollama, or LM Studio provider behavior was exercised.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Lagrange the 2nd` recommended this seeded RuntimeDevServer retrieval smoke slice before source approval, citations, or trusted-source work.
+- Caveat: this proves only seeded development RuntimeDevServer lexical retrieval over the authenticated relay smoke. It does not prove semantic retrieval, embedding generation, trusted-source review, citations, project/workspace registration, runtime file access, Android UI behavior, physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift build --product RuntimeDevServer`
+- `./script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-09 Android Document Index/Retrieval Compact Layout No-Device Gate
+
+- Scope: harden the new read-only Settings Documents panel for compact Android widths and large-font usage without changing the data boundary. This remains transient UI for runtime-owned catalog/search state, not chat context injection, not source approval, not citation UX, not trusted-source review, not local persistence, and not a permission/audit model.
+- Result: Android Documents catalog rows, catalog metadata, search summaries, retrieval result rows, result metadata, and snippet text now have no-device Compose coverage at compact width and 1.5x font scale across supported app languages.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages` renders catalog and `retrieval.query` result states in English, Korean, Japanese, Simplified Chinese, and French, checks the narrow root bounds, and proves key text/metadata/snippet elements do not overlap.
+- Device state: no-device Android JVM/Compose evidence only. The Android phone is disconnected; no install, optical QR scan, physical rendering, Ollama, or LM Studio provider behavior was exercised.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Sartre the 2nd` recommended this Android Documents compact/large-font hardening before moving into deeper runtime relay or trusted-source work.
+- Caveat: chat context injection, source approval, citations, trusted-source review, permission/audit semantics, local persistence, and physical Android proof remain out of scope. This also does not prove production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain'`
+
+### 2026-07-09 Android Document Index/Retrieval Read-Only Compose UI No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android client bridge by surfacing the existing transient document catalog/search state in Settings as a read-only Documents panel. This is not chat context injection, not source approval, not citation UX, not trusted-source review, not local persistence, and not a permission/audit model.
+- Result: Android Settings now renders a read-only Documents panel with document catalog summary counts, quality counts, catalog rows, and `retrieval.query` snippet rows from transient `RuntimeUiState`. The panel invokes explicit refresh/search callbacks only, connects those callbacks to `RuntimeClientViewModel.refreshRuntimeDocumentCatalog` and `RuntimeClientViewModel.searchRuntimeDocuments`, and localizes disconnected, streaming, loading, and ready action states.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows`, `ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults`, and `ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages` prove catalog rendering, explicit query callback trimming, snippet rendering, fingerprint omission, and localized action readiness. Existing ViewModel tests still prove `chat.send` stays free of retrieval fields after search results exist.
+- Device state: no-device Android JVM/Compose evidence only. The Android phone is disconnected; no install, optical QR scan, physical rendering, Ollama, or LM Studio provider behavior was exercised.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hooke the 2nd` recommended this Settings read-only UI slice while keeping chat grounding, citations, source approval, and persistence separate.
+- Caveat: chat context injection, source approval, citations, trusted-source review, permission/audit semantics, local persistence, and physical Android proof remain out of scope. This also does not prove production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin -Pkotlin.incremental=false --console=plain'`
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain'`
+
+### 2026-07-09 Android Document Index/Retrieval Transient ViewModel No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG Android client bridge by wiring active read-only `index.documents.list` and `retrieval.query` messages into `RuntimeClientViewModel` as explicit, transient requests. This is not Android Compose UI consumption, not chat context injection, not source approval, not citation UX, and not a permission/audit model.
+- Result: Android now advertises `index.documents.list` and `retrieval.query` in `hello.client_capabilities`, can send bounded explicit document catalog and lexical retrieval requests, decodes catalog/summary and snippet responses into transient RuntimeUiState only, clears document search failures for retry, and leaves persisted runtime data untouched.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage`, `RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext`, and `RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry` prove request bounds, transient state, retry cleanup, and `chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields.
+- Device state: no-device Android JVM evidence only. The Android phone is disconnected; no install, optical QR scan, physical rendering, Ollama, or LM Studio provider behavior was exercised.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Boole the 2nd` recommended this no-device ViewModel slice while keeping UI, chat grounding, citations, and permission semantics separate.
+- Caveat: Compose UI consumption, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, and physical Android proof remain out of scope. This also does not prove production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesAdvertiseRuntimeOwnedHistoryMemoryAndAttachments -Pkotlin.incremental=false --console=plain'`
+
+### 2026-07-08 Android Document Index/Retrieval Protocol Payload Parity No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG protocol alignment by adding Android protocol DTO parity for active read-only `index.documents.list` catalog/summary payloads and `retrieval.query` lexical snippet payloads, without advertising Android capabilities, adding ViewModel dispatch, adding Android UI consumption, injecting retrieval snippets into chat context, exposing citations, adding trusted-source review, or defining permission/audit semantics.
+- Result: Android `ProtocolModels.kt` now has typed request/result payloads for `index.documents.list` catalog/summary rows and `retrieval.query` lexical snippet rows. The DTOs use the shared schema field names for document metadata, quality counts, `max_snippet_characters`, `start_character_offset`, `end_character_offset`, and `matched_terms`.
+- Guardrail: `ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames` and `ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames` prove Android serialization/decode parity for the active runtime document catalog and retrieval payload shapes. `script/check_no_device_quality.sh` runs the focused Android codec regressions and reports the Android protocol document index and retrieval payload parity addendum; `script/check_copy_hygiene.py` pins the DTOs, tests, no-device gate, roadmap, progress, and QA evidence.
+- Device state: this is deterministic no-device Android JVM/protocol evidence only. The Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Faraday the 2nd` recommended keeping this slice to Android protocol payload parity and leaving Android UI consumption for a later source-approval/citation/permission pass.
+- Caveat: this is not user-facing Android retrieval. Android capabilities, ViewModel dispatch, UI consumption, chat context injection, citations, trusted-source review, and permission semantics out of scope. It also does not prove physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:compileDebugKotlin :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames'`
+
+### 2026-07-08 Runtime Document Retrieval Query Protocol No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding the first read-only runtime document retrieval protocol message, `retrieval.query`, behind authenticated `LocalRuntimeMessageRouter` dispatch, without exposing semantic retrieval, embeddings, `index.build`, Android UI, source-path persistence, workspace/project IDs, full chunk text, chunk IDs, citations, trusted-source fields, permission/audit semantics, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network proof.
+- Result: the shared protocol model and JSON schema now include `retrieval.query`; macOS protocol constants route it through `LocalRuntimeMessageRouter`; `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose a narrow `RuntimeDocumentIndexReading` seam; and the router returns bounded lexical result rows with document catalog metadata, `chunk_index`, character offsets, integer rank, matched_terms, and a bounded snippet.
+- Result: the initial RuntimeDevServer authenticated relay smoke proved the `retrieval.query` response shape and future-metadata rejection before seeded data existed; the 2026-07-09 seeded RuntimeDevServer gate now supersedes that empty-index proof with one bounded lexical snippet while keeping the same future source, embedding, citation, trusted-source, and backend metadata rejection.
+- Guardrail: `LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata` proves authenticated retrieval responses omit full chunk text, chunk IDs, source paths, workspace/project IDs, retrieval context, embeddings, citations, and trusted-source metadata. `LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch` proves response-only result fields and future source, embedding, citation, trusted-source, or backend metadata are rejected with `invalid_payload` before document-index store dispatch. Protocol-schema hygiene now allows only active lexical `retrieval.query` while keeping unsupported future `retrieval.*`, unsupported `index.*`, embeddings, semantic retrieval, research, citations, source-control, permission, and audit messages reserved.
+- Device state: this is deterministic no-device SwiftPM/protocol-schema/RuntimeDevServer evidence only. The Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Ohm the 2nd` was used for a parallel read-only check of the next safest roadmap slice and was closed after its recommendation was integrated.
+- Caveat: this opens only bounded lexical snippets over runtime-owned document-index chunks. It does not implement semantic retrieval, embedding generation, trusted-source review, citations, project/workspace registration, runtime file access, Android UI, physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata|LocalRuntimeMessageRouterTests/testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata|LocalRuntimeMessageRouterTests/testUnauthenticatedRuntimeCommandsRejectBeforeProtocolPayloadHandling'`
+- `python3 -m json.tool packages/protocol-schema/protocol.schema.json`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:compileDebugKotlin :core:protocol:testDebugUnitTest`
+- `git diff --check -- apps/macos/Protocol/Sources/ProtocolEnvelope.swift apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/connection-overlay.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-08 Runtime Document Index Documents List Protocol No-Device Gate
+
+- Scope: continue the v0.8 Workspace/RAG file-indexing path by adding the first read-only runtime document-index protocol catalog message, `index.documents.list`, behind authenticated `LocalRuntimeMessageRouter` dispatch, without exposing retrieval APIs, `index.build`, Android UI, source-path persistence, workspace/project IDs, chunk text, retrieval context, embeddings, citations, trusted-source fields, permission/audit semantics, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network proof.
+- Result: the shared protocol model and JSON schema now include `index.documents.list`; macOS protocol constants route it through `LocalRuntimeMessageRouter`; `RuntimeDocumentIndexStore` and `SQLiteRuntimeDocumentIndexStore` expose a narrow `RuntimeDocumentIndexCatalogReading` seam; and the router returns bounded document catalog metadata plus aggregate summary counts. Returned document rows are limited to `id`, `display_name`, `mime_type`, `content_fingerprint`, `extracted_character_count`, `chunk_count`, and `quality`.
+- Guardrail: `LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata` proves authenticated catalog responses omit chunk text, chunk IDs, source paths, workspace/project IDs, retrieval context, embeddings, citations, and trusted-source metadata. `LocalRuntimeMessageRouterTests/testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch` proves response-only catalog fields and future source metadata are rejected with `invalid_payload` before document-index store dispatch. Protocol-schema hygiene now allows only this read-only `index.` message while keeping unsupported future `index.*`, `retrieval.*`, embeddings, research, citations, source-control, permission, and audit messages reserved.
+- Device state: this is deterministic no-device SwiftPM/protocol-schema evidence only. The Android phone is disconnected for this slice; no Android app was installed or driven, no optical QR scan was attempted, and no Ollama or LM Studio provider was invoked.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorer `Peirce the 2nd` was used for a parallel read-only check of the next safest roadmap slice and recommended the catalog read path before retrieval.
+- Caveat: this opens only a bounded runtime-owned document catalog read. It does not expose document chunks, retrieval query results, embeddings, citations, trusted-source review, project/workspace registration, runtime file access, Android UI, physical Android rendering, optical QR, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata|LocalRuntimeMessageRouterTests/testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch'`
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testIndexDocumentsListReturnsBoundedCatalogWithoutContentOrFutureMetadata|LocalRuntimeMessageRouterTests/testIndexDocumentsListRejectsUnknownMetadataBeforeStoreDispatch|ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsMalformedRequiredFields|ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields'`
+- `python3 -m json.tool packages/protocol-schema/protocol.schema.json`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:compileDebugKotlin :core:protocol:testDebugUnitTest`
+- `git diff --check -- apps/macos/Protocol/Sources/ProtocolEnvelope.swift apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/connection-overlay.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
 
 ### 2026-07-08 Runtime Document Index Requested Document ID Control-Character Canonicality No-Device Gate
 
@@ -3305,14 +4484,14 @@ Verified after this change:
 
 ### 2026-07-03 Protocol Reserved RAG/Research Namespace No-Device Gate
 
-- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Runtime-side embedding generation, semantic retrieval, project/file indexing, research briefs/notebooks, source citations, trusted-source controls, and source-control context are still future work, so the active protocol should not grow `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, or `source_control.` messages yet.
-- Result: Protocol Reserved RAG/Research Namespace No-Device Gate: `script/check_protocol_schema.py` now reserves `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` from the active protocol enum alongside the existing future runtime namespaces.
-- Result: RuntimeDevServer Reserved RAG/Research Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `retrieval.query`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status` with `unknown_message_type`.
-- Boundary: these reserved messages are distinct from current `models.list` embedding model metadata, deterministic lexical `memory.list` query filtering, and the current `chat.sessions.list` `embedding_model_id` search hint.
-- Guardrail: relay ciphertext boundary markers now include the future RAG/research message names, request IDs, representative payload strings, embedding model hint, file-label canary, and backend URL canary where relevant. This keeps unsupported future retrieval, indexing, research, citation, and source-control request details inside encrypted relay frame bodies.
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Runtime-side embedding generation, semantic retrieval, project/file indexing, research briefs/notebooks, source citations, trusted-source controls, and source-control context are still future work, so the active protocol should not grow `embeddings.`, unsupported `retrieval.` beyond active lexical `retrieval.query`, unsupported `index.` beyond active read-only `index.documents.list`, `research.`, `citation.`, or `source_control.` messages yet.
+- Result: Protocol Reserved RAG/Research Namespace No-Device Gate: `script/check_protocol_schema.py` now reserves `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, and `source_control.` from the active protocol enum alongside the existing future runtime namespaces.
+- Result: RuntimeDevServer Reserved RAG/Research Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status` with `unknown_message_type`.
+- Boundary: these reserved messages are distinct from current `models.list` embedding model metadata, deterministic lexical `memory.list` query filtering, active lexical `retrieval.query`, active read-only `index.documents.list`, and the current `chat.sessions.list` `embedding_model_id` search hint.
+- Guardrail: relay ciphertext boundary markers now include the future RAG/research message names, request IDs, representative payload strings, embedding model hint, file-label canary, and backend URL canary where relevant. This keeps unsupported future semantic retrieval, indexing, research, citation, and source-control request details inside encrypted relay frame bodies.
 - Guardrail: `script/check_copy_hygiene.py` pins the schema prefixes, RuntimeDevServer smoke, no-device summary phrase, protocol docs, connection overlay boundary, roadmap, progress, and QA evidence.
 - Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
-- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` as the next concrete RAG/research namespace gap.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, and `source_control.` as the concrete RAG/research namespace gap for that earlier reserved-namespace slice.
 - Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement embedding generation, semantic retrieval, indexing, research notebooks, citations, trusted-source controls, source-control integration, physical Android QR scanning, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
 
 Verified after this change:

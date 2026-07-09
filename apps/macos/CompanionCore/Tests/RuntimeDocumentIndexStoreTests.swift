@@ -120,12 +120,349 @@ final class RuntimeDocumentIndexStoreTests: XCTestCase {
         let results = store.query("retrieval runtime", limit: 3, maxSnippetCharacters: 64)
 
         XCTAssertGreaterThanOrEqual(results.count, 2)
-        XCTAssertEqual(results.first?.document.id, "retrieval")
+        let first = try XCTUnwrap(results.first)
+        XCTAssertEqual(first.document.id, "retrieval")
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(first.sourceAnchorID), first.sourceAnchorID)
+        XCTAssertEqual(
+            first.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: first.document, chunk: first.chunk)
+        )
         XCTAssertGreaterThan(results[0].rank, results[1].rank)
         XCTAssertTrue(results.allSatisfy { !$0.snippet.isEmpty })
         XCTAssertTrue(results.allSatisfy { $0.snippet.count <= 64 })
-        XCTAssertTrue(results.first?.matchedTerms.contains("retrieval") == true)
-        XCTAssertTrue(results.first?.matchedTerms.contains("runtime") == true)
+        XCTAssertTrue(first.matchedTerms.contains("retrieval"))
+        XCTAssertTrue(first.matchedTerms.contains("runtime"))
+    }
+
+    func testLexicalQueryAppliesLimitOffsetSanityAndDeterministicOrdering() throws {
+        let store = RuntimeDocumentIndexStore()
+        let alphaText = "target alpha first target alpha second"
+        let zetaText = "target target zeta"
+        let betaText = "target beta"
+
+        _ = store.replaceDocument(
+            result: try segmentedIngestedDocument(
+                fileName: "beta.md",
+                text: betaText,
+                chunkTexts: [betaText]
+            ),
+            documentID: "beta"
+        )
+        _ = store.replaceDocument(
+            result: try segmentedIngestedDocument(
+                fileName: "zeta.md",
+                text: zetaText,
+                chunkTexts: [zetaText]
+            ),
+            documentID: "zeta"
+        )
+        _ = store.replaceDocument(
+            result: try segmentedIngestedDocument(
+                fileName: "alpha.md",
+                text: alphaText,
+                chunkTexts: ["target alpha first", "target alpha second"]
+            ),
+            documentID: "alpha"
+        )
+
+        XCTAssertEqual(store.query("target", limit: 0, maxSnippetCharacters: 64), [])
+
+        let results = store.query("target", limit: 3, maxSnippetCharacters: 64)
+
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(
+            results.map { "\($0.document.id)#\($0.chunk.chunkIndex)" },
+            ["zeta#0", "alpha#0", "alpha#1"]
+        )
+        XCTAssertTrue(
+            results.allSatisfy {
+                $0.chunk.endCharacterOffset >= $0.chunk.startCharacterOffset
+            }
+        )
+        XCTAssertTrue(
+            zip(results, results.dropFirst()).allSatisfy { previous, next in
+                previous.rank >= next.rank
+            }
+        )
+    }
+
+    func testSourceAnchorIDIsStableForSameChunkAndRotatesWhenContentChanges() throws {
+        let store = RuntimeDocumentIndexStore()
+        let initial = try ingestedDocument(
+            fileName: "anchor-source.md",
+            text: "Runtime source anchors stay stable before PRIVATE_CHUNK_SENTINEL."
+        )
+        _ = store.replaceDocument(result: initial, documentID: "anchor-doc")
+
+        let first = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+        let repeated = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+
+        XCTAssertEqual(first.sourceAnchorID, repeated.sourceAnchorID)
+        XCTAssertEqual(first.document.id, repeated.document.id)
+        XCTAssertEqual(first.document.contentFingerprint, repeated.document.contentFingerprint)
+        XCTAssertEqual(first.chunk.chunkIndex, repeated.chunk.chunkIndex)
+        XCTAssertEqual(first.chunk.startCharacterOffset, repeated.chunk.startCharacterOffset)
+        XCTAssertEqual(first.chunk.endCharacterOffset, repeated.chunk.endCharacterOffset)
+        XCTAssertEqual(
+            first.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: first.document, chunk: first.chunk)
+        )
+
+        _ = store.replaceDocument(result: initial, documentID: "anchor-doc")
+        let afterSameReindex = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+        XCTAssertEqual(first.sourceAnchorID, afterSameReindex.sourceAnchorID)
+
+        let changed = try ingestedDocument(
+            fileName: "anchor-source.md",
+            text: "Runtime source anchors rotate after PRIVATE_CHUNK_SENTINEL changes."
+        )
+        _ = store.replaceDocument(result: changed, documentID: "anchor-doc")
+        let afterChange = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+
+        XCTAssertEqual(afterChange.document.id, "anchor-doc")
+        XCTAssertNotEqual(first.document.contentFingerprint, afterChange.document.contentFingerprint)
+        XCTAssertNotEqual(first.sourceAnchorID, afterChange.sourceAnchorID)
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(afterChange.sourceAnchorID), afterChange.sourceAnchorID)
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("anchor-source.md"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("PRIVATE_CHUNK_SENTINEL"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("workspace"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("project"))
+    }
+
+    func testSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBounds() throws {
+        let store = RuntimeDocumentIndexStore()
+        let target = try ingestedDocument(
+            fileName: "anchor-window.md",
+            text: "anchoralpha anchorbeta anchorwindow stable handle stays inside one source chunk."
+        )
+        let competitor = try ingestedDocument(
+            fileName: "anchor-competitor.md",
+            text: "anchoralpha anchoralpha anchoralpha competing row stays separate."
+        )
+        _ = store.replaceDocument(result: target, documentID: "anchor-window")
+        _ = store.replaceDocument(result: competitor, documentID: "anchor-competitor")
+
+        let targetOnly = try XCTUnwrap(
+            store.query("anchorbeta", limit: 1, maxSnippetCharacters: 36).single
+        )
+        let multiTerm = try XCTUnwrap(
+            store.query("anchoralpha anchorbeta", limit: 5, maxSnippetCharacters: 120)
+                .first { $0.document.id == "anchor-window" }
+        )
+        let tightSnippet = try XCTUnwrap(
+            store.query("anchorbeta", limit: 5, maxSnippetCharacters: 28)
+                .first { $0.document.id == "anchor-window" }
+        )
+        let rankWindow = try XCTUnwrap(
+            store.query("anchoralpha", limit: 5, maxSnippetCharacters: 64)
+                .first { $0.document.id == "anchor-window" }
+        )
+
+        XCTAssertEqual(targetOnly.document.id, "anchor-window")
+        XCTAssertEqual(Set(store.query("anchoralpha", limit: 5).map(\.document.id)), Set(["anchor-competitor", "anchor-window"]))
+        XCTAssertEqual(targetOnly.sourceAnchorID, multiTerm.sourceAnchorID)
+        XCTAssertEqual(targetOnly.sourceAnchorID, tightSnippet.sourceAnchorID)
+        XCTAssertEqual(targetOnly.sourceAnchorID, rankWindow.sourceAnchorID)
+        XCTAssertEqual(targetOnly.chunk.chunkIndex, multiTerm.chunk.chunkIndex)
+        XCTAssertEqual(targetOnly.chunk.startCharacterOffset, multiTerm.chunk.startCharacterOffset)
+        XCTAssertEqual(targetOnly.chunk.endCharacterOffset, multiTerm.chunk.endCharacterOffset)
+        XCTAssertEqual(
+            targetOnly.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: targetOnly.document, chunk: targetOnly.chunk)
+        )
+        XCTAssertEqual(multiTerm.matchedTerms, ["anchoralpha", "anchorbeta"])
+        XCTAssertEqual(rankWindow.matchedTerms, ["anchoralpha"])
+        XCTAssertNotEqual(multiTerm.rank, rankWindow.rank)
+        XCTAssertLessThanOrEqual(tightSnippet.snippet.count, 28)
+        XCTAssertGreaterThan(multiTerm.snippet.count, tightSnippet.snippet.count)
+        XCTAssertNotNil(store.sourceAnchor(id: targetOnly.sourceAnchorID))
+    }
+
+    func testSourceAnchorResolverReturnsRedactedEnvelopeWithoutTextOrFutureMetadata() throws {
+        let store = RuntimeDocumentIndexStore()
+        let result = try ingestedDocument(
+            fileName: "/Users/example/workspace/private-source.md",
+            text: "Runtime source anchor resolver keeps PRIVATE_ANCHOR_BODY_SENTINEL out of review metadata."
+        )
+        _ = store.replaceDocument(result: result, documentID: "anchor-review")
+        let searchResult = try XCTUnwrap(store.query("runtime resolver", limit: 1, maxSnippetCharacters: 80).single)
+
+        let resolved = try XCTUnwrap(store.sourceAnchor(id: searchResult.sourceAnchorID))
+
+        XCTAssertEqual(resolved.sourceAnchorID, searchResult.sourceAnchorID)
+        XCTAssertEqual(resolved.document, searchResult.document)
+        XCTAssertEqual(resolved.chunkSummary.documentID, searchResult.chunk.documentID)
+        XCTAssertEqual(resolved.chunkSummary.documentDisplayName, searchResult.chunk.documentDisplayName)
+        XCTAssertEqual(resolved.chunkSummary.documentMimeType, searchResult.chunk.documentMimeType)
+        XCTAssertEqual(resolved.chunkSummary.chunkIndex, searchResult.chunk.chunkIndex)
+        XCTAssertEqual(resolved.chunkSummary.startCharacterOffset, searchResult.chunk.startCharacterOffset)
+        XCTAssertEqual(resolved.chunkSummary.endCharacterOffset, searchResult.chunk.endCharacterOffset)
+        XCTAssertEqual(resolved.chunkSummary.characterCount, searchResult.chunk.text.count)
+
+        let description = String(describing: resolved)
+        XCTAssertFalse(description.contains("PRIVATE_ANCHOR_BODY_SENTINEL"))
+        XCTAssertFalse(description.contains("/Users/example/workspace"))
+        XCTAssertFalse(description.contains("source_path"))
+        XCTAssertFalse(description.contains("workspace_id"))
+        XCTAssertFalse(description.contains("project_id"))
+        XCTAssertFalse(description.contains("retrieval_context"))
+        XCTAssertFalse(description.contains("snippet"))
+        XCTAssertFalse(description.contains("citation"))
+        XCTAssertFalse(description.contains("trustedSource"))
+        XCTAssertFalse(description.contains("trusted_source"))
+        XCTAssertNil(store.sourceAnchor(id: "source_anchor_0000000000000000"))
+        XCTAssertNil(store.sourceAnchor(id: "SOURCE_ANCHOR_0000000000000000"))
+        XCTAssertNil(store.sourceAnchor(id: "source_anchor_not_hex_value"))
+    }
+
+    func testSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDs() throws {
+        let store = RuntimeDocumentIndexStore()
+        let result = try ingestedDocument(
+            fileName: "anchor-canonicality.md",
+            text: "Runtime source anchor canonicality rejects whitespace-mutated future approval handles."
+        )
+        _ = store.replaceDocument(result: result, documentID: "anchor-canonicality")
+        let searchResult = try XCTUnwrap(
+            store.query("canonicality approval", limit: 1, maxSnippetCharacters: 80).single
+        )
+
+        XCTAssertNotNil(store.sourceAnchor(id: searchResult.sourceAnchorID))
+        XCTAssertNil(store.sourceAnchor(id: " \(searchResult.sourceAnchorID)"))
+        XCTAssertNil(store.sourceAnchor(id: "\(searchResult.sourceAnchorID)\n"))
+        XCTAssertNil(store.sourceAnchor(id: "\t\(searchResult.sourceAnchorID)"))
+        XCTAssertNil(store.sourceAnchor(id: "\(searchResult.sourceAnchorID) "))
+        XCTAssertNil(runtimeDocumentIndexCanonicalSourceAnchorID(" \(searchResult.sourceAnchorID)\n"))
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(searchResult.sourceAnchorID), searchResult.sourceAnchorID)
+    }
+
+    func testSourceAnchorResolverInvalidatesAnchorsAfterReplaceAndDelete() throws {
+        let store = RuntimeDocumentIndexStore()
+        let initial = try ingestedDocument(
+            fileName: "anchor-lifecycle.md",
+            text: "Runtime source anchor invalidation keeps stale approval handles from resolving."
+        )
+        _ = store.replaceDocument(result: initial, documentID: "anchor-lifecycle")
+        let first = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+        let firstAnchorID = first.sourceAnchorID
+
+        XCTAssertNotNil(store.sourceAnchor(id: firstAnchorID))
+
+        let replacement = try ingestedDocument(
+            fileName: "anchor-lifecycle.md",
+            text: "Runtime source anchor invalidation rotates after document replacement."
+        )
+        _ = store.replaceDocument(result: replacement, documentID: "anchor-lifecycle")
+        let replaced = try XCTUnwrap(store.query("runtime source", limit: 1, maxSnippetCharacters: 80).single)
+
+        XCTAssertNotEqual(firstAnchorID, replaced.sourceAnchorID)
+        XCTAssertNil(store.sourceAnchor(id: firstAnchorID))
+        XCTAssertNotNil(store.sourceAnchor(id: replaced.sourceAnchorID))
+
+        store.deleteDocument(id: "anchor-lifecycle")
+
+        XCTAssertNil(store.sourceAnchor(id: replaced.sourceAnchorID))
+        XCTAssertEqual(store.query("runtime source"), [])
+    }
+
+    func testSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletes() throws {
+        func indexedAnchorID(
+            in store: RuntimeDocumentIndexStore,
+            result: DocumentIngestionResult,
+            documentID: String,
+            query: String
+        ) throws -> String {
+            _ = store.replaceDocument(result: result, documentID: documentID)
+            let searchResult = try XCTUnwrap(store.query(query, limit: 1, maxSnippetCharacters: 80).single)
+
+            XCTAssertEqual(searchResult.document.id, documentID)
+            XCTAssertNotNil(store.sourceAnchor(id: searchResult.sourceAnchorID))
+            return searchResult.sourceAnchorID
+        }
+
+        let displayStore = RuntimeDocumentIndexStore()
+        let displayAnchorID = try indexedAnchorID(
+            in: displayStore,
+            result: try ingestedDocument(
+                fileName: "filtered-display.md",
+                text: "displayanchorfilter runtime source anchor should stop resolving after display-name cleanup."
+            ),
+            documentID: "display-anchor-filter",
+            query: "displayanchorfilter"
+        )
+
+        displayStore.deleteDocuments(matchingDisplayName: "filtered-display.md")
+
+        XCTAssertNil(displayStore.sourceAnchor(id: displayAnchorID))
+        XCTAssertEqual(displayStore.query("displayanchorfilter"), [])
+
+        let mimeStore = RuntimeDocumentIndexStore()
+        let mimeAnchorID = try indexedAnchorID(
+            in: mimeStore,
+            result: try ingestedDocument(
+                fileName: "filtered-mime.txt",
+                mimeType: "text/plain",
+                text: "mimeanchorfilter runtime source anchor should stop resolving after MIME cleanup."
+            ),
+            documentID: "mime-anchor-filter",
+            query: "mimeanchorfilter"
+        )
+
+        mimeStore.deleteDocuments(matchingMimeType: " text/plain\n")
+
+        XCTAssertNil(mimeStore.sourceAnchor(id: mimeAnchorID))
+        XCTAssertEqual(mimeStore.query("mimeanchorfilter"), [])
+
+        let fingerprintStore = RuntimeDocumentIndexStore()
+        let fingerprintResult = try ingestedDocument(
+            fileName: "filtered-fingerprint.md",
+            text: "fingerprintanchorfilter runtime source anchor should stop resolving after fingerprint cleanup."
+        )
+        let fingerprintAnchorID = try indexedAnchorID(
+            in: fingerprintStore,
+            result: fingerprintResult,
+            documentID: "fingerprint-anchor-filter",
+            query: "fingerprintanchorfilter"
+        )
+
+        fingerprintStore.deleteDocuments(
+            matchingContentFingerprint: " \(RuntimeDocumentIndexStore.stableContentFingerprint(for: fingerprintResult))\n"
+        )
+
+        XCTAssertNil(fingerprintStore.sourceAnchor(id: fingerprintAnchorID))
+        XCTAssertEqual(fingerprintStore.query("fingerprintanchorfilter"), [])
+
+        let qualityStore = RuntimeDocumentIndexStore()
+        let qualityAnchorID = try indexedAnchorID(
+            in: qualityStore,
+            result: try ingestedDocument(
+                fileName: "filtered-quality.md",
+                text: "qualityanchorfilter runtime source anchor should stop resolving after quality cleanup."
+            ),
+            documentID: "quality-anchor-filter",
+            query: "qualityanchorfilter"
+        )
+        XCTAssertEqual(qualityStore.document(id: "quality-anchor-filter")?.quality, .chunked)
+
+        qualityStore.deleteDocuments(matchingQuality: .chunked)
+
+        XCTAssertNil(qualityStore.sourceAnchor(id: qualityAnchorID))
+        XCTAssertEqual(qualityStore.query("qualityanchorfilter"), [])
+
+        let clearAllStore = RuntimeDocumentIndexStore()
+        let clearAllAnchorID = try indexedAnchorID(
+            in: clearAllStore,
+            result: try ingestedDocument(
+                fileName: "filtered-clear-all.md",
+                text: "clearallanchorfilter runtime source anchor should stop resolving after clear-all cleanup."
+            ),
+            documentID: "clear-all-anchor-filter",
+            query: "clearallanchorfilter"
+        )
+
+        clearAllStore.deleteAllDocuments()
+
+        XCTAssertNil(clearAllStore.sourceAnchor(id: clearAllAnchorID))
+        XCTAssertEqual(clearAllStore.query("clearallanchorfilter"), [])
     }
 
     func testLexicalQueryMatchesSubstringInsideTokens() throws {
@@ -1214,6 +1551,44 @@ final class RuntimeDocumentIndexStoreTests: XCTestCase {
             overlapCharacters: 8,
             minChunkCharacters: 28
         ))).ingest(extractedDocument: ExtractedDocument(fileName: fileName, mimeType: mimeType, text: text))
+    }
+
+    private func segmentedIngestedDocument(
+        fileName: String,
+        mimeType: String = "text/markdown",
+        text: String,
+        chunkTexts: [String]
+    ) throws -> DocumentIngestionResult {
+        let document = ExtractedDocument(fileName: fileName, mimeType: mimeType, text: text)
+        var searchStart = text.startIndex
+        let chunks = try chunkTexts.enumerated().map { index, chunkText in
+            let searchRange = searchStart..<text.endIndex
+            let range = try XCTUnwrap(text.range(of: chunkText, range: searchRange))
+            let start = text.distance(from: text.startIndex, to: range.lowerBound)
+            let end = text.distance(from: text.startIndex, to: range.upperBound)
+            searchStart = range.upperBound
+            return DocumentChunk(
+                documentFileName: fileName,
+                documentMimeType: mimeType,
+                index: index,
+                startCharacterOffset: start,
+                endCharacterOffset: end,
+                text: chunkText
+            )
+        }
+        return DocumentIngestionResult(
+            document: document,
+            chunks: chunks,
+            summary: DocumentIngestionSummary(
+                documentFileName: fileName,
+                documentMimeType: mimeType,
+                extractedCharacterCount: text.trimmingCharacters(in: .whitespacesAndNewlines).count,
+                chunkCount: chunks.count,
+                minChunkCharacters: chunks.map(\.text.count).min() ?? 0,
+                maxChunkCharacters: chunks.map(\.text.count).max() ?? 0,
+                quality: chunks.count > 1 ? .chunked : .singleChunk
+            )
+        )
     }
 
     private func chunkCeilingText(minimumChunks: Int) -> String {

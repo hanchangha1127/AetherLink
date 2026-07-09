@@ -7,13 +7,24 @@ import com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifier
 import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.protocol.AuthChallengePayload
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
+import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsQualityCountsPayload
+import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MessageType
+import com.localagentbridge.android.core.protocol.ModelInfoPayload
+import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
+import com.localagentbridge.android.core.protocol.RetrievalQueryResultItemPayload
+import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
+import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.transport.DiscoveredRuntime
 import com.localagentbridge.android.core.transport.RuntimeRelaySocketFactory
@@ -353,6 +364,35 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 val connectedState = awaitActiveRouteKind(viewModel, RuntimeActiveRouteKind.Relay)
                 val healthyState = awaitRuntimeStatus(viewModel, "ok")
 
+                viewModel.refreshRuntimeDocumentCatalog()
+                val indexDocumentsEnvelope = awaitFuture(relay.indexDocumentsListRequest)
+                val indexDocumentsRequest = json.decodeFromJsonElement(
+                    IndexDocumentsListRequestPayload.serializer(),
+                    indexDocumentsEnvelope.payload,
+                )
+                val catalogState = awaitDocumentCatalog(viewModel)
+
+                viewModel.searchRuntimeDocuments("  relay document  ")
+                val retrievalQueryEnvelope = awaitFuture(relay.retrievalQueryRequest)
+                val retrievalQueryRequest = json.decodeFromJsonElement(
+                    RetrievalQueryRequestPayload.serializer(),
+                    retrievalQueryEnvelope.payload,
+                )
+                val retrievalState = awaitDocumentSearchResult(viewModel)
+
+                viewModel.requestModels()
+                val modelsListEnvelope = awaitFuture(relay.modelsListRequest)
+                val modelState = awaitSelectedModel(viewModel, "ollama:relay-chat")
+
+                viewModel.updateChatInput("Use the relay document result")
+                viewModel.sendChatMessage()
+                val chatSendEnvelope = awaitFuture(relay.chatSendRequest)
+                val chatSendPayload = json.decodeFromJsonElement(
+                    ChatSendPayload.serializer(),
+                    chatSendEnvelope.payload,
+                )
+                val chatSendPayloadText = chatSendEnvelope.payload.toString()
+
                 assertEquals(0, directConnectionAttempts)
                 assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
                 assertEquals(MessageType.Hello, helloEnvelope.type)
@@ -364,10 +404,51 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertTrue(!authResponsePayload.signature.isNullOrBlank())
                 assertEquals(MessageType.RouteRefresh, routeRefreshEnvelope.type)
                 assertEquals(MessageType.RuntimeHealth, healthEnvelope.type)
+                assertEquals(MessageType.IndexDocumentsList, indexDocumentsEnvelope.type)
+                assertEquals(100, indexDocumentsRequest.limit)
+                assertEquals(MessageType.RetrievalQuery, retrievalQueryEnvelope.type)
+                assertEquals("relay document", retrievalQueryRequest.query)
+                assertEquals(10, retrievalQueryRequest.limit)
+                assertEquals(480, retrievalQueryRequest.maxSnippetCharacters)
+                assertEquals(MessageType.ModelsList, modelsListEnvelope.type)
+                assertEquals("ollama:relay-chat", modelState.selectedModelId)
+                assertEquals(MessageType.ChatSend, chatSendEnvelope.type)
+                assertEquals("ollama:relay-chat", chatSendPayload.model)
+                assertEquals("Use the relay document result", chatSendPayload.messages.last().content)
+                listOf(
+                    "retrieval_context",
+                    "source_path",
+                    "workspace_id",
+                    "project_id",
+                    "citation",
+                    "trusted_source",
+                    "source_anchor_id",
+                    "source_anchor_0011223344556677",
+                    "relay-runtime-guide.md",
+                    "Relay document search stays inside the authenticated runtime channel.",
+                ).forEach { forbidden ->
+                    assertTrue(
+                        "Document search state must stay out of chat.send payload: $forbidden",
+                        !chatSendPayloadText.contains(forbidden),
+                    )
+                }
                 assertEquals("ok", healthyState.runtimeStatus)
                 assertEquals("100.64.2.20", connectedState.trustedRuntime?.relayHost)
                 assertEquals("private_overlay", connectedState.trustedRuntime?.relayScope)
                 assertEquals(RuntimeActiveRouteKind.Relay, connectedState.activeRouteKind)
+                assertEquals(1, catalogState.documentCatalog.documents.size)
+                assertEquals("relay-doc", catalogState.documentCatalog.documents.single().id)
+                assertEquals("relay-runtime-guide.md", catalogState.documentCatalog.documents.single().displayName)
+                assertEquals(2, catalogState.documentCatalog.summary.documentCount)
+                assertEquals(3, catalogState.documentCatalog.summary.chunkCount)
+                assertEquals(1, catalogState.documentCatalog.summary.qualityCounts.chunked)
+                assertEquals(1, retrievalState.documentSearchResults.size)
+                val searchResult = retrievalState.documentSearchResults.single()
+                assertEquals("relay-doc", searchResult.document.id)
+                assertEquals("relay-runtime-guide.md", searchResult.document.displayName)
+                assertEquals(listOf("relay", "document"), searchResult.matchedTerms)
+                assertEquals("Relay document search stays inside the authenticated runtime channel.", searchResult.snippet)
+                assertEquals("source_anchor_0011223344556677", searchResult.sourceAnchorId)
                 assertEquals("100.64.2.20", refreshedTrusted.relayHost)
                 assertEquals(443, refreshedTrusted.relayPort)
                 assertEquals(relayId, refreshedTrusted.relayId)
@@ -625,6 +706,48 @@ class RuntimeClientViewModelRelayIntegrationTest {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitDocumentCatalog(viewModel: RuntimeClientViewModel): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (!state.isLoadingDocumentCatalog && state.documentCatalog.documents.isNotEmpty()) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitDocumentSearchResult(viewModel: RuntimeClientViewModel): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (!state.isSearchingDocuments && state.documentSearchResults.isNotEmpty()) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitSelectedModel(
+        viewModel: RuntimeClientViewModel,
+        expectedModelId: String,
+    ): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (!state.isLoadingModels && state.selectedModelId == expectedModelId) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun TestScope.awaitRuntimeError(
         viewModel: RuntimeClientViewModel,
         expected: String,
@@ -841,6 +964,10 @@ class RuntimeClientViewModelRelayIntegrationTest {
         val authResponseRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val routeRefreshRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val healthRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val modelsListRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val indexDocumentsListRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val retrievalQueryRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val chatSendRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         private val releaseConnection: CompletableFuture<Unit> = CompletableFuture()
         private val worker = thread(start = true, isDaemon = true) {
             runCatching {
@@ -899,7 +1026,14 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         ),
                     )
 
-                    while (!healthRequest.isDone || !routeRefreshRequest.isDone) {
+                    while (
+                        !healthRequest.isDone ||
+                        !routeRefreshRequest.isDone ||
+                        !modelsListRequest.isDone ||
+                        !indexDocumentsListRequest.isDone ||
+                        !retrievalQueryRequest.isDone ||
+                        !chatSendRequest.isDone
+                    ) {
                         val request = readEncryptedEnvelope(input, cryptor)
                         when (request.type) {
                             MessageType.RouteRefresh -> {
@@ -942,6 +1076,94 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                     ),
                                 )
                             }
+                            MessageType.ModelsList -> {
+                                modelsListRequest.complete(request)
+                                writeEncryptedEnvelope(
+                                    output = output,
+                                    cryptor = cryptor,
+                                    envelope = ProtocolEnvelope(
+                                        type = MessageType.ModelsResult,
+                                        requestId = request.requestId,
+                                        payload = json.encodeToJsonElement(
+                                            ModelsResultPayload.serializer(),
+                                            ModelsResultPayload(
+                                                models = listOf(
+                                                    ModelInfoPayload(
+                                                        id = "relay-chat",
+                                                        name = "Relay Chat",
+                                                        provider = "ollama",
+                                                        providerModelId = "relay-chat",
+                                                        qualifiedId = "ollama:relay-chat",
+                                                        modelKind = "chat",
+                                                        capabilities = listOf("chat"),
+                                                        installed = true,
+                                                        running = true,
+                                                        source = "local",
+                                                    ),
+                                                ),
+                                            ),
+                                        ).jsonObject,
+                                    ),
+                                )
+                            }
+                            MessageType.IndexDocumentsList -> {
+                                indexDocumentsListRequest.complete(request)
+                                writeEncryptedEnvelope(
+                                    output = output,
+                                    cryptor = cryptor,
+                                    envelope = ProtocolEnvelope(
+                                        type = MessageType.IndexDocumentsList,
+                                        requestId = request.requestId,
+                                        payload = json.encodeToJsonElement(
+                                            IndexDocumentsListResultPayload.serializer(),
+                                            IndexDocumentsListResultPayload(
+                                                documents = listOf(relayDocumentPayload()),
+                                                summary = IndexDocumentsSummaryPayload(
+                                                    documentCount = 2,
+                                                    chunkCount = 3,
+                                                    extractedCharacterCount = 256,
+                                                    qualityCounts = IndexDocumentsQualityCountsPayload(
+                                                        noUsableText = 0,
+                                                        singleChunk = 1,
+                                                        chunked = 1,
+                                                    ),
+                                                ),
+                                            ),
+                                        ).jsonObject,
+                                    ),
+                                )
+                            }
+                            MessageType.RetrievalQuery -> {
+                                retrievalQueryRequest.complete(request)
+                                writeEncryptedEnvelope(
+                                    output = output,
+                                    cryptor = cryptor,
+                                    envelope = ProtocolEnvelope(
+                                        type = MessageType.RetrievalQuery,
+                                        requestId = request.requestId,
+                                        payload = json.encodeToJsonElement(
+                                            RetrievalQueryResultPayload.serializer(),
+                                            RetrievalQueryResultPayload(
+                                                results = listOf(
+                                                    RetrievalQueryResultItemPayload(
+                                                        document = relayDocumentPayload(),
+                                                        chunkIndex = 0,
+                                                        startCharacterOffset = 0,
+                                                        endCharacterOffset = 72,
+                                                        rank = 3,
+                                                        matchedTerms = listOf("relay", "document"),
+                                                        snippet = "Relay document search stays inside the authenticated runtime channel.",
+                                                        sourceAnchorId = "source_anchor_0011223344556677",
+                                                    ),
+                                                ),
+                                            ),
+                                        ).jsonObject,
+                                    ),
+                                )
+                            }
+                            MessageType.ChatSend -> {
+                                chatSendRequest.complete(request)
+                            }
                         }
                     }
                     releaseConnection.get(4, TimeUnit.SECONDS)
@@ -953,9 +1175,24 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 authResponseRequest.completeExceptionally(error)
                 routeRefreshRequest.completeExceptionally(error)
                 healthRequest.completeExceptionally(error)
+                modelsListRequest.completeExceptionally(error)
+                indexDocumentsListRequest.completeExceptionally(error)
+                retrievalQueryRequest.completeExceptionally(error)
+                chatSendRequest.completeExceptionally(error)
                 serverError.complete(error)
             }
         }
+
+        private fun relayDocumentPayload(): RuntimeDocumentIndexDocumentPayload =
+            RuntimeDocumentIndexDocumentPayload(
+                id = "relay-doc",
+                displayName = "relay-runtime-guide.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "0123456789abcdef",
+                extractedCharacterCount = 128,
+                chunkCount = 2,
+                quality = "chunked",
+            )
 
         private fun readEncryptedEnvelope(
             input: InputStream,

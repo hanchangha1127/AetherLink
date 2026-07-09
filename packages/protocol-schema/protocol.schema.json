@@ -32,6 +32,8 @@
         "chat.session.restore",
         "chat.session.delete",
         "index.documents.list",
+        "retrieval.query",
+        "source_anchor.resolve",
         "memory.list",
         "memory.upsert",
         "memory.delete",
@@ -139,6 +141,14 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/indexDocumentsListPayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "retrieval.query" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/retrievalQueryPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "source_anchor.resolve" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/sourceAnchorResolvePayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "memory.list" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memoryListPayload" } } }
     },
@@ -180,6 +190,10 @@
       "type": "string",
       "minLength": 1,
       "pattern": "\\S"
+    },
+    "sourceAnchorID": {
+      "type": "string",
+      "pattern": "^source_anchor_[0-9a-f]{16}$"
     },
     "opaqueRouteValue": {
       "type": "string",
@@ -896,14 +910,62 @@
         "quality"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/nonEmptyString" },
-        "display_name": { "$ref": "#/$defs/nonEmptyString" },
-        "mime_type": { "$ref": "#/$defs/nonEmptyString" },
-        "content_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+        "id": {
+          "allOf": [
+            { "$ref": "#/$defs/nonEmptyString" },
+            { "maxLength": 128 }
+          ]
+        },
+        "display_name": {
+          "allOf": [
+            { "$ref": "#/$defs/nonEmptyString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "mime_type": {
+          "allOf": [
+            { "$ref": "#/$defs/nonEmptyString" },
+            { "maxLength": 128 },
+            { "pattern": "^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$" }
+          ]
+        },
+        "content_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
         "extracted_character_count": { "type": "integer", "minimum": 0 },
         "chunk_count": { "type": "integer", "minimum": 0 },
         "quality": { "enum": ["no_usable_text", "single_chunk", "chunked"] }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "chunk_count": { "const": 0 } },
+            "required": ["chunk_count"]
+          },
+          "then": {
+            "properties": { "quality": { "const": "no_usable_text" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "chunk_count": { "const": 1 } },
+            "required": ["chunk_count"]
+          },
+          "then": {
+            "properties": { "quality": { "const": "single_chunk" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "chunk_count": { "type": "integer", "minimum": 2 } },
+            "required": ["chunk_count"]
+          },
+          "then": {
+            "properties": { "quality": { "const": "chunked" } }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "indexDocumentsSummary": {
@@ -920,6 +982,7 @@
         "extracted_character_count": { "type": "integer", "minimum": 0 },
         "quality_counts": {
           "type": "object",
+          "required": ["no_usable_text", "single_chunk", "chunked"],
           "properties": {
             "no_usable_text": { "type": "integer", "minimum": 0 },
             "single_chunk": { "type": "integer", "minimum": 0 },
@@ -945,9 +1008,118 @@
           "properties": {
             "documents": {
               "type": "array",
+              "maxItems": 100,
               "items": { "$ref": "#/$defs/indexDocument" }
             },
             "summary": { "$ref": "#/$defs/indexDocumentsSummary" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "retrievalQueryResult": {
+      "type": "object",
+      "required": [
+        "document",
+        "source_anchor_id",
+        "chunk_index",
+        "start_character_offset",
+        "end_character_offset",
+        "rank",
+        "matched_terms",
+        "snippet"
+      ],
+      "properties": {
+        "document": { "$ref": "#/$defs/indexDocument" },
+        "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" },
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "start_character_offset": { "type": "integer", "minimum": 0 },
+        "end_character_offset": { "type": "integer", "minimum": 0 },
+        "rank": { "type": "integer", "minimum": 1 },
+        "matched_terms": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/nonEmptyString" },
+              { "maxLength": 64 }
+            ]
+          }
+        },
+        "snippet": {
+          "allOf": [
+            { "$ref": "#/$defs/nonEmptyString" },
+            { "maxLength": 500 }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "retrievalQueryPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["query"],
+          "properties": {
+            "query": {
+              "allOf": [
+                { "$ref": "#/$defs/nonBlankString" },
+                { "maxLength": 1024 }
+              ]
+            },
+            "limit": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "max_snippet_characters": { "type": "integer", "minimum": 0, "maximum": 500 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["results"],
+          "properties": {
+            "results": {
+              "type": "array",
+              "maxItems": 100,
+              "items": { "$ref": "#/$defs/retrievalQueryResult" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sourceAnchorChunkSummary": {
+      "type": "object",
+      "required": [
+        "chunk_index",
+        "start_character_offset",
+        "end_character_offset",
+        "character_count"
+      ],
+      "properties": {
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "start_character_offset": { "type": "integer", "minimum": 0 },
+        "end_character_offset": { "type": "integer", "minimum": 0 },
+        "character_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "sourceAnchorResolvePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["source_anchor_id"],
+          "properties": {
+            "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["source_anchor_id", "document", "chunk_summary"],
+          "properties": {
+            "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" },
+            "document": { "$ref": "#/$defs/indexDocument" },
+            "chunk_summary": { "$ref": "#/$defs/sourceAnchorChunkSummary" }
           },
           "additionalProperties": false
         }

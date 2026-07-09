@@ -199,6 +199,15 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
         }
     }
 
+    public func sourceAnchor(id sourceAnchorID: String) throws -> RuntimeDocumentSourceAnchor? {
+        guard let sourceAnchorID = runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) else { return nil }
+        return try lock.withLock {
+            try withDatabase { database in
+                try sourceAnchorUnlocked(id: sourceAnchorID, database: database)
+            }
+        }
+    }
+
     public func documents(limit: Int = 100) throws -> [RuntimeDocumentIndexDocument] {
         guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
             limit,
@@ -615,6 +624,43 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
             chunks.append(try Self.chunkSummary(from: statement))
         }
         return chunks
+    }
+
+    private func sourceAnchorUnlocked(
+        id sourceAnchorID: String,
+        database: OpaquePointer
+    ) throws -> RuntimeDocumentSourceAnchor? {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT d.document_id, d.display_name, d.mime_type, d.content_fingerprint,
+                   d.extracted_character_count, d.chunk_count, d.quality,
+                   c.document_id, c.document_display_name, c.document_mime_type,
+                   c.chunk_index, c.start_character_offset, c.end_character_offset, length(c.text)
+            FROM runtime_document_index_chunks c
+            JOIN runtime_document_index_documents d ON d.document_id = c.document_id
+            ORDER BY d.display_name ASC, c.chunk_index ASC
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { return nil }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not resolve runtime document source anchor.")
+            }
+            let document = try Self.document(from: statement, offset: 0)
+            let chunkSummary = try Self.chunkSummary(from: statement, offset: 7)
+            let anchor = RuntimeDocumentSourceAnchor(
+                sourceAnchorID: runtimeDocumentSourceAnchorID(document: document, chunkSummary: chunkSummary),
+                document: document,
+                chunkSummary: chunkSummary
+            )
+            if anchor.sourceAnchorID == sourceAnchorID {
+                return anchor
+            }
+        }
     }
 
     private func documentsUnlocked(
@@ -1083,7 +1129,7 @@ public final class SQLiteRuntimeDocumentIndexStore: @unchecked Sendable {
     }
 }
 
-extension SQLiteRuntimeDocumentIndexStore: RuntimeDocumentIndexCatalogReading {}
+extension SQLiteRuntimeDocumentIndexStore: RuntimeDocumentIndexReading {}
 
 private let sqliteDocumentIndexTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 

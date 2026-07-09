@@ -5451,6 +5451,46 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(capturedRequest.value)
     }
 
+    func testChatSendRejectsSourceAnchorIDBeforeTrustedSourceSemanticsExist() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-payload-source-anchor",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Use this retrieved source.")
+                    ])
+                ]),
+                "source_anchor_id": .string("source_anchor_0000000000000000")
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "chat-payload-source-anchor")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        if case .string(let errorMessage)? = message?.payload["message"] {
+            XCTAssertTrue(errorMessage.contains("source_anchor_id"))
+        } else {
+            XCTFail("Expected invalid payload message to mention source_anchor_id.")
+        }
+        XCTAssertNil(capturedRequest.value)
+    }
+
     func testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch() async throws {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
@@ -6922,7 +6962,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(firstDocument["quality"], .string("single_chunk"))
         XCTAssertEqual(summary["document_count"], .number(2))
         XCTAssertEqual(summary["chunk_count"], .number(2))
+        XCTAssertEqual(qualityCounts["no_usable_text"], .number(0))
         XCTAssertEqual(qualityCounts["single_chunk"], .number(2))
+        XCTAssertEqual(qualityCounts["chunked"], .number(0))
         XCTAssertFalse(String(describing: message?.payload).contains(alphaSentinel))
         XCTAssertFalse(String(describing: message?.payload).contains(betaSentinel))
         XCTAssertFalse(String(describing: message?.payload).contains("chunk_id"))
@@ -6967,6 +7009,346 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(String(describing: message?.payload).contains("documents"))
         XCTAssertEqual(documentIndexStore.documentsCallCount, 0)
         XCTAssertEqual(documentIndexStore.summaryCallCount, 0)
+    }
+
+    func testRetrievalQueryReturnsBoundedLexicalResultsWithoutFullChunkOrFutureMetadata() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RuntimeDocumentIndexStore()
+        let alphaSentinel = "RETRIEVAL_ALPHA_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+        let betaSentinel = "RETRIEVAL_BETA_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+        _ = documentIndexStore.replaceDocument(
+            result: try routerIndexedDocument(
+                fileName: "retrieval.md",
+                text: [
+                    "Runtime retrieval planning starts with lexical retrieval over approved chunks.",
+                    "Retrieval snippets stay bounded before embeddings are introduced.",
+                    alphaSentinel
+                ].joined(separator: " ")
+            ),
+            documentID: "retrieval-doc"
+        )
+        _ = documentIndexStore.replaceDocument(
+            result: try routerIndexedDocument(
+                fileName: "memory.md",
+                text: "Memory search is adjacent but has fewer retrieval matches. \(betaSentinel)"
+            ),
+            documentID: "memory-doc"
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.retrievalQuery,
+            requestID: "retrieval-query",
+            payload: [
+                "query": .string("retrieval runtime"),
+                "limit": .number(2),
+                "max_snippet_characters": .number(64)
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.retrievalQuery)
+        XCTAssertEqual(message?.requestID, "retrieval-query")
+        guard case .array(let results)? = message?.payload["results"],
+              case .object(let firstResult)? = results.first,
+              case .object(let document)? = firstResult["document"],
+              case .string(let sourceAnchorID)? = firstResult["source_anchor_id"],
+              case .array(let matchedTerms)? = firstResult["matched_terms"],
+              case .string(let snippet)? = firstResult["snippet"] else {
+            XCTFail("Expected retrieval.query response payload.")
+            return
+        }
+        XCTAssertEqual(results.count, 2)
+        var previousRank: Double?
+        for case .object(let result) in results {
+            guard case .number(let start)? = result["start_character_offset"],
+                  case .number(let end)? = result["end_character_offset"],
+                  case .number(let rank)? = result["rank"] else {
+                XCTFail("Expected retrieval result offsets and rank.")
+                return
+            }
+            XCTAssertGreaterThanOrEqual(end, start)
+            if let previousRank {
+                XCTAssertGreaterThanOrEqual(previousRank, rank)
+            }
+            previousRank = rank
+        }
+        XCTAssertEqual(document["id"], .string("retrieval-doc"))
+        XCTAssertEqual(document["display_name"], .string("retrieval.md"))
+        XCTAssertEqual(firstResult["chunk_index"], .number(0))
+        XCTAssertEqual(firstResult["start_character_offset"], .number(0))
+        XCTAssertNotNil(firstResult["end_character_offset"])
+        XCTAssertNotNil(firstResult["rank"])
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID), sourceAnchorID)
+        XCTAssertLessThanOrEqual(snippet.count, 64)
+        XCTAssertTrue(matchedTerms.contains(.string("retrieval")))
+        XCTAssertTrue(matchedTerms.contains(.string("runtime")))
+        XCTAssertFalse(String(describing: message?.payload).contains(alphaSentinel))
+        XCTAssertFalse(String(describing: message?.payload).contains(betaSentinel))
+        XCTAssertFalse(String(describing: message?.payload).contains("chunk_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("chunk_text"))
+        XCTAssertFalse(String(describing: message?.payload).contains("source_path"))
+        XCTAssertFalse(String(describing: message?.payload).contains("workspace_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("project_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("retrieval_context"))
+        XCTAssertFalse(String(describing: message?.payload).contains("embedding"))
+        XCTAssertFalse(String(describing: message?.payload).contains("citation"))
+        XCTAssertFalse(String(describing: message?.payload).contains("trusted_source"))
+    }
+
+    func testRetrievalQueryRejectsUnknownMetadataBeforeStoreDispatch() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.retrievalQuery,
+            requestID: "retrieval-query-unknown-metadata",
+            payload: [
+                "query": .string("runtime retrieval"),
+                "results": .array([]),
+                "backend_url": .string("http://127.0.0.1:11434"),
+                "workspace_id": .string("workspace-1"),
+                "project_id": .string("project-1"),
+                "source_path": .string("/Users/example/project/notes.md"),
+                "source_anchor_id": .string("source_anchor_0000000000000000"),
+                "retrieval_context": .string("future retrieval context"),
+                "embedding_model_id": .string("nomic-embed-text"),
+                "citation": .string("future citation"),
+                "trusted_source": .bool(true)
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "retrieval-query-unknown-metadata")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("backend_url"))
+        XCTAssertTrue(String(describing: message?.payload).contains("results"))
+        XCTAssertTrue(String(describing: message?.payload).contains("source_anchor_id"))
+        XCTAssertEqual(documentIndexStore.queryCallCount, 0)
+    }
+
+    func testRetrievalQueryRejectsOversizedQueryBeforeStoreDispatch() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+        let oversizedQuery = String(
+            repeating: "q",
+            count: runtimeDocumentIndexQueryTextCharacterLimitCeiling + 1
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.retrievalQuery,
+            requestID: "retrieval-query-oversized-query",
+            payload: [
+                "query": .string(oversizedQuery),
+                "limit": .number(10),
+                "max_snippet_characters": .number(160)
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "retrieval-query-oversized-query")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("query"))
+        XCTAssertTrue(String(describing: message?.payload).contains("1024"))
+        XCTAssertEqual(documentIndexStore.queryCallCount, 0)
+    }
+
+    func testSourceAnchorResolveReturnsRedactedDocumentAndChunkSummary() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RuntimeDocumentIndexStore()
+        let privateBodyCanary = "SOURCE_ANCHOR_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+        _ = documentIndexStore.replaceDocument(
+            result: try routerIndexedDocument(
+                fileName: "source-anchor.md",
+                text: [
+                    "Runtime source anchor resolution points back to a bounded chunk summary.",
+                    "The private document body must stay out of the protocol response.",
+                    privateBodyCanary
+                ].joined(separator: " ")
+            ),
+            documentID: "source-anchor-doc"
+        )
+        let sourceAnchorID = try XCTUnwrap(
+            documentIndexStore.query(
+                "source anchor runtime",
+                limit: 1,
+                maxSnippetCharacters: 80
+            ).first?.sourceAnchorID
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.sourceAnchorResolve,
+            requestID: "source-anchor-resolve",
+            payload: ["source_anchor_id": .string(sourceAnchorID)]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.sourceAnchorResolve)
+        XCTAssertEqual(message?.requestID, "source-anchor-resolve")
+        guard case .string(let resolvedSourceAnchorID)? = message?.payload["source_anchor_id"],
+              case .object(let document)? = message?.payload["document"],
+              case .object(let chunkSummary)? = message?.payload["chunk_summary"],
+              case .number(let start)? = chunkSummary["start_character_offset"],
+              case .number(let end)? = chunkSummary["end_character_offset"],
+              case .number(let characterCount)? = chunkSummary["character_count"] else {
+            XCTFail("Expected source_anchor.resolve response payload.")
+            return
+        }
+        XCTAssertEqual(resolvedSourceAnchorID, sourceAnchorID)
+        XCTAssertEqual(document["id"], .string("source-anchor-doc"))
+        XCTAssertEqual(document["display_name"], .string("source-anchor.md"))
+        XCTAssertEqual(document["mime_type"], .string("text/markdown"))
+        XCTAssertEqual(document["chunk_count"], .number(2))
+        XCTAssertEqual(document["quality"], .string("chunked"))
+        XCTAssertEqual(chunkSummary["chunk_index"], .number(0))
+        XCTAssertGreaterThanOrEqual(end, start)
+        XCTAssertGreaterThan(characterCount, 0)
+        XCTAssertFalse(String(describing: message?.payload).contains(privateBodyCanary))
+        XCTAssertFalse(String(describing: message?.payload).contains("chunk_text"))
+        XCTAssertFalse(String(describing: message?.payload).contains("snippet"))
+        XCTAssertFalse(String(describing: message?.payload).contains("source_path"))
+        XCTAssertFalse(String(describing: message?.payload).contains("workspace_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("project_id"))
+        XCTAssertFalse(String(describing: message?.payload).contains("retrieval_context"))
+        XCTAssertFalse(String(describing: message?.payload).contains("embedding"))
+        XCTAssertFalse(String(describing: message?.payload).contains("citation"))
+        XCTAssertFalse(String(describing: message?.payload).contains("trusted_source"))
+        XCTAssertFalse(String(describing: message?.payload).contains("approval"))
+    }
+
+    func testSourceAnchorResolveRejectsUnknownMetadataBeforeStoreDispatch() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.sourceAnchorResolve,
+            requestID: "source-anchor-resolve-unknown-metadata",
+            payload: [
+                "source_anchor_id": .string("source_anchor_0000000000000000"),
+                "document": .object([:]),
+                "chunk_summary": .object([:]),
+                "chunk_text": .string("future chunk body"),
+                "snippet": .string("future snippet"),
+                "workspace_id": .string("workspace-1"),
+                "project_id": .string("project-1"),
+                "source_path": .string("/Users/example/project/notes.md"),
+                "retrieval_context": .string("future retrieval context"),
+                "embedding_model_id": .string("nomic-embed-text"),
+                "citation": .string("future citation"),
+                "trusted_source": .bool(true),
+                "approval": .string("future approval")
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "source-anchor-resolve-unknown-metadata")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("document"))
+        XCTAssertTrue(String(describing: message?.payload).contains("chunk_text"))
+        XCTAssertEqual(documentIndexStore.sourceAnchorCallCount, 0)
+    }
+
+    func testSourceAnchorResolveRejectsMalformedAnchorBeforeStoreDispatch() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.sourceAnchorResolve,
+            requestID: "source-anchor-resolve-malformed",
+            payload: ["source_anchor_id": .string("source_anchor_0123456789ABCDEF")]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "source-anchor-resolve-malformed")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("source_anchor_id"))
+        XCTAssertEqual(documentIndexStore.sourceAnchorCallCount, 0)
+    }
+
+    func testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch() async throws {
+        let invalidPayloads: [(String, [String: JSONValue])] = [
+            ("missing", [:]),
+            ("empty", ["source_anchor_id": .string("")]),
+            ("blank", ["source_anchor_id": .string("   \n  ")]),
+            ("non-string", ["source_anchor_id": .number(123)])
+        ]
+
+        for (label, payload) in invalidPayloads {
+            let sink = RecordingSink()
+            let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+            let router = makeRouter(
+                backend: MockBackend(),
+                documentIndexStore: documentIndexStore
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.sourceAnchorResolve,
+                requestID: "source-anchor-resolve-\(label)",
+                payload: payload
+            ), sink: sink)
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.error)
+            XCTAssertEqual(message?.requestID, "source-anchor-resolve-\(label)")
+            XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(message?.payload["retryable"], .bool(false))
+            XCTAssertTrue(String(describing: message?.payload).contains("source_anchor_id"))
+            XCTAssertEqual(documentIndexStore.sourceAnchorCallCount, 0)
+        }
+    }
+
+    func testSourceAnchorResolveReturnsNotFoundForStaleCanonicalAnchor() async throws {
+        let sink = RecordingSink()
+        let documentIndexStore = RecordingRuntimeDocumentIndexCatalogStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            documentIndexStore: documentIndexStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.sourceAnchorResolve,
+            requestID: "source-anchor-resolve-stale",
+            payload: ["source_anchor_id": .string("source_anchor_0000000000000000")]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "source-anchor-resolve-stale")
+        XCTAssertEqual(message?.payload["code"], .string("source_anchor_not_found"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("source_anchor_0000000000000000"))
+        XCTAssertEqual(documentIndexStore.sourceAnchorCallCount, 1)
     }
 
     func testResponseOnlyMessageTypesReturnDirectionProtocolError() async throws {
@@ -7665,6 +8047,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             MessageType.chatSessionArchive,
             MessageType.chatSessionRestore,
             MessageType.chatSessionDelete,
+            MessageType.indexDocumentsList,
+            MessageType.retrievalQuery,
+            MessageType.sourceAnchorResolve,
             MessageType.memoryList,
             MessageType.memoryUpsert,
             MessageType.memoryDelete,
@@ -11510,7 +11895,7 @@ private func makeRouter(
     ),
     chatEventStore: any RuntimeChatEventStore = NullRuntimeChatEventStore(),
     memoryStore: any RuntimeMemoryStore = NullRuntimeMemoryStore(),
-    documentIndexStore: any RuntimeDocumentIndexCatalogReading = RuntimeDocumentIndexStore(),
+    documentIndexStore: any RuntimeDocumentIndexReading = RuntimeDocumentIndexStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
     runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil
 ) -> LocalRuntimeMessageRouter {
@@ -11534,10 +11919,12 @@ private func routerIndexedDocument(fileName: String, text: String) throws -> Doc
     ))).ingest(extractedDocument: ExtractedDocument(fileName: fileName, mimeType: "text/markdown", text: text))
 }
 
-private final class RecordingRuntimeDocumentIndexCatalogStore: RuntimeDocumentIndexCatalogReading {
+private final class RecordingRuntimeDocumentIndexCatalogStore: RuntimeDocumentIndexReading {
     private let lock = NSLock()
     private var documentReads = 0
     private var summaryReads = 0
+    private var queryReads = 0
+    private var sourceAnchorReads = 0
 
     var documentsCallCount: Int {
         lock.withLock { documentReads }
@@ -11545,6 +11932,14 @@ private final class RecordingRuntimeDocumentIndexCatalogStore: RuntimeDocumentIn
 
     var summaryCallCount: Int {
         lock.withLock { summaryReads }
+    }
+
+    var queryCallCount: Int {
+        lock.withLock { queryReads }
+    }
+
+    var sourceAnchorCallCount: Int {
+        lock.withLock { sourceAnchorReads }
     }
 
     func documents(limit: Int) throws -> [RuntimeDocumentIndexDocument] {
@@ -11564,6 +11959,24 @@ private final class RecordingRuntimeDocumentIndexCatalogStore: RuntimeDocumentIn
             extractedCharacterCount: 0,
             qualityCounts: [:]
         )
+    }
+
+    func query(
+        _ query: String,
+        limit: Int,
+        maxSnippetCharacters: Int
+    ) throws -> [RuntimeDocumentSearchResult] {
+        lock.withLock {
+            queryReads += 1
+        }
+        return []
+    }
+
+    func sourceAnchor(id sourceAnchorID: String) throws -> RuntimeDocumentSourceAnchor? {
+        lock.withLock {
+            sourceAnchorReads += 1
+        }
+        return nil
     }
 }
 

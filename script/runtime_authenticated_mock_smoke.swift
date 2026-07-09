@@ -197,6 +197,14 @@ let smokeBackendCredentialCanary = "Authorization: Bearer smoke-backend-credenti
 let smokeBackendAPIKeyCanary = "AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary"
 let smokeBackendURLCanary = "https://provider.example.invalid/v1/chat/completions"
 let smokeEmbeddingSearchHintModelID = "ollama:nomic-embed-text"
+let smokeRetrievalDocumentID = "smoke-retrieval-doc"
+let smokeRetrievalDocumentName = "runtime-retrieval-smoke.md"
+let smokeRetrievalSecondaryDocumentID = "smoke-memory-doc"
+let smokeRetrievalSecondaryDocumentName = "runtime-memory-smoke.md"
+let smokeRetrievalQuery = "seeded retrieval"
+let smokeRetrievalSnippetMarker = "Seeded runtime retrieval smoke"
+let smokeRetrievalPrivateBodyCanary = "AETHERLINK_SMOKE_RETRIEVAL_PRIVATE_BODY_SHOULD_NOT_APPEAR"
+let smokeRetrievalSecondaryBodyCanary = "AETHERLINK_SMOKE_RETRIEVAL_SECONDARY_BODY_SHOULD_NOT_APPEAR"
 
 final class ServerOutput {
     private let lock = NSLock()
@@ -2291,6 +2299,9 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("chat.session.archive", "smoke-unauthenticated-archive", [:]),
         ("chat.session.restore", "smoke-unauthenticated-restore", [:]),
         ("chat.session.delete", "smoke-unauthenticated-delete", [:]),
+        ("index.documents.list", "smoke-unauthenticated-index-documents-list", [:]),
+        ("retrieval.query", "smoke-unauthenticated-retrieval-query", [:]),
+        ("source_anchor.resolve", "smoke-unauthenticated-source-anchor-resolve", [:]),
         ("memory.list", "smoke-unauthenticated-memory", [:]),
         ("memory.upsert", "smoke-unauthenticated-memory-upsert", [:]),
         ("memory.delete", "smoke-unauthenticated-memory-delete", [:]),
@@ -2578,6 +2589,11 @@ func startServer(
         .deletingLastPathComponent()
         .appendingPathComponent("runtime-memory-events.jsonl")
         .path
+    environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE"] = trustedDevicesFile
+        .deletingLastPathComponent()
+        .appendingPathComponent("runtime-document-index.sqlite")
+        .path
+    environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE"] = "1"
     environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"] = "0"
     environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"] = "2"
     environment["AETHERLINK_DEV_RUNTIME_IDENTITY_FILE"] = runtimeIdentityFile.path
@@ -3025,9 +3041,31 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "backend.configure",
         "embeddings.create",
         "retrieval.query",
+        "smoke-retrieval-query-unknown-metadata",
+        "smoke-retrieval-query",
+        "smoke-source-anchor-resolve-unknown-metadata",
+        "smoke-source-anchor-resolve-malformed",
+        "smoke-source-anchor-resolve-stale",
+        "smoke-source-anchor-resolve",
+        "source_anchor_id",
+        "chunk_summary",
+        "character_count",
+        "max_snippet_characters",
+        "future retrieval context",
+        smokeRetrievalQuery,
+        smokeRetrievalSnippetMarker,
+        smokeRetrievalDocumentID,
+        smokeRetrievalDocumentName,
+        smokeRetrievalSecondaryDocumentID,
+        smokeRetrievalSecondaryDocumentName,
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
         "index.build",
         "research.brief.create",
         "citation.sources.list",
+        "source_anchor.resolve",
+        "source_anchor.metadata.get",
+        "trusted_source.approve",
         "source_control.status",
         "p2p.session.open",
         "rendezvous.records.publish",
@@ -3072,10 +3110,10 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "smoke-future-backend-call",
         "smoke-future-backend-configure",
         "smoke-future-embeddings-create",
-        "smoke-future-retrieval-query",
         "smoke-future-index-build",
         "smoke-future-research-brief-create",
         "smoke-future-citation-sources-list",
+        "smoke-future-source-anchor-metadata-get",
         "smoke-future-source-control-status",
         "smoke-future-p2p-session-open",
         "smoke-future-rendezvous-records-publish",
@@ -3117,10 +3155,10 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "future backend call namespace smoke",
         "future backend configure namespace smoke",
         "future embeddings create namespace smoke",
-        "future retrieval query namespace smoke",
         "future index build namespace smoke",
         "future research brief namespace smoke",
         "future citation sources namespace smoke",
+        "future source anchor metadata namespace smoke",
         "future source control status namespace smoke",
         "future p2p session namespace smoke",
         "future rendezvous record namespace smoke",
@@ -5399,14 +5437,6 @@ func runAuthenticatedFutureNamespaceRejectionChecks(client: TCPClient) throws {
             ]
         ),
         (
-            "retrieval.query",
-            "smoke-future-retrieval-query",
-            [
-                "query": "future retrieval query namespace smoke",
-                "embedding_model_id": smokeEmbeddingSearchHintModelID,
-            ]
-        ),
-        (
             "index.build",
             "smoke-future-index-build",
             [
@@ -5429,6 +5459,22 @@ func runAuthenticatedFutureNamespaceRejectionChecks(client: TCPClient) throws {
             [
                 "query": "future citation sources namespace smoke",
                 "backend_url": smokeBackendURLCanary,
+            ]
+        ),
+        (
+            "source_anchor.metadata.get",
+            "smoke-future-source-anchor-metadata-get",
+            [
+                "source_anchor_id": "source_anchor_ffffffffffffffff",
+                "operation": "future source anchor metadata namespace smoke",
+            ]
+        ),
+        (
+            "trusted_source.approve",
+            "smoke-future-trusted-source-approve",
+            [
+                "source_anchor_id": "source_anchor_ffffffffffffffff",
+                "approval": "future trusted source approval namespace smoke",
             ]
         ),
         (
@@ -6065,6 +6111,309 @@ func runMockBackendChecks(
     }
     guard mockCloudModels.isEmpty else {
         throw SmokeFailure.message("mock models.list should not include cloud suggestions: \(mockCloudModels)")
+    }
+
+    print("Checking index.documents.list...")
+    let malformedIndexDocumentsList = try sendAndRead(
+        client,
+        type: "index.documents.list",
+        requestID: "smoke-index-documents-list-unknown-metadata",
+        payload: [
+            "documents": [],
+            "summary": [:],
+            "backend_url": smokeBackendURLCanary,
+            "workspace_id": "workspace-1",
+            "source_path": "/Users/example/project/notes.md",
+            "retrieval_context": "future retrieval context",
+            "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            "citation": "future citation",
+            "trusted_source": true
+        ]
+    )
+    try requireErrorCode(
+        malformedIndexDocumentsList,
+        "invalid_payload",
+        requestID: "smoke-index-documents-list-unknown-metadata",
+        context: "index.documents.list unknown metadata"
+    )
+    let indexDocumentsList = try sendAndRead(
+        client,
+        type: "index.documents.list",
+        requestID: "smoke-index-documents-list",
+        payload: ["limit": 1]
+    )
+    try requireType(indexDocumentsList, "index.documents.list", context: "index.documents.list")
+    let indexPayload = try payload(indexDocumentsList, context: "index.documents.list")
+    guard let catalogDocuments = indexPayload["documents"] as? [[String: Any]],
+          catalogDocuments.count == 1,
+          let firstCatalogDocument = catalogDocuments.first,
+          let catalogSummary = indexPayload["summary"] as? [String: Any],
+          let qualityCounts = catalogSummary["quality_counts"] as? [String: Any] else {
+        throw SmokeFailure.message("index.documents.list should return one bounded seeded catalog row and summary: \(indexDocumentsList)")
+    }
+    let catalogDocumentID = try requireString(firstCatalogDocument, "id", context: "index.documents.list document")
+    let expectedCatalogDisplayName: String
+    switch catalogDocumentID {
+    case smokeRetrievalDocumentID:
+        expectedCatalogDisplayName = smokeRetrievalDocumentName
+    case smokeRetrievalSecondaryDocumentID:
+        expectedCatalogDisplayName = smokeRetrievalSecondaryDocumentName
+    default:
+        throw SmokeFailure.message("index.documents.list returned an unexpected seeded document id: \(indexDocumentsList)")
+    }
+    let catalogContentFingerprint = try requireString(
+        firstCatalogDocument,
+        "content_fingerprint",
+        context: "index.documents.list document"
+    )
+    guard try requireString(firstCatalogDocument, "display_name", context: "index.documents.list document") == expectedCatalogDisplayName,
+          try requireString(firstCatalogDocument, "mime_type", context: "index.documents.list document") == "text/markdown",
+          catalogContentFingerprint.range(of: #"^[0-9a-f]{16}$"#, options: .regularExpression) != nil,
+          try requireInt(firstCatalogDocument, "extracted_character_count", context: "index.documents.list document") > 0,
+          try requireInt(firstCatalogDocument, "chunk_count", context: "index.documents.list document") >= 1,
+          ["single_chunk", "chunked"].contains(try requireString(firstCatalogDocument, "quality", context: "index.documents.list document")),
+          try requireInt(catalogSummary, "document_count", context: "index.documents.list summary") == 2,
+          try requireInt(catalogSummary, "chunk_count", context: "index.documents.list summary") >= 2,
+          try requireInt(catalogSummary, "extracted_character_count", context: "index.documents.list summary") > 0,
+          try requireInt(qualityCounts, "no_usable_text", context: "index.documents.list summary quality_counts") >= 0,
+          try requireInt(qualityCounts, "single_chunk", context: "index.documents.list summary quality_counts") >= 0,
+          try requireInt(qualityCounts, "chunked", context: "index.documents.list summary quality_counts") >= 0,
+          try requireInt(qualityCounts, "single_chunk", context: "index.documents.list summary quality_counts")
+            + requireInt(qualityCounts, "chunked", context: "index.documents.list summary quality_counts") >= 1 else {
+        throw SmokeFailure.message("index.documents.list did not return seeded catalog metadata and summary: \(indexDocumentsList)")
+    }
+    let indexPayloadDescription = String(describing: indexPayload)
+    for forbidden in [
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
+        "chunk_id",
+        "chunk_text",
+        "source_path",
+        "workspace_id",
+        "project_id",
+        "retrieval_context",
+        "embedding",
+        "citation",
+        "trusted_source"
+    ] where indexPayloadDescription.contains(forbidden) {
+        throw SmokeFailure.message("index.documents.list exposed forbidden seeded catalog metadata \(forbidden): \(indexDocumentsList)")
+    }
+
+    print("Checking retrieval.query...")
+    let malformedRetrievalQuery = try sendAndRead(
+        client,
+        type: "retrieval.query",
+        requestID: "smoke-retrieval-query-unknown-metadata",
+        payload: [
+            "query": "runtime retrieval",
+            "results": [],
+            "backend_url": smokeBackendURLCanary,
+            "workspace_id": "workspace-1",
+            "source_path": "/Users/example/project/notes.md",
+            "retrieval_context": "future retrieval context",
+            "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            "citation": "future citation",
+            "trusted_source": true
+        ]
+    )
+    try requireErrorCode(
+        malformedRetrievalQuery,
+        "invalid_payload",
+        requestID: "smoke-retrieval-query-unknown-metadata",
+        context: "retrieval.query unknown metadata"
+    )
+    let oversizedRetrievalQuery = try sendAndRead(
+        client,
+        type: "retrieval.query",
+        requestID: "smoke-retrieval-query-oversized-query",
+        payload: [
+            "query": String(repeating: "q", count: 1_025),
+            "limit": 10,
+            "max_snippet_characters": 160
+        ]
+    )
+    try requireErrorCode(
+        oversizedRetrievalQuery,
+        "invalid_payload",
+        requestID: "smoke-retrieval-query-oversized-query",
+        context: "retrieval.query oversized query"
+    )
+    let oversizedRetrievalErrorPayload = try payload(
+        oversizedRetrievalQuery,
+        context: "retrieval.query oversized query"
+    )
+    guard String(describing: oversizedRetrievalErrorPayload).contains("query"),
+          String(describing: oversizedRetrievalErrorPayload).contains("1024") else {
+        throw SmokeFailure.message(
+            "retrieval.query oversized query should name the query request ceiling: \(oversizedRetrievalQuery)"
+        )
+    }
+    let retrievalQuery = try sendAndRead(
+        client,
+        type: "retrieval.query",
+        requestID: "smoke-retrieval-query",
+        payload: [
+            "query": smokeRetrievalQuery,
+            "limit": 1,
+            "max_snippet_characters": 64
+        ]
+    )
+    try requireType(retrievalQuery, "retrieval.query", context: "retrieval.query")
+    let retrievalPayload = try payload(retrievalQuery, context: "retrieval.query")
+    guard let retrievalResults = retrievalPayload["results"] as? [[String: Any]],
+          retrievalResults.count == 1,
+          let firstRetrievalResult = retrievalResults.first,
+          let retrievalDocument = firstRetrievalResult["document"] as? [String: Any],
+          let retrievalSourceAnchorID = firstRetrievalResult["source_anchor_id"] as? String,
+          let retrievalSnippet = firstRetrievalResult["snippet"] as? String,
+          let retrievalMatchedTerms = firstRetrievalResult["matched_terms"] as? [String] else {
+        throw SmokeFailure.message("retrieval.query should return one seeded runtime document result: \(retrievalQuery)")
+    }
+    guard retrievalDocument["id"] as? String == smokeRetrievalDocumentID,
+          retrievalDocument["display_name"] as? String == smokeRetrievalDocumentName,
+          retrievalDocument["mime_type"] as? String == "text/markdown",
+          (retrievalDocument["content_fingerprint"] as? String)?.range(
+              of: #"^[0-9a-f]{16}$"#,
+              options: .regularExpression
+          ) != nil else {
+        throw SmokeFailure.message("retrieval.query did not return the seeded document metadata: \(retrievalQuery)")
+    }
+    guard retrievalSnippet.count <= 64,
+          retrievalSnippet.contains(smokeRetrievalSnippetMarker),
+          retrievalMatchedTerms.contains("seeded"),
+          retrievalMatchedTerms.contains("retrieval"),
+          retrievalSourceAnchorID.range(
+              of: #"^source_anchor_[0-9a-f]{16}$"#,
+              options: .regularExpression
+          ) != nil,
+          firstRetrievalResult["chunk_index"] as? Int == 0,
+          let retrievalRank = firstRetrievalResult["rank"] as? Int,
+          retrievalRank >= 0,
+          let retrievalStartOffset = firstRetrievalResult["start_character_offset"] as? Int,
+          retrievalStartOffset == 0,
+          let retrievalEndOffset = firstRetrievalResult["end_character_offset"] as? Int,
+          retrievalEndOffset >= retrievalStartOffset else {
+        throw SmokeFailure.message("retrieval.query did not return bounded seeded lexical snippet metadata: \(retrievalQuery)")
+    }
+    let retrievalPayloadDescription = String(describing: retrievalPayload)
+    for forbidden in [
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
+        "chunk_id",
+        "chunk_text",
+        "source_path",
+        "workspace_id",
+        "project_id",
+        "retrieval_context",
+        "embedding",
+        "citation",
+        "trusted_source"
+    ] where retrievalPayloadDescription.contains(forbidden) {
+        throw SmokeFailure.message("retrieval.query exposed forbidden seeded retrieval metadata \(forbidden): \(retrievalQuery)")
+    }
+
+    print("Checking source_anchor.resolve...")
+    let malformedSourceAnchorResolve = try sendAndRead(
+        client,
+        type: "source_anchor.resolve",
+        requestID: "smoke-source-anchor-resolve-unknown-metadata",
+        payload: [
+            "source_anchor_id": retrievalSourceAnchorID,
+            "document": [:],
+            "chunk_summary": [:],
+            "chunk_text": "future chunk body",
+            "snippet": "future snippet",
+            "workspace_id": "workspace-1",
+            "project_id": "project-1",
+            "source_path": "/Users/example/project/notes.md",
+            "retrieval_context": "future retrieval context",
+            "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            "citation": "future citation",
+            "trusted_source": true,
+            "approval": "future approval"
+        ]
+    )
+    try requireErrorCode(
+        malformedSourceAnchorResolve,
+        "invalid_payload",
+        requestID: "smoke-source-anchor-resolve-unknown-metadata",
+        context: "source_anchor.resolve unknown metadata"
+    )
+    let malformedSourceAnchorIDResolve = try sendAndRead(
+        client,
+        type: "source_anchor.resolve",
+        requestID: "smoke-source-anchor-resolve-malformed",
+        payload: [
+            "source_anchor_id": "source_anchor_0123456789ABCDEF"
+        ]
+    )
+    try requireErrorCode(
+        malformedSourceAnchorIDResolve,
+        "invalid_payload",
+        requestID: "smoke-source-anchor-resolve-malformed",
+        context: "source_anchor.resolve malformed source_anchor_id"
+    )
+    let staleSourceAnchorResolve = try sendAndRead(
+        client,
+        type: "source_anchor.resolve",
+        requestID: "smoke-source-anchor-resolve-stale",
+        payload: [
+            "source_anchor_id": "source_anchor_0000000000000000"
+        ]
+    )
+    try requireErrorCode(
+        staleSourceAnchorResolve,
+        "source_anchor_not_found",
+        requestID: "smoke-source-anchor-resolve-stale",
+        context: "source_anchor.resolve stale source_anchor_id"
+    )
+    let sourceAnchorResolve = try sendAndRead(
+        client,
+        type: "source_anchor.resolve",
+        requestID: "smoke-source-anchor-resolve",
+        payload: [
+            "source_anchor_id": retrievalSourceAnchorID
+        ]
+    )
+    try requireType(sourceAnchorResolve, "source_anchor.resolve", context: "source_anchor.resolve")
+    let sourceAnchorPayload = try payload(sourceAnchorResolve, context: "source_anchor.resolve")
+    guard sourceAnchorPayload["source_anchor_id"] as? String == retrievalSourceAnchorID,
+          let sourceAnchorDocument = sourceAnchorPayload["document"] as? [String: Any],
+          sourceAnchorDocument["id"] as? String == smokeRetrievalDocumentID,
+          sourceAnchorDocument["display_name"] as? String == smokeRetrievalDocumentName,
+          sourceAnchorDocument["mime_type"] as? String == "text/markdown",
+          let sourceAnchorContentFingerprint = sourceAnchorDocument["content_fingerprint"] as? String,
+          sourceAnchorContentFingerprint.range(
+              of: #"^[0-9a-f]{16}$"#,
+              options: .regularExpression
+          ) != nil,
+          let sourceAnchorChunkSummary = sourceAnchorPayload["chunk_summary"] as? [String: Any],
+          sourceAnchorChunkSummary["chunk_index"] as? Int == 0,
+          let sourceAnchorStartOffset = sourceAnchorChunkSummary["start_character_offset"] as? Int,
+          sourceAnchorStartOffset == 0,
+          let sourceAnchorEndOffset = sourceAnchorChunkSummary["end_character_offset"] as? Int,
+          sourceAnchorEndOffset >= sourceAnchorStartOffset,
+          let sourceAnchorCharacterCount = sourceAnchorChunkSummary["character_count"] as? Int,
+          sourceAnchorCharacterCount > 0 else {
+        throw SmokeFailure.message("source_anchor.resolve did not return redacted seeded document metadata and chunk summary: \(sourceAnchorResolve)")
+    }
+    let sourceAnchorPayloadDescription = String(describing: sourceAnchorPayload)
+    for forbidden in [
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
+        "chunk_id",
+        "chunk_text",
+        "snippet",
+        "source_path",
+        "workspace_id",
+        "project_id",
+        "retrieval_context",
+        "embedding",
+        "citation",
+        "trusted_source",
+        "approval"
+    ] where sourceAnchorPayloadDescription.contains(forbidden) {
+        throw SmokeFailure.message("source_anchor.resolve exposed forbidden seeded resolver metadata \(forbidden): \(sourceAnchorResolve)")
     }
 
     print("Checking models.pull...")

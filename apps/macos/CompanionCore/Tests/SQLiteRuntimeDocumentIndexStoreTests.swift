@@ -165,11 +165,442 @@ final class SQLiteRuntimeDocumentIndexStoreTests: XCTestCase {
         let memoryResults = memoryStore.query("retrieval runtime", limit: 3, maxSnippetCharacters: 64)
 
         XCTAssertEqual(sqliteResults, memoryResults)
-        XCTAssertEqual(sqliteResults.first?.document.id, "retrieval")
+        XCTAssertEqual(try reopened.query("retrieval runtime", limit: 0, maxSnippetCharacters: 64), [])
+        XCTAssertTrue(
+            sqliteResults.allSatisfy {
+                $0.chunk.endCharacterOffset >= $0.chunk.startCharacterOffset
+            }
+        )
+        XCTAssertTrue(
+            zip(sqliteResults, sqliteResults.dropFirst()).allSatisfy { previous, next in
+                previous.rank >= next.rank
+            }
+        )
+        let first = try XCTUnwrap(sqliteResults.first)
+        XCTAssertEqual(first.document.id, "retrieval")
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(first.sourceAnchorID), first.sourceAnchorID)
+        XCTAssertEqual(
+            first.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: first.document, chunk: first.chunk)
+        )
         XCTAssertTrue(sqliteResults.allSatisfy { !$0.snippet.isEmpty })
         XCTAssertTrue(sqliteResults.allSatisfy { $0.snippet.count <= 64 })
-        XCTAssertTrue(sqliteResults.first?.matchedTerms.contains("retrieval") == true)
-        XCTAssertTrue(sqliteResults.first?.matchedTerms.contains("runtime") == true)
+        XCTAssertTrue(first.matchedTerms.contains("retrieval"))
+        XCTAssertTrue(first.matchedTerms.contains("runtime"))
+    }
+
+    func testSQLiteSourceAnchorIDIsStableAfterReopenAndRotatesWhenContentChanges() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+        let initial = try ingestedDocument(
+            fileName: "anchor-source.md",
+            text: "Runtime source anchors stay stable before PRIVATE_CHUNK_SENTINEL."
+        )
+        try sqliteStore.replaceDocument(result: initial, documentID: "anchor-doc")
+
+        let first = try XCTUnwrap(
+            try sqliteStore.query("runtime source", limit: 1, maxSnippetCharacters: 80).single
+        )
+        let afterReopen = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("runtime source", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+
+        XCTAssertEqual(first.sourceAnchorID, afterReopen.sourceAnchorID)
+        XCTAssertEqual(first.document.id, afterReopen.document.id)
+        XCTAssertEqual(first.document.contentFingerprint, afterReopen.document.contentFingerprint)
+        XCTAssertEqual(first.chunk.chunkIndex, afterReopen.chunk.chunkIndex)
+        XCTAssertEqual(first.chunk.startCharacterOffset, afterReopen.chunk.startCharacterOffset)
+        XCTAssertEqual(first.chunk.endCharacterOffset, afterReopen.chunk.endCharacterOffset)
+        XCTAssertEqual(
+            first.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: first.document, chunk: first.chunk)
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+            .replaceDocument(result: initial, documentID: "anchor-doc")
+        let afterSameReindex = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("runtime source", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+        XCTAssertEqual(first.sourceAnchorID, afterSameReindex.sourceAnchorID)
+
+        let changed = try ingestedDocument(
+            fileName: "anchor-source.md",
+            text: "Runtime source anchors rotate after PRIVATE_CHUNK_SENTINEL changes."
+        )
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+            .replaceDocument(result: changed, documentID: "anchor-doc")
+        let afterChange = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("runtime source", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+
+        XCTAssertEqual(afterChange.document.id, "anchor-doc")
+        XCTAssertNotEqual(first.document.contentFingerprint, afterChange.document.contentFingerprint)
+        XCTAssertNotEqual(first.sourceAnchorID, afterChange.sourceAnchorID)
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(afterChange.sourceAnchorID), afterChange.sourceAnchorID)
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("anchor-source.md"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("PRIVATE_CHUNK_SENTINEL"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("workspace"))
+        XCTAssertFalse(afterChange.sourceAnchorID.contains("project"))
+    }
+
+    func testSQLiteSourceAnchorIDIsIndependentOfQueryWindowAndSnippetBoundsAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+        let target = try ingestedDocument(
+            fileName: "anchor-window.md",
+            text: "anchoralpha anchorbeta anchorwindow stable handle stays inside one SQLite source chunk."
+        )
+        let competitor = try ingestedDocument(
+            fileName: "anchor-competitor.md",
+            text: "anchoralpha anchoralpha anchoralpha SQLite competing row stays separate."
+        )
+        try sqliteStore.replaceDocument(result: target, documentID: "anchor-window")
+        try sqliteStore.replaceDocument(result: competitor, documentID: "anchor-competitor")
+
+        let targetOnly = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("anchorbeta", limit: 1, maxSnippetCharacters: 36)
+                .single
+        )
+        let multiTerm = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("anchoralpha anchorbeta", limit: 5, maxSnippetCharacters: 120)
+                .first { $0.document.id == "anchor-window" }
+        )
+        let tightSnippet = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("anchorbeta", limit: 5, maxSnippetCharacters: 28)
+                .first { $0.document.id == "anchor-window" }
+        )
+        let rankWindow = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("anchoralpha", limit: 5, maxSnippetCharacters: 64)
+                .first { $0.document.id == "anchor-window" }
+        )
+
+        XCTAssertEqual(targetOnly.document.id, "anchor-window")
+        XCTAssertEqual(
+            Set(try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("anchoralpha", limit: 5)
+                .map(\.document.id)),
+            Set(["anchor-competitor", "anchor-window"])
+        )
+        XCTAssertEqual(targetOnly.sourceAnchorID, multiTerm.sourceAnchorID)
+        XCTAssertEqual(targetOnly.sourceAnchorID, tightSnippet.sourceAnchorID)
+        XCTAssertEqual(targetOnly.sourceAnchorID, rankWindow.sourceAnchorID)
+        XCTAssertEqual(targetOnly.chunk.chunkIndex, multiTerm.chunk.chunkIndex)
+        XCTAssertEqual(targetOnly.chunk.startCharacterOffset, multiTerm.chunk.startCharacterOffset)
+        XCTAssertEqual(targetOnly.chunk.endCharacterOffset, multiTerm.chunk.endCharacterOffset)
+        XCTAssertEqual(
+            targetOnly.sourceAnchorID,
+            runtimeDocumentSourceAnchorID(document: targetOnly.document, chunk: targetOnly.chunk)
+        )
+        XCTAssertEqual(multiTerm.matchedTerms, ["anchoralpha", "anchorbeta"])
+        XCTAssertEqual(rankWindow.matchedTerms, ["anchoralpha"])
+        XCTAssertNotEqual(multiTerm.rank, rankWindow.rank)
+        XCTAssertLessThanOrEqual(tightSnippet.snippet.count, 28)
+        XCTAssertGreaterThan(multiTerm.snippet.count, tightSnippet.snippet.count)
+        XCTAssertNotNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: targetOnly.sourceAnchorID)
+        )
+    }
+
+    func testSQLiteSourceAnchorResolverMatchesRuntimeStoreAfterReopenWithoutTextOrFutureMetadata() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+        let memoryStore = RuntimeDocumentIndexStore()
+        let result = try ingestedDocument(
+            fileName: "/Users/example/workspace/private-source.md",
+            text: "SQLite source anchor resolver keeps PRIVATE_SQLITE_ANCHOR_SENTINEL out of review metadata."
+        )
+        _ = memoryStore.replaceDocument(result: result, documentID: "anchor-review")
+        try sqliteStore.replaceDocument(result: result, documentID: "anchor-review")
+
+        let searchResult = try XCTUnwrap(memoryStore.query("sqlite resolver", limit: 1, maxSnippetCharacters: 80).single)
+        let memoryAnchor = try XCTUnwrap(memoryStore.sourceAnchor(id: searchResult.sourceAnchorID))
+        let sqliteAnchor = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: searchResult.sourceAnchorID)
+        )
+
+        XCTAssertEqual(sqliteAnchor, memoryAnchor)
+        XCTAssertEqual(sqliteAnchor.chunkSummary.characterCount, searchResult.chunk.text.count)
+
+        let description = String(describing: sqliteAnchor)
+        XCTAssertFalse(description.contains("PRIVATE_SQLITE_ANCHOR_SENTINEL"))
+        XCTAssertFalse(description.contains("/Users/example/workspace"))
+        XCTAssertFalse(description.contains("source_path"))
+        XCTAssertFalse(description.contains("workspace_id"))
+        XCTAssertFalse(description.contains("project_id"))
+        XCTAssertFalse(description.contains("retrieval_context"))
+        XCTAssertFalse(description.contains("snippet"))
+        XCTAssertFalse(description.contains("citation"))
+        XCTAssertFalse(description.contains("trustedSource"))
+        XCTAssertFalse(description.contains("trusted_source"))
+        XCTAssertNil(try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL).sourceAnchor(id: "source_anchor_0000000000000000"))
+        XCTAssertNil(try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL).sourceAnchor(id: "SOURCE_ANCHOR_0000000000000000"))
+        XCTAssertNil(try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL).sourceAnchor(id: "source_anchor_not_hex_value"))
+    }
+
+    func testSQLiteSourceAnchorResolverRejectsWhitespaceMutatedAnchorIDsAfterReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+        let result = try ingestedDocument(
+            fileName: "anchor-canonicality.md",
+            text: "SQLite source anchor canonicality rejects whitespace-mutated future approval handles."
+        )
+        try sqliteStore.replaceDocument(result: result, documentID: "anchor-canonicality")
+        let searchResult = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("canonicality approval", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+
+        XCTAssertNotNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: searchResult.sourceAnchorID)
+        )
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: " \(searchResult.sourceAnchorID)")
+        )
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: "\(searchResult.sourceAnchorID)\n")
+        )
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: "\t\(searchResult.sourceAnchorID)")
+        )
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: "\(searchResult.sourceAnchorID) ")
+        )
+        XCTAssertNil(runtimeDocumentIndexCanonicalSourceAnchorID(" \(searchResult.sourceAnchorID)\n"))
+        XCTAssertEqual(runtimeDocumentIndexCanonicalSourceAnchorID(searchResult.sourceAnchorID), searchResult.sourceAnchorID)
+    }
+
+    func testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterReplaceDeleteAndReopen() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+        let initial = try ingestedDocument(
+            fileName: "anchor-lifecycle.md",
+            text: "SQLite source anchor invalidation keeps stale approval handles from resolving."
+        )
+        try sqliteStore.replaceDocument(result: initial, documentID: "anchor-lifecycle")
+        let first = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("sqlite source", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+        let firstAnchorID = first.sourceAnchorID
+
+        XCTAssertNotNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: firstAnchorID)
+        )
+
+        let replacement = try ingestedDocument(
+            fileName: "anchor-lifecycle.md",
+            text: "SQLite source anchor invalidation rotates after document replacement."
+        )
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+            .replaceDocument(result: replacement, documentID: "anchor-lifecycle")
+        let replaced = try XCTUnwrap(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("sqlite source", limit: 1, maxSnippetCharacters: 80)
+                .single
+        )
+
+        XCTAssertNotEqual(firstAnchorID, replaced.sourceAnchorID)
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: firstAnchorID)
+        )
+        XCTAssertNotNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: replaced.sourceAnchorID)
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+            .deleteDocument(id: "anchor-lifecycle")
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .sourceAnchor(id: replaced.sourceAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .query("sqlite source"),
+            []
+        )
+        XCTAssertEqual(try ftsRowCount(in: databaseURL, documentID: "anchor-lifecycle"), 0)
+    }
+
+    func testSQLiteSourceAnchorResolverInvalidatesAnchorsAfterFilteredMaintenanceDeletesAndReopen() throws {
+        func indexedAnchorID(
+            in databaseURL: URL,
+            result: DocumentIngestionResult,
+            documentID: String,
+            query: String
+        ) throws -> String {
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                .replaceDocument(result: result, documentID: documentID)
+            let searchResult = try XCTUnwrap(
+                try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                    .query(query, limit: 1, maxSnippetCharacters: 80)
+                    .single
+            )
+
+            XCTAssertEqual(searchResult.document.id, documentID)
+            XCTAssertNotNil(
+                try SQLiteRuntimeDocumentIndexStore(databaseURL: databaseURL)
+                    .sourceAnchor(id: searchResult.sourceAnchorID)
+            )
+            return searchResult.sourceAnchorID
+        }
+
+        let displayDatabaseURL = try temporaryDatabaseURL()
+        let displayAnchorID = try indexedAnchorID(
+            in: displayDatabaseURL,
+            result: try ingestedDocument(
+                fileName: "filtered-display.md",
+                text: "displayanchorfilter sqlite source anchor should stop resolving after display-name cleanup."
+            ),
+            documentID: "display-anchor-filter",
+            query: "displayanchorfilter"
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: displayDatabaseURL)
+            .deleteDocuments(matchingDisplayName: "filtered-display.md")
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: displayDatabaseURL)
+                .sourceAnchor(id: displayAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: displayDatabaseURL)
+                .query("displayanchorfilter"),
+            []
+        )
+        XCTAssertEqual(try ftsRowCount(in: displayDatabaseURL, documentID: "display-anchor-filter"), 0)
+
+        let mimeDatabaseURL = try temporaryDatabaseURL()
+        let mimeAnchorID = try indexedAnchorID(
+            in: mimeDatabaseURL,
+            result: try ingestedDocument(
+                fileName: "filtered-mime.txt",
+                mimeType: "text/plain",
+                text: "mimeanchorfilter sqlite source anchor should stop resolving after MIME cleanup."
+            ),
+            documentID: "mime-anchor-filter",
+            query: "mimeanchorfilter"
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: mimeDatabaseURL)
+            .deleteDocuments(matchingMimeType: " text/plain\n")
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: mimeDatabaseURL)
+                .sourceAnchor(id: mimeAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: mimeDatabaseURL)
+                .query("mimeanchorfilter"),
+            []
+        )
+        XCTAssertEqual(try ftsRowCount(in: mimeDatabaseURL, documentID: "mime-anchor-filter"), 0)
+
+        let fingerprintDatabaseURL = try temporaryDatabaseURL()
+        let fingerprintResult = try ingestedDocument(
+            fileName: "filtered-fingerprint.md",
+            text: "fingerprintanchorfilter sqlite source anchor should stop resolving after fingerprint cleanup."
+        )
+        let fingerprintAnchorID = try indexedAnchorID(
+            in: fingerprintDatabaseURL,
+            result: fingerprintResult,
+            documentID: "fingerprint-anchor-filter",
+            query: "fingerprintanchorfilter"
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: fingerprintDatabaseURL)
+            .deleteDocuments(
+                matchingContentFingerprint: " \(RuntimeDocumentIndexStore.stableContentFingerprint(for: fingerprintResult))\n"
+            )
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: fingerprintDatabaseURL)
+                .sourceAnchor(id: fingerprintAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: fingerprintDatabaseURL)
+                .query("fingerprintanchorfilter"),
+            []
+        )
+        XCTAssertEqual(try ftsRowCount(in: fingerprintDatabaseURL, documentID: "fingerprint-anchor-filter"), 0)
+
+        let qualityDatabaseURL = try temporaryDatabaseURL()
+        let qualityAnchorID = try indexedAnchorID(
+            in: qualityDatabaseURL,
+            result: try ingestedDocument(
+                fileName: "filtered-quality.md",
+                text: "qualityanchorfilter sqlite source anchor should stop resolving after quality cleanup."
+            ),
+            documentID: "quality-anchor-filter",
+            query: "qualityanchorfilter"
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: qualityDatabaseURL)
+                .document(id: "quality-anchor-filter")?
+                .quality,
+            .chunked
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: qualityDatabaseURL)
+            .deleteDocuments(matchingQuality: .chunked)
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: qualityDatabaseURL)
+                .sourceAnchor(id: qualityAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: qualityDatabaseURL)
+                .query("qualityanchorfilter"),
+            []
+        )
+        XCTAssertEqual(try ftsRowCount(in: qualityDatabaseURL, documentID: "quality-anchor-filter"), 0)
+
+        let clearAllDatabaseURL = try temporaryDatabaseURL()
+        let clearAllAnchorID = try indexedAnchorID(
+            in: clearAllDatabaseURL,
+            result: try ingestedDocument(
+                fileName: "filtered-clear-all.md",
+                text: "clearallanchorfilter sqlite source anchor should stop resolving after clear-all cleanup."
+            ),
+            documentID: "clear-all-anchor-filter",
+            query: "clearallanchorfilter"
+        )
+
+        try SQLiteRuntimeDocumentIndexStore(databaseURL: clearAllDatabaseURL)
+            .deleteAllDocuments()
+
+        XCTAssertNil(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: clearAllDatabaseURL)
+                .sourceAnchor(id: clearAllAnchorID)
+        )
+        XCTAssertEqual(
+            try SQLiteRuntimeDocumentIndexStore(databaseURL: clearAllDatabaseURL)
+                .query("clearallanchorfilter"),
+            []
+        )
+        XCTAssertEqual(try ftsTotalRowCount(in: clearAllDatabaseURL), 0)
     }
 
     func testSQLiteStoreMaintainsFtsCandidateRowsWithoutChangingQueryResults() throws {
