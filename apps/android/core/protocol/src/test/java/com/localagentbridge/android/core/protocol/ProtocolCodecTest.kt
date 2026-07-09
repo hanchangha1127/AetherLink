@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +23,15 @@ class ProtocolCodecTest {
         "source_anchor_not_a_handle",
         "source_anchor_0123456789abcde",
         "source_anchor_0123456789abcdef0",
+        "",
+    )
+    private val nonCanonicalContentFingerprints = listOf(
+        " 0011223344556677",
+        "0011223344556677 ",
+        "001122334455667G",
+        "AABBCCDDEEFF0011",
+        "001122334455667",
+        "00112233445566770",
         "",
     )
 
@@ -67,6 +77,72 @@ class ProtocolCodecTest {
         }
 
         assertEquals("Unknown protocol envelope field: backend_url", error.message)
+    }
+
+    @Test
+    fun errorPayloadAcceptsKnownProtocolCodes() {
+        val knownCodes = listOf(
+            "unknown_message_type",
+            "unexpected_message_direction",
+            "invalid_payload",
+            "not_connected",
+            "pairing_required",
+            "authentication_required",
+            "authentication_failed",
+            "backend_unavailable",
+            "bad_backend_response",
+            "no_models",
+            "model_not_found",
+            "model_not_installed",
+            "generation_not_found",
+            "generation_cancelled",
+            "route_refresh_unavailable",
+            "unsupported_operation",
+            "unsupported_attachment",
+            "unreadable_attachment",
+            "chat_session_not_found",
+            "chat_session_must_be_archived_before_delete",
+            "chat_session_must_be_restored_before_send",
+            "chat_store_unavailable",
+            "document_index_unavailable",
+            "source_anchor_not_found",
+            "memory_store_unavailable",
+            "memory_summary_draft_unavailable",
+            "memory_summary_draft_stale",
+            "transport_error",
+            "internal_error",
+        )
+
+        knownCodes.forEach { code ->
+            val decoded = Json.decodeFromString<ErrorPayload>(
+                """{"code":"$code","message":"Runtime error","retryable":false}""",
+            )
+
+            assertEquals(code, decoded.code)
+        }
+    }
+
+    @Test
+    fun errorPayloadRejectsUnknownCodes() {
+        val invalidCodes = listOf(
+            "backend_failed",
+            "runtime_history_unavailable",
+            "route_refresh_unavailable ",
+            "",
+        )
+
+        invalidCodes.forEach { code ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ErrorPayload>(
+                    """{"code":"$code","message":"Runtime error","retryable":false}""",
+                )
+            }
+
+            assertTrue(
+                "expected code in ${error.message}",
+                error.message.orEmpty().contains("code"),
+            )
+        }
     }
 
     @Test
@@ -216,6 +292,31 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun chatSendRequestRejectsInvalidBounds() {
+        val invalidRequests = listOf(
+            """{"session_id":"","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello"}]}""" to "session_id",
+            """{"session_id":"   ","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello"}]}""" to "session_id",
+            """{"session_id":"session-1","model":"","messages":[{"role":"user","content":"Hello"}]}""" to "model",
+            """{"session_id":"session-1","model":"   ","messages":[{"role":"user","content":"Hello"}]}""" to "model",
+            """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[]}""" to "messages",
+            """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"tool","content":"Hello"}]}""" to "role",
+            """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello","attachments":[{"type":"audio","mime_type":"audio/wav"}]}]}""" to "type",
+            """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello","attachments":[{"type":"document","mime_type":""}]}]}""" to "mime_type",
+        )
+
+        invalidRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSendPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
     fun modelInfoPayloadCanCarryContextWindowMetadata() {
         val payload = ModelsResultPayload(
             models = listOf(
@@ -298,6 +399,71 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun modelInfoPayloadRejectsInvalidScalarMetadata() {
+        val invalidPayloads = listOf(
+            """{"models":[{"id":"","name":"Empty ID"}]}""" to "id",
+            """{"models":[{"id":"missing-name"}]}""" to "name",
+            """{"models":[{"id":"empty-name","name":""}]}""" to "name",
+            """{"models":[{"id":"bad-backend","name":"Bad Backend","backend":"openai"}]}""" to "backend",
+            """{"models":[{"id":"bad-provider","name":"Bad Provider","provider":"openai"}]}""" to "provider",
+            """{"models":[{"id":"bad-kind","name":"Bad Kind","model_kind":"vision"}]}""" to "model_kind",
+            """{"models":[{"id":"duplicate-capability","name":"Duplicate Capability","capabilities":["chat","chat"]}]}""" to "capabilities",
+            """{"models":[{"id":"bad-source","name":"Bad Source","source":"remote"}]}""" to "source",
+        )
+
+        invalidPayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ModelsResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun modelInfoPayloadRejectsInvalidModifiedAtMetadata() {
+        val invalidPayloads = listOf(
+            """{"models":[{"id":"not-a-date","name":"Not A Date","modified_at":"not-a-date"}]}""",
+            """{"models":[{"id":"date-only","name":"Date Only","modified_at":"2026-07-09"}]}""",
+            """{"models":[{"id":"missing-zone","name":"Missing Zone","modified_at":"2026-07-09T12:34:56"}]}""",
+        )
+
+        invalidPayloads.forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ModelsResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected modified_at in ${error.message}",
+                error.message.orEmpty().contains("modified_at"),
+            )
+        }
+    }
+
+    @Test
+    fun modelInfoPayloadRejectsInvalidNumericMetadata() {
+        val invalidPayloads = listOf(
+            """{"models":[{"id":"negative-size","name":"Negative Size","size_bytes":-1}]}""" to "size_bytes",
+            """{"models":[{"id":"zero-context","name":"Zero Context","context_window_tokens":0}]}""" to "context_window_tokens",
+            """{"models":[{"id":"negative-context","name":"Negative Context","context_window_tokens":-1}]}""" to "context_window_tokens",
+        )
+
+        invalidPayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ModelsResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
     fun modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList() {
         val decoded = Json.decodeFromString<ModelsResultPayload>(
             """
@@ -320,6 +486,154 @@ class ProtocolCodecTest {
         assertEquals("embedding", decoded.models.first().modelKind)
         assertEquals("legacy-embed", decoded.models.first().providerModelId)
         assertEquals("ollama:legacy-embed", decoded.models.first().qualifiedId)
+    }
+
+    @Test
+    fun routeRefreshPayloadRejectsInvalidScalarRouteMaterial() {
+        val oversizedBody = "b".repeat(2049)
+        val invalidPayloads = listOf(
+            """{"runtime_device_id":" runtime"}""" to "opaque route value",
+            """{"runtime_key_fingerprint":"${"f".repeat(513)}"}""" to "opaque route value",
+            """{"relay_port":0}""" to "relay_port",
+            """{"relay_port":65536}""" to "relay_port",
+            """{"relay_id":"relay id"}""" to "opaque route value",
+            """{"relay_secret":""}""" to "opaque route value",
+            """{"relay_expires_at":0}""" to "expiry",
+            """{"relay_nonce":"nonce\nroute"}""" to "opaque route value",
+            """{"relay_scope":" remote "}""" to "relay_scope",
+            """{"relay_scope":"local_diagnostic"}""" to "relay_scope",
+            """{"p2p_class":"relay"}""" to "p2p_class",
+            """{"p2p_record_id":"p2p record"}""" to "opaque route value",
+            """{"p2p_encrypted_body":"$oversizedBody"}""" to "opaque route body",
+            """{"p2p_expires_at":0}""" to "expiry",
+            """{"p2p_anti_replay_nonce":"p2p nonce"}""" to "opaque route value",
+            """{"p2p_protocol_version":2}""" to "p2p_protocol_version",
+        )
+
+        invalidPayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RouteRefreshPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun routeRefreshPayloadRequiresCompleteRouteMaterialFamilies() {
+        val empty = Json.decodeFromString<RouteRefreshPayload>("{}")
+        assertNull(empty.runtimeDeviceId)
+        assertNull(empty.relayHost)
+        assertNull(empty.p2pRouteClass)
+
+        val relay = Json.decodeFromString<RouteRefreshPayload>(
+            """
+            {
+              "runtime_device_id": "runtime-1",
+              "runtime_key_fingerprint": "runtime-fingerprint",
+              "relay_host": "relay.example.test",
+              "relay_port": 443,
+              "relay_id": "relay-1",
+              "relay_secret": "secret-1",
+              "relay_expires_at": 4102444800000,
+              "relay_nonce": "nonce-1",
+              "relay_scope": "remote"
+            }
+            """.trimIndent(),
+        )
+        assertEquals("runtime-1", relay.runtimeDeviceId)
+        assertEquals("relay.example.test", relay.relayHost)
+        assertEquals("remote", relay.relayScope)
+
+        val p2p = Json.decodeFromString<RouteRefreshPayload>(
+            """
+            {
+              "runtime_device_id": "runtime-1",
+              "runtime_key_fingerprint": "runtime-fingerprint",
+              "p2p_class": "p2p_rendezvous",
+              "p2p_record_id": "p2p-record-1",
+              "p2p_encrypted_body": "opaque-candidate-1",
+              "p2p_expires_at": 4102444800000,
+              "p2p_anti_replay_nonce": "p2p-nonce-1",
+              "p2p_protocol_version": 1
+            }
+            """.trimIndent(),
+        )
+        assertEquals("runtime-1", p2p.runtimeDeviceId)
+        assertEquals("p2p_rendezvous", p2p.p2pRouteClass)
+        assertEquals(1, p2p.p2pProtocolVersion)
+
+        val invalidPayloads = listOf(
+            """{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint"}""" to "complete relay or P2P route material",
+            """{"runtime_device_id":"runtime-1","relay_host":"relay.example.test","relay_port":443,"relay_id":"relay-1","relay_secret":"secret-1","relay_expires_at":4102444800000,"relay_nonce":"nonce-1"}""" to "runtime_key_fingerprint",
+            """{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","relay_host":"relay.example.test"}""" to "relay route material",
+            """{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","relay_scope":"remote"}""" to "relay route material",
+            """{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","p2p_class":"p2p_rendezvous"}""" to "P2P route material",
+            """{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","p2p_record_id":"p2p-record-1","p2p_encrypted_body":"opaque-candidate-1","p2p_expires_at":4102444800000,"p2p_anti_replay_nonce":"p2p-nonce-1","p2p_protocol_version":1}""" to "P2P route material",
+        )
+
+        invalidPayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RouteRefreshPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun runtimeHealthBackendStatusAcceptsSchemaMinimalPayload() {
+        val decoded = Json.decodeFromString<RuntimeHealthPayload>(
+            """
+            {
+              "status": "ok",
+              "ollama": {
+                "available": true
+              },
+              "lm_studio": {
+                "available": false,
+                "code": "backend_unavailable",
+                "retryable": true
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("ok", decoded.status)
+        assertEquals(true, decoded.ollama?.available)
+        assertNull(decoded.ollama?.message)
+        assertNull(decoded.ollama?.code)
+        assertNull(decoded.ollama?.retryable)
+        assertEquals(false, decoded.lmStudio?.available)
+        assertNull(decoded.lmStudio?.message)
+        assertEquals("backend_unavailable", decoded.lmStudio?.code)
+        assertEquals(true, decoded.lmStudio?.retryable)
+    }
+
+    @Test
+    fun runtimeHealthPayloadRejectsInvalidStatus() {
+        val invalidPayloads = listOf(
+            """{"status":"connected"}""",
+            """{"status":"failed"}""",
+            """{"status":""}""",
+        )
+
+        invalidPayloads.forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RuntimeHealthPayload>(json)
+            }
+
+            assertTrue(
+                "expected status in ${error.message}",
+                error.message.orEmpty().contains("status"),
+            )
+        }
     }
 
     @Test
@@ -360,6 +674,42 @@ class ProtocolCodecTest {
         assertEquals("ollama", decoded.modelResidency?.lastUnloadFailure?.provider)
         assertEquals("llama3.1:8b", decoded.modelResidency?.lastUnloadFailure?.modelId)
         assertEquals("manual", decoded.modelResidency?.lastUnloadFailure?.reason)
+    }
+
+    @Test
+    fun runtimeHealthPayloadRejectsInvalidModelResidencyBounds() {
+        val invalidPayloads = listOf(
+            """
+            {
+              "status": "ok",
+              "model_residency": {
+                "supported": true,
+                "in_flight_generations": -1
+              }
+            }
+            """.trimIndent() to "in_flight_generations",
+            """
+            {
+              "status": "ok",
+              "model_residency": {
+                "supported": true,
+                "in_flight_generations": 0,
+                "idle_unload_delay_seconds": -1
+              }
+            }
+            """.trimIndent() to "idle_unload_delay_seconds",
+        )
+
+        invalidPayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RuntimeHealthPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
     }
 
     @Test
@@ -421,6 +771,170 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun chatSessionsListRequestRejectsInvalidBounds() {
+        val invalidRequests = listOf(
+            """{"limit":-1}""" to "limit",
+            """{"limit":201}""" to "limit",
+            """{"query":""}""" to "query",
+            """{"embedding_model_id":""}""" to "embedding_model_id",
+        )
+
+        invalidRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsListRequestPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun chatSessionsListResponseRejectsInvalidBounds() {
+        val invalidResponses = listOf(
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2
+                }
+              ]
+            }
+            """.trimIndent() to "session_id",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": -1
+                }
+              ]
+            }
+            """.trimIndent() to "message_count",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "status": "deleted"
+                }
+              ]
+            }
+            """.trimIndent() to "status",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "last_event": "started"
+                }
+              ]
+            }
+            """.trimIndent() to "last_event",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "search": {
+                    "rank": 0,
+                    "snippet": "Runtime history matched relay route.",
+                    "matched_fields": ["title"]
+                  }
+                }
+              ]
+            }
+            """.trimIndent() to "rank",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "search": {
+                    "rank": 1,
+                    "snippet": "Runtime history matched relay route.",
+                    "matched_fields": []
+                  }
+                }
+              ]
+            }
+            """.trimIndent() to "matched_fields",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "search": {
+                    "rank": 1,
+                    "snippet": "Runtime history matched relay route.",
+                    "matched_fields": [""]
+                  }
+                }
+              ]
+            }
+            """.trimIndent() to "matched_fields",
+            """
+            {
+              "sessions": [
+                {
+                  "session_id": "session-1",
+                  "title": "Runtime history",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-23T09:02:05Z",
+                  "message_count": 2,
+                  "search": {
+                    "rank": 1,
+                    "snippet": "Runtime history matched relay route.",
+                    "matched_fields": ["title", "title"]
+                  }
+                }
+              ]
+            }
+            """.trimIndent() to "matched_fields",
+        )
+
+        invalidResponses.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsListResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
     fun indexDocumentsListPayloadUsesProtocolFieldNames() {
         val request = IndexDocumentsListRequestPayload(limit = 25)
         val document = RuntimeDocumentIndexDocumentPayload(
@@ -476,6 +990,199 @@ class ProtocolCodecTest {
         assertEquals("chunked", decoded.documents.single().quality)
         assertEquals(1, decoded.summary.documentCount)
         assertEquals(1, decoded.summary.qualityCounts.chunked)
+    }
+
+    @Test
+    fun indexDocumentsListRequestRejectsInvalidBounds() {
+        val invalidRequestSamples = listOf(
+            "limit" to """{"limit": -1}""",
+            "limit" to """{"limit": 101}""",
+        )
+
+        invalidRequestSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<IndexDocumentsListRequestPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds() {
+        val overlongMimeType = "text/" + "a".repeat(124)
+        val overlongDocuments = (0..100).joinToString(",") { index ->
+            indexDocumentJson(
+                id = jsonString("doc-$index"),
+                contentFingerprint = jsonString(index.toString(16).padStart(16, '0')),
+            )
+        }
+        val invalidResponseSamples = listOf(
+            "documents" to indexDocumentsListResultJson(documentsJson = overlongDocuments),
+            "id" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(id = jsonString("")),
+            ),
+            "id" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(id = jsonString("d".repeat(129))),
+            ),
+            "display_name" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(displayName = jsonString("")),
+            ),
+            "display_name" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(displayName = jsonString("d".repeat(257))),
+            ),
+            "mime_type" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(mimeType = jsonString(overlongMimeType)),
+            ),
+            "mime_type" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(mimeType = jsonString("Text/markdown")),
+            ),
+            "mime_type" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(mimeType = jsonString("textplain")),
+            ),
+            "mime_type" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(mimeType = jsonString("text/plain; charset=utf-8")),
+            ),
+            "mime_type" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(mimeType = jsonString("https://example.invalid/text/plain")),
+            ),
+            "extracted_character_count" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(extractedCharacterCount = "-1"),
+            ),
+            "chunk_count" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(chunkCount = "-1"),
+            ),
+            "quality" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(quality = jsonString("trusted_source")),
+            ),
+            "quality" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(chunkCount = "0", quality = jsonString("chunked")),
+            ),
+            "quality" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(chunkCount = "1", quality = jsonString("no_usable_text")),
+            ),
+            "quality" to indexDocumentsListResultJson(
+                documentsJson = indexDocumentJson(chunkCount = "2", quality = jsonString("single_chunk")),
+            ),
+        )
+
+        invalidResponseSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<IndexDocumentsListResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun indexDocumentsListResponseRejectsInvalidSummaryBounds() {
+        val invalidResponseSamples = listOf(
+            "document_count" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(documentCount = "-1"),
+            ),
+            "chunk_count" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(chunkCount = "-1"),
+            ),
+            "extracted_character_count" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(extractedCharacterCount = "-1"),
+            ),
+            "no_usable_text" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"single_chunk": 0, "chunked": 1}""",
+                ),
+            ),
+            "single_chunk" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"no_usable_text": 0, "chunked": 1}""",
+                ),
+            ),
+            "chunked" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"no_usable_text": 0, "single_chunk": 0}""",
+                ),
+            ),
+            "no_usable_text" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"no_usable_text": -1, "single_chunk": 0, "chunked": 1}""",
+                ),
+            ),
+            "single_chunk" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"no_usable_text": 0, "single_chunk": -1, "chunked": 1}""",
+                ),
+            ),
+            "chunked" to indexDocumentsListResultJson(
+                summaryJson = indexDocumentsSummaryJson(
+                    qualityCountsJson = """{"no_usable_text": 0, "single_chunk": 0, "chunked": -1}""",
+                ),
+            ),
+        )
+
+        invalidResponseSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<IndexDocumentsListResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds() {
+        val invalidDocument = indexDocumentJson(
+            mimeType = jsonString("Text/markdown"),
+        )
+        val invalidResponseSamples = listOf(
+            "mime_type" to {
+                Json.decodeFromString<RetrievalQueryResultPayload>(
+                    retrievalQueryResultJsonWithDocument(invalidDocument),
+                )
+            },
+            "mime_type" to {
+                Json.decodeFromString<SourceAnchorResolveResultPayload>(
+                    sourceAnchorResolveResultJsonWithDocument(invalidDocument),
+                )
+            },
+        )
+
+        invalidResponseSamples.forEach { (fieldName, decode) ->
+            val error = assertThrows(Exception::class.java) {
+                decode()
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun retrievalQueryResponseRejectsTooManyResults() {
+        val overlongResults = (0..100).joinToString(",") { index ->
+            retrievalQueryResultItemJson(index)
+        }
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<RetrievalQueryResultPayload>(
+                retrievalQueryResultJsonWithResults(overlongResults),
+            )
+        }
+
+        assertTrue(
+            "Expected oversized retrieval.query response decode error to name results, got ${error.message}",
+            error.message.orEmpty().contains("results"),
+        )
     }
 
     @Test
@@ -550,6 +1257,30 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun retrievalQueryRequestRejectsInvalidBounds() {
+        val invalidRequestSamples = listOf(
+            "query" to """{"query": ""}""",
+            "query" to """{"query": "   "}""",
+            "query" to """{"query": "${"q".repeat(1025)}"}""",
+            "limit" to """{"query": "relay", "limit": -1}""",
+            "limit" to """{"query": "relay", "limit": 101}""",
+            "max_snippet_characters" to """{"query": "relay", "max_snippet_characters": -1}""",
+            "max_snippet_characters" to """{"query": "relay", "max_snippet_characters": 501}""",
+        )
+
+        invalidRequestSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RetrievalQueryRequestPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
     fun sourceAnchorResolvePayloadUsesProtocolFieldNames() {
         val request = SourceAnchorResolveRequestPayload(
             sourceAnchorId = "source_anchor_0123456789abcdef",
@@ -604,6 +1335,45 @@ class ProtocolCodecTest {
         assertEquals("runtime-notes.md", decoded.document.displayName)
         assertEquals(1, decoded.chunkSummary.chunkIndex)
         assertEquals(120, decoded.chunkSummary.characterCount)
+    }
+
+    @Test
+    fun indexDocumentsListRejectsNonCanonicalContentFingerprints() {
+        nonCanonicalContentFingerprints.forEach { contentFingerprint ->
+            assertContentFingerprintDecodeRejected(contentFingerprint) {
+                Json.decodeFromString<IndexDocumentsListResultPayload>(
+                    indexDocumentsListResultJsonWithContentFingerprint(contentFingerprint),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints() {
+        nonCanonicalContentFingerprints.forEach { contentFingerprint ->
+            assertContentFingerprintDecodeRejected(contentFingerprint) {
+                Json.decodeFromString<RetrievalQueryResultPayload>(
+                    retrievalQueryResultJsonWithSourceAnchor(
+                        sourceAnchorId = "source_anchor_0123456789abcdef",
+                        contentFingerprint = contentFingerprint,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints() {
+        nonCanonicalContentFingerprints.forEach { contentFingerprint ->
+            assertContentFingerprintDecodeRejected(contentFingerprint) {
+                Json.decodeFromString<SourceAnchorResolveResultPayload>(
+                    sourceAnchorResolveResultJsonWithSourceAnchor(
+                        sourceAnchorId = "source_anchor_0123456789abcdef",
+                        contentFingerprint = contentFingerprint,
+                    ),
+                )
+            }
+        }
     }
 
     @Test
@@ -697,6 +1467,47 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun sourceAnchorResolveResultRejectsInvalidChunkSummaryValues() {
+        val invalidChunkSummarySamples = listOf(
+            "chunk_summary.chunk_index" to sourceAnchorResolveResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkSummaryOverrides = mapOf("chunk_index" to -1),
+            ),
+            "chunk_summary.start_character_offset" to sourceAnchorResolveResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkSummaryOverrides = mapOf("start_character_offset" to -1),
+            ),
+            "chunk_summary.end_character_offset" to sourceAnchorResolveResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkSummaryOverrides = mapOf("end_character_offset" to -1),
+            ),
+            "chunk_summary.character_count" to sourceAnchorResolveResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkSummaryOverrides = mapOf("character_count" to -1),
+            ),
+            "chunk_summary.end_character_offset" to sourceAnchorResolveResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkSummaryOverrides = mapOf(
+                    "start_character_offset" to 240,
+                    "end_character_offset" to 120,
+                    "character_count" to 0,
+                ),
+            ),
+        )
+
+        invalidChunkSummarySamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<SourceAnchorResolveResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
     fun sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds() {
         nonCanonicalSourceAnchorIds.forEach { sourceAnchorId ->
             assertSourceAnchorDecodeRejected(sourceAnchorId) {
@@ -752,6 +1563,85 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun retrievalQueryResultRejectsInvalidCoordinatesAndRank() {
+        val invalidResultSamples = listOf(
+            "chunk_index" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                chunkIndex = -1,
+            ),
+            "start_character_offset" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                startCharacterOffset = -1,
+            ),
+            "end_character_offset" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                endCharacterOffset = -1,
+            ),
+            "end_character_offset" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                startCharacterOffset = 240,
+                endCharacterOffset = 120,
+            ),
+            "rank" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                rank = 0,
+            ),
+        )
+
+        invalidResultSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RetrievalQueryResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
+    fun retrievalQueryResultRejectsInvalidLexicalMetadata() {
+        val invalidResultSamples = listOf(
+            "matched_terms" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchedTermsJson = "",
+            ),
+            "matched_terms" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchedTermsJson = (1..17).joinToString(", ") { index -> "\"term$index\"" },
+            ),
+            "matched_terms" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchedTermsJson = "\"relay\", \"\"",
+            ),
+            "matched_terms" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchedTermsJson = "\"relay\", \"${"t".repeat(65)}\"",
+            ),
+            "snippet" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                snippet = "",
+            ),
+            "snippet" to retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                snippet = "s".repeat(501),
+            ),
+        )
+
+        invalidResultSamples.forEach { (fieldName, sample) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RetrievalQueryResultPayload>(sample)
+            }
+
+            assertTrue(
+                "Expected invalid $fieldName decode error to name the field, got ${error.message}",
+                error.message.orEmpty().contains(fieldName),
+            )
+        }
+    }
+
+    @Test
     fun retrievalQueryResultRejectsMissingMatchedTerms() {
         val missingMatchedTermsResult = """
             {
@@ -795,7 +1685,7 @@ class ProtocolCodecTest {
                     content = "Hello",
                     reasoning = "Short thought",
                     attachments = listOf(
-                        ChatAttachmentPayload(
+                        ChatStoredAttachmentPayload(
                             type = "document",
                             mimeType = "text/plain",
                             name = "context.txt",
@@ -823,8 +1713,61 @@ class ProtocolCodecTest {
         assertEquals("text/plain", attachment?.get("mime_type")?.jsonPrimitive?.content)
         assertEquals("context.txt", attachment?.get("name")?.jsonPrimitive?.content)
         assertEquals("Saved context", attachment?.get("text")?.jsonPrimitive?.content)
+        assertFalse(attachment?.containsKey("data_base64") ?: true)
         assertEquals("2026-06-23T09:02:06Z", message?.get("created_at")?.jsonPrimitive?.content)
         assertEquals("Short thought", decoded.messages.first().reasoning)
+    }
+
+    @Test
+    fun chatMessagesListRejectsInlineStoredAttachmentBytes() {
+        val response = """
+            {
+              "session_id": "session-1",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Summarize this stored attachment.",
+                  "attachments": [
+                    {
+                      "type": "document",
+                      "mime_type": "text/plain",
+                      "name": "context.txt",
+                      "text": "Saved context",
+                      "data_base64": "U2F2ZWQgY29udGV4dA=="
+                    }
+                  ],
+                  "created_at": "2026-06-23T09:02:06Z"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ChatMessagesListResultPayload>(response)
+        }
+
+        assertTrue(error.message.orEmpty().contains("data_base64"))
+    }
+
+    @Test
+    fun chatMessagesListRequestRejectsInvalidBounds() {
+        val invalidRequests = listOf(
+            """{"session_id":"","limit":1}""" to "session_id",
+            """{"session_id":"   ","limit":1}""" to "session_id",
+            """{"session_id":"session-1","limit":-1}""" to "limit",
+            """{"session_id":"session-1","limit":501}""" to "limit",
+        )
+
+        invalidRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatMessagesListRequestPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
     }
 
     @Test
@@ -847,12 +1790,130 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun chatTitleAndSessionMutationRequestsRejectInvalidBounds() {
+        val invalidTitleRequests = listOf(
+            """{"session_id":"","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Title this"}]}""" to "session_id",
+            """{"session_id":"   ","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Title this"}]}""" to "session_id",
+            """{"session_id":"session-1","model":"","messages":[{"role":"user","content":"Title this"}]}""" to "model",
+            """{"session_id":"session-1","model":"   ","messages":[{"role":"user","content":"Title this"}]}""" to "model",
+            """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[]}""" to "messages",
+        )
+        val invalidRenameRequests = listOf(
+            """{"session_id":"","title":"Renamed chat"}""" to "session_id",
+            """{"session_id":"   ","title":"Renamed chat"}""" to "session_id",
+            """{"session_id":"session-1","title":""}""" to "title",
+            """{"session_id":"session-1","title":"   "}""" to "title",
+        )
+        val invalidLifecycleRequests = listOf(
+            """{"session_id":""}""",
+            """{"session_id":"   "}""",
+        )
+
+        invalidTitleRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatTitleRequestPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidRenameRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionRenamePayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidLifecycleRequests.forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionLifecyclePayload>(json)
+            }
+
+            assertTrue(
+                "expected session_id in ${error.message}",
+                error.message.orEmpty().contains("session_id"),
+            )
+        }
+    }
+
+    @Test
     fun chatDeltaPayloadAcceptsCompatibilityAliases() {
         val textAlias = Json.decodeFromString<ChatDeltaPayload>("""{"text":"hello"}""")
         val thinkingAlias = Json.decodeFromString<ChatDeltaPayload>("""{"thinking_delta":"plan"}""")
 
         assertEquals("hello", textAlias.content)
         assertEquals("plan", thinkingAlias.reasoning)
+    }
+
+    @Test
+    fun chatStreamResponsePayloadsRejectInvalidBounds() {
+        val invalidDeltas = listOf(
+            "{}" to "delta",
+        )
+        val invalidDonePayloads = listOf(
+            """{"finish_reason":"timeout"}""" to "finish_reason",
+            """{"usage":{"input_tokens":-1,"output_tokens":0}}""" to "input_tokens",
+            """{"usage":{"input_tokens":0,"output_tokens":-1}}""" to "output_tokens",
+        )
+
+        invalidDeltas.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatDeltaPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidDonePayloads.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatDonePayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun modelPullAndChatCancelRequestsRejectInvalidBounds() {
+        val invalidModelPullRequests = listOf(
+            """{"model":""}""" to "model",
+            """{"model":"   "}""" to "model",
+        )
+        val invalidChatCancelRequests = listOf(
+            """{"target_request_id":""}""" to "target_request_id",
+            """{"target_request_id":"   "}""" to "target_request_id",
+        )
+
+        invalidModelPullRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ModelPullPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidChatCancelRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatCancelPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
     }
 
     @Test
@@ -951,6 +2012,53 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun memoryListRequestRejectsInvalidBounds() {
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<MemoryListRequestPayload>("""{"query":""}""")
+        }
+
+        assertTrue(
+            "expected query in ${error.message}",
+            error.message.orEmpty().contains("query"),
+        )
+    }
+
+    @Test
+    fun memoryCrudRequestsRejectInvalidBounds() {
+        val invalidUpsertRequests = listOf(
+            """{"id":"","content":"Prefers concise answers."}""" to "id",
+            """{"id":"   ","content":"Prefers concise answers."}""" to "id",
+            """{"content":""}""" to "content",
+            """{"content":"   "}""" to "content",
+        )
+        val invalidDeleteRequests = listOf(
+            """{"id":""}""" to "id",
+            """{"id":"   "}""" to "id",
+        )
+
+        invalidUpsertRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemoryUpsertPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidDeleteRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemoryDeletePayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
     fun memorySummaryDraftsListPayloadUsesProtocolFieldNames() {
         val protocolJson = Json { encodeDefaults = true }
         val request = MemorySummaryDraftsListRequestPayload(limit = 10)
@@ -1011,6 +2119,166 @@ class ProtocolCodecTest {
         assertEquals("session-1", decoded.drafts.first().session.sessionId)
         assertEquals(1_209_600L, decoded.drafts.first().session.inactiveSeconds)
         assertEquals(1, decoded.drafts.first().sourcePointers.first().messageIndex)
+    }
+
+    @Test
+    fun memorySummaryDraftsListRequestRejectsInvalidBounds() {
+        val invalidRequests = listOf(
+            """{"limit":-1}""",
+            """{"limit":51}""",
+        )
+
+        invalidRequests.forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemorySummaryDraftsListRequestPayload>(json)
+            }
+
+            assertTrue(
+                "expected limit in ${error.message}",
+                error.message.orEmpty().contains("limit"),
+            )
+        }
+    }
+
+    @Test
+    fun memorySummaryDraftResponsePayloadsRejectInvalidBounds() {
+        fun sessionJson(
+            sessionId: String = """"session-1"""",
+            messageCount: String = "7",
+            inactiveSeconds: String = "1209600",
+        ) = """
+            {
+              "session_id": $sessionId,
+              "title": "Runtime notes",
+              "model": "ollama:llama3.1:8b",
+              "last_activity_at": "2026-06-01T09:02:05Z",
+              "message_count": $messageCount,
+              "inactive_seconds": $inactiveSeconds
+            }
+        """.trimIndent()
+
+        fun sourcePointersJson(
+            sessionId: String = """"session-1"""",
+            messageIndex: String = "1",
+            role: String = """"user"""",
+            excerpt: String = """"Summarize my preference."""",
+        ) = """
+            [
+              {
+                "session_id": $sessionId,
+                "message_index": $messageIndex,
+                "role": $role,
+                "created_at": "2026-06-01T09:00:00Z",
+                "excerpt": $excerpt
+              }
+            ]
+        """.trimIndent()
+
+        fun draftListResultJson(
+            id: String = """"long-inactivity:session-1:1000:6"""",
+            session: String = sessionJson(),
+            sourceMessageCount: String = "6",
+            sourceRange: String = """"visible messages 1-6 of 6"""",
+            sourcePointers: String = sourcePointersJson(),
+            summaryPreview: String = """"User: Summarize my preference."""",
+        ) = """
+            {
+              "drafts": [
+                {
+                  "id": $id,
+                  "session": $session,
+                  "source_message_count": $sourceMessageCount,
+                  "source_range": $sourceRange,
+                  "source_pointers": $sourcePointers,
+                  "summary_preview": $summaryPreview
+                }
+              ]
+            }
+        """.trimIndent()
+
+        fun memoryEntrySourceJson(
+            kind: String = """"long_inactivity_summary_draft"""",
+            draftId: String = """"long-inactivity:session-1:1000:6"""",
+            summaryMethod: String = """"deterministic_preview"""",
+            sourceMessageCount: String = "6",
+            sourceRange: String = """"visible messages 1-6 of 6"""",
+            sourcePointers: String = sourcePointersJson(),
+        ) = """
+            {
+              "kind": $kind,
+              "draft_id": $draftId,
+              "summary_method": $summaryMethod,
+              "session": ${sessionJson()},
+              "source_message_count": $sourceMessageCount,
+              "source_range": $sourceRange,
+              "source_pointers": $sourcePointers
+            }
+        """.trimIndent()
+
+        fun memoryListResultJson(
+            id: String = """"memory-1"""",
+            content: String = """"Prefers concise answers."""",
+            source: String = memoryEntrySourceJson(),
+        ) = """
+            {
+              "entries": [
+                {
+                  "id": $id,
+                  "content": $content,
+                  "enabled": true,
+                  "created_at": "2026-06-25T05:25:00Z",
+                  "updated_at": "2026-06-25T05:26:00Z",
+                  "source": $source
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val invalidDraftResults = listOf(
+            draftListResultJson(id = "\"\"") to "id",
+            draftListResultJson(session = sessionJson(sessionId = "\"\"")) to "session_id",
+            draftListResultJson(session = sessionJson(messageCount = "-1")) to "message_count",
+            draftListResultJson(session = sessionJson(inactiveSeconds = "-1")) to "inactive_seconds",
+            draftListResultJson(sourceMessageCount = "0") to "source_message_count",
+            draftListResultJson(sourceRange = "\"\"") to "source_range",
+            draftListResultJson(sourcePointers = "[]") to "source_pointers",
+            draftListResultJson(sourcePointers = sourcePointersJson(sessionId = "\"\"")) to "session_id",
+            draftListResultJson(sourcePointers = sourcePointersJson(messageIndex = "0")) to "message_index",
+            draftListResultJson(sourcePointers = sourcePointersJson(role = "\"system\"")) to "role",
+            draftListResultJson(sourcePointers = sourcePointersJson(excerpt = "\"\"")) to "excerpt",
+            draftListResultJson(summaryPreview = "\"\"") to "summary_preview",
+        )
+        val invalidMemoryResults = listOf(
+            memoryListResultJson(id = "\"\"") to "id",
+            memoryListResultJson(content = "\"\"") to "content",
+            memoryListResultJson(source = memoryEntrySourceJson(kind = "\"manual\"")) to "kind",
+            memoryListResultJson(source = memoryEntrySourceJson(draftId = "\"\"")) to "draft_id",
+            memoryListResultJson(source = memoryEntrySourceJson(summaryMethod = "\"manual\"")) to "summary_method",
+            memoryListResultJson(source = memoryEntrySourceJson(sourceMessageCount = "0")) to "source_message_count",
+            memoryListResultJson(source = memoryEntrySourceJson(sourceRange = "\"\"")) to "source_range",
+            memoryListResultJson(source = memoryEntrySourceJson(sourcePointers = "[]")) to "source_pointers",
+        )
+
+        invalidDraftResults.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemorySummaryDraftsListResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidMemoryResults.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemoryListResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
     }
 
     @Test
@@ -1088,6 +2356,49 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun memorySummaryDraftDecisionRequestsRejectInvalidBounds() {
+        val invalidApproveRequests = listOf(
+            """{"draft_id":"","content":"Reviewed memory"}""" to "draft_id",
+            """{"draft_id":"   ","content":"Reviewed memory"}""" to "draft_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","content":""}""" to "content",
+            """{"draft_id":"long-inactivity:session-1:1000:6","content":"   "}""" to "content",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":""}""" to "expected_session_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":"   "}""" to "expected_session_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":0}""" to "expected_source_message_count",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":-1}""" to "expected_source_message_count",
+        )
+        val invalidDismissRequests = listOf(
+            """{"draft_id":""}""" to "draft_id",
+            """{"draft_id":"   "}""" to "draft_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":""}""" to "expected_session_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":"   "}""" to "expected_session_id",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":0}""" to "expected_source_message_count",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":-1}""" to "expected_source_message_count",
+        )
+
+        invalidApproveRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemorySummaryDraftApprovePayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+        invalidDismissRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemorySummaryDraftDismissPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
     fun memorySummaryDraftDismissPayloadUsesProtocolFieldNames() {
         val protocolJson = Json { encodeDefaults = true }
         val request = MemorySummaryDraftDismissPayload(
@@ -1119,6 +2430,216 @@ class ProtocolCodecTest {
         assertEquals("2026-06-25T05:26:00Z", decoded.dismissedAt)
     }
 
+    @Test
+    fun chatAndMemoryPayloadsRejectInvalidTimestampMetadata() {
+        val invalidDecodes: List<Pair<String, () -> Unit>> = listOf(
+            "last_activity_at" to {
+                Json.decodeFromString<ChatSessionsListResultPayload>(
+                    """
+                    {
+                      "sessions": [
+                        {
+                          "session_id": "session-1",
+                          "title": "Runtime notes",
+                          "model": "ollama:llama3.1:8b",
+                          "last_activity_at": "not-a-date",
+                          "message_count": 1
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "archived_at" to {
+                Json.decodeFromString<ChatSessionsListResultPayload>(
+                    """
+                    {
+                      "sessions": [
+                        {
+                          "session_id": "session-1",
+                          "title": "Runtime notes",
+                          "model": "ollama:llama3.1:8b",
+                          "last_activity_at": "2026-06-23T09:02:05Z",
+                          "message_count": 1,
+                          "status": "archived",
+                          "archived_at": "2026-07-09"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "created_at" to {
+                Json.decodeFromString<ChatMessagesListResultPayload>(
+                    """
+                    {
+                      "session_id": "session-1",
+                      "messages": [
+                        {
+                          "role": "user",
+                          "content": "Hello",
+                          "created_at": "2026-07-09"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "renamed_at" to {
+                Json.decodeFromString<ChatSessionRenamePayload>(
+                    """{"session_id":"session-1","title":"Runtime notes","renamed_at":"not-a-date"}""",
+                )
+                Unit
+            },
+            "archived_at" to {
+                Json.decodeFromString<ChatSessionLifecyclePayload>(
+                    """{"session_id":"session-1","status":"archived","archived_at":"not-a-date"}""",
+                )
+                Unit
+            },
+            "restored_at" to {
+                Json.decodeFromString<ChatSessionLifecyclePayload>(
+                    """{"session_id":"session-1","status":"active","restored_at":"2026-07-09"}""",
+                )
+                Unit
+            },
+            "deleted_at" to {
+                Json.decodeFromString<ChatSessionLifecyclePayload>(
+                    """{"session_id":"session-1","status":"deleted","deleted_at":"2026-07-09T12:34:56"}""",
+                )
+                Unit
+            },
+            "created_at" to {
+                Json.decodeFromString<MemoryListResultPayload>(
+                    """
+                    {
+                      "entries": [
+                        {
+                          "id": "memory-1",
+                          "content": "Prefers concise answers.",
+                          "enabled": true,
+                          "created_at": "not-a-date"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "updated_at" to {
+                Json.decodeFromString<MemoryListResultPayload>(
+                    """
+                    {
+                      "entries": [
+                        {
+                          "id": "memory-1",
+                          "content": "Prefers concise answers.",
+                          "enabled": true,
+                          "updated_at": "2026-07-09"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "deleted_at" to {
+                Json.decodeFromString<MemoryDeleteResultPayload>(
+                    """{"id":"memory-1","deleted_at":"2026-07-09"}""",
+                )
+                Unit
+            },
+            "dismissed_at" to {
+                Json.decodeFromString<MemorySummaryDraftDismissResultPayload>(
+                    """{"draft_id":"long-inactivity:session-1:1000:6","status":"dismissed","dismissed_at":"not-a-date"}""",
+                )
+                Unit
+            },
+            "last_activity_at" to {
+                Json.decodeFromString<MemorySummaryDraftsListResultPayload>(
+                    """
+                    {
+                      "drafts": [
+                        {
+                          "id": "long-inactivity:session-1:1000:6",
+                          "session": {
+                            "session_id": "session-1",
+                            "title": "Runtime notes",
+                            "model": "ollama:llama3.1:8b",
+                            "last_activity_at": "not-a-date",
+                            "message_count": 7,
+                            "inactive_seconds": 1209600
+                          },
+                          "source_message_count": 6,
+                          "source_range": "visible messages 1-6 of 6",
+                          "source_pointers": [
+                            {
+                              "session_id": "session-1",
+                              "message_index": 1,
+                              "role": "user",
+                              "created_at": "2026-06-01T09:00:00Z",
+                              "excerpt": "Summarize my preference."
+                            }
+                          ],
+                          "summary_preview": "User: Summarize my preference."
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+            "created_at" to {
+                Json.decodeFromString<MemorySummaryDraftsListResultPayload>(
+                    """
+                    {
+                      "drafts": [
+                        {
+                          "id": "long-inactivity:session-1:1000:6",
+                          "session": {
+                            "session_id": "session-1",
+                            "title": "Runtime notes",
+                            "model": "ollama:llama3.1:8b",
+                            "last_activity_at": "2026-06-01T09:02:05Z",
+                            "message_count": 7,
+                            "inactive_seconds": 1209600
+                          },
+                          "source_message_count": 6,
+                          "source_range": "visible messages 1-6 of 6",
+                          "source_pointers": [
+                            {
+                              "session_id": "session-1",
+                              "message_index": 1,
+                              "role": "user",
+                              "created_at": "2026-07-09",
+                              "excerpt": "Summarize my preference."
+                            }
+                          ],
+                          "summary_preview": "User: Summarize my preference."
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                Unit
+            },
+        )
+
+        invalidDecodes.forEach { (expectedField, decode) ->
+            val error = assertThrows(Exception::class.java) {
+                decode()
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
     private fun assertSourceAnchorDecodeRejected(sourceAnchorId: String, decode: () -> Unit) {
         val error = assertThrows(Exception::class.java) {
             decode()
@@ -1135,7 +2656,183 @@ class ProtocolCodecTest {
         )
     }
 
-    private fun retrievalQueryResultJsonWithSourceAnchor(sourceAnchorId: String): String {
+    private fun assertContentFingerprintDecodeRejected(contentFingerprint: String, decode: () -> Unit) {
+        val error = assertThrows(Exception::class.java) {
+            decode()
+        }
+        val message = error.message.orEmpty()
+
+        assertTrue(
+            "Expected noncanonical $contentFingerprint decode error to name content_fingerprint, got $message",
+            message.contains("content_fingerprint"),
+        )
+        assertTrue(
+            "Expected noncanonical $contentFingerprint decode error to name canonical fingerprint shape, got $message",
+            message.contains("16 lowercase hex"),
+        )
+    }
+
+    private fun jsonString(value: String): String = "\"$value\""
+
+    private fun indexDocumentJson(
+        id: String = """"doc-1"""",
+        displayName: String = """"runtime-notes.md"""",
+        mimeType: String = """"text/markdown"""",
+        contentFingerprint: String = """"0011223344556677"""",
+        extractedCharacterCount: String = "2048",
+        chunkCount: String = "3",
+        quality: String = """"chunked"""",
+    ): String {
+        return """
+            {
+              "id": $id,
+              "display_name": $displayName,
+              "mime_type": $mimeType,
+              "content_fingerprint": $contentFingerprint,
+              "extracted_character_count": $extractedCharacterCount,
+              "chunk_count": $chunkCount,
+              "quality": $quality
+            }
+        """.trimIndent()
+    }
+
+    private fun indexDocumentsSummaryJson(
+        documentCount: String = "1",
+        chunkCount: String = "3",
+        extractedCharacterCount: String = "2048",
+        qualityCountsJson: String = """
+            {
+              "no_usable_text": 0,
+              "single_chunk": 0,
+              "chunked": 1
+            }
+        """.trimIndent(),
+    ): String {
+        return """
+            {
+              "document_count": $documentCount,
+              "chunk_count": $chunkCount,
+              "extracted_character_count": $extractedCharacterCount,
+              "quality_counts": $qualityCountsJson
+            }
+        """.trimIndent()
+    }
+
+    private fun indexDocumentsListResultJson(
+        documentsJson: String = indexDocumentJson(),
+        summaryJson: String = indexDocumentsSummaryJson(),
+    ): String {
+        return """
+            {
+              "documents": [
+                $documentsJson
+              ],
+              "summary": $summaryJson
+            }
+        """.trimIndent()
+    }
+
+    private fun retrievalQueryResultJsonWithDocument(documentJson: String): String {
+        return """
+            {
+              "results": [
+                {
+                  "document": $documentJson,
+                  "chunk_index": 1,
+                  "start_character_offset": 120,
+                  "end_character_offset": 240,
+                  "rank": 2,
+                  "matched_terms": ["relay", "route"],
+                  "snippet": "Runtime document snippet matched relay route.",
+                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                }
+              ]
+            }
+        """.trimIndent()
+    }
+
+    private fun retrievalQueryResultItemJson(index: Int): String {
+        val fingerprint = index.toString(16).padStart(16, '0')
+        return """
+            {
+              "document": ${indexDocumentJson(
+                  id = jsonString("doc-$index"),
+                  contentFingerprint = jsonString(fingerprint),
+              )},
+              "chunk_index": 0,
+              "start_character_offset": 0,
+              "end_character_offset": 64,
+              "rank": ${index + 1},
+              "matched_terms": ["relay"],
+              "snippet": "Runtime document snippet matched relay.",
+              "source_anchor_id": "source_anchor_$fingerprint"
+            }
+        """.trimIndent()
+    }
+
+    private fun retrievalQueryResultJsonWithResults(resultsJson: String): String {
+        return """
+            {
+              "results": [
+                $resultsJson
+              ]
+            }
+        """.trimIndent()
+    }
+
+    private fun sourceAnchorResolveResultJsonWithDocument(documentJson: String): String {
+        return """
+            {
+              "source_anchor_id": "source_anchor_0123456789abcdef",
+              "document": $documentJson,
+              "chunk_summary": {
+                "chunk_index": 1,
+                "start_character_offset": 120,
+                "end_character_offset": 240,
+                "character_count": 120
+              }
+            }
+        """.trimIndent()
+    }
+
+    private fun indexDocumentsListResultJsonWithContentFingerprint(contentFingerprint: String): String {
+        return """
+            {
+              "documents": [
+                {
+                  "id": "doc-1",
+                  "display_name": "runtime-notes.md",
+                  "mime_type": "text/markdown",
+                  "content_fingerprint": "$contentFingerprint",
+                  "extracted_character_count": 2048,
+                  "chunk_count": 3,
+                  "quality": "chunked"
+                }
+              ],
+              "summary": {
+                "document_count": 1,
+                "chunk_count": 3,
+                "extracted_character_count": 2048,
+                "quality_counts": {
+                  "no_usable_text": 0,
+                  "single_chunk": 0,
+                  "chunked": 1
+                }
+              }
+            }
+        """.trimIndent()
+    }
+
+    private fun retrievalQueryResultJsonWithSourceAnchor(
+        sourceAnchorId: String,
+        contentFingerprint: String = "0011223344556677",
+        chunkIndex: Int = 1,
+        startCharacterOffset: Int = 120,
+        endCharacterOffset: Int = 240,
+        rank: Int = 2,
+        matchedTermsJson: String = "\"relay\", \"route\"",
+        snippet: String = "Runtime document snippet matched relay route.",
+    ): String {
         return """
             {
               "results": [
@@ -1144,17 +2841,17 @@ class ProtocolCodecTest {
                     "id": "doc-1",
                     "display_name": "runtime-notes.md",
                     "mime_type": "text/markdown",
-                    "content_fingerprint": "0011223344556677",
+                    "content_fingerprint": "$contentFingerprint",
                     "extracted_character_count": 2048,
                     "chunk_count": 3,
                     "quality": "chunked"
                   },
-                  "chunk_index": 1,
-                  "start_character_offset": 120,
-                  "end_character_offset": 240,
-                  "rank": 2,
-                  "matched_terms": ["relay", "route"],
-                  "snippet": "Runtime document snippet matched relay route.",
+                  "chunk_index": $chunkIndex,
+                  "start_character_offset": $startCharacterOffset,
+                  "end_character_offset": $endCharacterOffset,
+                  "rank": $rank,
+                  "matched_terms": [$matchedTermsJson],
+                  "snippet": "$snippet",
                   "source_anchor_id": "$sourceAnchorId"
                 }
               ]
@@ -1162,7 +2859,15 @@ class ProtocolCodecTest {
         """.trimIndent()
     }
 
-    private fun sourceAnchorResolveResultJsonWithSourceAnchor(sourceAnchorId: String): String {
+    private fun sourceAnchorResolveResultJsonWithSourceAnchor(
+        sourceAnchorId: String,
+        contentFingerprint: String = "0011223344556677",
+        chunkSummaryOverrides: Map<String, Int> = emptyMap(),
+    ): String {
+        val chunkIndex = chunkSummaryOverrides["chunk_index"] ?: 1
+        val startCharacterOffset = chunkSummaryOverrides["start_character_offset"] ?: 120
+        val endCharacterOffset = chunkSummaryOverrides["end_character_offset"] ?: 240
+        val characterCount = chunkSummaryOverrides["character_count"] ?: 120
         return """
             {
               "source_anchor_id": "$sourceAnchorId",
@@ -1170,16 +2875,16 @@ class ProtocolCodecTest {
                 "id": "doc-1",
                 "display_name": "runtime-notes.md",
                 "mime_type": "text/markdown",
-                "content_fingerprint": "0011223344556677",
+                "content_fingerprint": "$contentFingerprint",
                 "extracted_character_count": 2048,
                 "chunk_count": 3,
                 "quality": "chunked"
               },
               "chunk_summary": {
-                "chunk_index": 1,
-                "start_character_offset": 120,
-                "end_character_offset": 240,
-                "character_count": 120
+                "chunk_index": $chunkIndex,
+                "start_character_offset": $startCharacterOffset,
+                "end_character_offset": $endCharacterOffset,
+                "character_count": $characterCount
               }
             }
         """.trimIndent()

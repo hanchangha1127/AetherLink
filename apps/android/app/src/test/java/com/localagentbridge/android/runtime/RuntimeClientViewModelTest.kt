@@ -13,7 +13,9 @@ import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSearchPayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
+import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
+import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayload
@@ -21,6 +23,7 @@ import com.localagentbridge.android.core.protocol.IndexDocumentsQualityCountsPay
 import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
+import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
 import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
@@ -31,9 +34,11 @@ import com.localagentbridge.android.core.protocol.MemorySummaryDraftPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSessionPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSourcePointerPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListResultPayload
+import com.localagentbridge.android.core.protocol.MemoryUpsertResultPayload
 import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ModelInfoPayload
 import com.localagentbridge.android.core.protocol.ModelPullPayload
+import com.localagentbridge.android.core.protocol.ModelPullResultPayload
 import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
@@ -97,9 +102,11 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -2467,6 +2474,122 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun pairingResultRejectsUnknownMetadataBeforeTrustMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val rawUri = "aetherlink://pair?v=1&n=nonce-unknown-metadata&c=135791" +
+                "&rid=runtime-unknown-metadata&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-unknown-metadata" +
+                "&rh=relay-unknown.example.test&rp=443&ri=relay-unknown&rs=secret-unknown" +
+                "&rx=4102444800000&rrn=nonce-route-unknown&rsc=remote"
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedRuntimeStore = FakeTrustedRuntimeStore()
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for pairing result metadata rejection")
+                    },
+                    relayConnector = RuntimeRelayConnector { route, _ ->
+                        assertEquals("relay-unknown.example.test", route.host)
+                        assertEquals("relay-unknown", route.relayId)
+                        assertEquals("secret-unknown", route.relayFrameSecret)
+                        assertEquals("nonce-route-unknown", route.security.antiReplayNonce)
+                        channel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedRuntimeStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr(rawUri)
+            advanceUntilIdle()
+
+            val pendingSecretRef = requireNotNull(localStore.data.pendingPairingRoute?.relaySecretRef)
+            assertEquals("secret-unknown", localStore.relaySecret(pendingSecretRef))
+            val pairingRequest = channel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
+            val sentCountBeforeRejectedResult = channel.sentEnvelopes.size
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.PairingResult,
+                    requestId = pairingRequest.requestId,
+                    payload = buildJsonObject {
+                        put("accepted", true)
+                        put("runtime_device_id", "runtime-unknown-metadata")
+                        put("runtime_public_key", "runtime-public-key")
+                        put("runtime_key_fingerprint", "runtime-fingerprint")
+                        put("trusted_device_id", "client-1")
+                        put("message", "trusted")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("pairing.result response"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertNull(trustedRuntimeStore.trusted)
+            assertNotNull(localStore.data.pendingPairingRoute)
+            assertEquals("secret-unknown", localStore.relaySecret(pendingSecretRef))
+            assertEquals("135791", rejectedState.pairingCode)
+            assertEquals("AetherLink Runtime", rejectedState.pendingPairingRuntimeName)
+            assertEquals(sentCountBeforeRejectedResult, channel.sentEnvelopes.size)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+            assertFalse(json.encodeToString(localStore.data).contains("127.0.0.1:11434"))
+
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.PairingResult,
+                    requestId = pairingRequest.requestId,
+                    payload = json.encodeToJsonElement(
+                        PairingResultPayload.serializer(),
+                        PairingResultPayload(
+                            accepted = true,
+                            runtimeDeviceIdV2 = "runtime-unknown-metadata",
+                            runtimePublicKey = "runtime-public-key",
+                            runtimeKeyFingerprint = "runtime-fingerprint",
+                            trustedDeviceId = "client-1",
+                            message = "trusted",
+                        ),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val trusted = requireNotNull(trustedRuntimeStore.trusted)
+            val acceptedState = viewModel.state.value
+            assertEquals("runtime-unknown-metadata", trusted.deviceId)
+            assertEquals("relay-unknown.example.test", trusted.relayHost)
+            assertNull(localStore.data.pendingPairingRoute)
+            assertNull(localStore.relaySecret(pendingSecretRef))
+            assertNull(acceptedState.error)
+            assertNull(acceptedState.pendingPairingRuntimeName)
+            assertFalse(acceptedState.isPairingAwaitingRoute)
+            assertEquals("", acceptedState.pairingCode)
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.RuntimeHealth })
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.ChatSessionsList })
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.MemoryList })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun rejectedCompactRelayQrPairingResultClearsPendingRouteAndSecret() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -3709,6 +3832,197 @@ class RuntimeClientViewModelTest {
             val routeRefreshRequests = channel.sentEnvelopes.filter { it.type == MessageType.RouteRefresh }
             assertEquals(2, routeRefreshRequests.size)
             assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                TrustedRuntime(
+                    deviceId = "runtime-auth-challenge",
+                    name = "AetherLink Runtime",
+                    fingerprint = "runtime-fingerprint",
+                    publicKeyBase64 = null,
+                    routeToken = "route-token-1",
+                    relayHost = "relay-auth-challenge.example.test",
+                    relayPort = 443,
+                    relayId = "relay-auth-challenge",
+                    relaySecret = "secret-auth-challenge",
+                    relayExpiresAtEpochMillis = 4102444800000L,
+                    relayNonce = "nonce-route-auth-challenge",
+                    relayScope = "remote",
+                ),
+            )
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for auth challenge metadata rejection")
+                    },
+                    relayConnector = RuntimeRelayConnector { route, _ ->
+                        assertEquals("relay-auth-challenge.example.test", route.host)
+                        assertEquals(443, route.port)
+                        assertEquals("relay-auth-challenge", route.relayId)
+                        assertEquals("secret-auth-challenge", route.relayFrameSecret)
+                        assertEquals("nonce-route-auth-challenge", route.security.antiReplayNonce)
+                        channel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    authenticatedRouteRefreshEnabled = true,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.Hello })
+            val sentCountBeforeRejectedChallenge = channel.sentEnvelopes.size
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthChallenge,
+                    requestId = "auth-challenge",
+                    payload = buildJsonObject {
+                        put("device_id", "client-1")
+                        put("nonce", "nonce-for-signing")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("auth.challenge response"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(sentCountBeforeRejectedChallenge, channel.sentEnvelopes.size)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertFalse(json.encodeToString(localStore.data).contains("127.0.0.1:11434"))
+
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthChallenge,
+                    requestId = "auth-challenge",
+                    payload = buildJsonObject {
+                        put("device_id", "client-1")
+                        put("nonce", "nonce-for-signing")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val authResponse = channel.sentEnvelopes.single { it.type == MessageType.AuthResponse }
+            val payload = json.decodeFromJsonElement(AuthResponsePayload.serializer(), authResponse.payload)
+            assertEquals("auth-challenge", authResponse.requestId)
+            assertEquals("client-1", payload.deviceId)
+            assertEquals("nonce-for-signing", payload.nonce)
+            assertNotNull(payload.signature)
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for auth response metadata rejection")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    authenticatedRouteRefreshEnabled = true,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            val sentCountBeforeRejectedAuth = channel.sentEnvelopes.size
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthResponse,
+                    requestId = "auth-accepted",
+                    payload = buildJsonObject {
+                        put("accepted", true)
+                        put("device_id", "client-1")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("auth.response response"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertFalse(rejectedState.runtimeStatus == "authenticated")
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
+            assertEquals(sentCountBeforeRejectedAuth, channel.sentEnvelopes.size)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList })
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(
+                        deviceId = "client-1",
+                        accepted = true,
+                    ),
+                    requestId = "auth-accepted",
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = viewModel.state.value
+            assertNull(acceptedState.error)
+            assertEquals("authenticated", acceptedState.runtimeStatus)
+            assertTrue(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList })
         } finally {
             Dispatchers.resetMain()
         }
@@ -7914,6 +8228,240 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(drafts = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemorySummaryDraftsList }.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val initialState = fixture.viewModel.state.value
+            val initialRuntimeStatus = initialState.runtimeStatus
+            val initialBackendAvailable = initialState.backendAvailable
+            val initialBackendCode = initialState.backendCode
+            val initialProviderStatuses = initialState.providerStatuses
+            val initialModelResidency = initialState.modelResidency
+            val initialModelsListRequests = fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList }
+            val initialChatSessionsListRequests = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList }
+            val initialMemoryListRequests = fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList }
+            val initialMemorySummaryDraftsListRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            fun assertRuntimeHealthStateUnchanged() {
+                val state = fixture.viewModel.state.value
+                assertEquals(initialRuntimeStatus, state.runtimeStatus)
+                assertEquals(initialBackendAvailable, state.backendAvailable)
+                assertEquals(initialBackendCode, state.backendCode)
+                assertEquals(initialProviderStatuses, state.providerStatuses)
+                assertEquals(initialModelResidency, state.modelResidency)
+                assertEquals(initialModelsListRequests, fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList })
+                assertEquals(
+                    initialChatSessionsListRequests,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
+                assertEquals(initialMemoryListRequests, fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+                assertEquals(
+                    initialMemorySummaryDraftsListRequests,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+                )
+            }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RuntimeHealth,
+                    requestId = "runtime-health-unknown-top-level",
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "status": "ok",
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedTopLevelState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedTopLevelState.error?.code)
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("runtime.health"))
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertRuntimeHealthStateUnchanged()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RuntimeHealth,
+                    requestId = "runtime-health-unknown-provider",
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "status": "ok",
+                              "ollama": {
+                                "available": true,
+                                "provider_url": "http://127.0.0.1:11434"
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedProviderState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedProviderState.error?.code)
+            assertTrue(rejectedProviderState.error?.technicalDetail.orEmpty().contains("runtime.health"))
+            assertTrue(rejectedProviderState.error?.technicalDetail.orEmpty().contains("ollama.provider_url"))
+            assertRuntimeHealthStateUnchanged()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RuntimeHealth,
+                    requestId = "runtime-health-unknown-residency",
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "status": "ok",
+                              "model_residency": {
+                                "supported": true,
+                                "in_flight_generations": 0,
+                                "workspace_id": "local-workspace"
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedResidencyState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedResidencyState.error?.code)
+            assertTrue(rejectedResidencyState.error?.technicalDetail.orEmpty().contains("runtime.health"))
+            assertTrue(rejectedResidencyState.error?.technicalDetail.orEmpty().contains("model_residency.workspace_id"))
+            assertRuntimeHealthStateUnchanged()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RuntimeHealth,
+                    requestId = "runtime-health-unknown-residency-failure",
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "status": "ok",
+                              "model_residency": {
+                                "supported": true,
+                                "in_flight_generations": 0,
+                                "last_unload_failure": {
+                                  "provider": "ollama",
+                                  "model_id": "llama3.1:8b",
+                                  "reason": "manual",
+                                  "backend_url": "http://127.0.0.1:11434"
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedNestedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedNestedState.error?.code)
+            assertTrue(rejectedNestedState.error?.technicalDetail.orEmpty().contains("runtime.health"))
+            assertTrue(
+                rejectedNestedState.error?.technicalDetail.orEmpty()
+                    .contains("model_residency.last_unload_failure.backend_url"),
+            )
+            assertRuntimeHealthStateUnchanged()
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(
+                        status = "degraded",
+                        ollama = RuntimeBackendStatusPayload(
+                            available = false,
+                            message = "Provider unavailable",
+                            code = "backend_unavailable",
+                            retryable = true,
+                        ),
+                        modelResidency = RuntimeModelResidencyPayload(
+                            supported = true,
+                            activeProvider = "ollama",
+                            activeModelId = "llama3.1:8b",
+                            inFlightGenerations = 1,
+                            idleUnloadDelaySeconds = 60,
+                        ),
+                    ),
+                    requestId = "runtime-health-canonical-retry",
+                ),
+            )
+            advanceUntilIdle()
+
+            val retryState = fixture.viewModel.state.value
+            assertEquals("degraded", retryState.runtimeStatus)
+            assertEquals(false, retryState.backendAvailable)
+            assertEquals("backend_unavailable", retryState.backendCode)
+            assertEquals(1, retryState.providerStatuses.size)
+            assertEquals("ollama", retryState.providerStatuses.single().id)
+            assertEquals(false, retryState.providerStatuses.single().available)
+            assertEquals("Provider unavailable", retryState.providerStatuses.single().message)
+            assertEquals("backend_unavailable", retryState.providerStatuses.single().code)
+            assertEquals(true, retryState.providerStatuses.single().retryable)
+            val residency = requireNotNull(retryState.modelResidency)
+            assertTrue(residency.supported)
+            assertEquals("ollama", residency.activeProvider)
+            assertEquals("llama3.1:8b", residency.activeModelId)
+            assertEquals(1, residency.inFlightGenerations)
+            assertEquals(60, residency.idleUnloadDelaySeconds)
+            assertNull(retryState.error)
+            assertEquals(initialModelsListRequests + 1, fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList })
+            assertEquals(
+                initialChatSessionsListRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            assertEquals(initialMemoryListRequests + 1, fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+            assertEquals(
+                initialMemorySummaryDraftsListRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -7970,8 +8518,8 @@ class RuntimeClientViewModelTest {
                 supported = true,
                 activeProvider = "http://127.0.0.1:11434",
                 activeModelId = "llama3.1:8b route_token=secret",
-                inFlightGenerations = -2,
-                idleUnloadDelaySeconds = -1,
+                inFlightGenerations = 2,
+                idleUnloadDelaySeconds = 600,
                 lastUnloadFailure = RuntimeModelResidencyUnloadFailurePayload(
                     provider = "http://127.0.0.1:11434",
                     modelId = "qwen-local relay_secret=secret",
@@ -7985,9 +8533,19 @@ class RuntimeClientViewModelTest {
         assertTrue(residency.supported)
         assertNull(residency.activeProvider)
         assertNull(residency.activeModelId)
-        assertEquals(0, residency.inFlightGenerations)
-        assertEquals(0, residency.idleUnloadDelaySeconds)
+        assertEquals(2, residency.inFlightGenerations)
+        assertEquals(600, residency.idleUnloadDelaySeconds)
         assertNull(residency.lastUnloadFailure)
+    }
+
+    @Test
+    fun runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty() {
+        assertEquals("", runtimeProviderSafeMessage(null))
+        assertEquals("", runtimeProviderSafeMessage("   "))
+        assertEquals("Provider is reachable", runtimeProviderSafeMessage(" Provider is reachable "))
+        assertEquals("", runtimeProviderSafeMessage("http://127.0.0.1:11434/api/tags"))
+        assertEquals("", runtimeProviderSafeMessage("route_token=route-secret-token"))
+        assertEquals("", runtimeProviderSafeMessage("relay_secret=relay-secret-value"))
     }
 
     @Test
@@ -8103,6 +8661,117 @@ class RuntimeClientViewModelTest {
             assertEquals(uninstalledModel.id, fixture.localStore.data.selectedModelId)
             assertEquals(uninstalledModel.id, pullPayload.model)
             assertEquals(SelectedModelSendState.NotInstalled, state.selectedModelSendState())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun modelPullResultRejectsUnknownMetadataBeforeInstallStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val installedModel = textChatModel()
+            val uninstalledModel = installedModel.copy(
+                id = "ollama:gemma3:12b",
+                name = "Gemma 3 12B",
+                installed = false,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(installedModel, uninstalledModel),
+                selectedModelId = installedModel.id,
+            )
+
+            fixture.viewModel.selectModel(uninstalledModel.id)
+            advanceUntilIdle()
+
+            val pullEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsPull }
+            val modelListRequestsBeforeResult = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ModelsList
+            }
+            assertEquals(pullEnvelope.requestId, fixture.viewModel.privateField<String>("pendingModelPullRequestId"))
+            assertEquals(uninstalledModel.id, fixture.viewModel.state.value.installingModelId)
+            assertEquals(uninstalledModel.id, fixture.viewModel.privateField<String>("modelIdToSelectAfterRefresh"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsPull,
+                    serializer = ModelPullResultPayload.serializer(),
+                    payload = ModelPullResultPayload(
+                        model = uninstalledModel.id,
+                        backend = "ollama",
+                        provider = "ollama",
+                        status = "success",
+                        installed = true,
+                    ),
+                    requestId = "stale-model-pull-result",
+                ),
+            )
+            advanceUntilIdle()
+
+            val afterStaleResult = fixture.viewModel.state.value
+            assertNull(afterStaleResult.error)
+            assertEquals(uninstalledModel.id, afterStaleResult.installingModelId)
+            assertEquals(pullEnvelope.requestId, fixture.viewModel.privateField<String>("pendingModelPullRequestId"))
+            assertEquals(
+                modelListRequestsBeforeResult,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ModelsPull,
+                    requestId = pullEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("model", uninstalledModel.id)
+                        put("backend", "ollama")
+                        put("provider", "ollama")
+                        put("status", "success")
+                        put("installed", true)
+                        put("provider_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("models.pull"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("provider_url"))
+            assertEquals(uninstalledModel.id, rejectedState.installingModelId)
+            assertEquals(pullEnvelope.requestId, fixture.viewModel.privateField<String>("pendingModelPullRequestId"))
+            assertEquals(uninstalledModel.id, fixture.viewModel.privateField<String>("modelIdToSelectAfterRefresh"))
+            assertEquals(
+                modelListRequestsBeforeResult,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("127.0.0.1:11434"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsPull,
+                    serializer = ModelPullResultPayload.serializer(),
+                    payload = ModelPullResultPayload(
+                        model = uninstalledModel.id,
+                        backend = "ollama",
+                        provider = "ollama",
+                        status = "success",
+                        installed = true,
+                    ),
+                    requestId = pullEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertNull(acceptedState.installingModelId)
+            assertNull(fixture.viewModel.privateField<String>("pendingModelPullRequestId"))
+            assertEquals(
+                modelListRequestsBeforeResult + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
         } finally {
             Dispatchers.resetMain()
         }
@@ -8813,7 +9482,7 @@ class RuntimeClientViewModelTest {
                                 search = ChatSessionSearchPayload(
                                     rank = 1,
                                     snippet = "Relay recovery source matched the memory entry.",
-                                    matchedFields = listOf("content", "source_excerpt", "content"),
+                                    matchedFields = listOf("content", "source_excerpt"),
                                 ),
                             ),
                         ),
@@ -8986,46 +9655,45 @@ class RuntimeClientViewModelTest {
 
             val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
             fixture.channel.enqueue(
-                envelope(
+                ProtocolEnvelope(
                     type = MessageType.IndexDocumentsList,
-                    serializer = IndexDocumentsListResultPayload.serializer(),
-                    payload = IndexDocumentsListResultPayload(
-                        documents = listOf(
-                            RuntimeDocumentIndexDocumentPayload(
-                                id = "doc-summary-bounds",
-                                displayName = "Summary Bounds.md",
-                                mimeType = "text/markdown",
-                                contentFingerprint = "bbbbaaaa99998888",
-                                extractedCharacterCount = 128,
-                                chunkCount = 1,
-                                quality = "single_chunk",
-                            ),
-                        ),
-                        summary = IndexDocumentsSummaryPayload(
-                            documentCount = -7,
-                            chunkCount = -3,
-                            extractedCharacterCount = -1200,
-                            qualityCounts = IndexDocumentsQualityCountsPayload(
-                                noUsableText = -1,
-                                singleChunk = -2,
-                                chunked = -3,
-                            ),
-                        ),
-                    ),
                     requestId = catalogRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "documents": [
+                                {
+                                  "id": "doc-summary-bounds",
+                                  "display_name": "Summary Bounds.md",
+                                  "mime_type": "text/markdown",
+                                  "content_fingerprint": "bbbbaaaa99998888",
+                                  "extracted_character_count": 128,
+                                  "chunk_count": 1,
+                                  "quality": "single_chunk"
+                                }
+                              ],
+                              "summary": {
+                                "document_count": -7,
+                                "chunk_count": -3,
+                                "extracted_character_count": -1200,
+                                "quality_counts": {
+                                  "no_usable_text": -1,
+                                  "single_chunk": -2,
+                                  "chunked": -3
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
                 ),
             )
             advanceUntilIdle()
 
             val catalog = fixture.viewModel.state.value.documentCatalog
             assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
-            assertEquals(0, catalog.summary.documentCount)
-            assertEquals(0, catalog.summary.chunkCount)
-            assertEquals(0, catalog.summary.extractedCharacterCount)
-            assertEquals(0, catalog.summary.qualityCounts.noUsableText)
-            assertEquals(0, catalog.summary.qualityCounts.singleChunk)
-            assertEquals(0, catalog.summary.qualityCounts.chunked)
-            assertEquals("Summary Bounds.md", catalog.documents.single().displayName)
+            assertTrue(catalog.documents.isEmpty())
+            assertEquals(RuntimeDocumentIndexSummary(), catalog.summary)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
         } finally {
@@ -9067,7 +9735,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.IndexDocumentsList,
                     serializer = IndexDocumentsListResultPayload.serializer(),
                     payload = IndexDocumentsListResultPayload(
-                        documents = (0 until 105).map(::document),
+                        documents = (0 until 100).map(::document),
                         summary = IndexDocumentsSummaryPayload(
                             documentCount = 105,
                             chunkCount = 210,
@@ -9075,7 +9743,7 @@ class RuntimeClientViewModelTest {
                             qualityCounts = IndexDocumentsQualityCountsPayload(
                                 noUsableText = 0,
                                 singleChunk = 0,
-                                chunked = 105,
+                                chunked = 100,
                             ),
                         ),
                     ),
@@ -9132,7 +9800,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState() = runTest {
+    fun runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -9149,17 +9817,187 @@ class RuntimeClientViewModelTest {
                 chunkCount = 1,
                 quality = "single_chunk",
             )
-            val whitespaceFingerprintDocument = canonicalDocument.copy(
-                id = "doc-whitespace-fingerprint",
-                contentFingerprint = " 0123456789abcdef",
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.IndexDocumentsList,
+                    requestId = catalogRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "documents": [
+                                {
+                                  "id": "doc-whitespace-fingerprint",
+                                  "display_name": "Whitespace Fingerprint.md",
+                                  "mime_type": "text/markdown",
+                                  "content_fingerprint": " 0123456789abcdef",
+                                  "extracted_character_count": 128,
+                                  "chunk_count": 1,
+                                  "quality": "single_chunk"
+                                }
+                              ],
+                              "summary": {
+                                "document_count": 1,
+                                "chunk_count": 1,
+                                "extracted_character_count": 128,
+                                "quality_counts": {
+                                  "no_usable_text": 0,
+                                  "single_chunk": 1,
+                                  "chunked": 0
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
             )
-            val uppercaseFingerprintDocument = canonicalDocument.copy(
-                id = "doc-uppercase-fingerprint",
-                contentFingerprint = "0123456789ABCDEF",
+            advanceUntilIdle()
+
+            val rejectedCatalogState = fixture.viewModel.state.value
+            assertFalse(rejectedCatalogState.isLoadingDocumentCatalog)
+            assertTrue(rejectedCatalogState.documentCatalog.documents.isEmpty())
+            assertEquals("invalid_payload", rejectedCatalogState.error?.code)
+            assertTrue(rejectedCatalogState.error?.technicalDetail.orEmpty().contains("content_fingerprint"))
+            assertTrue(rejectedCatalogState.error?.technicalDetail.orEmpty().contains("16 lowercase hex"))
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val retryCatalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(canonicalDocument),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 1,
+                            extractedCharacterCount = 128,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 1,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = retryCatalogRequest.requestId,
+                ),
             )
-            val overlongFingerprintDocument = canonicalDocument.copy(
-                id = "doc-overlong-fingerprint",
-                contentFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("0123456789abcdef"),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.contentFingerprint },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.searchRuntimeDocuments("fingerprint")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-uppercase-fingerprint",
+                                    "display_name": "Uppercase Fingerprint.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "0123456789ABCDEF",
+                                    "extracted_character_count": 128,
+                                    "chunk_count": 1,
+                                    "quality": "single_chunk"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 64,
+                                  "rank": 1,
+                                  "matched_terms": ["fingerprint"],
+                                  "snippet": "Noncanonical content fingerprint must fail decode.",
+                                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSearchState = fixture.viewModel.state.value
+            assertFalse(rejectedSearchState.isSearchingDocuments)
+            assertTrue(rejectedSearchState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedSearchState.error?.code)
+            assertTrue(rejectedSearchState.error?.technicalDetail.orEmpty().contains("content_fingerprint"))
+            assertTrue(rejectedSearchState.error?.technicalDetail.orEmpty().contains("16 lowercase hex"))
+
+            fixture.viewModel.searchRuntimeDocuments("fingerprint retry")
+            advanceUntilIdle()
+
+            val retrySearchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = canonicalDocument,
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 64,
+                                rank = 1,
+                                matchedTerms = listOf("fingerprint"),
+                                snippet = "Canonical fingerprint metadata stays runtime-owned.",
+                                sourceAnchorId = "source_anchor_0123456789abcdef",
+                            ),
+                        ),
+                    ),
+                    requestId = retrySearchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("0123456789abcdef"),
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.contentFingerprint },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val canonicalDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-future-metadata",
+                displayName = "Future Metadata.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "0123456789abcdef",
+                extractedCharacterCount = 512,
+                chunkCount = 2,
+                quality = "chunked",
             )
 
             fixture.viewModel.refreshRuntimeDocumentCatalog()
@@ -9167,74 +10005,206 @@ class RuntimeClientViewModelTest {
 
             val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
             fixture.channel.enqueue(
-                envelope(
+                ProtocolEnvelope(
                     type = MessageType.IndexDocumentsList,
-                    serializer = IndexDocumentsListResultPayload.serializer(),
-                    payload = IndexDocumentsListResultPayload(
-                        documents = listOf(
-                            canonicalDocument,
-                            whitespaceFingerprintDocument,
-                            uppercaseFingerprintDocument,
-                            overlongFingerprintDocument,
-                        ),
-                        summary = IndexDocumentsSummaryPayload(
-                            documentCount = 4,
-                            chunkCount = 4,
-                            extractedCharacterCount = 512,
-                            qualityCounts = IndexDocumentsQualityCountsPayload(
-                                noUsableText = 0,
-                                singleChunk = 4,
-                                chunked = 0,
-                            ),
-                        ),
-                    ),
                     requestId = catalogRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "documents": [
+                                {
+                                  "id": "doc-catalog-future",
+                                  "display_name": "Catalog Future.md",
+                                  "mime_type": "text/markdown",
+                                  "content_fingerprint": "0123456789abcdef",
+                                  "extracted_character_count": 512,
+                                  "chunk_count": 2,
+                                  "quality": "chunked",
+                                  "source_path": "/private/catalog.md"
+                                }
+                              ],
+                              "summary": {
+                                "document_count": 1,
+                                "chunk_count": 2,
+                                "extracted_character_count": 512,
+                                "quality_counts": {
+                                  "no_usable_text": 0,
+                                  "single_chunk": 0,
+                                  "chunked": 1
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
                 ),
             )
             advanceUntilIdle()
 
-            val catalogDocuments = fixture.viewModel.state.value.documentCatalog.documents
-            assertEquals(
-                listOf("0123456789abcdef", "", "", ""),
-                catalogDocuments.map { it.contentFingerprint },
-            )
+            val rejectedCatalogState = fixture.viewModel.state.value
+            assertFalse(rejectedCatalogState.isLoadingDocumentCatalog)
+            assertTrue(rejectedCatalogState.documentCatalog.documents.isEmpty())
+            assertEquals("invalid_payload", rejectedCatalogState.error?.code)
+            assertTrue(rejectedCatalogState.error?.technicalDetail.orEmpty().contains("index.documents.list"))
+            assertTrue(rejectedCatalogState.error?.technicalDetail.orEmpty().contains("documents[0].source_path"))
 
-            fixture.viewModel.searchRuntimeDocuments("fingerprint")
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val retryCatalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(canonicalDocument),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 2,
+                            extractedCharacterCount = 512,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 0,
+                                chunked = 1,
+                            ),
+                        ),
+                    ),
+                    requestId = retryCatalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("Future Metadata.md"),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.displayName },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.searchRuntimeDocuments("future metadata")
             advanceUntilIdle()
 
             val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-search-future",
+                                    "display_name": "Search Future.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "abcdef0123456789",
+                                    "extracted_character_count": 512,
+                                    "chunk_count": 2,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 80,
+                                  "rank": 1,
+                                  "matched_terms": ["future"],
+                                  "snippet": "Future metadata must fail before transient state.",
+                                  "source_anchor_id": "source_anchor_abcdef0123456789",
+                                  "retrieval_context": "private retrieval context"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSearchState = fixture.viewModel.state.value
+            assertFalse(rejectedSearchState.isSearchingDocuments)
+            assertTrue(rejectedSearchState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedSearchState.error?.code)
+            assertTrue(rejectedSearchState.error?.technicalDetail.orEmpty().contains("retrieval.query"))
+            assertTrue(rejectedSearchState.error?.technicalDetail.orEmpty().contains("results[0].retrieval_context"))
+
+            fixture.viewModel.searchRuntimeDocuments("future metadata retry")
+            advanceUntilIdle()
+
+            val documentMetadataSearchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = documentMetadataSearchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-search-document-future",
+                                    "display_name": "Search Document Future.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "abcdef0123456789",
+                                    "extracted_character_count": 512,
+                                    "chunk_count": 2,
+                                    "quality": "chunked",
+                                    "source_path": "/private/search.md"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 80,
+                                  "rank": 1,
+                                  "matched_terms": ["future"],
+                                  "snippet": "Nested document metadata must also fail.",
+                                  "source_anchor_id": "source_anchor_abcdef0123456789"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedDocumentMetadataSearchState = fixture.viewModel.state.value
+            assertFalse(rejectedDocumentMetadataSearchState.isSearchingDocuments)
+            assertTrue(rejectedDocumentMetadataSearchState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedDocumentMetadataSearchState.error?.code)
+            assertTrue(
+                rejectedDocumentMetadataSearchState.error?.technicalDetail.orEmpty()
+                    .contains("results[0].document.source_path"),
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("canonical future metadata")
+            advanceUntilIdle()
+
+            val canonicalSearchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.RetrievalQuery,
                     serializer = RetrievalQueryResultPayload.serializer(),
                     payload = RetrievalQueryResultPayload(
                         results = listOf(
-                            canonicalDocument,
-                            whitespaceFingerprintDocument,
-                            uppercaseFingerprintDocument,
-                            overlongFingerprintDocument,
-                        ).mapIndexed { index, document ->
                             RetrievalQueryResultItemPayload(
-                                document = document,
-                                chunkIndex = index,
-                                startCharacterOffset = index * 10,
-                                endCharacterOffset = index * 10 + 8,
-                                rank = index + 1,
-                                matchedTerms = listOf("fingerprint"),
-                                snippet = "Fingerprint metadata stays runtime-owned.",
-                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
-                            )
-                        },
+                                document = canonicalDocument,
+                                chunkIndex = 0,
+                                startCharacterOffset = 0,
+                                endCharacterOffset = 80,
+                                rank = 1,
+                                matchedTerms = listOf("future"),
+                                snippet = "Canonical document metadata can recover after rejection.",
+                                sourceAnchorId = "source_anchor_abcdef0123456789",
+                            ),
+                        ),
                     ),
-                    requestId = searchRequest.requestId,
+                    requestId = canonicalSearchRequest.requestId,
                 ),
             )
             advanceUntilIdle()
 
             assertEquals(
-                listOf("0123456789abcdef", "", "", ""),
-                fixture.viewModel.state.value.documentSearchResults.map { it.document.contentFingerprint },
+                listOf("Future Metadata.md"),
+                fixture.viewModel.state.value.documentSearchResults.map { it.document.displayName },
             )
+            assertNull(fixture.viewModel.state.value.error)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
         } finally {
@@ -9261,105 +10231,158 @@ class RuntimeClientViewModelTest {
                 chunkCount = 1,
                 quality = "single_chunk",
             )
-            val whitespaceMimeDocument = canonicalDocument.copy(
-                id = "doc-whitespace-mime",
-                mimeType = " text/markdown\n",
-            )
-            val uppercaseMimeDocument = canonicalDocument.copy(
-                id = "doc-uppercase-mime",
-                mimeType = "Text/Markdown",
-            )
-            val parameterizedMimeDocument = canonicalDocument.copy(
-                id = "doc-parameterized-mime",
-                mimeType = "text/plain; charset=utf-8",
-            )
-            val urlMimeDocument = canonicalDocument.copy(
-                id = "doc-url-mime",
-                mimeType = "https://example.invalid/text/plain",
-            )
-            val overlongMimeDocument = canonicalDocument.copy(
-                id = "doc-overlong-mime",
-                mimeType = "text/" + "a".repeat(124),
-            )
-            val documents = listOf(
-                canonicalDocument,
-                whitespaceMimeDocument,
-                uppercaseMimeDocument,
-                parameterizedMimeDocument,
-                urlMimeDocument,
-                overlongMimeDocument,
-            )
 
             fixture.viewModel.refreshRuntimeDocumentCatalog()
             advanceUntilIdle()
 
             val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
             fixture.channel.enqueue(
-                envelope(
+                ProtocolEnvelope(
                     type = MessageType.IndexDocumentsList,
-                    serializer = IndexDocumentsListResultPayload.serializer(),
-                    payload = IndexDocumentsListResultPayload(
-                        documents = documents,
-                        summary = IndexDocumentsSummaryPayload(
-                            documentCount = documents.size,
-                            chunkCount = documents.size,
-                            extractedCharacterCount = documents.sumOf { it.extractedCharacterCount },
-                            qualityCounts = IndexDocumentsQualityCountsPayload(
-                                noUsableText = 0,
-                                singleChunk = documents.size,
-                                chunked = 0,
-                            ),
-                        ),
-                    ),
                     requestId = catalogRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "documents": [
+                                {
+                                  "id": "doc-uppercase-mime",
+                                  "display_name": "Uppercase MIME.md",
+                                  "mime_type": "Text/Markdown",
+                                  "content_fingerprint": "1234567890abcdef",
+                                  "extracted_character_count": 128,
+                                  "chunk_count": 1,
+                                  "quality": "single_chunk"
+                                }
+                              ],
+                              "summary": {
+                                "document_count": 1,
+                                "chunk_count": 1,
+                                "extracted_character_count": 128,
+                                "quality_counts": {
+                                  "no_usable_text": 0,
+                                  "single_chunk": 1,
+                                  "chunked": 0
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
                 ),
             )
             advanceUntilIdle()
 
-            val expectedMimeTypes = listOf(
-                "text/markdown",
-                "application/octet-stream",
-                "application/octet-stream",
-                "application/octet-stream",
-                "application/octet-stream",
-                "application/octet-stream",
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertTrue(fixture.viewModel.state.value.documentCatalog.documents.isEmpty())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.state.value.error?.technicalDetail.orEmpty().contains("mime_type"))
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val retryCatalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(canonicalDocument),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 1,
+                            extractedCharacterCount = 128,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 1,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = retryCatalogRequest.requestId,
+                ),
             )
+            advanceUntilIdle()
+
             assertEquals(
-                expectedMimeTypes,
+                listOf("text/markdown"),
                 fixture.viewModel.state.value.documentCatalog.documents.map { it.mimeType },
             )
+            assertNull(fixture.viewModel.state.value.error)
 
             fixture.viewModel.searchRuntimeDocuments("mime")
             advanceUntilIdle()
 
             val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
             fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-parameterized-mime",
+                                    "display_name": "Parameterized MIME.md",
+                                    "mime_type": "text/plain; charset=utf-8",
+                                    "content_fingerprint": "1234567890abcdef",
+                                    "extracted_character_count": 128,
+                                    "chunk_count": 1,
+                                    "quality": "single_chunk"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 64,
+                                  "rank": 1,
+                                  "matched_terms": ["mime"],
+                                  "snippet": "Parameterized MIME must fail before transient state.",
+                                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.state.value.error?.technicalDetail.orEmpty().contains("mime_type"))
+
+            fixture.viewModel.searchRuntimeDocuments("canonical mime")
+            advanceUntilIdle()
+
+            val retrySearchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
                 envelope(
                     type = MessageType.RetrievalQuery,
                     serializer = RetrievalQueryResultPayload.serializer(),
                     payload = RetrievalQueryResultPayload(
-                        results = documents.mapIndexed { index, document ->
+                        results = listOf(
                             RetrievalQueryResultItemPayload(
-                                document = document,
-                                chunkIndex = index,
-                                startCharacterOffset = index * 10,
-                                endCharacterOffset = index * 10 + 8,
-                                rank = index + 1,
-                                matchedTerms = listOf("mime"),
-                                snippet = "MIME metadata stays runtime-owned.",
-                                sourceAnchorId = "source_anchor_0123456789abcd${index}f",
-                            )
-                        },
+	                                document = canonicalDocument,
+	                                chunkIndex = 0,
+	                                startCharacterOffset = 0,
+	                                endCharacterOffset = 64,
+	                                rank = 1,
+	                                matchedTerms = listOf("mime"),
+                                snippet = "Canonical MIME metadata stays runtime-owned.",
+                                sourceAnchorId = "source_anchor_0123456789abcdef",
+                            ),
+                        ),
                     ),
-                    requestId = searchRequest.requestId,
+                    requestId = retrySearchRequest.requestId,
                 ),
             )
             advanceUntilIdle()
 
             assertEquals(
-                expectedMimeTypes,
+                listOf("text/markdown"),
                 fixture.viewModel.state.value.documentSearchResults.map { it.document.mimeType },
             )
+            assertNull(fixture.viewModel.state.value.error)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
         } finally {
@@ -9377,35 +10400,34 @@ class RuntimeClientViewModelTest {
                 models = listOf(textChatModel()),
                 redactRuntimeOwnedLocalDataOnSave = true,
             )
-            val negativeChunkDocument = RuntimeDocumentIndexDocumentPayload(
-                id = "doc-negative-chunk-quality",
-                displayName = "Negative Chunk Quality.md",
-                mimeType = "text/markdown",
-                contentFingerprint = "1111222233334444",
-                extractedCharacterCount = 128,
-                chunkCount = -7,
-                quality = "chunked",
-            )
-            val zeroChunkDocument = negativeChunkDocument.copy(
+            val zeroChunkDocument = RuntimeDocumentIndexDocumentPayload(
                 id = "doc-zero-chunk-quality",
+                displayName = "Zero Chunk Quality.md",
+                mimeType = "text/markdown",
                 contentFingerprint = "2222333344445555",
+                extractedCharacterCount = 0,
                 chunkCount = 0,
+                quality = "no_usable_text",
+            )
+            val singleChunkDocument = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-single-chunk-quality",
+                displayName = "Single Chunk Quality.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "3333444455556666",
+                extractedCharacterCount = 128,
+                chunkCount = 1,
                 quality = "single_chunk",
             )
-            val singleChunkDocument = negativeChunkDocument.copy(
-                id = "doc-single-chunk-quality",
-                contentFingerprint = "3333444455556666",
-                chunkCount = 1,
-                quality = "CHUNKED",
-            )
-            val chunkedDocument = negativeChunkDocument.copy(
+            val chunkedDocument = RuntimeDocumentIndexDocumentPayload(
                 id = "doc-multi-chunk-quality",
+                displayName = "Multi Chunk Quality.md",
+                mimeType = "text/markdown",
                 contentFingerprint = "4444555566667777",
+                extractedCharacterCount = 256,
                 chunkCount = 2,
-                quality = "future_trusted_source",
+                quality = "chunked",
             )
             val documents = listOf(
-                negativeChunkDocument,
                 zeroChunkDocument,
                 singleChunkDocument,
                 chunkedDocument,
@@ -9415,6 +10437,50 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             val catalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.IndexDocumentsList,
+                    requestId = catalogRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "documents": [
+                                {
+                                  "id": "doc-quality-mismatch",
+                                  "display_name": "Quality Mismatch.md",
+                                  "mime_type": "text/markdown",
+                                  "content_fingerprint": "1111222233334444",
+                                  "extracted_character_count": 128,
+                                  "chunk_count": 0,
+                                  "quality": "chunked"
+                                }
+                              ],
+                              "summary": {
+                                "document_count": 1,
+                                "chunk_count": 0,
+                                "extracted_character_count": 128,
+                                "quality_counts": {
+                                  "no_usable_text": 1,
+                                  "single_chunk": 0,
+                                  "chunked": 0
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertTrue(fixture.viewModel.state.value.documentCatalog.documents.isEmpty())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.state.value.error?.technicalDetail.orEmpty().contains("quality"))
+
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            advanceUntilIdle()
+
+            val retryCatalogRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.IndexDocumentsList }
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.IndexDocumentsList,
@@ -9426,30 +10492,74 @@ class RuntimeClientViewModelTest {
                             chunkCount = 3,
                             extractedCharacterCount = documents.sumOf { it.extractedCharacterCount },
                             qualityCounts = IndexDocumentsQualityCountsPayload(
-                                noUsableText = 2,
+                                noUsableText = 1,
                                 singleChunk = 1,
                                 chunked = 1,
                             ),
                         ),
                     ),
-                    requestId = catalogRequest.requestId,
+                    requestId = retryCatalogRequest.requestId,
                 ),
             )
             advanceUntilIdle()
 
             assertEquals(
-                listOf(0, 0, 1, 2),
+                listOf(0, 1, 2),
                 fixture.viewModel.state.value.documentCatalog.documents.map { it.chunkCount },
             )
             assertEquals(
-                listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked"),
+                listOf("no_usable_text", "single_chunk", "chunked"),
                 fixture.viewModel.state.value.documentCatalog.documents.map { it.quality },
             )
+            assertNull(fixture.viewModel.state.value.error)
 
             fixture.viewModel.searchRuntimeDocuments("quality")
             advanceUntilIdle()
 
             val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-search-quality-mismatch",
+                                    "display_name": "Search Quality Mismatch.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "5555666677778888",
+                                    "extracted_character_count": 128,
+                                    "chunk_count": 1,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 64,
+                                  "rank": 1,
+                                  "matched_terms": ["quality"],
+                                  "snippet": "Mismatched quality must fail before transient state.",
+                                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.state.value.error?.technicalDetail.orEmpty().contains("quality"))
+
+            fixture.viewModel.searchRuntimeDocuments("canonical quality")
+            advanceUntilIdle()
+
+            val retrySearchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.RetrievalQuery,
@@ -9463,24 +10573,25 @@ class RuntimeClientViewModelTest {
                                 endCharacterOffset = index * 10 + 8,
                                 rank = index + 1,
                                 matchedTerms = listOf("quality"),
-                                snippet = "Quality metadata is derived from chunk count.",
+                                snippet = "Quality metadata matches chunk count.",
                                 sourceAnchorId = "source_anchor_0123456789abcd${index}f",
                             )
                         },
                     ),
-                    requestId = searchRequest.requestId,
+                    requestId = retrySearchRequest.requestId,
                 ),
             )
             advanceUntilIdle()
 
             assertEquals(
-                listOf(0, 0, 1, 2),
+                listOf(0, 1, 2),
                 fixture.viewModel.state.value.documentSearchResults.map { it.document.chunkCount },
             )
             assertEquals(
-                listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked"),
+                listOf("no_usable_text", "single_chunk", "chunked"),
                 fixture.viewModel.state.value.documentSearchResults.map { it.document.quality },
             )
+            assertNull(fixture.viewModel.state.value.error)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
         } finally {
@@ -9522,39 +10633,23 @@ class RuntimeClientViewModelTest {
                 displayName = "folder\\Nested.pdf",
                 contentFingerprint = "88889999aaaabbbb",
             )
-            val overlongIdDocument = canonicalDocument.copy(
-                id = "d".repeat(129),
-                displayName = ".",
-                contentFingerprint = "9999aaaabbbbcccc",
-            )
-            val overlongDisplayDocument = canonicalDocument.copy(
-                id = "doc-overlong-display",
-                displayName = "d".repeat(257),
-                contentFingerprint = "aaaabbbbccccdddd",
-            )
             val documents = listOf(
                 canonicalDocument,
                 pathDisplayDocument,
                 blankDocument,
                 controlIdDocument,
-                overlongIdDocument,
-                overlongDisplayDocument,
             )
             val expectedIds = listOf(
                 "doc-canonical-label",
                 "doc-trimmed",
                 "document_3",
                 "document_4",
-                "document_5",
-                "doc-overlong-display",
             )
             val expectedDisplayNames = listOf(
                 "Canonical Label.md",
                 "Runtime Notes.md",
                 "untitled-document",
                 "Nested.pdf",
-                "untitled-document",
-                "untitled-document",
             )
 
             fixture.viewModel.refreshRuntimeDocumentCatalog()
@@ -9717,6 +10812,38 @@ class RuntimeClientViewModelTest {
             assertFalse(chatSendPayload.contains("trusted_source"))
             assertFalse(chatSendPayload.contains("source_anchor_id"))
             assertFalse(chatSendPayload.contains("source_anchor_8899aabbccddeeff"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("  source approval notes  ")
+            advanceUntilIdle()
+
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val searchPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                searchRequest.payload,
+            )
+            assertEquals("source approval notes", searchPayload.query)
+            assertEquals(10, searchPayload.limit)
+            assertEquals(480, searchPayload.maxSnippetCharacters)
+            assertNull(searchRequest.payload["embedding_model_id"])
+            assertNull(searchRequest.payload["source_anchor_id"])
+            assertFalse(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))
         } finally {
             Dispatchers.resetMain()
         }
@@ -9896,10 +11023,10 @@ class RuntimeClientViewModelTest {
                 chunkCount = 2,
                 quality = "chunked",
             )
-            val overlongSnippet = "s".repeat(600)
-            val overlongTerm = "t".repeat(65)
-            val matchedTerms = listOf(" route ", "", "route", overlongTerm) +
-                (1..20).map { index -> "term$index" }
+            val maxWireSnippet = "s".repeat(500)
+            val maxWireTerm = "t".repeat(64)
+            val matchedTerms = listOf(" route ", " ", "route", maxWireTerm) +
+                (1..12).map { index -> "term$index" }
 
             fixture.viewModel.searchRuntimeDocuments("route")
             advanceUntilIdle()
@@ -9913,12 +11040,12 @@ class RuntimeClientViewModelTest {
                         results = listOf(
                             RetrievalQueryResultItemPayload(
                                 document = document,
-                                chunkIndex = -5,
-                                startCharacterOffset = -10,
-                                endCharacterOffset = -20,
-                                rank = 0,
+                                chunkIndex = 3,
+                                startCharacterOffset = 10,
+                                endCharacterOffset = 42,
+                                rank = 2,
                                 matchedTerms = matchedTerms,
-                                snippet = overlongSnippet,
+                                snippet = maxWireSnippet,
                                 sourceAnchorId = "source_anchor_fedcba9876543210",
                             ),
                         ),
@@ -9929,16 +11056,265 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             val result = fixture.viewModel.state.value.documentSearchResults.single()
-            assertEquals(0, result.chunkIndex)
-            assertEquals(0, result.startCharacterOffset)
-            assertEquals(0, result.endCharacterOffset)
-            assertEquals(1, result.rank)
+            assertEquals(3, result.chunkIndex)
+            assertEquals(10, result.startCharacterOffset)
+            assertEquals(42, result.endCharacterOffset)
+            assertEquals(2, result.rank)
             assertEquals(
-                listOf("route") + (1..15).map { index -> "term$index" },
+                listOf("route", maxWireTerm) + (1..12).map { index -> "term$index" },
                 result.matchedTerms,
             )
             assertEquals("s".repeat(480), result.snippet)
             assertEquals("source_anchor_fedcba9876543210", result.sourceAnchorId)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor lexical terms")
+            advanceUntilIdle()
+
+            val invalidTermsRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = invalidTermsRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-invalid-terms",
+                                    "display_name": "Invalid Terms.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "fedcba9876543210",
+                                    "extracted_character_count": 1000,
+                                    "chunk_count": 2,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 1,
+                                  "start_character_offset": 40,
+                                  "end_character_offset": 80,
+                                  "rank": 1,
+                                  "matched_terms": [],
+                                  "snippet": "Invalid matched terms must fail before transient source anchors.",
+                                  "source_anchor_id": "source_anchor_fedcba9876543210"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedTermsState = fixture.viewModel.state.value
+            assertFalse(rejectedTermsState.isSearchingDocuments)
+            assertTrue(rejectedTermsState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedTermsState.error?.code)
+            assertTrue(rejectedTermsState.error?.technicalDetail.orEmpty().contains("matched_terms"))
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor lexical snippet")
+            advanceUntilIdle()
+
+            val invalidSnippetRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = invalidSnippetRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-invalid-snippet",
+                                    "display_name": "Invalid Snippet.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "fedcba9876543210",
+                                    "extracted_character_count": 1000,
+                                    "chunk_count": 2,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 1,
+                                  "start_character_offset": 40,
+                                  "end_character_offset": 80,
+                                  "rank": 1,
+                                  "matched_terms": ["source", "anchor"],
+                                  "snippet": "${"s".repeat(501)}",
+                                  "source_anchor_id": "source_anchor_fedcba9876543210"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSnippetState = fixture.viewModel.state.value
+            assertFalse(rejectedSnippetState.isSearchingDocuments)
+            assertTrue(rejectedSnippetState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedSnippetState.error?.code)
+            assertTrue(rejectedSnippetState.error?.technicalDetail.orEmpty().contains("snippet"))
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor lexical retry")
+            advanceUntilIdle()
+
+            val retryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = RuntimeDocumentIndexDocumentPayload(
+                                    id = "doc-valid-lexical",
+                                    displayName = "Valid Lexical.md",
+                                    mimeType = "text/markdown",
+                                    contentFingerprint = "fedcba9876543210",
+                                    extractedCharacterCount = 1000,
+                                    chunkCount = 2,
+                                    quality = "chunked",
+                                ),
+                                chunkIndex = 1,
+                                startCharacterOffset = 40,
+                                endCharacterOffset = 80,
+                                rank = 1,
+                                matchedTerms = listOf("source", "anchor"),
+                                snippet = "Valid lexical metadata can publish transient search rows.",
+                                sourceAnchorId = "source_anchor_fedcba9876543210",
+                            ),
+                        ),
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val result = fixture.viewModel.state.value.documentSearchResults.single()
+            assertEquals("Valid Lexical.md", result.document.displayName)
+            assertEquals(listOf("source", "anchor"), result.matchedTerms)
+            assertEquals("Valid lexical metadata can publish transient search rows.", result.snippet)
+            assertEquals("source_anchor_fedcba9876543210", result.sourceAnchorId)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor coordinates")
+            advanceUntilIdle()
+
+            val invalidRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = invalidRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-invalid-coordinate",
+                                    "display_name": "Invalid Coordinate.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "fedcba9876543210",
+                                    "extracted_character_count": 1000,
+                                    "chunk_count": 2,
+                                    "quality": "chunked"
+                                  },
+                                  "chunk_index": 1,
+                                  "start_character_offset": 80,
+                                  "end_character_offset": 40,
+                                  "rank": 1,
+                                  "matched_terms": ["source", "anchor"],
+                                  "snippet": "Invalid coordinates must fail before transient source anchors.",
+                                  "source_anchor_id": "source_anchor_fedcba9876543210"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertFalse(rejectedState.isSearchingDocuments)
+            assertTrue(rejectedState.documentSearchResults.isEmpty())
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("end_character_offset"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("start_character_offset"))
+
+            fixture.viewModel.searchRuntimeDocuments("source anchor coordinates retry")
+            advanceUntilIdle()
+
+            val retryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = RuntimeDocumentIndexDocumentPayload(
+                                    id = "doc-valid-coordinate",
+                                    displayName = "Valid Coordinate.md",
+                                    mimeType = "text/markdown",
+                                    contentFingerprint = "fedcba9876543210",
+                                    extractedCharacterCount = 1000,
+                                    chunkCount = 2,
+                                    quality = "chunked",
+                                ),
+                                chunkIndex = 1,
+                                startCharacterOffset = 40,
+                                endCharacterOffset = 80,
+                                rank = 1,
+                                matchedTerms = listOf("source", "anchor"),
+                                snippet = "Valid coordinates can still publish transient search rows.",
+                                sourceAnchorId = "source_anchor_fedcba9876543210",
+                            ),
+                        ),
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val retryState = fixture.viewModel.state.value
+            assertFalse(retryState.isSearchingDocuments)
+            assertNull(retryState.error)
+            assertEquals("Valid Coordinate.md", retryState.documentSearchResults.single().document.displayName)
+            assertEquals("source_anchor_fedcba9876543210", retryState.documentSearchResults.single().sourceAnchorId)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
         } finally {
@@ -10283,7 +11659,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "runtime_document_index_unavailable",
+                        code = "document_index_unavailable",
                         message = "Document index unavailable",
                         retryable = false,
                     ),
@@ -10400,6 +11776,330 @@ class RuntimeClientViewModelTest {
                 initialDraftRequestCount + 1,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
             )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialDraftRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(
+                            MemorySummaryDraftPayload(
+                                id = "existing-draft",
+                                session = MemorySummaryDraftSessionPayload(
+                                    sessionId = "runtime-session",
+                                    title = "Existing planning chat",
+                                    model = "ollama:qwen3:8b",
+                                    lastActivityAt = "2026-06-01T00:00:00Z",
+                                    messageCount = 6,
+                                    inactiveSeconds = 1_209_600L,
+                                ),
+                                sourceMessageCount = 6,
+                                sourceRange = "visible messages 1-6 of 6",
+                                sourcePointers = listOf(
+                                    MemorySummaryDraftSourcePointerPayload(
+                                        sessionId = "runtime-session",
+                                        messageIndex = 1,
+                                        role = "user",
+                                        createdAt = "2026-06-01T00:00:00Z",
+                                        excerpt = "Keep review state stable.",
+                                    ),
+                                ),
+                                summaryPreview = "Existing summary preview",
+                            ),
+                        ),
+                    ),
+                    requestId = initialDraftRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fun assertExistingDraftPreserved() {
+                assertEquals(
+                    listOf("Existing summary preview"),
+                    fixture.viewModel.state.value.memorySummaryDrafts.map { it.summaryPreview },
+                )
+                assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+                val persistedSnapshot = json.encodeToString(fixture.localStore.data)
+                assertFalse(persistedSnapshot.contains("Leaky summary preview"))
+                assertFalse(persistedSnapshot.contains("workspace-canary"))
+            }
+
+            assertExistingDraftPreserved()
+
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val topLevelMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    requestId = topLevelMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "drafts": [
+                                {
+                                  "id": "leaky-top-level-draft",
+                                  "session": {
+                                    "session_id": "runtime-session",
+                                    "title": "Leaky planning chat",
+                                    "model": "ollama:qwen3:8b",
+                                    "last_activity_at": "2026-06-01T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "runtime-session",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-01T00:00:00Z",
+                                      "excerpt": "Leaky source excerpt"
+                                    }
+                                  ],
+                                  "summary_preview": "Leaky summary preview"
+                                }
+                              ],
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val topLevelRejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", topLevelRejectedState.error?.code)
+            assertTrue(topLevelRejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.drafts.list"))
+            assertTrue(topLevelRejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertExistingDraftPreserved()
+
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val draftMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    requestId = draftMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "drafts": [
+                                {
+                                  "id": "leaky-draft-metadata",
+                                  "session": {
+                                    "session_id": "runtime-session",
+                                    "title": "Leaky planning chat",
+                                    "model": "ollama:qwen3:8b",
+                                    "last_activity_at": "2026-06-01T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "runtime-session",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-01T00:00:00Z",
+                                      "excerpt": "Leaky source excerpt"
+                                    }
+                                  ],
+                                  "summary_preview": "Leaky summary preview",
+                                  "workspace_id": "workspace-canary"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val draftRejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", draftRejectedState.error?.code)
+            assertTrue(draftRejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.drafts.list"))
+            assertTrue(draftRejectedState.error?.technicalDetail.orEmpty().contains("drafts[0].workspace_id"))
+            assertExistingDraftPreserved()
+
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val sessionMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    requestId = sessionMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "drafts": [
+                                {
+                                  "id": "leaky-session-metadata",
+                                  "session": {
+                                    "session_id": "runtime-session",
+                                    "title": "Leaky planning chat",
+                                    "model": "ollama:qwen3:8b",
+                                    "last_activity_at": "2026-06-01T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600,
+                                    "backend_url": "http://127.0.0.1:11434"
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "runtime-session",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-01T00:00:00Z",
+                                      "excerpt": "Leaky source excerpt"
+                                    }
+                                  ],
+                                  "summary_preview": "Leaky summary preview"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val sessionRejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", sessionRejectedState.error?.code)
+            assertTrue(sessionRejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.drafts.list"))
+            assertTrue(sessionRejectedState.error?.technicalDetail.orEmpty().contains("drafts[0].session.backend_url"))
+            assertExistingDraftPreserved()
+
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val pointerMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    requestId = pointerMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "drafts": [
+                                {
+                                  "id": "leaky-pointer-metadata",
+                                  "session": {
+                                    "session_id": "runtime-session",
+                                    "title": "Leaky planning chat",
+                                    "model": "ollama:qwen3:8b",
+                                    "last_activity_at": "2026-06-01T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "runtime-session",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-01T00:00:00Z",
+                                      "excerpt": "Leaky source excerpt",
+                                      "source_path": "/Users/hanchangha/private-chat.jsonl"
+                                    }
+                                  ],
+                                  "summary_preview": "Leaky summary preview"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val pointerRejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", pointerRejectedState.error?.code)
+            assertTrue(pointerRejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.drafts.list"))
+            assertTrue(
+                pointerRejectedState.error?.technicalDetail.orEmpty()
+                    .contains("drafts[0].source_pointers[0].source_path"),
+            )
+            assertExistingDraftPreserved()
+
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val canonicalRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(
+                            MemorySummaryDraftPayload(
+                                id = "canonical-draft",
+                                session = MemorySummaryDraftSessionPayload(
+                                    sessionId = "runtime-session",
+                                    title = "Canonical planning chat",
+                                    model = "ollama:qwen3:8b",
+                                    lastActivityAt = "2026-06-02T00:00:00Z",
+                                    messageCount = 7,
+                                    inactiveSeconds = 1_296_000L,
+                                ),
+                                sourceMessageCount = 7,
+                                sourceRange = "visible messages 1-7 of 7",
+                                sourcePointers = listOf(
+                                    MemorySummaryDraftSourcePointerPayload(
+                                        sessionId = "runtime-session",
+                                        messageIndex = 1,
+                                        role = "assistant",
+                                        createdAt = "2026-06-02T00:00:00Z",
+                                        excerpt = "Canonical source excerpt.",
+                                    ),
+                                ),
+                                summaryPreview = "Canonical summary preview",
+                            ),
+                        ),
+                    ),
+                    requestId = canonicalRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertEquals(
+                listOf("Canonical summary preview"),
+                acceptedState.memorySummaryDrafts.map { it.summaryPreview },
+            )
+            assertEquals("canonical-draft", acceptedState.memorySummaryDrafts.single().id)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
         } finally {
             Dispatchers.resetMain()
         }
@@ -10529,6 +12229,130 @@ class RuntimeClientViewModelTest {
             )
             assertTrue(fixture.viewModel.state.value.memorySummaryDrafts.isEmpty())
             assertTrue(fixture.viewModel.state.value.approvingMemorySummaryDraftIds.isEmpty())
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialDraftRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload(id = "draft-approve-guard")),
+                    ),
+                    requestId = initialDraftRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.approveMemorySummaryDraft("draft-approve-guard")
+            advanceUntilIdle()
+            val approvalRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftApprove
+            }
+            assertEquals(setOf("draft-approve-guard"), fixture.viewModel.state.value.approvingMemorySummaryDraftIds)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftApprove,
+                    requestId = approvalRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "draft_id": "draft-approve-guard",
+                              "status": "approved",
+                              "entry": {
+                                "id": "memory-summary:draft-approve-guard",
+                                "content": "Leaky approved memory",
+                                "enabled": true,
+                                "created_at": "2026-06-25T00:00:00Z",
+                                "updated_at": "2026-06-25T00:01:00Z",
+                                "source": {
+                                  "kind": "long_inactivity_summary_draft",
+                                  "draft_id": "draft-approve-guard",
+                                  "summary_method": "deterministic_preview",
+                                  "session": {
+                                    "session_id": "runtime-session",
+                                    "title": "Long idle planning chat",
+                                    "model": "ollama:qwen3:8b",
+                                    "last_activity_at": "2026-06-01T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "runtime-session",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-01T00:00:00Z",
+                                      "excerpt": "Use concise Korean summaries for release notes.",
+                                      "backend_url": "http://127.0.0.1:11434"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.draft.approve"))
+            assertTrue(
+                rejectedState.error?.technicalDetail.orEmpty()
+                    .contains("entry.source.source_pointers[0].backend_url"),
+            )
+            assertEquals(listOf("draft-approve-guard"), rejectedState.memorySummaryDrafts.map { it.id })
+            assertEquals(setOf("draft-approve-guard"), rejectedState.approvingMemorySummaryDraftIds)
+            assertTrue(rejectedState.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            val rejectedPersistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(rejectedPersistedSnapshot.contains("Leaky approved memory"))
+            assertFalse(rejectedPersistedSnapshot.contains("127.0.0.1"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftApprove,
+                    serializer = MemorySummaryDraftApproveResultPayload.serializer(),
+                    payload = MemorySummaryDraftApproveResultPayload(
+                        draftId = "draft-approve-guard",
+                        status = "approved",
+                        entry = memorySummaryDraftApprovedEntryPayload(
+                            draftId = "draft-approve-guard",
+                            memoryId = "memory-summary:draft-approve-guard",
+                            content = "Canonical approved memory",
+                        ),
+                    ),
+                    requestId = approvalRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertTrue(acceptedState.memorySummaryDrafts.isEmpty())
+            assertTrue(acceptedState.approvingMemorySummaryDraftIds.isEmpty())
+            assertEquals(listOf("Canonical approved memory"), acceptedState.memoryEntries.map { it.content })
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
         } finally {
             Dispatchers.resetMain()
@@ -10716,6 +12540,92 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialDraftRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload(id = "draft-dismiss-guard")),
+                    ),
+                    requestId = initialDraftRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.dismissMemorySummaryDraft("draft-dismiss-guard")
+            advanceUntilIdle()
+            val dismissRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftDismiss
+            }
+            assertEquals(setOf("draft-dismiss-guard"), fixture.viewModel.state.value.dismissingMemorySummaryDraftIds)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftDismiss,
+                    requestId = dismissRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "draft_id": "draft-dismiss-guard",
+                              "status": "dismissed",
+                              "dismissed_at": "2026-06-25T00:01:00Z",
+                              "workspace_id": "workspace-canary"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.draft.dismiss"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("workspace_id"))
+            assertEquals(listOf("draft-dismiss-guard"), rejectedState.memorySummaryDrafts.map { it.id })
+            assertEquals(setOf("draft-dismiss-guard"), rejectedState.dismissingMemorySummaryDraftIds)
+            assertTrue(rejectedState.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            val rejectedPersistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(rejectedPersistedSnapshot.contains("workspace-canary"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftDismiss,
+                    serializer = MemorySummaryDraftDismissResultPayload.serializer(),
+                    payload = MemorySummaryDraftDismissResultPayload(
+                        draftId = "draft-dismiss-guard",
+                        status = "dismissed",
+                        dismissedAt = "2026-06-25T00:01:00Z",
+                    ),
+                    requestId = dismissRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertTrue(acceptedState.memorySummaryDrafts.isEmpty())
+            assertTrue(acceptedState.dismissingMemorySummaryDraftIds.isEmpty())
+            assertTrue(acceptedState.memoryEntries.isEmpty())
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun dismissMemorySummaryDraftErrorClearsPendingAndAllowsRetry() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -10803,6 +12713,861 @@ class RuntimeClientViewModelTest {
                 2,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftDismiss },
             )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialMemoryListRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = emptyList()),
+                    requestId = initialMemoryListRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeMemory(query = "  durable route notes  ")
+            advanceUntilIdle()
+
+            val queryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            val queryPayload = json.decodeFromJsonElement(
+                MemoryListRequestPayload.serializer(),
+                queryRequest.payload,
+            )
+            assertEquals("durable route notes", queryPayload.query)
+            assertNull(queryRequest.payload["embedding_model_id"])
+            assertFalse(json.encodeToString(queryRequest.payload).contains(selectedEmbeddingModel.id))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryListRejectsUnknownMetadataBeforeMemoryStatePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                memoryEntries = listOf(
+                    PersistedMemoryEntry(
+                        id = "existing-memory",
+                        content = "Existing memory",
+                        enabled = true,
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+            val initialMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+
+            fun assertExistingMemoryPreserved() {
+                assertEquals(
+                    listOf("Existing memory"),
+                    fixture.viewModel.state.value.memoryEntries.map { it.content },
+                )
+                assertEquals(
+                    listOf("Existing memory"),
+                    fixture.localStore.data.memoryEntries.map { it.content },
+                )
+            }
+
+            assertExistingMemoryPreserved()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = initialMemoryRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "entries": [
+                                {
+                                  "id": "leaky-memory-top-level",
+                                  "content": "Leaky top-level memory",
+                                  "enabled": true
+                                }
+                              ],
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedTopLevelState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedTopLevelState.error?.code)
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("memory.list"))
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertExistingMemoryPreserved()
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val entryMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = entryMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "entries": [
+                                {
+                                  "id": "leaky-memory-entry",
+                                  "content": "Leaky entry memory",
+                                  "enabled": true,
+                                  "workspace_id": "workspace-canary"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedEntryState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedEntryState.error?.code)
+            assertTrue(rejectedEntryState.error?.technicalDetail.orEmpty().contains("memory.list"))
+            assertTrue(rejectedEntryState.error?.technicalDetail.orEmpty().contains("entries[0].workspace_id"))
+            assertExistingMemoryPreserved()
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val sourceMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = sourceMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "entries": [
+                                {
+                                  "id": "leaky-memory-source",
+                                  "content": "Leaky source memory",
+                                  "enabled": true,
+                                  "source": {
+                                    "kind": "long_inactivity_summary_draft",
+                                    "draft_id": "long-inactivity:session-1:1000:6",
+                                    "summary_method": "deterministic_preview",
+                                    "session": {
+                                      "session_id": "session-1",
+                                      "title": "Runtime notes",
+                                      "model": "ollama:llama3.1:8b",
+                                      "last_activity_at": "2026-06-25T00:00:00Z",
+                                      "message_count": 6,
+                                      "inactive_seconds": 1209600
+                                    },
+                                    "source_message_count": 6,
+                                    "source_range": "visible messages 1-6 of 6",
+                                    "source_pointers": [
+                                      {
+                                        "session_id": "session-1",
+                                        "message_index": 1,
+                                        "role": "user",
+                                        "created_at": "2026-06-25T00:00:00Z",
+                                        "excerpt": "Remember route recovery steps."
+                                      }
+                                    ],
+                                    "source_path": "/Users/hanchangha/private-memory.jsonl"
+                                  }
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSourceState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedSourceState.error?.code)
+            assertTrue(rejectedSourceState.error?.technicalDetail.orEmpty().contains("memory.list"))
+            assertTrue(
+                rejectedSourceState.error?.technicalDetail.orEmpty()
+                    .contains("entries[0].source.source_path"),
+            )
+            assertExistingMemoryPreserved()
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val pointerMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = pointerMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "entries": [
+                                {
+                                  "id": "leaky-memory-pointer",
+                                  "content": "Leaky pointer memory",
+                                  "enabled": true,
+                                  "source": {
+                                    "kind": "long_inactivity_summary_draft",
+                                    "draft_id": "long-inactivity:session-1:1000:6",
+                                    "summary_method": "deterministic_preview",
+                                    "session": {
+                                      "session_id": "session-1",
+                                      "title": "Runtime notes",
+                                      "model": "ollama:llama3.1:8b",
+                                      "last_activity_at": "2026-06-25T00:00:00Z",
+                                      "message_count": 6,
+                                      "inactive_seconds": 1209600
+                                    },
+                                    "source_message_count": 6,
+                                    "source_range": "visible messages 1-6 of 6",
+                                    "source_pointers": [
+                                      {
+                                        "session_id": "session-1",
+                                        "message_index": 1,
+                                        "role": "user",
+                                        "created_at": "2026-06-25T00:00:00Z",
+                                        "excerpt": "Remember route recovery steps.",
+                                        "backend_url": "http://127.0.0.1:1234"
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedPointerState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedPointerState.error?.code)
+            assertTrue(rejectedPointerState.error?.technicalDetail.orEmpty().contains("memory.list"))
+            assertTrue(
+                rejectedPointerState.error?.technicalDetail.orEmpty()
+                    .contains("entries[0].source.source_pointers[0].backend_url"),
+            )
+            assertExistingMemoryPreserved()
+            val storedJson = json.encodeToString(fixture.localStore.data)
+            assertFalse(storedJson.contains("workspace-canary"))
+            assertFalse(storedJson.contains("private-memory.jsonl"))
+            assertFalse(storedJson.contains("127.0.0.1:1234"))
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val canonicalRetryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "canonical-memory",
+                                content = "Canonical runtime memory",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = canonicalRetryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val retryState = fixture.viewModel.state.value
+            assertNull(retryState.error)
+            assertEquals(listOf("Canonical runtime memory"), retryState.memoryEntries.map { it.content })
+            assertEquals(listOf("Canonical runtime memory"), fixture.localStore.data.memoryEntries.map { it.content })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                memoryEntries = listOf(
+                    PersistedMemoryEntry(
+                        id = "existing-memory",
+                        content = "Existing memory",
+                        enabled = true,
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fun assertExistingMemoryPreserved() {
+                assertEquals(
+                    listOf("Existing memory"),
+                    fixture.viewModel.state.value.memoryEntries.map { it.content },
+                )
+                assertEquals(
+                    listOf("Existing memory"),
+                    fixture.localStore.data.memoryEntries.map { it.content },
+                )
+            }
+
+            assertExistingMemoryPreserved()
+
+            fixture.viewModel.addMemoryEntry("New runtime memory")
+            advanceUntilIdle()
+            val upsertRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryUpsert,
+                    requestId = upsertRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "entry": {
+                                "id": "leaky-upsert-memory",
+                                "content": "Leaky upsert memory",
+                                "enabled": true,
+                                "created_at": "2026-06-25T00:00:00Z",
+                                "updated_at": "2026-06-25T00:01:00Z",
+                                "source": {
+                                  "kind": "long_inactivity_summary_draft",
+                                  "draft_id": "long-inactivity:session-1:1000:6",
+                                  "summary_method": "deterministic_preview",
+                                  "session": {
+                                    "session_id": "session-1",
+                                    "title": "Runtime notes",
+                                    "model": "ollama:llama3.1:8b",
+                                    "last_activity_at": "2026-06-25T00:00:00Z",
+                                    "message_count": 6,
+                                    "inactive_seconds": 1209600
+                                  },
+                                  "source_message_count": 6,
+                                  "source_range": "visible messages 1-6 of 6",
+                                  "source_pointers": [
+                                    {
+                                      "session_id": "session-1",
+                                      "message_index": 1,
+                                      "role": "user",
+                                      "created_at": "2026-06-25T00:00:00Z",
+                                      "excerpt": "Remember route recovery steps.",
+                                      "backend_url": "http://127.0.0.1:11434"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("memory.upsert"))
+            assertTrue(
+                rejectedState.error?.technicalDetail.orEmpty()
+                    .contains("entry.source.source_pointers[0].backend_url"),
+            )
+            assertExistingMemoryPreserved()
+            val rejectedStoredJson = json.encodeToString(fixture.localStore.data)
+            assertFalse(rejectedStoredJson.contains("Leaky upsert memory"))
+            assertFalse(rejectedStoredJson.contains("127.0.0.1:11434"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "canonical-upsert-memory",
+                            content = "Canonical upsert memory",
+                            enabled = true,
+                            createdAt = "2026-06-25T00:00:00Z",
+                            updatedAt = "2026-06-25T00:01:00Z",
+                        ),
+                    ),
+                    requestId = upsertRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertEquals(
+                listOf("Canonical upsert memory", "Existing memory"),
+                acceptedState.memoryEntries.map { it.content },
+            )
+            assertEquals(
+                listOf("Canonical upsert memory", "Existing memory"),
+                fixture.localStore.data.memoryEntries.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                memoryEntries = listOf(
+                    PersistedMemoryEntry(
+                        id = "delete-target",
+                        content = "Delete target memory",
+                        enabled = true,
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                    ),
+                    PersistedMemoryEntry(
+                        id = "keep-memory",
+                        content = "Keep memory",
+                        enabled = true,
+                        createdAtMillis = 300L,
+                        updatedAtMillis = 400L,
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fun assertDeleteTargetPreserved() {
+                assertEquals(
+                    setOf("Delete target memory", "Keep memory"),
+                    fixture.viewModel.state.value.memoryEntries.map { it.content }.toSet(),
+                )
+                assertEquals(
+                    setOf("Delete target memory", "Keep memory"),
+                    fixture.localStore.data.memoryEntries.map { it.content }.toSet(),
+                )
+            }
+
+            assertDeleteTargetPreserved()
+
+            fixture.viewModel.removeMemoryEntry("delete-target")
+            advanceUntilIdle()
+            val deleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryDelete,
+                    requestId = deleteRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "id": "delete-target",
+                              "deleted_at": "2026-06-25T00:01:00Z",
+                              "workspace_id": "workspace-canary"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("memory.delete"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("workspace_id"))
+            assertDeleteTargetPreserved()
+            val rejectedStoredJson = json.encodeToString(fixture.localStore.data)
+            assertFalse(rejectedStoredJson.contains("workspace-canary"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "delete-target",
+                        deletedAt = "2026-06-25T00:01:00Z",
+                    ),
+                    requestId = deleteRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertEquals(listOf("Keep memory"), acceptedState.memoryEntries.map { it.content })
+            assertEquals(listOf("Keep memory"), fixture.localStore.data.memoryEntries.map { it.content })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun errorPayloadRejectsUnknownMetadataBeforePendingStateMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val initialMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            val memoryRequestCountBeforeRejectedError = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryList
+            }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = initialMemoryRequest.requestId,
+                    payload = buildJsonObject {
+                        put("code", "memory_store_unavailable")
+                        put("message", "Memory store unavailable.")
+                        put("retryable", true)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("error response"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            assertEquals(
+                memoryRequestCountBeforeRejectedError,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_store_unavailable",
+                        message = "Memory store unavailable.",
+                        retryable = true,
+                    ),
+                    requestId = initialMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("memory_load_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                "Memory store unavailable.",
+                fixture.viewModel.state.value.error?.technicalDetail,
+            )
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            assertEquals(
+                memoryRequestCountBeforeRejectedError + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Explain runtime error metadata boundaries")
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val sessionId = requireNotNull(fixture.viewModel.state.value.activeChatSessionId)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = sendEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("code", "backend_unavailable")
+                        put("message", "Backend unavailable.")
+                        put("retryable", true)
+                        put("workspace_id", "workspace-canary")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("error response"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("workspace_id"))
+            assertTrue(rejectedState.isStreaming)
+            assertEquals(sendEnvelope.requestId, rejectedState.activeRequestId)
+            assertEquals(
+                listOf("Explain runtime error metadata boundaries", ""),
+                rejectedState.messages.map { it.content },
+            )
+            val rejectedStoredJson = json.encodeToString(fixture.localStore.data)
+            assertFalse(rejectedStoredJson.contains("workspace-canary"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_unavailable",
+                        message = "Backend unavailable.",
+                        retryable = true,
+                    ),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertEquals("backend_unavailable", acceptedState.error?.code)
+            assertFalse(acceptedState.isStreaming)
+            assertNull(acceptedState.activeRequestId)
+            assertEquals(
+                listOf("Explain runtime error metadata boundaries"),
+                acceptedState.messages.map { it.content },
+            )
+            val savedSession = fixture.localStore.data.sessions.single { it.id == sessionId }
+            assertEquals(
+                listOf("Explain runtime error metadata boundaries"),
+                savedSession.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialChatSessionsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fun assertNoRuntimeHistoryPublished() {
+                assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+                assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+                assertTrue(fixture.localStore.data.sessions.isEmpty())
+            }
+
+            assertNoRuntimeHistoryPublished()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = initialChatSessionsRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "sessions": [
+                                {
+                                  "session_id": "leaky-chat-history",
+                                  "title": "Leaky chat history",
+                                  "model": "ollama:llama3.1:8b",
+                                  "last_activity_at": "2026-06-25T00:00:00Z",
+                                  "message_count": 2,
+                                  "status": "active",
+                                  "last_event": "done"
+                                }
+                              ],
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedTopLevelState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedTopLevelState.error?.code)
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("chat.sessions.list"))
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertNoRuntimeHistoryPublished()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val sessionMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = sessionMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "sessions": [
+                                {
+                                  "session_id": "leaky-session-metadata",
+                                  "title": "Leaky session metadata",
+                                  "model": "ollama:llama3.1:8b",
+                                  "last_activity_at": "2026-06-25T00:01:00Z",
+                                  "message_count": 3,
+                                  "status": "active",
+                                  "last_event": "done",
+                                  "workspace_id": "workspace-canary"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSessionMetadataState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedSessionMetadataState.error?.code)
+            assertTrue(rejectedSessionMetadataState.error?.technicalDetail.orEmpty().contains("chat.sessions.list"))
+            assertTrue(rejectedSessionMetadataState.error?.technicalDetail.orEmpty().contains("sessions[0].workspace_id"))
+            assertNoRuntimeHistoryPublished()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val searchMetadataRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = searchMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "sessions": [
+                                {
+                                  "session_id": "leaky-search-metadata",
+                                  "title": "Leaky search metadata",
+                                  "model": "ollama:llama3.1:8b",
+                                  "last_activity_at": "2026-06-25T00:02:00Z",
+                                  "message_count": 4,
+                                  "status": "active",
+                                  "last_event": "done",
+                                  "search": {
+                                    "rank": 1,
+                                    "snippet": "Relay route matched the session title.",
+                                    "matched_fields": ["title"],
+                                    "source_path": "/Users/hanchangha/private-chat-history.jsonl"
+                                  }
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedSearchMetadataState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedSearchMetadataState.error?.code)
+            assertTrue(rejectedSearchMetadataState.error?.technicalDetail.orEmpty().contains("chat.sessions.list"))
+            assertTrue(
+                rejectedSearchMetadataState.error?.technicalDetail.orEmpty()
+                    .contains("sessions[0].search.source_path"),
+            )
+            assertNoRuntimeHistoryPublished()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val canonicalRetryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-history-canonical-retry",
+                                title = "Canonical runtime history",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:03:00Z",
+                                messageCount = 5,
+                                status = "active",
+                                lastEvent = "done",
+                                search = ChatSessionSearchPayload(
+                                    rank = 1,
+                                    snippet = "Canonical runtime history matched the query.",
+                                    matchedFields = listOf("title"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    requestId = canonicalRetryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val retryState = fixture.viewModel.state.value
+            assertEquals(listOf("Canonical runtime history"), retryState.chatSessions.map { it.title })
+            val retrySession = retryState.chatSessions.single()
+            assertEquals(1, retrySession.searchRank)
+            assertEquals("Canonical runtime history matched the query.", retrySession.searchSnippet)
+            assertEquals(listOf("title"), retrySession.searchMatchedFields)
+            val savedRuntimeSession = fixture.localStore.data.sessions.single {
+                it.id == "runtime-history-canonical-retry"
+            }
+            assertTrue(savedRuntimeSession.runtimeOwned)
+            assertEquals(5, savedRuntimeSession.runtimeMessageCount)
         } finally {
             Dispatchers.resetMain()
         }
@@ -11047,7 +13812,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "runtime_history_unavailable",
+                        code = "chat_store_unavailable",
                         message = "Runtime history unavailable",
                         retryable = true,
                     ),
@@ -11095,7 +13860,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "runtime_history_unavailable",
+                        code = "chat_store_unavailable",
                         message = "Runtime history unavailable",
                         retryable = true,
                     ),
@@ -11141,7 +13906,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "runtime_memory_unavailable",
+                        code = "memory_store_unavailable",
                         message = "Runtime memory unavailable",
                         retryable = true,
                     ),
@@ -11194,7 +13959,7 @@ class RuntimeClientViewModelTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "runtime_memory_summary_drafts_unavailable",
+                        code = "memory_summary_draft_unavailable",
                         message = "Runtime memory summary drafts unavailable",
                         retryable = true,
                     ),
@@ -11289,6 +14054,129 @@ class RuntimeClientViewModelTest {
             assertNull(fixture.localStore.data.pendingPairingRoute)
             assertEquals(sentEnvelopeCount, fixture.channel.sentEnvelopes.size)
             assertEquals("generation_in_progress", state.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun modelsResultRejectsUnknownMetadataBeforeModelStatePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val initialModelIds = fixture.viewModel.state.value.models.map { it.id }
+
+            fixture.viewModel.requestModels()
+            advanceUntilIdle()
+
+            val topLevelRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ModelsResult,
+                    requestId = topLevelRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "models": [
+                                {
+                                  "id": "leaky-top-level",
+                                  "name": "Leaky Top Level",
+                                  "provider": "ollama",
+                                  "model_kind": "chat",
+                                  "capabilities": ["chat"],
+                                  "qualified_id": "ollama:leaky-top-level",
+                                  "installed": true,
+                                  "source": "local"
+                                }
+                              ],
+                              "route_token": "route-token-canary"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedTopLevelState = fixture.viewModel.state.value
+            assertFalse(rejectedTopLevelState.isLoadingModels)
+            assertEquals(initialModelIds, rejectedTopLevelState.models.map { it.id })
+            assertEquals("invalid_payload", rejectedTopLevelState.error?.code)
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("models.result"))
+            assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("route_token"))
+
+            fixture.viewModel.requestModels()
+            advanceUntilIdle()
+
+            val modelMetadataRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ModelsResult,
+                    requestId = modelMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "models": [
+                                {
+                                  "id": "leaky-provider",
+                                  "name": "Leaky Provider",
+                                  "provider": "ollama",
+                                  "model_kind": "chat",
+                                  "capabilities": ["chat"],
+                                  "qualified_id": "ollama:leaky-provider",
+                                  "installed": true,
+                                  "source": "local",
+                                  "provider_url": "http://127.0.0.1:11434",
+                                  "backend_url": "http://127.0.0.1:1234"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedModelMetadataState = fixture.viewModel.state.value
+            assertFalse(rejectedModelMetadataState.isLoadingModels)
+            assertEquals(initialModelIds, rejectedModelMetadataState.models.map { it.id })
+            assertEquals("invalid_payload", rejectedModelMetadataState.error?.code)
+            assertTrue(rejectedModelMetadataState.error?.technicalDetail.orEmpty().contains("models.result"))
+            assertTrue(rejectedModelMetadataState.error?.technicalDetail.orEmpty().contains("models[0].provider_url"))
+
+            fixture.viewModel.requestModels()
+            advanceUntilIdle()
+
+            val canonicalRetryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(
+                        models = listOf(
+                            ModelInfoPayload(
+                                id = "canonical-retry",
+                                name = "Canonical Retry",
+                                provider = "ollama",
+                                modelKind = MODEL_KIND_CHAT,
+                                capabilities = listOf("chat"),
+                                qualifiedId = "ollama:canonical-retry",
+                                installed = true,
+                                source = "local",
+                            ),
+                        ),
+                    ),
+                    requestId = canonicalRetryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val retryState = fixture.viewModel.state.value
+            assertEquals(listOf("ollama:canonical-retry"), retryState.models.map { it.id })
+            assertNull(retryState.error)
         } finally {
             Dispatchers.resetMain()
         }
@@ -12767,6 +15655,253 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "runtime-session",
+                        title = "Runtime session",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = "existing-message",
+                                role = "user",
+                                content = "Existing prompt",
+                                createdAtMillis = 100L,
+                            ),
+                        ),
+                    )
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "session_id": "runtime-session",
+                              "messages": [
+                                {
+                                  "role": "user",
+                                  "content": "Malformed attachment bytes",
+                                  "attachments": [
+                                    {
+                                      "type": "document",
+                                      "mime_type": "text/plain",
+                                      "name": "context.txt",
+                                      "text": "Saved context",
+                                      "data_base64": "U2F2ZWQgY29udGV4dA=="
+                                    }
+                                  ],
+                                  "created_at": "2026-06-23T09:02:06Z"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                )
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertNull(state.loadingChatSessionId)
+            assertFalse(state.isLoadingActiveChatMessages)
+            assertEquals("invalid_payload", state.error?.code)
+            assertTrue(state.error?.technicalDetail.orEmpty().contains("chat.messages.list"))
+            assertTrue(state.error?.technicalDetail.orEmpty().contains("messages[0].attachments[0].data_base64"))
+            assertEquals(listOf("Existing prompt"), state.messages.map { it.content })
+            val persistedSession = fixture.localStore.data.sessions.single { it.id == "runtime-session" }
+            assertEquals(listOf("Existing prompt"), persistedSession.messages.map { it.content })
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("U2F2ZWQgY29udGV4dA=="))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "runtime-session",
+                        title = "Runtime session",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = "existing-message",
+                                role = "user",
+                                content = "Existing prompt",
+                                createdAtMillis = 100L,
+                            ),
+                        ),
+                    )
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val topLevelMetadataRequest =
+                fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = topLevelMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "session_id": "runtime-session",
+                              "messages": [
+                                {
+                                  "role": "user",
+                                  "content": "Leaky top-level transcript",
+                                  "created_at": "2026-06-23T09:02:00Z"
+                                }
+                              ],
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                )
+            )
+            advanceUntilIdle()
+
+            val topLevelRejectedState = fixture.viewModel.state.value
+            assertNull(topLevelRejectedState.loadingChatSessionId)
+            assertFalse(topLevelRejectedState.isLoadingActiveChatMessages)
+            assertEquals("invalid_payload", topLevelRejectedState.error?.code)
+            assertTrue(topLevelRejectedState.error?.technicalDetail.orEmpty().contains("chat.messages.list"))
+            assertTrue(topLevelRejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertEquals(listOf("Existing prompt"), topLevelRejectedState.messages.map { it.content })
+            assertEquals(
+                listOf("Existing prompt"),
+                fixture.localStore.data.sessions.single { it.id == "runtime-session" }.messages.map { it.content },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("Leaky top-level transcript"))
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val messageMetadataRequest =
+                fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messageMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "session_id": "runtime-session",
+                              "messages": [
+                                {
+                                  "role": "assistant",
+                                  "content": "Leaky message transcript",
+                                  "created_at": "2026-06-23T09:02:05Z",
+                                  "workspace_id": "workspace-canary"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                )
+            )
+            advanceUntilIdle()
+
+            val messageRejectedState = fixture.viewModel.state.value
+            assertNull(messageRejectedState.loadingChatSessionId)
+            assertFalse(messageRejectedState.isLoadingActiveChatMessages)
+            assertEquals("invalid_payload", messageRejectedState.error?.code)
+            assertTrue(messageRejectedState.error?.technicalDetail.orEmpty().contains("chat.messages.list"))
+            assertTrue(messageRejectedState.error?.technicalDetail.orEmpty().contains("messages[0].workspace_id"))
+            assertEquals(listOf("Existing prompt"), messageRejectedState.messages.map { it.content })
+            assertEquals(
+                listOf("Existing prompt"),
+                fixture.localStore.data.sessions.single { it.id == "runtime-session" }.messages.map { it.content },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("Leaky message transcript"))
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val canonicalRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-session",
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "user",
+                                content = "Canonical runtime prompt",
+                                createdAt = "2026-06-23T09:02:00Z",
+                            ),
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Canonical runtime answer",
+                                reasoning = "Canonical runtime reasoning",
+                                createdAt = "2026-06-23T09:02:05Z",
+                            ),
+                        ),
+                    ),
+                    requestId = canonicalRequest.requestId,
+                )
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.loadingChatSessionId)
+            assertFalse(acceptedState.isLoadingActiveChatMessages)
+            assertNull(acceptedState.error)
+            assertEquals(
+                listOf("Canonical runtime prompt", "Canonical runtime answer"),
+                acceptedState.messages.map { it.content },
+            )
+            assertEquals("Canonical runtime reasoning", acceptedState.messages.last().reasoning)
+            assertEquals(
+                listOf("Canonical runtime prompt", "Canonical runtime answer"),
+                fixture.localStore.data.sessions.single { it.id == "runtime-session" }.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -12996,13 +16131,13 @@ class RuntimeClientViewModelTest {
                 requestId = "other-request",
                 serializer = ErrorPayload.serializer(),
                 payload = ErrorPayload(
-                    code = "backend_failed",
+                    code = "backend_unavailable",
                     message = "Different request failed",
                     retryable = false,
                 ),
             ),
             ErrorPayload(
-                code = "backend_failed",
+                code = "backend_unavailable",
                 message = "Different request failed",
                 retryable = false,
             ),
@@ -13014,7 +16149,7 @@ class RuntimeClientViewModelTest {
         assertEquals("active-request", afterError.activeRequestId)
         assertEquals("lm_studio:model", afterError.installingModelId)
         assertFalse(afterError.isLoadingModels)
-        assertEquals("backend_failed", afterError.error?.code)
+        assertEquals("backend_unavailable", afterError.error?.code)
         assertNull(afterError.error?.detail)
         assertEquals("Different request failed", afterError.error?.technicalDetail)
     }
@@ -13088,13 +16223,13 @@ class RuntimeClientViewModelTest {
                 requestId = "active-request",
                 serializer = ErrorPayload.serializer(),
                 payload = ErrorPayload(
-                    code = "backend_failed",
+                    code = "backend_unavailable",
                     message = "Backend failed",
                     retryable = false,
                 ),
             ),
             ErrorPayload(
-                code = "backend_failed",
+                code = "backend_unavailable",
                 message = "Backend failed",
                 retryable = false,
             ),
@@ -13107,7 +16242,7 @@ class RuntimeClientViewModelTest {
         assertFalse(afterDone.isStreaming)
         assertFalse(afterCancel.isStreaming)
         assertFalse(afterError.isStreaming)
-        assertEquals("backend_failed", afterError.error?.code)
+        assertEquals("backend_unavailable", afterError.error?.code)
         assertNull(afterError.error?.detail)
         assertEquals("Backend failed", afterError.error?.technicalDetail)
 
@@ -13120,13 +16255,13 @@ class RuntimeClientViewModelTest {
                     requestId = "active-request",
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "backend_failed",
+                        code = "backend_unavailable",
                         message = "Backend failed",
                         retryable = false,
                     ),
                 ),
                 ErrorPayload(
-                    code = "backend_failed",
+                    code = "backend_unavailable",
                     message = "Backend failed",
                     retryable = false,
                 ),
@@ -13198,13 +16333,13 @@ class RuntimeClientViewModelTest {
                 requestId = "active-request",
                 serializer = ErrorPayload.serializer(),
                 payload = ErrorPayload(
-                    code = "backend_failed",
+                    code = "backend_unavailable",
                     message = "Backend failed",
                     retryable = false,
                 ),
             ),
             ErrorPayload(
-                code = "backend_failed",
+                code = "backend_unavailable",
                 message = "Backend failed",
                 retryable = false,
             ),
@@ -14534,7 +17669,7 @@ class RuntimeClientViewModelTest {
                     search = ChatSessionSearchPayload(
                         rank = 2,
                         snippet = "Fresh QR route matched this runtime transcript.",
-                        matchedFields = listOf("transcript", "model", "transcript"),
+                        matchedFields = listOf("transcript", "model"),
                     ),
                 ),
             ),
@@ -14589,23 +17724,23 @@ class RuntimeClientViewModelTest {
                     title = "Existing runtime",
                     model = "ollama:llama3.1:8b",
                     lastActivityAt = "2026-06-23T09:02:05Z",
-                    messageCount = -3,
+                    messageCount = 0,
                 ),
                 ChatSessionSummaryPayload(
                     sessionId = "runtime-new",
                     title = "New runtime",
                     model = "ollama:qwen3:8b",
                     lastActivityAt = "2026-06-23T09:02:06Z",
-                    messageCount = -1,
+                    messageCount = 1,
                 ),
             ),
             nowMillis = 100L,
         )
 
         assertEquals(0, merged.sessions.first { it.id == "runtime-existing" }.runtimeMessageCount)
-        assertEquals(0, merged.sessions.first { it.id == "runtime-new" }.runtimeMessageCount)
+        assertEquals(1, merged.sessions.first { it.id == "runtime-new" }.runtimeMessageCount)
         assertEquals(0, runtimeChatSessions(merged).first { it.id == "runtime-existing" }.messageCount)
-        assertEquals(0, runtimeChatSessions(merged).first { it.id == "runtime-new" }.messageCount)
+        assertEquals(1, runtimeChatSessions(merged).first { it.id == "runtime-new" }.messageCount)
 
         val stalePersistedData = PersistedRuntimeData(
             sessions = listOf(
@@ -14946,7 +18081,7 @@ class RuntimeClientViewModelTest {
                 role = "user",
                 content = "Explain QR pairing.",
                 attachments = listOf(
-                    ChatAttachmentPayload(
+                    ChatStoredAttachmentPayload(
                         type = "document",
                         mimeType = "text/plain",
                         name = "pairing-notes.txt",
@@ -15695,6 +18830,364 @@ class RuntimeClientViewModelTest {
             assertTrue(savedAfterDone.runtimeOwned)
             assertTrue(savedAfterDone.messages.isEmpty())
             assertEquals(2, savedAfterDone.runtimeMessageCount)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatDeltaRejectsUnknownMetadataBeforeMessagePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Explain stream metadata boundaries")
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val sessionId = requireNotNull(fixture.viewModel.state.value.activeChatSessionId)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("delta", "Leaky stream answer")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.delta"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertTrue(rejectedState.isStreaming)
+            assertEquals(sendEnvelope.requestId, rejectedState.activeRequestId)
+            assertEquals(
+                listOf("Explain stream metadata boundaries", ""),
+                rejectedState.messages.map { it.content },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("Leaky stream answer"))
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("127.0.0.1:11434"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(
+                        delta = "Canonical stream answer",
+                        reasoningDelta = "Canonical runtime reasoning",
+                    ),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertTrue(acceptedState.isStreaming)
+            assertEquals(sendEnvelope.requestId, acceptedState.activeRequestId)
+            val acceptedAssistant = acceptedState.messages.last()
+            assertEquals("Canonical stream answer", acceptedAssistant.content)
+            assertEquals("Canonical runtime reasoning", acceptedAssistant.reasoning)
+            assertEquals(
+                "Canonical stream answer",
+                fixture.localStore.data.sessions.single { it.id == sessionId }.messages.last().content,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Explain done metadata boundaries")
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "Canonical answer before done"),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val titleRequestCountBeforeRejectedDone = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatTitleRequest
+            }
+            val historyRequestCountBeforeRejectedDone = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("finish_reason", "stop")
+                        put(
+                            "usage",
+                            buildJsonObject {
+                                put("input_tokens", 4)
+                                put("output_tokens", 6)
+                                put("workspace_id", "workspace-canary")
+                            },
+                        )
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.done"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("usage.workspace_id"))
+            assertTrue(rejectedState.isStreaming)
+            assertEquals(sendEnvelope.requestId, rejectedState.activeRequestId)
+            assertEquals("Canonical answer before done", rejectedState.messages.last().content)
+            assertEquals(
+                titleRequestCountBeforeRejectedDone,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatTitleRequest },
+            )
+            assertEquals(
+                historyRequestCountBeforeRejectedDone,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("workspace-canary"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertFalse(acceptedState.isStreaming)
+            assertNull(acceptedState.activeRequestId)
+            assertEquals("Canonical answer before done", acceptedState.messages.last().content)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatCancelAckRejectsUnknownMetadataBeforeStreamingClear() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Explain cancel acknowledgement metadata boundaries")
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val sessionId = requireNotNull(fixture.viewModel.state.value.activeChatSessionId)
+            fixture.viewModel.cancelGeneration()
+            advanceUntilIdle()
+            val cancelEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatCancel }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatCancel,
+                    requestId = cancelEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("target_request_id", sendEnvelope.requestId)
+                        put("cancelled", true)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.cancel"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertTrue(rejectedState.isStreaming)
+            assertEquals(sendEnvelope.requestId, rejectedState.activeRequestId)
+            assertEquals(
+                listOf("Explain cancel acknowledgement metadata boundaries", ""),
+                rejectedState.messages.map { it.content },
+            )
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("127.0.0.1:11434"))
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatCancel,
+                    requestId = cancelEnvelope.requestId,
+                    payload = buildJsonObject {
+                        put("target_request_id", sendEnvelope.requestId)
+                        put("cancelled", true)
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            val acceptedState = fixture.viewModel.state.value
+            assertNull(acceptedState.error)
+            assertFalse(acceptedState.isStreaming)
+            assertNull(acceptedState.activeRequestId)
+            assertEquals(
+                listOf("Explain cancel acknowledgement metadata boundaries"),
+                acceptedState.messages.map { it.content },
+            )
+            assertEquals(
+                listOf("Explain cancel acknowledgement metadata boundaries"),
+                fixture.localStore.data.sessions.single { it.id == sessionId }.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val initialHistoryRequest = fixture.channel.sentEnvelopes.lastOrNull {
+                it.type == MessageType.ChatSessionsList
+            }
+            if (initialHistoryRequest != null) {
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                        requestId = initialHistoryRequest.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+
+            fun completeFirstTurn(prompt: String, answer: String): Pair<String, ProtocolEnvelope> {
+                val titleRequestCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatTitleRequest
+                }
+                fixture.viewModel.updateChatInput(prompt)
+                fixture.viewModel.sendChatMessage()
+                advanceUntilIdle()
+
+                val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+                val sessionId = requireNotNull(fixture.viewModel.state.value.activeChatSessionId)
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatDelta,
+                        serializer = ChatDeltaPayload.serializer(),
+                        payload = ChatDeltaPayload(delta = answer),
+                        requestId = sendEnvelope.requestId,
+                    ),
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatDone,
+                        serializer = ChatDonePayload.serializer(),
+                        payload = ChatDonePayload(),
+                        requestId = sendEnvelope.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+
+                val titleRequests = fixture.channel.sentEnvelopes.filter {
+                    it.type == MessageType.ChatTitleRequest
+                }
+                assertEquals(titleRequestCount + 1, titleRequests.size)
+                return sessionId to titleRequests.last()
+            }
+
+            val (rejectedSessionId, rejectedTitleRequest) = completeFirstTurn(
+                prompt = "Explain generated-title metadata boundaries",
+                answer = "Title results must stay inside the runtime contract.",
+            )
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatTitleResult,
+                    requestId = rejectedTitleRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "title": "Leaky Generated Title",
+                              "backend_url": "http://127.0.0.1:11434"
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejectedState.error?.code)
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.title.result"))
+            assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            val rejectedSession = fixture.localStore.data.sessions.single { it.id == rejectedSessionId }
+            assertFalse(rejectedSession.titleGenerated)
+            assertFalse(rejectedSession.title == "Leaky Generated Title")
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("Leaky Generated Title"))
+            assertEquals(
+                listOf(
+                    "Explain generated-title metadata boundaries",
+                    "Title results must stay inside the runtime contract.",
+                ),
+                rejectedState.messages.map { it.content },
+            )
+            val historyRequestCountBeforeCanonical = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatTitleResult,
+                    serializer = ChatTitleResultPayload.serializer(),
+                    payload = ChatTitleResultPayload(title = "Canonical Generated Title"),
+                    requestId = rejectedTitleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val canonicalSession = fixture.localStore.data.sessions.single { it.id == rejectedSessionId }
+            assertTrue(canonicalSession.titleGenerated)
+            assertEquals("Canonical Generated Title", canonicalSession.title)
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                historyRequestCountBeforeCanonical + 1,
+                fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionsList
+                },
+            )
         } finally {
             Dispatchers.resetMain()
         }
@@ -17203,6 +20696,70 @@ class RuntimeClientViewModelTest {
         val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
         field.isAccessible = true
         return field.get(this) as T?
+    }
+
+    private fun memorySummaryDraftPayload(id: String): MemorySummaryDraftPayload {
+        return MemorySummaryDraftPayload(
+            id = id,
+            session = MemorySummaryDraftSessionPayload(
+                sessionId = "runtime-session",
+                title = "Long idle planning chat",
+                model = "ollama:qwen3:8b",
+                lastActivityAt = "2026-06-01T00:00:00Z",
+                messageCount = 6,
+                inactiveSeconds = 1_209_600L,
+            ),
+            sourceMessageCount = 6,
+            sourceRange = "visible messages 1-6 of 6",
+            sourcePointers = listOf(
+                MemorySummaryDraftSourcePointerPayload(
+                    sessionId = "runtime-session",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAt = "2026-06-01T00:00:00Z",
+                    excerpt = "Use concise Korean summaries for release notes.",
+                ),
+            ),
+            summaryPreview = "Prefer concise Korean release-note summaries.",
+        )
+    }
+
+    private fun memorySummaryDraftApprovedEntryPayload(
+        draftId: String,
+        memoryId: String,
+        content: String,
+    ): MemoryEntryPayload {
+        return MemoryEntryPayload(
+            id = memoryId,
+            content = content,
+            enabled = true,
+            createdAt = "2026-06-25T00:00:00Z",
+            updatedAt = "2026-06-25T00:01:00Z",
+            source = MemoryEntrySourcePayload(
+                kind = "long_inactivity_summary_draft",
+                draftId = draftId,
+                summaryMethod = "deterministic_preview",
+                session = MemorySummaryDraftSessionPayload(
+                    sessionId = "runtime-session",
+                    title = "Long idle planning chat",
+                    model = "ollama:qwen3:8b",
+                    lastActivityAt = "2026-06-01T00:00:00Z",
+                    messageCount = 6,
+                    inactiveSeconds = 1_209_600L,
+                ),
+                sourceMessageCount = 6,
+                sourceRange = "visible messages 1-6 of 6",
+                sourcePointers = listOf(
+                    MemorySummaryDraftSourcePointerPayload(
+                        sessionId = "runtime-session",
+                        messageIndex = 1,
+                        role = "user",
+                        createdAt = "2026-06-01T00:00:00Z",
+                        excerpt = "Use concise Korean summaries for release notes.",
+                    ),
+                ),
+            ),
+        )
     }
 
     private fun textChatModel(): RuntimeModel {

@@ -1001,6 +1001,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
 
     required_qr_scan_result_test_snippets = (
         "validCompactRemoteRouteQrReturnsValid",
+        "validCompactPrivateOverlayRouteQrReturnsValid",
+        "macos-compact-private-overlay-pairing-uri.txt",
         "identityOnlyPairQrIsInvalidWhenRemoteRouteIsRequired",
         "nonAetherLinkQrReturnsUnsupported",
         "blankAndNullFrameValuesAreIgnored",
@@ -1013,6 +1015,54 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{qr_scan_result_test_path.relative_to(ROOT)}: Missing Android QR scanner decoded-result "
                 f"regression {snippet}."
             )
+
+    required_private_overlay_scanner_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Private-Overlay QR Scanner Acceptance No-Device Gate",
+            "Progress docs must record the private-overlay QR scanner acceptance no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid",
+            "Progress docs must record the focused private-overlay scanner acceptance regression.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "macos-compact-private-overlay-pairing-uri.txt",
+            "Progress docs must name the shared private-overlay QR fixture.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "PairingQrScanResult.Valid(rawUri)",
+            "Progress docs must record the expected scanner classification.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Private-Overlay QR Scanner Acceptance No-Device Gate",
+            "QA evidence must record the private-overlay QR scanner acceptance no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android private-overlay QR scanner acceptance addendum",
+            "QA evidence must record the default-gate summary phrase.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android private-overlay QR scanner acceptance no-device gate",
+            "Roadmap must record the latest private-overlay QR scanner acceptance gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_private_overlay_scanner_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     required_archive_snackbar_runtime_snippets = (
         "val chatArchivedSnackbar = stringResource(R.string.chat_archived_snackbar)",
@@ -20329,6 +20379,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
+            "$defs.memoryListPayload request query must use nonEmptyString",
+            "Protocol schema checker must fail if memoryListPayload query stops using nonEmptyString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
             "$defs.memoryListPayload request additionalProperties must be false",
             "Protocol schema checker must require memoryListPayload request additionalProperties=false.",
         ),
@@ -22549,12 +22605,28 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android protocol DTO must keep the selected embedding model search hint serializable.",
         ),
         (
+            "require(limit == null || limit <= MAX_CHAT_SESSION_LIST_LIMIT)",
+            "Android protocol DTO must reject chat.sessions.list limits above the shared schema ceiling.",
+        ),
+        (
+            "require(query == null || query.isNotEmpty())",
+            "Android protocol DTO must reject empty chat.sessions.list search queries during decode.",
+        ),
+        (
+            "require(embeddingModelId == null || embeddingModelId.isNotEmpty())",
+            "Android protocol DTO must reject empty chat.sessions.list embedding model hints during decode.",
+        ),
+        (
             "data class ChatSessionSearchPayload(\n    val rank: Int,\n    val snippet: String,\n    @SerialName(\"matched_fields\") val matchedFields: List<String> = emptyList(),",
             "Android protocol DTO must decode chat.sessions.list search rank/snippet metadata.",
         ),
         (
             "data class MemoryListRequestPayload(\n    val query: String? = null,",
             "Android protocol DTO must encode optional memory.list query requests.",
+        ),
+        (
+            "memory.list request query must be nonempty",
+            "Android protocol DTO must reject empty memory.list query requests during decode.",
         ),
         (
             "val search: ChatSessionSearchPayload? = null,",
@@ -22788,6 +22860,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'assertEquals("Runtime history matched relay route.", decoded.sessions.first().search?.snippet)',
         "MemoryListRequestPayload(query = \"concise answers\")",
         'assertEquals("concise answers", listRequestJson["query"]?.jsonPrimitive?.content)',
+        "memoryListRequestRejectsInvalidBounds",
+        '"""{"query":""}"""',
         'assertEquals("Prefers concise answers.", decodedList.entries.first().search?.snippet)',
         "memorySummaryDraftsListPayloadUsesProtocolFieldNames",
         'assertEquals(MessageType.MemorySummaryDraftsList, "memory.summary.drafts.list")',
@@ -22835,6 +22909,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage",
         'assertEquals("relay recovery", queryPayload.query)',
         'assertEquals(listOf("content", "source_excerpt"), runtimeEntry.searchMatchedFields)',
+        "refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint",
+        'assertNull(queryRequest.payload["embedding_model_id"])',
+        "assertFalse(json.encodeToString(queryRequest.payload).contains(selectedEmbeddingModel.id))",
         "ChatSessionSearchPayload(",
         "assertNull(savedRedaction.runtimeSearchSnippet)",
     )
@@ -24020,6 +24097,55 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention Android Settings memory runtime search coverage."
         )
+    if "RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run Android memory.list selected embedding-model isolation regression."
+        )
+    if "Android memory.list selected embedding-model isolation addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android memory.list selected embedding-model isolation coverage."
+        )
+    required_android_memory_embedding_isolation_docs = (
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Android Memory.List Embedding Isolation No-Device Gate",
+            "Progress docs must record the Android memory.list selected embedding-model isolation no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint",
+            "Progress docs must record the focused Android memory.list selected embedding-model isolation regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Android Memory.List Embedding Isolation No-Device Gate",
+            "QA evidence must record the Android memory.list selected embedding-model isolation no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Android memory.list selected embedding-model isolation addendum",
+            "QA evidence must record the no-device summary phrase for Android memory.list selected embedding-model isolation coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Latest Android memory.list selected embedding-model isolation no-device gate",
+            "Roadmap must record the latest Android memory.list selected embedding-model isolation no-device gate.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_relative,
+            "it does not use embeddings, selected embedding models, semantic indexes, or a separate `memory.search` command",
+            "Protocol docs must keep memory.list query scoped away from selected embedding models.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_android_memory_embedding_isolation_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
     if "swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run long-inactivity memory summarization policy tests."
@@ -30052,6 +30178,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android scanner raw-value classification regression.",
         ),
         (
+            "PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid",
+            "Default no-device gate must run the Android private-overlay scanner acceptance regression.",
+        ),
+        (
+            "Android private-overlay QR scanner acceptance addendum",
+            "Default no-device gate coverage summary must mention Android private-overlay QR scanner acceptance.",
+        ),
+        (
             "RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired",
             "Default no-device gate must run the Android product QR identity-only rejection parser regression.",
         ),
@@ -30449,6 +30583,8 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
     runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    protocol_path = ROOT / "docs/protocol.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
@@ -31346,13 +31482,18 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         (
             android_protocol_path,
             android_protocol_text,
-            ('@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',),
+            (
+                '@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',
+                "require(sizeBytes == null || sizeBytes >= 0)",
+                "require(contextWindowTokens == null || contextWindowTokens > 0)",
+            ),
         ),
         (
             android_protocol_test_path,
             android_protocol_test_text,
             (
                 "modelInfoPayloadCanCarryContextWindowMetadata",
+                "modelInfoPayloadRejectsInvalidNumericMetadata",
                 '"context_window_tokens"',
                 "assertEquals(32768, decoded.models.first().contextWindowTokens)",
             ),
@@ -33761,6 +33902,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     roadmap_path = ROOT / "docs/roadmap.md"
+    protocol_path = ROOT / "docs/protocol.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
 
@@ -33769,6 +33911,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         runtime_mock_smoke_path,
         no_device_path,
         roadmap_path,
+        protocol_path,
         progress_path,
         qa_evidence_path,
     ):
@@ -33783,6 +33926,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    protocol_text = protocol_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
 
@@ -34219,6 +34363,7 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
     macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
     protocol_check_path = ROOT / "script/check_protocol_schema.py"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
 
@@ -34234,6 +34379,7 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
         macos_test_path,
         protocol_check_path,
         no_device_path,
+        roadmap_path,
         progress_path,
         qa_evidence_path,
     )
@@ -34245,6 +34391,11 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
     texts = {path: path.read_text(encoding="utf-8", errors="replace") for path in paths}
     required_snippets_by_path = {
         protocol_schema_path: (
+            '"backendHealth"',
+            '"required": ["available"]',
+            '"message": { "type": "string" }',
+            '"code": { "type": "string" }',
+            '"retryable": { "type": "boolean" }',
             '"modelResidencyHealth"',
             '"modelResidencyUnloadFailure"',
             '"model_residency": { "$ref": "#/$defs/modelResidencyHealth" }',
@@ -34254,22 +34405,43 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
             '"reason": { "enum": ["model_switch", "idle_timeout", "manual"] }',
         ),
         android_protocol_path: (
+            "data class RuntimeBackendStatusPayload",
+            "private val RUNTIME_HEALTH_STATUSES = setOf(\"ok\", \"degraded\", \"unavailable\")",
+            "runtime.health status must be ok, degraded, or unavailable",
+            "val message: String? = null",
             '@SerialName("model_residency") val modelResidency: RuntimeModelResidencyPayload? = null',
             "data class RuntimeModelResidencyPayload",
+            "runtime.health model_residency in_flight_generations must be nonnegative",
             '@SerialName("idle_unload_delay_seconds") val idleUnloadDelaySeconds: Int? = null',
+            "runtime.health model_residency idle_unload_delay_seconds must be nonnegative",
             '@SerialName("last_unload_failure") val lastUnloadFailure: RuntimeModelResidencyUnloadFailurePayload? = null',
             "data class RuntimeModelResidencyUnloadFailurePayload",
             '@SerialName("model_id") val modelId: String',
         ),
         android_protocol_test_path: (
+            "runtimeHealthBackendStatusAcceptsSchemaMinimalPayload",
+            "runtimeHealthPayloadRejectsInvalidStatus",
+            '"""{"status":"connected"}"""',
+            '"ollama": {\n                "available": true',
+            '"lm_studio": {\n                "available": false',
+            'assertNull(decoded.ollama?.message)',
             "runtimeHealthPayloadCanCarryModelResidencySnapshot",
+            "runtimeHealthPayloadRejectsInvalidModelResidencyBounds",
             '"model_residency"',
+            '"in_flight_generations"',
             '"idle_unload_delay_seconds"',
             '"last_unload_failure"',
             '"manual"',
         ),
         android_runtime_path: (
+            "private val RUNTIME_HEALTH_PAYLOAD_KEYS = setOf(",
+            "private val RUNTIME_BACKEND_HEALTH_PAYLOAD_KEYS = setOf(",
+            "private val RUNTIME_MODEL_RESIDENCY_PAYLOAD_KEYS = setOf(",
+            "private val RUNTIME_MODEL_RESIDENCY_UNLOAD_FAILURE_PAYLOAD_KEYS = setOf(",
+            "runtimeHealthUnknownMetadataKey",
+            "runtime.health response contains unsupported metadata",
             "modelResidency = runtimeModelResidencyStatus(payload)",
+            "internal fun runtimeProviderSafeMessage(message: String?): String",
             "internal fun runtimeModelResidencyStatus(payload: RuntimeHealthPayload): RuntimeModelResidencyStatus?",
             "lastUnloadFailure = runtimeResidencyUnloadFailureStatus(residency.lastUnloadFailure)",
             "private fun runtimeResidencyUnloadFailureStatus(",
@@ -34285,8 +34457,18 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
             "data class RuntimeModelResidencyUnloadFailureStatus",
         ),
         android_test_path: (
+            "runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication",
+            '"backend_url": "http://127.0.0.1:11434"',
+            '"provider_url": "http://127.0.0.1:11434"',
+            "ollama.provider_url",
+            "model_residency.workspace_id",
+            "model_residency.last_unload_failure.backend_url",
+            "assertRuntimeHealthStateUnchanged",
+            "initialModelsListRequests + 1",
             "runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime",
             "runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails",
+            "runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty",
+            'assertEquals("", runtimeProviderSafeMessage(null))',
             "RuntimeModelResidencyPayload(",
             "RuntimeModelResidencyUnloadFailurePayload(",
             'reason = "manual"',
@@ -34310,11 +34492,16 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
         ),
         protocol_check_path: (
             "check_runtime_health_model_residency_schema",
+            "backendHealth schema must require only available",
+            "backendHealth message must stay optional string metadata",
+            "backendHealth retryable must stay optional boolean metadata",
+            "runtime.health payload status must be limited to ok/degraded/unavailable",
             "runtime.health payload schema must allow optional model_residency snapshot",
             "modelResidencyHealth must allow optional last_unload_failure details",
             "modelResidencyUnloadFailure must not expose raw provider error messages",
         ),
         protocol_docs_path: (
+            "Each backend object requires `available`; `code`, `message`, and `retryable` are optional provider-health metadata.",
             "model_residency",
             "idle_unload_delay_seconds",
             "last_unload_failure",
@@ -34323,20 +34510,46 @@ def runtime_health_model_residency_contract_guard_failures() -> list[str]:
         ),
         no_device_path: (
             "runtime.health model-residency contract",
+            "ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload",
+            "ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus",
+            "ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidModelResidencyBounds",
+            "RuntimeClientViewModelTest.runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty",
+            "RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication",
+            "Android runtime.health closed-payload app-path addendum",
+            "unknown top-level runtime.health metadata, unknown provider metadata, unknown model-residency metadata, and unknown nested model-residency unload-failure metadata",
+            "Android runtime.health backend status minimal decode addendum",
+            "Android runtime.health status enum decode addendum",
+            "Android runtime.health model-residency numeric bounds decode addendum",
             "LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses",
             "LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage",
             "RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime",
             "runtime.health model-residency unload-failure contract",
         ),
+        roadmap_path: (
+            "Latest Android runtime.health closed-payload app-path no-device gate",
+            "Latest Android runtime.health status enum decode no-device gate",
+            "Latest Android runtime.health backend status minimal decode no-device gate",
+            "RuntimeBackendStatusPayload",
+            "ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus",
+            "ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload",
+        ),
         progress_path: (
+            "Android runtime.health Closed-Payload App-Path No-Device Gate",
+            "Android runtime.health Status Enum Decode No-Device Gate",
+            "Android runtime.health Backend Status Minimal Decode No-Device Gate",
             "runtime.health Model Residency Contract",
             "runtime.health model-residency contract",
             "runtime.health Model Residency Unload-Failure Contract",
+            "Android runtime.health Model Residency Numeric Bounds Decode No-Device Gate",
         ),
         qa_evidence_path: (
+            "Android runtime.health Closed-Payload App-Path No-Device Gate",
+            "Android runtime.health Status Enum Decode No-Device Gate",
+            "Android runtime.health Backend Status Minimal Decode No-Device Gate",
             "runtime.health Model Residency Contract",
             "runtime.health model-residency contract",
             "runtime.health Model Residency Unload-Failure Contract",
+            "Android runtime.health Model Residency Numeric Bounds Decode No-Device Gate",
         ),
     }
     for path, snippets in required_snippets_by_path.items():
@@ -35810,29 +36023,184 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     android_protocol_test_path = (
         ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
     )
+    android_viewmodel_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    android_viewmodel_test_path = (
+        ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    )
+    android_chat_session_mutation_failure_test_path = (
+        ROOT
+        / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientChatSessionMutationFailureTest.kt"
+    )
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     roadmap_path = ROOT / "docs/roadmap.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_protocol_path = ROOT / "docs/protocol.md"
+    schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
     required_paths = (
         android_protocol_path,
         android_protocol_test_path,
+        android_viewmodel_path,
+        android_viewmodel_test_path,
+        android_chat_session_mutation_failure_test_path,
         no_device_path,
         roadmap_path,
         progress_path,
         qa_evidence_path,
+        docs_protocol_path,
+        schema_path,
+        protocol_schema_check_path,
     )
     if any(not path.exists() for path in required_paths):
         return ["Android protocol model metadata guard files are missing."]
 
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
+    android_viewmodel_text = android_viewmodel_path.read_text(encoding="utf-8", errors="replace")
+    android_viewmodel_test_text = android_viewmodel_test_path.read_text(encoding="utf-8", errors="replace")
+    android_chat_session_mutation_failure_test_text = (
+        android_chat_session_mutation_failure_test_path.read_text(encoding="utf-8", errors="replace")
+    )
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    docs_protocol_text = docs_protocol_path.read_text(encoding="utf-8", errors="replace")
+    schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
+    protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
+
+    required_route_refresh_scalar_decode_protocol_snippets = (
+        "RouteRefreshOpaqueValueSerializer",
+        "RouteRefreshOpaqueBodySerializer",
+        "RouteRefreshRelayPortSerializer",
+        "RouteRefreshExpirySerializer",
+        "RouteRefreshRelayScopeSerializer",
+        "RouteRefreshP2pClassSerializer",
+        "RouteRefreshP2pProtocolVersionSerializer",
+        "route.refresh relay_port must be between 1 and 65535",
+        "route.refresh route expiry must be positive",
+        "route.refresh relay_scope must be remote, private_overlay, or usb_reverse",
+        "route.refresh p2p_class must be p2p_rendezvous",
+        "route.refresh p2p_protocol_version must be 1",
+    )
+    for snippet in required_route_refresh_scalar_decode_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android route.refresh scalar "
+                f"route-material DTO decode guard {snippet!r}."
+            )
+
+    required_route_refresh_scalar_decode_test_snippets = (
+        "routeRefreshPayloadRejectsInvalidScalarRouteMaterial",
+        '"""{"relay_port":0}"""',
+        '"""{"relay_port":65536}"""',
+        '"""{"relay_scope":"local_diagnostic"}"""',
+        '"""{"p2p_class":"relay"}"""',
+        '"""{"p2p_protocol_version":2}"""',
+        '"b".repeat(2049)',
+    )
+    for snippet in required_route_refresh_scalar_decode_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android route.refresh scalar "
+                f"route-material decode regression {snippet!r}."
+            )
+
+    required_route_refresh_scalar_decode_no_device_snippets = (
+        "ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial",
+        "Android route.refresh scalar route-material decode addendum",
+        "Android RouteRefreshPayload rejects schema-invalid scalar relay and P2P route material during JSON DTO decode",
+        "unsupported p2p_protocol_version values before trusted route storage",
+    )
+    for snippet in required_route_refresh_scalar_decode_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"route.refresh scalar route-material decode coverage; missing {snippet!r}."
+            )
+
+    if "Latest Android route.refresh scalar route-material decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android route.refresh "
+            "scalar route-material decode gate."
+        )
+    if "Android Route Refresh Scalar Route Material Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android route.refresh scalar "
+            "route-material decode gate."
+        )
+    if "Android Route Refresh Scalar Route Material Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android route.refresh scalar "
+            "route-material decode gate."
+        )
+
+    required_route_refresh_complete_decode_protocol_snippets = (
+        "@Serializable(with = RouteRefreshPayloadSerializer::class)",
+        "object RouteRefreshPayloadSerializer : KSerializer<RouteRefreshPayload>",
+        "RouteRefreshPayloadSurrogate",
+        "validateRouteRefreshPayloadSurrogate",
+        "route.refresh payload must include runtime_device_id and runtime_key_fingerprint when route material is present",
+        "route.refresh relay route material must include relay_host, relay_port, relay_id, relay_secret, relay_expires_at, and relay_nonce together",
+        "route.refresh P2P route material must include p2p_class, p2p_record_id, p2p_encrypted_body, p2p_expires_at, p2p_anti_replay_nonce, and p2p_protocol_version together",
+        "route.refresh payload must be empty or include complete relay or P2P route material",
+    )
+    for snippet in required_route_refresh_complete_decode_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android route.refresh complete "
+                f"route-material DTO decode guard {snippet!r}."
+            )
+
+    required_route_refresh_complete_decode_test_snippets = (
+        "routeRefreshPayloadRequiresCompleteRouteMaterialFamilies",
+        '"""{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint"}"""',
+        '"relay_host": "relay.example.test"',
+        '"p2p_class": "p2p_rendezvous"',
+        '"""{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","relay_scope":"remote"}"""',
+        '"""{"runtime_device_id":"runtime-1","runtime_key_fingerprint":"runtime-fingerprint","p2p_class":"p2p_rendezvous"}"""',
+    )
+    for snippet in required_route_refresh_complete_decode_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android route.refresh complete "
+                f"route-material decode regression {snippet!r}."
+            )
+
+    required_route_refresh_complete_decode_no_device_snippets = (
+        "ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies",
+        "Android route.refresh complete route-material decode addendum",
+        "Android RouteRefreshPayload accepts empty route.refresh responses and complete relay or P2P route-material families",
+        "missing-p2p_class payloads during JSON DTO decode",
+    )
+    for snippet in required_route_refresh_complete_decode_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"route.refresh complete route-material decode coverage; missing {snippet!r}."
+            )
+
+    if "Latest Android route.refresh complete route-material decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android route.refresh "
+            "complete route-material decode gate."
+        )
+    if "Android Route Refresh Complete Route Material Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android route.refresh complete "
+            "route-material decode gate."
+        )
+    if "Android Route Refresh Complete Route Material Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android route.refresh complete "
+            "route-material decode gate."
+        )
 
     required_model_snippets = (
+        'private val MODEL_INFO_PROVIDERS = setOf("ollama", "lm_studio")',
+        'private val MODEL_INFO_KINDS = setOf("chat", "embedding")',
+        'private val MODEL_INFO_SOURCES = setOf("local", "cloud")',
         "data class ModelInfoPayload(",
         "val backend: String? = null",
         "val provider: String? = null",
@@ -35843,6 +36211,19 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         '@SerialName("qualified_id") val qualifiedId: String? = null',
         '@SerialName("size_bytes") val sizeBytes: Long? = null',
         '@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',
+        "require(id.isNotEmpty())",
+        "require(!name.isNullOrEmpty())",
+        "model info id must be nonempty",
+        "model info name must be nonempty",
+        "model info backend must be ollama or lm_studio",
+        "model info provider must be ollama or lm_studio",
+        "model info model_kind must be chat or embedding",
+        "model info capabilities must be unique",
+        "model info source must be local or cloud",
+        "require(sizeBytes == null || sizeBytes >= 0)",
+        "require(contextWindowTokens == null || contextWindowTokens > 0)",
+        "Instant.parse(value)",
+        'requireProtocolDateTime(modifiedAt, "model info modified_at")',
         '@SerialName("modified_at") val modifiedAt: String? = null',
         '@SerialName("remote_model") val remoteModel: String? = null',
     )
@@ -35854,7 +36235,21 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
 
     required_test_snippets = (
         "modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+        "modelInfoPayloadRejectsInvalidScalarMetadata",
+        "modelInfoPayloadRejectsInvalidModifiedAtMetadata",
+        "modelInfoPayloadRejectsInvalidNumericMetadata",
         "modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList",
+        '"""{"models":[{"id":"","name":"Empty ID"}]}"""',
+        '"""{"models":[{"id":"missing-name"}]}"""',
+        '"""{"models":[{"id":"empty-name","name":""}]}"""',
+        '"""{"models":[{"id":"bad-backend","name":"Bad Backend","backend":"openai"}]}"""',
+        '"""{"models":[{"id":"bad-provider","name":"Bad Provider","provider":"openai"}]}"""',
+        '"""{"models":[{"id":"bad-kind","name":"Bad Kind","model_kind":"vision"}]}"""',
+        '"""{"models":[{"id":"duplicate-capability","name":"Duplicate Capability","capabilities":["chat","chat"]}]}"""',
+        '"""{"models":[{"id":"bad-source","name":"Bad Source","source":"remote"}]}"""',
+        '"""{"models":[{"id":"not-a-date","name":"Not A Date","modified_at":"not-a-date"}]}"""',
+        '"""{"models":[{"id":"date-only","name":"Date Only","modified_at":"2026-07-09"}]}"""',
+        '"""{"models":[{"id":"missing-zone","name":"Missing Zone","modified_at":"2026-07-09T12:34:56"}]}"""',
         '"model_kind"',
         '"kind"',
         '"provider_model_id"',
@@ -35874,9 +36269,18 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
 
     required_no_device_snippets = (
         "ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+        "ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata",
+        "ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata",
+        "ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata",
         "ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList",
         "Android protocol model metadata parity addendum",
         "Android ModelInfoPayload preserves backend, provider, provider_model_id, qualified_id, model_kind, kind, capabilities, size_bytes, context_window_tokens, modified_at, and remote_model",
+        "Android model scalar metadata decode addendum",
+        "Android ModelInfoPayload rejects empty id or name values, missing name values, unsupported backend/provider/model_kind/source values, and duplicate capabilities during models.result decode",
+        "Android model modified_at date-time decode addendum",
+        "Android ModelInfoPayload rejects malformed, date-only, and timezone-less modified_at values during models.result decode",
+        "Android model numeric metadata decode addendum",
+        "Android ModelInfoPayload rejects negative size_bytes values and nonpositive context_window_tokens values during models.result decode",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
@@ -35889,6 +36293,179 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name Android protocol "
             "model metadata parity."
+        )
+    if "Android Model Numeric Metadata Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android model numeric metadata "
+            "decode gate."
+        )
+    if "Android Model Numeric Metadata Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android model "
+            "numeric metadata decode gate."
+        )
+    if "Latest Android model scalar metadata decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name the Android model "
+            "scalar metadata decode gate."
+        )
+    if "Android Model Scalar Metadata Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android model scalar metadata "
+            "decode gate."
+        )
+    if "Android Model Scalar Metadata Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android model "
+            "scalar metadata decode gate."
+        )
+    if "Latest Android model modified_at date-time decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name the Android model "
+            "modified_at date-time decode gate."
+        )
+    if "Android Model Modified-At Date-Time Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android model modified_at "
+            "date-time decode gate."
+        )
+    if "Android Model Modified-At Date-Time Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android model "
+            "modified_at date-time decode gate."
+        )
+
+    required_viewmodel_closed_payload_snippets = (
+        "private val MODELS_RESULT_PAYLOAD_KEYS = setOf(\"models\")",
+        "private val MODEL_INFO_PAYLOAD_KEYS = setOf(",
+        "\"provider_model_id\"",
+        "modelsResultUnknownMetadataKey",
+        "models.result response contains unsupported metadata",
+        "mutableState.update { it.copy(isLoadingModels = false) }",
+    )
+    for snippet in required_viewmodel_closed_payload_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android models.result app-path "
+                f"closed-payload guard {snippet!r}."
+            )
+
+    required_viewmodel_test_closed_payload_snippets = (
+        "modelsResultRejectsUnknownMetadataBeforeModelStatePublication",
+        '"route_token": "route-token-canary"',
+        '"provider_url": "http://127.0.0.1:11434"',
+        '"backend_url": "http://127.0.0.1:1234"',
+        'contains("route_token")',
+        'contains("models[0].provider_url")',
+        'assertEquals(initialModelIds, rejectedTopLevelState.models.map { it.id })',
+        'assertEquals(initialModelIds, rejectedModelMetadataState.models.map { it.id })',
+        'assertEquals(listOf("ollama:canonical-retry"), retryState.models.map { it.id })',
+        "assertNull(retryState.error)",
+    )
+    for snippet in required_viewmodel_test_closed_payload_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android models.result app-path "
+                f"closed-payload regression {snippet!r}."
+            )
+
+    required_no_device_closed_payload_snippets = (
+        "RuntimeClientViewModelTest.modelsResultRejectsUnknownMetadataBeforeModelStatePublication",
+        "Android models.result closed-payload app-path addendum",
+        "RuntimeClientViewModel rejects unknown top-level models.result metadata and unknown per-model route/provider metadata before model state publication",
+    )
+    for snippet in required_no_device_closed_payload_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"models.result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    if "Latest Android models.result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name the Android "
+            "models.result closed-payload app-path gate."
+        )
+    if "Android Models.Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android models.result "
+            "closed-payload app-path gate."
+        )
+    if "Android Models.Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android models.result "
+            "closed-payload app-path gate."
+        )
+
+    required_timestamp_protocol_snippets = (
+        "private fun requireProtocolDateTime(value: String?, fieldName: String)",
+        'throw IllegalArgumentException("$fieldName must be date-time", error)',
+        'requireProtocolDateTime(lastActivityAt, "chat.sessions.list response last_activity_at")',
+        'requireProtocolDateTime(archivedAt, "chat.sessions.list response archived_at")',
+        'requireProtocolDateTime(createdAt, "chat.messages.list response created_at")',
+        'requireProtocolDateTime(renamedAt, "chat.session.rename renamed_at")',
+        'requireProtocolDateTime(archivedAt, "chat.session lifecycle archived_at")',
+        'requireProtocolDateTime(restoredAt, "chat.session lifecycle restored_at")',
+        'requireProtocolDateTime(deletedAt, "chat.session lifecycle deleted_at")',
+        'requireProtocolDateTime(createdAt, "memory entry created_at")',
+        'requireProtocolDateTime(updatedAt, "memory entry updated_at")',
+        'requireProtocolDateTime(deletedAt, "memory.delete result deleted_at")',
+        'requireProtocolDateTime(dismissedAt, "memory.summary.draft.dismiss result dismissed_at")',
+        'requireProtocolDateTime(lastActivityAt, "memory summary draft session last_activity_at")',
+        'requireProtocolDateTime(createdAt, "memory summary draft source pointer created_at")',
+    )
+    for snippet in required_timestamp_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat/memory timestamp "
+                f"date-time DTO guard {snippet!r}."
+            )
+
+    required_timestamp_test_snippets = (
+        "chatAndMemoryPayloadsRejectInvalidTimestampMetadata",
+        '"last_activity_at": "not-a-date"',
+        '"archived_at": "2026-07-09"',
+        '"created_at": "2026-07-09"',
+        '"""{"session_id":"session-1","title":"Runtime notes","renamed_at":"not-a-date"}"""',
+        '"""{"session_id":"session-1","status":"active","restored_at":"2026-07-09"}"""',
+        '"""{"session_id":"session-1","status":"deleted","deleted_at":"2026-07-09T12:34:56"}"""',
+        '"updated_at": "2026-07-09"',
+        '"""{"id":"memory-1","deleted_at":"2026-07-09"}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","status":"dismissed","dismissed_at":"not-a-date"}"""',
+    )
+    for snippet in required_timestamp_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat/memory timestamp "
+                f"date-time regression {snippet!r}."
+            )
+
+    required_timestamp_no_device_snippets = (
+        "ProtocolCodecTest.chatAndMemoryPayloadsRejectInvalidTimestampMetadata",
+        "Android chat and memory timestamp date-time decode addendum",
+        "Android chat sessions, stored chat messages, chat session mutation results, memory entries, memory delete results, memory summary draft dismiss results, memory summary draft sessions, and memory summary draft source pointers reject malformed, date-only, and timezone-less timestamp metadata during DTO decode",
+    )
+    for snippet in required_timestamp_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat/memory timestamp date-time decode coverage; missing {snippet!r}."
+            )
+
+    if "Latest Android chat and memory timestamp date-time decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name the Android "
+            "chat and memory timestamp date-time decode gate."
+        )
+    if "Android Chat And Memory Timestamp Date-Time Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat and memory "
+            "timestamp date-time decode gate."
+        )
+    if "Android Chat And Memory Timestamp Date-Time Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat and memory "
+            "timestamp date-time decode gate."
         )
 
     for path, text in (
@@ -35906,6 +36483,1693 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
                     f"{path.relative_to(ROOT)}: Docs must record Android protocol model metadata parity "
                     f"no-device evidence; missing {snippet!r}."
                 )
+
+    required_chat_send_protocol_snippets = (
+        'private val CHAT_MESSAGE_ROLES = setOf("system", "user", "assistant")',
+        'private val CHAT_ATTACHMENT_TYPES = setOf("image", "document", "file")',
+        "data class ChatMessagePayload(",
+        "chat.send message role must be system, user, or assistant",
+        "data class ChatAttachmentPayload(",
+        "chat.send attachment type must be image, document, or file",
+        "chat.send attachment mime_type must be nonempty",
+        "data class ChatSendPayload(",
+        "chat.send request session_id must be nonblank",
+        "chat.send request model must be nonblank",
+        "chat.send request messages must be nonempty",
+    )
+    for snippet in required_chat_send_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat.send request-bound "
+                f"DTO guard {snippet!r}."
+            )
+
+    required_chat_send_test_snippets = (
+        "chatSendRequestRejectsInvalidBounds",
+        '"""{"session_id":"","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello"}]}"""',
+        '"""{"session_id":"   ","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello"}]}"""',
+        '"""{"session_id":"session-1","model":"","messages":[{"role":"user","content":"Hello"}]}"""',
+        '"""{"session_id":"session-1","model":"   ","messages":[{"role":"user","content":"Hello"}]}"""',
+        '"""{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[]}"""',
+        '"""{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"tool","content":"Hello"}]}"""',
+        '"""{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello","attachments":[{"type":"audio","mime_type":"audio/wav"}]}]}"""',
+        '"""{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello","attachments":[{"type":"document","mime_type":""}]}]}"""',
+    )
+    for snippet in required_chat_send_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat.send request-bound "
+                f"regression {snippet!r}."
+            )
+
+    required_chat_send_no_device_snippets = (
+        "ProtocolCodecTest.chatSendRequestRejectsInvalidBounds",
+        "Android chat.send request bounds decode addendum",
+        "Android ChatSendPayload rejects blank session_id values, blank model values, empty messages, invalid message roles, invalid attachment types, and empty attachment mime_type values during decode",
+    )
+    for snippet in required_chat_send_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.send request-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Send Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.send request-bound "
+            "decode gate."
+        )
+    if "Android Chat Send Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.send "
+            "request-bound decode gate."
+        )
+    if "Latest Android chat.send request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.send "
+            "request-bound decode gate."
+        )
+
+    required_chat_stream_protocol_snippets = (
+        'private val CHAT_DONE_FINISH_REASONS = setOf("stop", "cancelled", "error")',
+        "data class ChatDeltaPayload(",
+        "chat.delta payload must include delta, text, reasoning_delta, or thinking_delta",
+        "data class ChatDonePayload(",
+        "chat.done finish_reason must be stop, cancelled, or error",
+        "data class UsagePayload(",
+        "chat.done usage input_tokens must be nonnegative",
+        "chat.done usage output_tokens must be nonnegative",
+    )
+    for snippet in required_chat_stream_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat stream response-bound "
+                f"DTO guard {snippet!r}."
+            )
+
+    required_chat_stream_test_snippets = (
+        "chatStreamResponsePayloadsRejectInvalidBounds",
+        '"{}" to "delta"',
+        '"""{"finish_reason":"timeout"}""" to "finish_reason"',
+        '"""{"usage":{"input_tokens":-1,"output_tokens":0}}""" to "input_tokens"',
+        '"""{"usage":{"input_tokens":0,"output_tokens":-1}}""" to "output_tokens"',
+    )
+    for snippet in required_chat_stream_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat stream response-bound "
+                f"regression {snippet!r}."
+            )
+
+    required_chat_stream_no_device_snippets = (
+        "ProtocolCodecTest.chatStreamResponsePayloadsRejectInvalidBounds",
+        "Android chat stream response bounds decode addendum",
+        "Android ChatDeltaPayload rejects empty stream delta payloads, ChatDonePayload rejects unsupported finish_reason values, and UsagePayload rejects negative input_tokens or output_tokens during decode",
+    )
+    for snippet in required_chat_stream_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat stream response-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Stream Response Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat stream response-bound "
+            "decode gate."
+        )
+    if "Android Chat Stream Response Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat stream "
+            "response-bound decode gate."
+        )
+    if "Latest Android chat stream response bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat stream "
+            "response-bound decode gate."
+        )
+
+    required_chat_stream_app_path_snippets = (
+        'private val CHAT_DELTA_PAYLOAD_KEYS = setOf(',
+        'private val CHAT_DONE_PAYLOAD_KEYS = setOf(',
+        'private val CHAT_DONE_USAGE_PAYLOAD_KEYS = setOf(',
+        "chatDeltaUnknownMetadataKey",
+        "chatDoneUnknownMetadataKey",
+        "chat.delta response contains unsupported metadata",
+        "chat.done response contains unsupported metadata",
+    )
+    for snippet in required_chat_stream_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat stream app-path "
+                f"closed-payload guard {snippet!r}."
+            )
+
+    required_chat_stream_app_path_test_snippets = (
+        "chatDeltaRejectsUnknownMetadataBeforeMessagePublication",
+        "chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        'put("workspace_id", "workspace-canary")',
+        "Leaky stream answer",
+        "usage.workspace_id",
+    )
+    for snippet in required_chat_stream_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android chat stream app-path "
+                f"closed-payload regression {snippet!r}."
+            )
+
+    required_chat_stream_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.chatDeltaRejectsUnknownMetadataBeforeMessagePublication",
+        "RuntimeClientViewModelTest.chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects",
+        "Android chat stream closed-payload app-path addendum",
+        "rejects unknown chat.delta response metadata and unknown top-level or nested chat.done usage metadata before streaming message publication, completion side effects, title/history follow-up, or device storage mutation",
+    )
+    for snippet in required_chat_stream_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat stream closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_chat_stream_app_path_protocol_doc_snippets = (
+        "chat.delta.payload` accepts only `delta`, `text`, `reasoning_delta`, and `thinking_delta`",
+        "Runtime streaming deltas must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material",
+        "chat.done.payload` accepts only `finish_reason` and `usage`; nested `usage` accepts only `input_tokens` and `output_tokens`",
+        "Runtime stream completion payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material",
+    )
+    for snippet in required_chat_stream_app_path_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android chat stream "
+                f"closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Chat Stream Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat stream "
+            "closed-payload app-path gate."
+        )
+    if "Android Chat Stream Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat stream "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android chat stream closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat stream "
+            "closed-payload app-path gate."
+        )
+
+    required_model_pull_cancel_ack_app_path_protocol_snippets = (
+        "data class ModelPullResultPayload(",
+        "val backend: String? = null",
+        "val provider: String? = null",
+        "val installed: Boolean? = null",
+    )
+    for snippet in required_model_pull_cancel_ack_app_path_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android models.pull result "
+                f"compatibility DTO field for app-path closed-payload handling; missing {snippet!r}."
+            )
+
+    required_model_pull_cancel_ack_app_path_viewmodel_snippets = (
+        "private val MODEL_PULL_RESULT_PAYLOAD_KEYS = setOf(",
+        "private val CHAT_CANCEL_ACK_PAYLOAD_KEYS = setOf(",
+        "modelPullResultUnknownMetadataKey",
+        "chatCancelAckUnknownMetadataKey",
+        "if (pendingModelPullRequestId != envelope.requestId) return",
+        "models.pull response contains unsupported metadata",
+        "chat.cancel acknowledgement contains unsupported metadata",
+    )
+    for snippet in required_model_pull_cancel_ack_app_path_viewmodel_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android models.pull/chat.cancel "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_model_pull_cancel_ack_app_path_test_snippets = (
+        "modelPullResultRejectsUnknownMetadataBeforeInstallStateMutation",
+        "chatCancelAckRejectsUnknownMetadataBeforeStreamingClear",
+        '"stale-model-pull-result"',
+        'put("provider_url", "http://127.0.0.1:11434")',
+        'put("backend_url", "http://127.0.0.1:11434")',
+        'put("cancelled", true)',
+    )
+    for snippet in required_model_pull_cancel_ack_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android models.pull/chat.cancel "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_model_pull_cancel_ack_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.modelPullResultRejectsUnknownMetadataBeforeInstallStateMutation",
+        "RuntimeClientViewModelTest.chatCancelAckRejectsUnknownMetadataBeforeStreamingClear",
+        "Android models.pull result and chat.cancel acknowledgement closed-payload app-path addendum",
+        "rejects unknown models.pull result metadata and unknown chat.cancel acknowledgement metadata before model install state mutation, model refresh fanout, streaming cancellation, or device storage mutation",
+    )
+    for snippet in required_model_pull_cancel_ack_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"models.pull/chat.cancel closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_model_pull_cancel_ack_app_path_protocol_doc_snippets = (
+        "models.pull` result payloads accept only `model`, compatibility `id`, `backend`, `provider`, `accepted`, `success`, `status`, `installed`, and `message`",
+        "Clients ignore stale `models.pull` result frames whose `request_id` does not match the active pull request",
+        "Acknowledgement payloads accept only `target_request_id` and `cancelled`",
+        "`chat.cancel` payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata",
+    )
+    for snippet in required_model_pull_cancel_ack_app_path_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android "
+                f"models.pull/chat.cancel closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Models.Pull Result And Chat.Cancel Acknowledgement Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android models.pull/chat.cancel "
+            "closed-payload app-path gate."
+        )
+    if "Android Models.Pull Result And Chat.Cancel Acknowledgement Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android models.pull/chat.cancel "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android models.pull result and chat.cancel acknowledgement closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android models.pull/chat.cancel "
+            "closed-payload app-path gate."
+        )
+
+    canonical_error_codes = (
+        "unknown_message_type",
+        "unexpected_message_direction",
+        "invalid_payload",
+        "not_connected",
+        "pairing_required",
+        "authentication_required",
+        "authentication_failed",
+        "backend_unavailable",
+        "bad_backend_response",
+        "no_models",
+        "model_not_found",
+        "model_not_installed",
+        "generation_not_found",
+        "generation_cancelled",
+        "route_refresh_unavailable",
+        "unsupported_operation",
+        "unsupported_attachment",
+        "unreadable_attachment",
+        "chat_session_not_found",
+        "chat_session_must_be_archived_before_delete",
+        "chat_session_must_be_restored_before_send",
+        "chat_store_unavailable",
+        "document_index_unavailable",
+        "source_anchor_not_found",
+        "memory_store_unavailable",
+        "memory_summary_draft_unavailable",
+        "memory_summary_draft_stale",
+        "transport_error",
+        "internal_error",
+    )
+    for error_code in canonical_error_codes:
+        for label, path, text in (
+            ("Android protocol DTO", android_protocol_path, android_protocol_text),
+            ("Protocol schema", schema_path, schema_text),
+            ("Protocol docs", docs_protocol_path, docs_protocol_text),
+            ("Protocol schema checker", protocol_schema_check_path, protocol_schema_check_text),
+            ("Android protocol test", android_protocol_test_path, android_protocol_test_text),
+        ):
+            if error_code not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: {label} must include canonical protocol error code "
+                    f"{error_code!r}."
+                )
+
+    required_error_payload_protocol_snippets = (
+        "private val ERROR_CODES = setOf(",
+        "data class ErrorPayload(",
+        "error payload code must be a known protocol error code",
+    )
+    for snippet in required_error_payload_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android error-payload code enum "
+                f"DTO guard {snippet!r}."
+            )
+
+    required_error_payload_test_snippets = (
+        "errorPayloadAcceptsKnownProtocolCodes",
+        "errorPayloadRejectsUnknownCodes",
+        '"backend_failed"',
+        '"runtime_history_unavailable"',
+        '"route_refresh_unavailable "',
+    )
+    for snippet in required_error_payload_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android error-payload code enum "
+                f"regression {snippet!r}."
+            )
+
+    required_error_payload_no_device_snippets = (
+        "ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes",
+        "ProtocolCodecTest.errorPayloadRejectsUnknownCodes",
+        "Android error payload code enum decode addendum",
+        "Android ErrorPayload now use the same canonical protocol error code set",
+    )
+    for snippet in required_error_payload_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"error-payload code enum decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Error Payload Code Enum Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android error-payload "
+            "code enum decode gate."
+        )
+    if "Android Error Payload Code Enum Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android error-payload "
+            "code enum decode gate."
+        )
+    if "Latest Android error payload code enum decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android error-payload "
+            "code enum decode gate."
+        )
+
+    required_chat_sessions_response_protocol_snippets = (
+        'private val CHAT_SESSION_STATUSES = setOf("active", "archived")',
+        "private val CHAT_SESSION_LAST_EVENTS = setOf(",
+        "chat.sessions.list response session_id must be nonempty",
+        "chat.sessions.list response message_count must be nonnegative",
+        "chat.sessions.list response status must be active or archived",
+        "chat.sessions.list response last_event must be a known chat event",
+        "chat session search rank must be positive",
+        "chat session search matched_fields must be nonempty",
+        "chat session search matched_fields entries must be nonempty",
+        "chat session search matched_fields entries must be unique",
+    )
+    for snippet in required_chat_sessions_response_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat.sessions.list "
+                f"response-bound DTO guard {snippet!r}."
+            )
+
+    required_chat_sessions_response_app_path_snippets = (
+        "private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(\"sessions\")",
+        "private val CHAT_SESSION_SUMMARY_PAYLOAD_KEYS = setOf(",
+        "private val CHAT_SESSION_SEARCH_PAYLOAD_KEYS = setOf(",
+        "chatSessionsListUnknownMetadataKey",
+        "chat.sessions.list response contains unsupported metadata",
+    )
+    for snippet in required_chat_sessions_response_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat.sessions.list "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_chat_sessions_response_test_snippets = (
+        "chatSessionsListResponseRejectsInvalidBounds",
+        '"session_id": ""',
+        '"message_count": -1',
+        '"status": "deleted"',
+        '"last_event": "started"',
+        '"rank": 0',
+        '"matched_fields": []',
+        '"matched_fields": [""]',
+        '"matched_fields": ["title", "title"]',
+    )
+    for snippet in required_chat_sessions_response_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat.sessions.list "
+                f"response-bound regression {snippet!r}."
+            )
+
+    required_chat_sessions_response_app_path_test_snippets = (
+        "chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication",
+        '"backend_url": "http://127.0.0.1:11434"',
+        '"workspace_id": "workspace-canary"',
+        '"source_path": "/Users/hanchangha/private-chat-history.jsonl"',
+        "sessions[0].workspace_id",
+        "sessions[0].search.source_path",
+        "assertNoRuntimeHistoryPublished",
+        "runtime-history-canonical-retry",
+    )
+    for snippet in required_chat_sessions_response_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android chat.sessions.list "
+                f"app-path closed-payload regression {snippet!r}."
+            )
+
+    required_chat_sessions_response_no_device_snippets = (
+        "ProtocolCodecTest.chatSessionsListResponseRejectsInvalidBounds",
+        "RuntimeClientViewModelTest.chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication",
+        "Android chat.sessions.list response bounds decode addendum",
+        "Android chat.sessions.list closed-payload app-path addendum",
+        "Android ChatSessionSummaryPayload rejects empty session_id values, negative message_count values, unknown status values, and unknown last_event values",
+        "ChatSessionSearchPayload rejects nonpositive rank values, empty matched_fields arrays, empty matched field entries, and duplicate matched_fields during decode",
+        "unknown top-level chat.sessions.list response metadata, unknown per-session metadata, and unknown nested search metadata",
+    )
+    for snippet in required_chat_sessions_response_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.sessions.list response-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Sessions List Response Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.sessions.list "
+            "response-bound decode gate."
+        )
+    if "Android Chat Sessions List Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.sessions.list "
+            "closed-payload app-path gate."
+        )
+    if "Android Chat Sessions List Response Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.sessions.list "
+            "response-bound decode gate."
+        )
+    if "Android Chat Sessions List Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.sessions.list "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android chat.sessions.list response bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.sessions.list "
+            "response-bound decode gate."
+        )
+    if "Latest Android chat.sessions.list closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.sessions.list "
+            "closed-payload app-path gate."
+        )
+
+    required_chat_messages_protocol_snippets = (
+        "private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500",
+        "data class ChatMessagesListRequestPayload(",
+        "require(sessionId.isNotBlank())",
+        "require(limit == null || limit >= 0)",
+        "require(limit == null || limit <= MAX_CHAT_MESSAGES_LIST_LIMIT)",
+    )
+    for snippet in required_chat_messages_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"request-bound DTO guard {snippet!r}."
+            )
+
+    required_chat_messages_test_snippets = (
+        "chatMessagesListRequestRejectsInvalidBounds",
+        '"""{"session_id":"","limit":1}"""',
+        '"""{"session_id":"   ","limit":1}"""',
+        '"""{"session_id":"session-1","limit":-1}"""',
+        '"""{"session_id":"session-1","limit":501}"""',
+    )
+    for snippet in required_chat_messages_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"request-bound regression {snippet!r}."
+            )
+
+    required_chat_messages_no_device_snippets = (
+        "ProtocolCodecTest.chatMessagesListRequestRejectsInvalidBounds",
+        "Android chat.messages.list request bounds decode addendum",
+        "Android ChatMessagesListRequestPayload rejects blank session_id values plus negative and over-maximum limit values during decode",
+    )
+    for snippet in required_chat_messages_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.messages.list request-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Messages List Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.messages.list "
+            "request-bound decode gate."
+        )
+    if "Android Chat Messages List Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.messages.list "
+            "request-bound decode gate."
+        )
+    if "Latest Android chat.messages.list request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.messages.list "
+            "request-bound decode gate."
+        )
+
+    required_chat_messages_response_app_path_snippets = (
+        "private val CHAT_MESSAGES_LIST_RUNTIME_ONLY_PAYLOAD_KEYS = setOf(",
+        "private val CHAT_MESSAGES_LIST_RESULT_PAYLOAD_KEYS = setOf(",
+        "private val CHAT_STORED_MESSAGE_PAYLOAD_KEYS = setOf(",
+        "private val CHAT_STORED_ATTACHMENT_PAYLOAD_KEYS = setOf(",
+        "chatMessagesListUnknownMetadataKey",
+        "chat.messages.list response contains unsupported metadata",
+    )
+    for snippet in required_chat_messages_response_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_chat_messages_response_app_path_test_snippets = (
+        "chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication",
+        '"backend_url": "http://127.0.0.1:11434"',
+        '"workspace_id": "workspace-canary"',
+        "messages[0].workspace_id",
+        "Existing prompt",
+        "Canonical runtime answer",
+    )
+    for snippet in required_chat_messages_response_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"app-path closed-payload regression {snippet!r}."
+            )
+
+    required_chat_messages_response_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication",
+        "Android chat.messages.list closed-payload app-path addendum",
+        "unknown top-level chat.messages.list response metadata, unknown stored-message metadata, and unknown stored-attachment metadata",
+    )
+    for snippet in required_chat_messages_response_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.messages.list closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Messages List Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.messages.list "
+            "closed-payload app-path gate."
+        )
+    if "Android Chat Messages List Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.messages.list "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android chat.messages.list closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.messages.list "
+            "closed-payload app-path gate."
+        )
+
+    required_chat_messages_stored_attachment_protocol_snippets = (
+        "data class ChatStoredAttachmentPayload(",
+        "chat.messages.list attachment type must be image, document, or file",
+        "chat.messages.list attachment mime_type must be nonempty",
+        "val attachments: List<ChatStoredAttachmentPayload> = emptyList()",
+    )
+    for snippet in required_chat_messages_stored_attachment_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"stored attachment safe-metadata DTO guard {snippet!r}."
+            )
+
+    required_chat_messages_stored_attachment_test_snippets = (
+        "chatMessagesListRejectsInlineStoredAttachmentBytes",
+        'assertFalse(attachment?.containsKey("data_base64") ?: true)',
+        '"data_base64": "U2F2ZWQgY29udGV4dA=="',
+    )
+    for snippet in required_chat_messages_stored_attachment_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"stored attachment inline-byte rejection regression {snippet!r}."
+            )
+
+    required_chat_messages_stored_attachment_app_path_snippets = (
+        "private val CHAT_STORED_ATTACHMENT_PAYLOAD_KEYS = setOf(",
+        "chatMessagesListUnknownMetadataKey",
+        "chat.messages.list response contains unsupported metadata",
+    )
+    for snippet in required_chat_messages_stored_attachment_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"stored attachment app-path closed-payload guard {snippet!r}."
+            )
+
+    required_chat_messages_stored_attachment_app_path_test_snippets = (
+        "chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication",
+        "messages[0].attachments[0].data_base64",
+        "Existing prompt",
+        "U2F2ZWQgY29udGV4dA==",
+    )
+    for snippet in required_chat_messages_stored_attachment_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android chat.messages.list "
+                f"stored attachment app-path inline-byte rejection regression {snippet!r}."
+            )
+
+    required_chat_messages_stored_attachment_schema_snippets = (
+        "$defs.chatStoredMessage.attachments must reference storedChatAttachment",
+        "$defs.storedChatAttachment.properties must stay limited to type, mime_type, name, and text",
+        "$defs.storedChatAttachment must not include data_base64",
+    )
+    for snippet in required_chat_messages_stored_attachment_schema_snippets:
+        if snippet not in protocol_schema_check_text:
+            failures.append(
+                f"{protocol_schema_check_path.relative_to(ROOT)}: Missing chat.messages.list stored "
+                f"attachment schema hygiene guard {snippet!r}."
+            )
+
+    required_chat_messages_stored_attachment_no_device_snippets = (
+        "ProtocolCodecTest.chatMessagesListRejectsInlineStoredAttachmentBytes",
+        "RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication",
+        "Android chat.messages.list stored attachment safe-metadata addendum",
+        "ChatStoredAttachmentPayload keeps stored transcript attachments limited to type, mime_type, name, and text",
+    )
+    for snippet in required_chat_messages_stored_attachment_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.messages.list stored attachment safe-metadata coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Messages List Stored Attachment Safe-Metadata No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.messages.list "
+            "stored attachment safe-metadata gate."
+        )
+    if "Android Chat Messages List Stored Attachment Safe-Metadata No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.messages.list "
+            "stored attachment safe-metadata gate."
+        )
+    if "Latest Android chat.messages.list stored attachment safe-metadata no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.messages.list "
+            "stored attachment safe-metadata gate."
+        )
+
+    required_memory_summary_protocol_snippets = (
+        'private const val MEMORY_ENTRY_SOURCE_KIND = "long_inactivity_summary_draft"',
+        'private const val MEMORY_ENTRY_SOURCE_SUMMARY_METHOD = "deterministic_preview"',
+        'private val MEMORY_SUMMARY_SOURCE_POINTER_ROLES = setOf("user", "assistant")',
+        "data class MemoryEntryPayload(",
+        "memory entry id must be nonempty",
+        "memory entry content must be nonempty",
+        "data class MemoryEntrySourcePayload(",
+        "memory entry source kind must be long_inactivity_summary_draft",
+        "memory entry source summary_method must be deterministic_preview",
+        "memory entry source source_message_count must be positive",
+        "memory entry source source_pointers must be nonempty",
+        "private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50",
+        "data class MemorySummaryDraftsListRequestPayload(",
+        "require(limit == null || limit >= 0)",
+        "require(limit == null || limit <= MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT)",
+        "data class MemorySummaryDraftPayload(",
+        "memory summary draft id must be nonempty",
+        "memory summary draft source_message_count must be positive",
+        "memory summary draft summary_preview must be nonempty",
+        "data class MemorySummaryDraftSessionPayload(",
+        "memory summary draft session_id must be nonempty",
+        "memory summary draft message_count must be nonnegative",
+        "memory summary draft inactive_seconds must be nonnegative",
+        "data class MemorySummaryDraftSourcePointerPayload(",
+        "memory summary draft source pointer message_index must be positive",
+        "memory summary draft source pointer role must be user or assistant",
+        "memory summary draft source pointer excerpt must be nonempty",
+        "data class MemorySummaryDraftApprovePayload(",
+        "require(draftId.isNotBlank())",
+        "require(content == null || content.isNotBlank())",
+        "require(expectedSessionId == null || expectedSessionId.isNotBlank())",
+        "require(expectedSourceMessageCount == null || expectedSourceMessageCount > 0)",
+        "data class MemorySummaryDraftDismissPayload(",
+    )
+    for snippet in required_memory_summary_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android memory-summary draft "
+                f"request-bound DTO guard {snippet!r}."
+            )
+
+    required_memory_summary_test_snippets = (
+        "memorySummaryDraftResponsePayloadsRejectInvalidBounds",
+        "draftListResultJson(id = \"\\\"\\\"\")",
+        "draftListResultJson(session = sessionJson(messageCount = \"-1\"))",
+        "draftListResultJson(sourcePointers = sourcePointersJson(role = \"\\\"system\\\"\"))",
+        "memoryListResultJson(content = \"\\\"\\\"\")",
+        "memoryListResultJson(source = memoryEntrySourceJson(kind = \"\\\"manual\\\"\"))",
+        "memoryListResultJson(source = memoryEntrySourceJson(summaryMethod = \"\\\"manual\\\"\"))",
+        "memorySummaryDraftsListRequestRejectsInvalidBounds",
+        '"""{"limit":-1}"""',
+        '"""{"limit":51}"""',
+        "memorySummaryDraftDecisionRequestsRejectInvalidBounds",
+        '"""{"draft_id":"","content":"Reviewed memory"}"""',
+        '"""{"draft_id":"   ","content":"Reviewed memory"}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","content":""}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","content":"   "}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":""}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":"   "}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":0}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":-1}"""',
+    )
+    for snippet in required_memory_summary_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android memory-summary draft "
+                f"request-bound regression {snippet!r}."
+            )
+
+    required_memory_summary_no_device_snippets = (
+        "ProtocolCodecTest.memorySummaryDraftsListRequestRejectsInvalidBounds",
+        "ProtocolCodecTest.memorySummaryDraftDecisionRequestsRejectInvalidBounds",
+        "ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds",
+        "Android memory summary drafts list request bounds decode addendum",
+        "Android MemorySummaryDraftsListRequestPayload rejects negative and over-maximum limit values during decode",
+        "Android memory summary draft decision request bounds decode addendum",
+        "Android MemorySummaryDraftApprovePayload and MemorySummaryDraftDismissPayload reject blank draft_id values",
+        "Android memory summary draft response bounds decode addendum",
+        "Android MemorySummaryDraftPayload, MemorySummaryDraftSessionPayload, MemorySummaryDraftSourcePointerPayload, MemoryEntryPayload, and MemoryEntrySourcePayload reject empty ids/content/source fields",
+    )
+    for snippet in required_memory_summary_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory-summary draft request-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Memory Summary Draft Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory-summary draft "
+            "request-bound decode gate."
+        )
+    if "Android Memory Summary Draft Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory-summary draft "
+            "request-bound decode gate."
+        )
+    if "Android Memory Summary Draft Response Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory-summary draft "
+            "response-bound decode gate."
+        )
+    if "Android Memory Summary Draft Response Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory-summary draft "
+            "response-bound decode gate."
+        )
+    if "Latest Android memory summary draft response bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory-summary draft "
+            "response-bound decode gate."
+        )
+    if "Latest Android memory summary draft request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory-summary draft "
+            "request-bound decode gate."
+        )
+
+    required_memory_summary_drafts_list_app_path_snippets = (
+        "private val MEMORY_SUMMARY_DRAFTS_LIST_RESULT_PAYLOAD_KEYS = setOf(\"drafts\")",
+        "private val MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS = setOf(",
+        "memorySummaryDraftsListResultUnknownMetadataKey",
+        "memory.summary.drafts.list response contains unsupported metadata",
+    )
+    for snippet in required_memory_summary_drafts_list_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android memory.summary.drafts.list "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_memory_summary_drafts_list_app_path_test_snippets = (
+        "memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication",
+        '"backend_url": "http://127.0.0.1:11434"',
+        '"workspace_id": "workspace-canary"',
+        '"source_path": "/Users/hanchangha/private-chat.jsonl"',
+        "drafts[0].workspace_id",
+        "drafts[0].session.backend_url",
+        "drafts[0].source_pointers[0].source_path",
+        "Canonical summary preview",
+    )
+    for snippet in required_memory_summary_drafts_list_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory.summary.drafts.list "
+                f"app-path closed-payload regression {snippet!r}."
+            )
+
+    required_memory_summary_drafts_list_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication",
+        "Android memory.summary.drafts.list closed-payload app-path addendum",
+        "unknown top-level memory.summary.drafts.list response metadata, unknown per-draft metadata, unknown draft session metadata, and unknown draft source-pointer metadata",
+    )
+    for snippet in required_memory_summary_drafts_list_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory.summary.drafts.list closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    if "Android Memory.Summary.Drafts.List Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory.summary.drafts.list "
+            "closed-payload app-path gate."
+        )
+    if "Android Memory.Summary.Drafts.List Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory.summary.drafts.list "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android memory.summary.drafts.list closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory.summary.drafts.list "
+            "closed-payload app-path gate."
+        )
+
+    required_memory_crud_result_app_path_snippets = (
+        "private val MEMORY_UPSERT_RESULT_PAYLOAD_KEYS = setOf(\"entry\")",
+        "private val MEMORY_DELETE_RESULT_PAYLOAD_KEYS = setOf(",
+        "memoryUpsertResultUnknownMetadataKey",
+        "memoryDeleteResultUnknownMetadataKey",
+        "memory.upsert response contains unsupported metadata",
+        "memory.delete response contains unsupported metadata",
+    )
+    for snippet in required_memory_crud_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android memory CRUD result "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_memory_crud_result_app_path_test_snippets = (
+        "memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "entry.source.source_pointers[0].backend_url",
+        '"workspace_id": "workspace-canary"',
+        "Leaky upsert memory",
+        "Canonical upsert memory",
+    )
+    for snippet in required_memory_crud_result_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory CRUD result "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_memory_crud_result_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "Android memory CRUD result closed-payload app-path addendum",
+        "rejects unknown memory.upsert result metadata and unknown memory.delete result metadata before runtime memory state mutation or device storage mutation",
+    )
+    for snippet in required_memory_crud_result_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory CRUD result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_memory_crud_result_protocol_doc_snippets = (
+        "memory.upsert` result payloads accept only `entry`",
+        "Upsert results must not carry backend URLs, provider URLs, backend credentials, route tokens",
+        "memory.delete` result payloads accept only `id` and `deleted_at`",
+        "Delete results must not carry backend URLs, provider URLs, backend credentials, route tokens",
+    )
+    for snippet in required_memory_crud_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android memory CRUD "
+                f"result closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Memory CRUD Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory CRUD result "
+            "closed-payload app-path gate."
+        )
+    if "Android Memory CRUD Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory CRUD result "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android memory CRUD result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory CRUD result "
+            "closed-payload app-path gate."
+        )
+
+    required_auth_challenge_app_path_snippets = (
+        "private val AUTH_CHALLENGE_PAYLOAD_KEYS = setOf(",
+        "authChallengeUnknownMetadataKey",
+        "auth.challenge response contains unsupported metadata",
+    )
+    for snippet in required_auth_challenge_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android auth.challenge "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_auth_challenge_app_path_test_snippets = (
+        "authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        "sentCountBeforeRejectedChallenge",
+        "MessageType.AuthResponse",
+        "nonce-for-signing",
+        "assertNotNull(payload.signature)",
+    )
+    for snippet in required_auth_challenge_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android auth.challenge "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_auth_challenge_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning",
+        "Android auth.challenge closed-payload app-path addendum",
+        "rejects unknown auth.challenge response metadata before device identity loading, runtime proof verification, auth.response signing/sending, authenticated session state, route-refresh scheduling, or authenticated refresh fanout",
+    )
+    for snippet in required_auth_challenge_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"auth.challenge closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_auth_challenge_protocol_doc_snippets = (
+        "Runtime `auth.challenge` payloads accept only `device_id`, `nonce`, `runtime_key_fingerprint`, and `runtime_signature`",
+        "Auth challenges must not carry backend URLs, provider URLs, backend credentials, route tokens",
+        "Android clients reject unsupported auth.challenge metadata before device identity loading, runtime proof verification, auth.response signing/sending, authenticated session state, route-refresh scheduling, or runtime refresh fanout",
+    )
+    for snippet in required_auth_challenge_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android auth.challenge "
+                f"closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Auth.Challenge Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android auth.challenge "
+            "closed-payload app-path gate."
+        )
+    if "Android Auth.Challenge Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android auth.challenge "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android auth.challenge closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android auth.challenge "
+            "closed-payload app-path gate."
+        )
+
+    required_auth_response_result_app_path_snippets = (
+        "private val AUTH_RESPONSE_RESULT_PAYLOAD_KEYS = setOf(",
+        "authResponseResultUnknownMetadataKey",
+        "auth.response response contains unsupported metadata",
+    )
+    for snippet in required_auth_response_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android auth.response result "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_auth_response_result_app_path_test_snippets = (
+        "authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        "isSessionAuthenticated",
+        "MessageType.RuntimeHealth",
+        "MessageType.ChatSessionsList",
+        "MessageType.MemoryList",
+        "MessageType.MemorySummaryDraftsList",
+    )
+    for snippet in required_auth_response_result_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android auth.response result "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_auth_response_result_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation",
+        "Android auth.response result closed-payload app-path addendum",
+        "rejects unknown auth.response result metadata before authentication state mutation or authenticated refresh fanout",
+    )
+    for snippet in required_auth_response_result_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"auth.response result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_auth_response_result_protocol_doc_snippets = (
+        "Runtime `auth.response` result payloads accept only `accepted`, `device_id`, and `message`",
+        "Auth response results must not carry nonces, signatures, runtime proof fields, backend URLs",
+        "Android clients reject unsupported auth.response result metadata before authenticated session state, route-refresh scheduling, or runtime refresh fanout",
+    )
+    for snippet in required_auth_response_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android auth.response "
+                f"result closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Auth.Response Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android auth.response result "
+            "closed-payload app-path gate."
+        )
+    if "Android Auth.Response Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android auth.response result "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android auth.response result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android auth.response result "
+            "closed-payload app-path gate."
+        )
+
+    required_pairing_result_app_path_snippets = (
+        "private val PAIRING_RESULT_PAYLOAD_KEYS = setOf(",
+        "pairingResultUnknownMetadataKey",
+        "pairing.result response contains unsupported metadata",
+    )
+    for snippet in required_pairing_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android pairing.result "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_pairing_result_app_path_test_snippets = (
+        "pairingResultRejectsUnknownMetadataBeforeTrustMutation",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        "assertNull(trustedRuntimeStore.trusted)",
+        "pendingSecretRef",
+        "sentCountBeforeRejectedResult",
+        "MessageType.RuntimeHealth",
+        "MessageType.ChatSessionsList",
+        "MessageType.MemoryList",
+    )
+    for snippet in required_pairing_result_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android pairing.result "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_pairing_result_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation",
+        "Android pairing.result closed-payload app-path addendum",
+        "rejects unknown pairing.result response metadata before trust mutation, pending route cleanup, authenticated refresh fanout, or device storage mutation",
+    )
+    for snippet in required_pairing_result_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"pairing.result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_pairing_result_protocol_doc_snippets = (
+        "pairing.result` payloads accept only `accepted`, `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, and `message`",
+        "Pairing results must not carry backend URLs, provider URLs, backend credentials, route tokens",
+        "Android clients reject unsupported pairing.result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout",
+    )
+    for snippet in required_pairing_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android pairing.result "
+                f"closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Pairing.Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android pairing.result "
+            "closed-payload app-path gate."
+        )
+    if "Android Pairing.Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android pairing.result "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android pairing.result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android pairing.result "
+            "closed-payload app-path gate."
+        )
+
+    required_error_payload_app_path_snippets = (
+        "private val ERROR_PAYLOAD_KEYS = setOf(",
+        "errorPayloadUnknownMetadataKey",
+        "error response contains unsupported metadata",
+    )
+    for snippet in required_error_payload_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android error payload "
+                f"closed-payload app-path guard {snippet!r}."
+            )
+
+    required_error_payload_app_path_test_snippets = (
+        "errorPayloadRejectsUnknownMetadataBeforePendingStateMutation",
+        "errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        'put("workspace_id", "workspace-canary")',
+        "Memory store unavailable.",
+        "Explain runtime error metadata boundaries",
+    )
+    for snippet in required_error_payload_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android error payload "
+                f"closed-payload app-path regression {snippet!r}."
+            )
+
+    required_error_payload_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation",
+        "RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination",
+        "Android error payload closed-payload app-path addendum",
+        "rejects unknown error response metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation",
+    )
+    for snippet in required_error_payload_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"error payload closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_error_payload_protocol_doc_snippets = (
+        "error` result/response payloads accept only `code`, `message`, and `retryable`",
+        "Error payloads must not carry backend URLs, provider URLs, backend credentials, route tokens",
+        "Android clients reject unsupported error metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation",
+    )
+    for snippet in required_error_payload_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android error payload "
+                f"closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Error Payload Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android error payload "
+            "closed-payload app-path gate."
+        )
+    if "Android Error Payload Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android error payload "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android error payload closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android error payload "
+            "closed-payload app-path gate."
+        )
+
+    required_memory_summary_draft_decision_result_app_path_snippets = (
+        "private val MEMORY_SUMMARY_DRAFT_APPROVE_RESULT_PAYLOAD_KEYS = setOf(",
+        "private val MEMORY_SUMMARY_DRAFT_DISMISS_RESULT_PAYLOAD_KEYS = setOf(",
+        "memoryEntryUnknownMetadataKey",
+        "memorySummaryDraftApproveResultUnknownMetadataKey",
+        "memorySummaryDraftDismissResultUnknownMetadataKey",
+        "pendingMemorySummaryDraftApprovalDraftIdsByRequestId[envelope.requestId] ?: return",
+        "pendingMemorySummaryDraftDismissalDraftIdsByRequestId[envelope.requestId] ?: return",
+        "memory.summary.draft.approve response contains unsupported metadata",
+        "memory.summary.draft.dismiss response contains unsupported metadata",
+    )
+    for snippet in required_memory_summary_draft_decision_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android memory-summary draft "
+                f"decision result closed-payload app-path guard {snippet!r}."
+            )
+
+    required_memory_summary_draft_decision_result_app_path_test_snippets = (
+        "memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation",
+        '"backend_url": "http://127.0.0.1:11434"',
+        '"workspace_id": "workspace-canary"',
+        "entry.source.source_pointers[0].backend_url",
+        "Canonical approved memory",
+    )
+    for snippet in required_memory_summary_draft_decision_result_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory-summary draft "
+                f"decision result closed-payload app-path regression {snippet!r}."
+            )
+
+    required_memory_summary_draft_decision_result_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation",
+        "Android memory summary draft decision result closed-payload app-path addendum",
+        "preserves pending draft decisions for canonical retry",
+    )
+    for snippet in required_memory_summary_draft_decision_result_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory-summary draft decision result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_memory_summary_draft_decision_result_protocol_doc_snippets = (
+        "memory.summary.draft.approve` result payloads accept only `draft_id`, `status`, and `entry`",
+        "Approved-memory result `entry.source.source_pointers` accepts only `session_id`, `message_index`, `role`, `created_at`, and `excerpt`",
+        "memory.summary.draft.dismiss` result payloads accept only `draft_id`, `status`, and `dismissed_at`",
+        "Clients preserve pending draft decisions when unsupported result metadata is rejected",
+    )
+    for snippet in required_memory_summary_draft_decision_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android "
+                f"memory-summary draft decision result closed-payload app-path boundary; missing {snippet!r}."
+            )
+
+    if "Android Memory Summary Draft Decision Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory-summary draft "
+            "decision result closed-payload app-path gate."
+        )
+    if "Android Memory Summary Draft Decision Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory-summary draft "
+            "decision result closed-payload app-path gate."
+        )
+    if "Latest Android memory summary draft decision result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory-summary draft "
+            "decision result closed-payload app-path gate."
+        )
+
+    required_chat_title_session_protocol_snippets = (
+        "data class ChatTitleRequestPayload(",
+        "chat.title.request session_id must be nonblank",
+        "chat.title.request model must be nonblank",
+        "chat.title.request messages must be nonempty",
+        "data class ChatSessionRenamePayload(",
+        "chat.session.rename session_id must be nonblank",
+        "chat.session.rename title must be nonblank",
+        "data class ChatSessionLifecyclePayload(",
+        "chat.session lifecycle session_id must be nonblank",
+    )
+    for snippet in required_chat_title_session_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android chat title/session mutation "
+                f"request-bound DTO guard {snippet!r}."
+            )
+
+    required_chat_title_session_test_snippets = (
+        "chatTitleAndSessionMutationRequestsRejectInvalidBounds",
+        '"""{"session_id":"","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Title this"}]}"""',
+        '"""{"session_id":"   ","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Title this"}]}"""',
+        '"""{"session_id":"session-1","model":"","messages":[{"role":"user","content":"Title this"}]}"""',
+        '"""{"session_id":"session-1","model":"   ","messages":[{"role":"user","content":"Title this"}]}"""',
+        '"""{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[]}"""',
+        '"""{"session_id":"","title":"Renamed chat"}"""',
+        '"""{"session_id":"   ","title":"Renamed chat"}"""',
+        '"""{"session_id":"session-1","title":""}"""',
+        '"""{"session_id":"session-1","title":"   "}"""',
+        '"""{"session_id":""}"""',
+        '"""{"session_id":"   "}"""',
+    )
+    for snippet in required_chat_title_session_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android chat title/session mutation "
+                f"request-bound regression {snippet!r}."
+            )
+
+    required_chat_title_session_no_device_snippets = (
+        "ProtocolCodecTest.chatTitleAndSessionMutationRequestsRejectInvalidBounds",
+        "Android chat title and session mutation request bounds decode addendum",
+        "Android ChatTitleRequestPayload rejects blank session_id values, blank model values, and empty messages during decode",
+        "ChatSessionRenamePayload rejects blank session_id and title values",
+        "ChatSessionLifecyclePayload rejects blank session_id values",
+    )
+    for snippet in required_chat_title_session_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat title/session mutation request-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Chat Title And Session Mutation Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat title/session "
+            "mutation request-bound decode gate."
+        )
+    if "Android Chat Title And Session Mutation Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat title/session "
+            "mutation request-bound decode gate."
+        )
+    if "Latest Android chat title and session mutation request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat title/session "
+            "mutation request-bound decode gate."
+        )
+
+    required_chat_title_result_app_path_snippets = (
+        "private val CHAT_TITLE_RESULT_PAYLOAD_KEYS = setOf(\"title\")",
+        "chatTitleResultUnknownMetadataKey",
+        "chat.title.result response contains unsupported metadata",
+    )
+    for snippet in required_chat_title_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat.title.result "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_chat_title_result_app_path_test_snippets = (
+        "chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication",
+        '"backend_url": "http://127.0.0.1:11434"',
+        "Leaky Generated Title",
+        "Canonical Generated Title",
+        "Title results must stay inside the runtime contract.",
+    )
+    for snippet in required_chat_title_result_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android chat.title.result "
+                f"app-path closed-payload regression {snippet!r}."
+            )
+
+    required_chat_title_result_no_device_snippets = (
+        "RuntimeClientViewModelTest.chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication",
+        "Android chat.title.result closed-payload app-path addendum",
+        "rejects unknown chat.title.result response metadata before generated-title publication or device storage mutation",
+    )
+    for snippet in required_chat_title_result_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.title.result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_chat_title_result_protocol_doc_snippets = (
+        "chat.title.result.payload accepts only `title`",
+        "Runtime title results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material",
+    )
+    for snippet in required_chat_title_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android chat.title.result "
+                f"closed-payload response boundary; missing {snippet!r}."
+            )
+
+    if "Android Chat.Title.Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.title.result "
+            "closed-payload app-path gate."
+        )
+    if "Android Chat.Title.Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.title.result "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android chat.title.result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.title.result "
+            "closed-payload app-path gate."
+        )
+
+    required_chat_session_mutation_result_app_path_snippets = (
+        'private val CHAT_SESSION_RENAME_RESULT_PAYLOAD_KEYS = setOf(',
+        'private val CHAT_SESSION_LIFECYCLE_RESULT_PAYLOAD_KEYS = setOf(',
+        "chatSessionRenameResultUnknownMetadataKey",
+        "chatSessionLifecycleResultUnknownMetadataKey",
+        "chat.session.rename response contains unsupported metadata",
+        "${envelope.type} response contains unsupported metadata",
+    )
+    for snippet in required_chat_session_mutation_result_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android chat.session mutation result "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_chat_session_mutation_result_test_snippets = (
+        "chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication",
+        "chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication",
+        'put("backend_url", "http://127.0.0.1:11434")',
+        'put("workspace_id", "workspace-canary")',
+        "Leaky Runtime Title",
+        "Canonical Runtime Title",
+    )
+    for snippet in required_chat_session_mutation_result_test_snippets:
+        if snippet not in android_chat_session_mutation_failure_test_text:
+            failures.append(
+                f"{android_chat_session_mutation_failure_test_path.relative_to(ROOT)}: Missing Android "
+                f"chat.session mutation result app-path closed-payload regression {snippet!r}."
+            )
+
+    required_chat_session_mutation_result_no_device_snippets = (
+        "RuntimeClientChatSessionMutationFailureTest.chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication",
+        "RuntimeClientChatSessionMutationFailureTest.chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication",
+        "Android chat.session mutation result closed-payload app-path addendum",
+        "rejects unknown chat.session.rename and chat.session lifecycle response metadata before runtime session cache publication or device storage mutation",
+    )
+    for snippet in required_chat_session_mutation_result_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"chat.session mutation result closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    required_chat_session_mutation_result_protocol_doc_snippets = (
+        "chat.session.rename` acknowledgement payloads accept only `session_id`, `title`, and `renamed_at`",
+        "Runtime rename acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata",
+        "chat.session.archive`, `chat.session.restore`, and `chat.session.delete` acknowledgement payloads accept only `session_id`, `status`, `archived_at`, `restored_at`, and `deleted_at`",
+        "Runtime lifecycle acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata",
+    )
+    for snippet in required_chat_session_mutation_result_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(
+                f"{docs_protocol_path.relative_to(ROOT)}: Protocol docs must record Android chat.session "
+                f"mutation acknowledgement closed-payload boundary; missing {snippet!r}."
+            )
+
+    if "Android Chat.Session Mutation Result Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android chat.session mutation result "
+            "closed-payload app-path gate."
+        )
+    if "Android Chat.Session Mutation Result Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android chat.session mutation result "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android chat.session mutation result closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.session mutation result "
+            "closed-payload app-path gate."
+        )
+
+    required_model_pull_cancel_protocol_snippets = (
+        "data class ModelPullPayload(",
+        "models.pull request model must be nonblank",
+        "data class ChatCancelPayload(",
+        "chat.cancel request target_request_id must be nonblank",
+    )
+    for snippet in required_model_pull_cancel_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android model pull/chat cancel "
+                f"request-bound DTO guard {snippet!r}."
+            )
+
+    required_model_pull_cancel_test_snippets = (
+        "modelPullAndChatCancelRequestsRejectInvalidBounds",
+        '"""{"model":""}"""',
+        '"""{"model":"   "}"""',
+        '"""{"target_request_id":""}"""',
+        '"""{"target_request_id":"   "}"""',
+    )
+    for snippet in required_model_pull_cancel_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android model pull/chat cancel "
+                f"request-bound regression {snippet!r}."
+            )
+
+    required_model_pull_cancel_no_device_snippets = (
+        "ProtocolCodecTest.modelPullAndChatCancelRequestsRejectInvalidBounds",
+        "Android model pull and chat cancel request bounds decode addendum",
+        "Android ModelPullPayload rejects blank model values and ChatCancelPayload rejects blank target_request_id values during decode",
+    )
+    for snippet in required_model_pull_cancel_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"model pull/chat cancel request-bound decode coverage; missing {snippet!r}."
+            )
+
+    required_memory_crud_protocol_snippets = (
+        "data class MemoryListRequestPayload(",
+        "memory.list request query must be nonempty",
+        "data class MemoryUpsertPayload(",
+        "memory.upsert request id must be nonblank",
+        "memory.upsert request content must be nonblank",
+        "data class MemoryDeletePayload(",
+        "memory.delete request id must be nonblank",
+    )
+    for snippet in required_memory_crud_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android memory CRUD request-bound "
+                f"DTO guard {snippet!r}."
+            )
+
+    required_memory_crud_test_snippets = (
+        "memoryListRequestRejectsInvalidBounds",
+        '"""{"query":""}"""',
+        "memoryCrudRequestsRejectInvalidBounds",
+        '"""{"id":"","content":"Prefers concise answers."}"""',
+        '"""{"id":"   ","content":"Prefers concise answers."}"""',
+        '"""{"content":""}"""',
+        '"""{"content":"   "}"""',
+        '"""{"id":""}"""',
+        '"""{"id":"   "}"""',
+    )
+    for snippet in required_memory_crud_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android memory CRUD "
+                f"request-bound regression {snippet!r}."
+            )
+
+    required_memory_crud_no_device_snippets = (
+        "ProtocolCodecTest.memoryListRequestRejectsInvalidBounds",
+        "Android memory.list request bounds decode addendum",
+        "Android MemoryListRequestPayload rejects empty query values during DTO decode",
+        "ProtocolCodecTest.memoryCrudRequestsRejectInvalidBounds",
+        "Android memory CRUD request bounds decode addendum",
+        "Android MemoryUpsertPayload rejects blank optional id values and blank content values",
+        "MemoryDeletePayload rejects blank id values",
+    )
+    for snippet in required_memory_crud_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory CRUD request-bound decode coverage; missing {snippet!r}."
+            )
+
+    if "Android Model Pull, Chat Cancel, And Memory CRUD Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android model pull/chat cancel "
+            "and memory CRUD request-bound decode gate."
+        )
+    if "Android Memory List Request Bounds Decode No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory.list "
+            "request-bound decode gate."
+        )
+    if "Android Model Pull, Chat Cancel, And Memory CRUD Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android model pull/chat "
+            "cancel and memory CRUD request-bound decode gate."
+        )
+    if "Android Memory List Request Bounds Decode No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory.list "
+            "request-bound decode gate."
+        )
+    if "Latest Android model pull, chat cancel, and memory CRUD request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android model pull/chat "
+            "cancel and memory CRUD request-bound decode gate."
+        )
+    if "Latest Android memory.list request bounds decode no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory.list "
+            "request-bound decode gate."
+        )
+
+    required_memory_list_app_path_snippets = (
+        "private val MEMORY_LIST_RESULT_PAYLOAD_KEYS = setOf(\"entries\")",
+        "private val MEMORY_ENTRY_PAYLOAD_KEYS = setOf(",
+        "private val MEMORY_ENTRY_SOURCE_PAYLOAD_KEYS = setOf(",
+        "private val MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS = setOf(",
+        "private val MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS = setOf(",
+        "memoryListResultUnknownMetadataKey",
+        "memory.list response contains unsupported metadata",
+    )
+    for snippet in required_memory_list_app_path_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android memory.list "
+                f"app-path closed-payload guard {snippet!r}."
+            )
+
+    required_memory_list_app_path_test_snippets = (
+        "memoryListRejectsUnknownMetadataBeforeMemoryStatePublication",
+        '"backend_url": "http://127.0.0.1:11434"',
+        '"workspace_id": "workspace-canary"',
+        '"source_path": "/Users/hanchangha/private-memory.jsonl"',
+        "entries[0].workspace_id",
+        "entries[0].source.source_path",
+        "entries[0].source.source_pointers[0].backend_url",
+        "Canonical runtime memory",
+    )
+    for snippet in required_memory_list_app_path_test_snippets:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory.list "
+                f"app-path closed-payload regression {snippet!r}."
+            )
+
+    required_memory_list_app_path_no_device_snippets = (
+        "RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication",
+        "Android memory.list closed-payload app-path addendum",
+        "unknown top-level memory.list response metadata, unknown per-entry metadata, unknown nested search metadata, and unknown approved-memory source/session/source-pointer metadata",
+    )
+    for snippet in required_memory_list_app_path_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android "
+                f"memory.list closed-payload app-path coverage; missing {snippet!r}."
+            )
+
+    if "Android Memory.List Closed-Payload App-Path No-Device Gate" not in progress_text:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress must record the Android memory.list "
+            "closed-payload app-path gate."
+        )
+    if "Android Memory.List Closed-Payload App-Path No-Device Gate" not in qa_evidence_text:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record the Android memory.list "
+            "closed-payload app-path gate."
+        )
+    if "Latest Android memory.list closed-payload app-path no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android memory.list "
+            "closed-payload app-path gate."
+        )
 
     return failures
 
@@ -35960,9 +38224,27 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
         '@SerialName("end_character_offset") val endCharacterOffset: Int',
         '@SerialName("matched_terms") val matchedTerms: List<String>,',
         'private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")',
+        'private val DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")',
         "private object SourceAnchorIdSerializer",
+        "private object DocumentContentFingerprintSerializer",
         "@Serializable(with = SourceAnchorIdSerializer::class)",
+        "@Serializable(with = DocumentContentFingerprintSerializer::class)",
         "source_anchor_id must match source_anchor_[16 lowercase hex]",
+        "content_fingerprint must match 16 lowercase hex characters",
+        "retrieval.query result end_character_offset must be greater than or equal to start_character_offset",
+        "retrieval.query result rank must be positive",
+        "retrieval.query response results must contain at most 100 items",
+        "chunk_summary.end_character_offset must be greater than or equal to start_character_offset",
+        'private val DOCUMENT_MIME_TYPE_PATTERN = Regex("^[a-z0-9!#\\$%&\'*+.^_`|~-]+/[a-z0-9!#\\$%&\'*+.^_`|~-]+$")',
+        "private val DOCUMENT_QUALITIES = setOf(\"no_usable_text\", \"single_chunk\", \"chunked\")",
+        "private const val MAX_DOCUMENT_ID_LENGTH = 128",
+        "private const val MAX_DOCUMENT_DISPLAY_NAME_LENGTH = 256",
+        "private const val MAX_DOCUMENT_MIME_TYPE_LENGTH = 128",
+        "index.documents.list response documents must contain at most 100 items",
+        "index.documents.list summary document_count must be nonnegative",
+        "index.documents.list summary quality_counts.no_usable_text must be nonnegative",
+        "index document mime_type must match lowercase type/subtype",
+        "index document quality must match chunk_count",
     )
     for snippet in required_protocol_snippets:
         if snippet not in android_protocol_text:
@@ -35973,14 +38255,23 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
 
     required_test_snippets = (
         "indexDocumentsListPayloadUsesProtocolFieldNames",
+        "indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds",
+        "indexDocumentsListResponseRejectsInvalidSummaryBounds",
         "retrievalQueryPayloadUsesProtocolFieldNames",
+        "retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds",
+        "retrievalQueryResponseRejectsTooManyResults",
         "retrievalQueryResultRejectsMissingSourceAnchorId",
+        "indexDocumentsListRejectsNonCanonicalContentFingerprints",
+        "retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints",
+        "sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints",
         "retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
         "retrievalQueryResultRejectsMissingMatchedTerms",
         "sourceAnchorResolveRequestRejectsMissingRequiredField",
         "sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
         "sourceAnchorResolveResultRejectsMissingRequiredFields",
+        "sourceAnchorResolveResultRejectsInvalidChunkSummaryValues",
         "sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+        "retrievalQueryResultRejectsInvalidCoordinatesAndRank",
         "MessageType.IndexDocumentsList",
         "MessageType.RetrievalQuery",
         '"index.documents.list"',
@@ -36000,6 +38291,16 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
         "source_anchor_0123456789ABCDEF",
         "source_anchor_not_a_handle",
         "Json.decodeFromString<SourceAnchorResolveResultPayload>",
+        "indexDocumentJson",
+        "indexDocumentsSummaryJson",
+        "indexDocumentsListResultJson",
+        "retrievalQueryResultJsonWithDocument",
+        "sourceAnchorResolveResultJsonWithDocument",
+        "retrievalQueryResultItemJson",
+        "retrievalQueryResultJsonWithResults",
+        "(0..100).joinToString",
+        'chunkCount = "0", quality = jsonString("chunked")',
+        "text/plain; charset=utf-8",
     )
     for snippet in required_test_snippets:
         if snippet not in android_protocol_test_text:
@@ -36010,25 +38311,56 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
 
     required_no_device_snippets = (
         "ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds",
+        "ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds",
+        "ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds",
+        "ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds",
         "ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds",
+        "ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds",
+        "ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults",
         "ProtocolCodecTest.sourceAnchorResolvePayloadUsesProtocolFieldNames",
+        "ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints",
+        "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints",
+        "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints",
         "ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField",
         "ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
         "ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields",
+        "ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues",
         "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+        "ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank",
+        "ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata",
         "ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId",
         "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
         "ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms",
         "Android protocol document index, retrieval, and source-anchor resolver payload parity addendum",
+        "Android document content-fingerprint canonical decode addendum",
+        "Android document metadata response bounds decode addendum",
+        "Android retrieval.query response array bounds decode addendum",
         "Android source-anchor resolver request required-field decode addendum",
         "Android source-anchor resolver required-field decode addendum",
         "Android retrieval source-anchor required decode addendum",
         "Android source-anchor canonical decode addendum",
+        "Android retrieval/source-anchor coordinate decode addendum",
         "Android retrieval matched-terms required decode addendum",
+        "Android retrieval lexical metadata decode addendum",
+        "Android document retrieval request bounds decode addendum",
+        "Android chat.sessions.list request bounds decode addendum",
         "Android SourceAnchorResolveResultPayload now rejects missing source_anchor_id, document, chunk_summary, and nested chunk_summary chunk_index, start_character_offset, end_character_offset, and character_count required fields",
+        "Android IndexDocumentsListRequestPayload rejects negative and over-maximum limit values during decode",
+        "Android ChatSessionsListRequestPayload rejects negative and over-maximum limit values, empty query text, and empty embedding_model_id values during decode",
+        "RetrievalQueryRequestPayload rejects blank or overlong query text, negative or over-maximum limit values, and negative or over-maximum max_snippet_characters values",
+        "Android RetrievalQueryResultItemPayload rejects negative chunk indexes, negative offsets, end-before-start offsets, and nonpositive ranks during decode",
+        "Android RetrievalQueryResultItemPayload rejects empty matched_terms arrays, over-maximum matched_terms arrays, empty matched term entries, overlong matched term entries, empty snippets, and overlong snippets during decode",
+        "SourceAnchorChunkSummaryPayload rejects the same invalid resolver chunk summary coordinates",
         "Android SourceAnchorResolveRequestPayload now rejects missing source_anchor_id during DTO decode",
         "Android protocol DTO decode rejects noncanonical retrieval.query and source_anchor.resolve source_anchor_id values",
         "Android ProtocolModels and ProtocolCodecTest serialize and decode index.documents.list catalog/summary payloads, retrieval.query lexical snippet payloads, and source_anchor.resolve redacted resolver payloads",
+        "Android RuntimeDocumentIndexDocumentPayload now rejects noncanonical content_fingerprint values during DTO decode for index.documents.list, retrieval.query, and source_anchor.resolve",
+        "Android RuntimeDocumentIndexDocumentPayload, IndexDocumentsListResultPayload, IndexDocumentsSummaryPayload, and IndexDocumentsQualityCountsPayload reject empty or overlong document ids and display names",
+        "quality/chunk_count mismatches",
+        "over-100 catalog documents",
+        "Android RetrievalQueryResultPayload rejects over-100 retrieval.query result arrays during DTO decode",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
@@ -36049,29 +38381,58 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
     ):
         for snippet in (
             "Android Document Index/Retrieval Protocol Payload Parity No-Device Gate",
+            "Android Chat Sessions List Request Bounds Decode No-Device Gate",
+            "Android Document Content-Fingerprint Canonical Decode No-Device Gate",
+            "Android Document Metadata Response Bounds Decode No-Device Gate",
+            "Android Retrieval Query Response Array Bounds Decode No-Device Gate",
+            "Android Document Retrieval Request Bounds Decode No-Device Gate",
             "Android Retrieval Source-Anchor Required Decode No-Device Gate",
             "Android Source-Anchor Canonical Decode No-Device Gate",
             "Android Retrieval Matched-Terms Required Decode No-Device Gate",
+            "Android Retrieval Lexical Metadata Decode No-Device Gate",
             "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate",
             "Android Source-Anchor Resolver Required-Field Decode No-Device Gate",
+            "Android Retrieval/Source-Anchor Coordinate Decode No-Device Gate",
             "ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames",
+            "ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds",
+            "ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds",
+            "ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds",
+            "ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds",
             "ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames",
+            "ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds",
+            "ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds",
+            "ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults",
+            "ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints",
+            "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints",
+            "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints",
             "ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId",
             "ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds",
             "ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms",
+            "ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank",
+            "ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata",
             "ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField",
             "ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds",
             "ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields",
+            "ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues",
             "ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds",
+            "empty or overlong document ids/display names",
+            "malformed or overlong MIME",
+            "negative summary and quality-count values",
+            "over-100 retrieval.query result arrays",
             "`index.documents.list` catalog/summary payloads",
+            "invalid `chat.sessions.list` request bounds",
             "`retrieval.query` lexical snippet payloads",
+            "invalid document retrieval request bounds",
             "missing `source_anchor_id`",
             "noncanonical `source_anchor_id`",
             "missing `matched_terms`",
+            "invalid `retrieval.query` lexical metadata",
             "missing `chunk_summary`",
             "nested missing `start_character_offset`",
             "nested missing `end_character_offset`",
             "nested missing `character_count`",
+            "invalid `retrieval.query` coordinate/rank values",
+            "invalid resolver `chunk_summary` coordinate values",
             "Android capabilities, ViewModel dispatch, UI consumption, chat context injection, citations, trusted-source review, and permission semantics out of scope",
         ):
             if snippet not in text:
@@ -36090,6 +38451,7 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
     viewmodel_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     roadmap_path = ROOT / "docs/roadmap.md"
+    protocol_path = ROOT / "docs/protocol.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
     required_paths = (
@@ -36098,6 +38460,7 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         viewmodel_test_path,
         no_device_path,
         roadmap_path,
+        protocol_path,
         progress_path,
         qa_evidence_path,
     )
@@ -36111,6 +38474,7 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
     viewmodel_test_text = viewmodel_test_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    protocol_text = protocol_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
 
@@ -36150,6 +38514,16 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "MAX_RUNTIME_DOCUMENT_MATCHED_TERMS",
         "canonicalRuntimeDocumentMatchedTerms",
         "boundedRuntimeDocumentSnippet",
+        "RUNTIME_DOCUMENT_INDEX_DOCUMENT_PAYLOAD_KEYS",
+        "INDEX_DOCUMENTS_LIST_RESULT_PAYLOAD_KEYS",
+        "INDEX_DOCUMENTS_SUMMARY_PAYLOAD_KEYS",
+        "INDEX_DOCUMENTS_QUALITY_COUNTS_PAYLOAD_KEYS",
+        "RETRIEVAL_QUERY_RESULT_PAYLOAD_KEYS",
+        "RETRIEVAL_QUERY_RESULT_ITEM_PAYLOAD_KEYS",
+        "indexDocumentsListResultUnknownMetadataKey",
+        "retrievalQueryResultUnknownMetadataKey",
+        "index.documents.list response contains unsupported metadata",
+        "retrieval.query response contains unsupported metadata",
         "rank = result.rank.coerceAtLeast(1)",
         "endCharacterOffset = result.endCharacterOffset.coerceAtLeast(startCharacterOffset)",
         "RUNTIME_DOCUMENT_CONTENT_FINGERPRINT_PATTERN",
@@ -36184,50 +38558,76 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
         "runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
         "runtimeDocumentResponsesCapTransientRowsToRequestLimits",
-        "runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+        "runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState",
+        "runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState",
         "runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
         "runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
         "runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
         "runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+        "runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
         "runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
         "runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
         "runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+        "runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState",
+        "runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState",
         "runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
         "runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
-        "documentCount = -7",
-        "chunkCount = -3",
-        "extractedCharacterCount = -1200",
-        "qualityCounts = IndexDocumentsQualityCountsPayload(",
+        '"document_count": -7',
+        '"chunk_count": -3',
+        '"extracted_character_count": -1200',
+        '"no_usable_text": -1',
         '"q".repeat(1025)',
         "retrievalRequestsBefore",
         '"query_too_long"',
-        "(0 until 105).map(::document)",
+        "(0 until 100).map(::document)",
         "assertEquals(100, catalog.documents.size)",
         "(0 until 12).map { index ->",
         "assertEquals(10, searchResults.size)",
-        'contentFingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"',
-        'listOf("0123456789abcdef", "", "", "")',
-        'mimeType = "text/plain; charset=utf-8"',
-        '"text/" + "a".repeat(124)',
-        '"application/octet-stream"',
-        'quality = "future_trusted_source"',
-        'listOf("no_usable_text", "no_usable_text", "single_chunk", "chunked")',
+        '"content_fingerprint": " 0123456789abcdef"',
+        '"content_fingerprint": "0123456789ABCDEF"',
+        'assertEquals("invalid_payload", rejectedCatalogState.error?.code)',
+        'assertEquals("invalid_payload", rejectedSearchState.error?.code)',
+        'rejectedCatalogState.error?.technicalDetail.orEmpty().contains("content_fingerprint")',
+        'rejectedSearchState.error?.technicalDetail.orEmpty().contains("16 lowercase hex")',
+        '"source_path": "/private/catalog.md"',
+        '"retrieval_context": "private retrieval context"',
+        '"source_path": "/private/search.md"',
+        'rejectedCatalogState.error?.technicalDetail.orEmpty().contains("documents[0].source_path")',
+        'rejectedSearchState.error?.technicalDetail.orEmpty().contains("results[0].retrieval_context")',
+        'rejectedDocumentMetadataSearchState.error?.technicalDetail.orEmpty()',
+        'contains("results[0].document.source_path")',
+        '"mime_type": "Text/Markdown"',
+        '"mime_type": "text/plain; charset=utf-8"',
+        'assertTrue(fixture.viewModel.state.value.error?.technicalDetail.orEmpty().contains("mime_type"))',
+        '"doc-quality-mismatch"',
+        '"doc-search-quality-mismatch"',
+        'listOf("no_usable_text", "single_chunk", "chunked")',
         'id = "doc\\u0000control"',
-        'id = "d".repeat(129)',
-        'displayName = "d".repeat(257)',
         '"doc-canonical-label",',
         '"untitled-document"',
-        'val overlongSnippet = "s".repeat(600)',
-        'val overlongTerm = "t".repeat(65)',
-        'listOf("route") + (1..15).map { index -> "term$index" }',
+        'val maxWireSnippet = "s".repeat(500)',
+        'val maxWireTerm = "t".repeat(64)',
+        'listOf("route", maxWireTerm) + (1..12).map { index -> "term$index" }',
         'assertEquals("s".repeat(480), result.snippet)',
+        '"matched_terms": []',
+        '"snippet": "${"s".repeat(501)}"',
+        'rejectedTermsState.error?.technicalDetail.orEmpty().contains("matched_terms")',
+        'rejectedSnippetState.error?.technicalDetail.orEmpty().contains("snippet")',
+        '"start_character_offset": 80',
+        '"end_character_offset": 40',
+        'rejectedState.error?.technicalDetail.orEmpty().contains("end_character_offset")',
+        'rejectedState.error?.technicalDetail.orEmpty().contains("start_character_offset")',
         'fixture.viewModel.disconnect()',
         "assertTrue(disconnectedState.documentCatalog.documents.isEmpty())",
         "assertEquals(RuntimeDocumentIndexSummary(), disconnectedState.documentCatalog.summary)",
         'assertEquals("", disconnectedState.documentSearchQuery)',
         "assertTrue(disconnectedState.documentSearchResults.isEmpty())",
         "runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
-        "SourceAnchorResolveResultPayload",
+        "json.parseToJsonElement",
+        '"retrieval_context": "$resolvedRetrievalContextCanary"',
+        '"trusted_source": {"id": "$resolvedTrustedSourceCanary"}',
+        'assertFalse(chatSendPayload.contains(resolvedRetrievalContextCanary))',
+        'assertFalse(chatSendPayload.contains(resolvedTrustedSourceCanary))',
         "assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.SourceAnchorResolve })",
         'assertFalse(chatSendPayload.contains("chunk_summary"))',
         "assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.IndexDocumentsList))",
@@ -36235,6 +38635,9 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         'assertFalse(chatSendPayload.contains("retrieval_context"))',
         'assertFalse(chatSendPayload.contains("source_path"))',
         'assertFalse(chatSendPayload.contains("trusted_source"))',
+        'assertNull(searchRequest.payload["embedding_model_id"])',
+        'assertNull(searchRequest.payload["source_anchor_id"])',
+        "assertFalse(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))",
     )
     for snippet in required_test_snippets:
         if snippet not in viewmodel_test_text:
@@ -36248,40 +38651,48 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
         "RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
         "RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits",
-        "RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
         "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
         "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
         "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState",
         "RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
         "RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
         "RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
         "Android document index and retrieval transient ViewModel wiring addendum",
         "Android document catalog disconnect transient clear addendum",
         "Android document catalog summary transient-state bounds addendum",
-        "Android document content-fingerprint transient-state canonicality addendum",
+        "Android document content-fingerprint canonical decode addendum",
+        "Android document response future-metadata fail-closed addendum",
         "Android document MIME transient-state canonicality addendum",
         "Android document quality/chunk-count transient-state consistency addendum",
         "Android document id/display-name transient-state bounds addendum",
         "Android retrieval query outbound bounds addendum",
         "Android document response row transient-state cap addendum",
         "Android retrieval lexical metadata transient-state bounds addendum",
+        "Android retrieval lexical metadata decode addendum",
         "decodes catalog and lexical snippet responses into transient RuntimeUiState only",
         "clears transient index.documents.list documentCatalog rows and summary values on explicit disconnect and receive failure",
-        "coerces index.documents.list summary document_count, chunk_count, extracted_character_count, and quality_counts",
-        "preserves only exact 16-lowercase-hex content_fingerprint values in transient document state",
-        "preserves only exact lowercase type/subtype MIME values up to 128 characters in transient document state",
-        "derives transient document quality from the nonnegative chunk_count envelope",
-        "keeps transient document ids nonblank, control-free, and within 128 characters",
+        "rejects schema-invalid index.documents.list summary values before transient state",
+        "rejects noncanonical content_fingerprint values during DTO decode",
+        "rejects unknown future/private metadata in active index.documents.list catalog responses and retrieval.query search responses",
+        "rejects schema-invalid MIME values before transient state",
+        "rejects schema-invalid quality/chunk_count combinations before transient state",
+        "rejects schema-invalid empty or overlong document ids and display names before transient state",
         "rejects document search queries longer than 1024 characters before emitting retrieval.query",
         "clears pending retrieval.query request tracking when the user submits a blank or overlong document search",
         "Android document search pending invalidation addendum",
+        "Android retrieval/source-anchor coordinate decode addendum",
         "clears transient retrieval.query documentSearchQuery, documentSearchResults, and source_anchor_id values on explicit disconnect and receive failure",
         "Android document search disconnect transient clear addendum",
-        "caps decoded index.documents.list catalog rows to 100 and retrieval.query search rows to 10",
+        "accepts schema-valid index.documents.list catalog rows up to the 100-row protocol maximum and caps retrieval.query search rows to 10",
         "clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols",
         "Android client capability future Workspace/RAG/source deny-list addendum",
         "Android unsolicited source-anchor resolver boundary addendum",
@@ -36291,7 +38702,11 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "memory.search",
         "route.candidates.exchange",
         "coerces retrieval.query transient rank values to positive integers",
+        "rejects malformed retrieval.query lexical responses before transient source_anchor_id state",
+        "rejects malformed retrieval.query coordinate responses before transient source_anchor_id state",
         "keeps chat.send payloads free of retrieval_context, source paths, workspace/project IDs, citations, and trusted-source fields",
+        "Android retrieval.query selected embedding-model isolation addendum",
+        "keeps selected embedding_model_id out of retrieval.query payloads",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
@@ -36315,41 +38730,52 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
             "Android Document Catalog Disconnect Transient Clear No-Device Gate",
             "Android Document Catalog Summary Transient-State No-Device Gate",
             "Android Document Response Row Transient-State Cap No-Device Gate",
-            "Android Document Content-Fingerprint Transient-State No-Device Gate",
+            "Android Document Content-Fingerprint Canonical Decode No-Device Gate",
+            "Android Document Response Future-Metadata Fail-Closed No-Device Gate",
             "Android Document MIME Transient-State No-Device Gate",
             "Android Document Quality/Chunk-Count Transient-State No-Device Gate",
             "Android Document ID/Display-Name Transient-State No-Device Gate",
             "Android Retrieval Query Outbound Bounds No-Device Gate",
+            "Android Retrieval.Query Embedding Isolation No-Device Gate",
             "Android Document Search Pending Invalidation No-Device Gate",
             "Android Document Search Disconnect Transient Clear No-Device Gate",
             "Android Retrieval Lexical Metadata Transient-State No-Device Gate",
+            "Android Retrieval Lexical Metadata Decode No-Device Gate",
+            "Android Retrieval/Source-Anchor Coordinate Decode No-Device Gate",
             "Android Client Capability Future Workspace/RAG/Source Deny-List No-Device Gate",
             "Android Unsolicited Source-Anchor Resolver Boundary No-Device Gate",
             "RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage",
             "RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect",
             "RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses",
             "RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits",
-            "RuntimeClientViewModelTest.runtimeDocumentMetadataDropsNonCanonicalContentFingerprintsFromTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
             "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
             "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
             "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect",
             "RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting",
             "RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols",
             "RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry",
-            "nonnegative transient catalog summary counts",
+            "schema-invalid catalog summary values before transient state",
             "explicit disconnect and receive failure clear `documentCatalog` rows and summary values",
             "exact 16-character lowercase hex `content_fingerprint`",
-            "exact lowercase `type/subtype` MIME",
-            "`chunk_count`-derived document quality",
-            "bounded document `id` and `display_name` metadata",
+            "unknown future/private metadata in active `index.documents.list` and `retrieval.query` responses",
+            "schema-invalid MIME values before transient state",
+            "schema-invalid quality/chunk_count combinations before transient state",
+            "schema-invalid empty or overlong document ids and display names before transient state",
             "1024-character `retrieval.query` request ceiling",
+            "selected embedding model is not sent as `embedding_model_id` in `retrieval.query` payloads",
             "blank or overlong document search",
             "stale runtime responses for superseded invalid searches",
+            "malformed `retrieval.query` lexical responses",
             "explicit disconnect and receive failure clear `documentSearchQuery`, `documentSearchResults`, and `source_anchor_id`",
             "catalog rows at 100 and retrieval search rows at 10",
             "future Workspace/RAG/source protocol capability strings",
@@ -36358,8 +38784,10 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
             "does not advertise `source_anchor.resolve`",
             "does not send resolver requests",
             "positive `retrieval.query` rank values",
+            "invalid `retrieval.query` coordinate/rank values fail with `invalid_payload`",
             "transient RuntimeUiState only",
             "`chat.send` payloads free of `retrieval_context`, source paths, workspace/project IDs, citations, and trusted-source fields",
+            "Android retrieval.query selected embedding-model isolation addendum",
             "Compose UI consumption, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, and physical Android proof remain out of scope",
         ):
             if snippet not in text:
@@ -36367,6 +38795,17 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
                     f"{path.relative_to(ROOT)}: Docs must record Android document retrieval ViewModel no-device "
                     f"evidence; missing {snippet!r}."
                 )
+
+    if "Latest Android retrieval.query selected embedding-model isolation no-device gate" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must record Android retrieval.query selected "
+            "embedding-model isolation."
+        )
+    if "does not send or use selected embedding models in `retrieval.query` request payloads" not in protocol_text:
+        failures.append(
+            f"{protocol_path.relative_to(ROOT)}: Protocol docs must keep retrieval.query request payloads scoped "
+            "away from selected embedding models."
+        )
 
     return failures
 
@@ -37088,6 +39527,7 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("roadmap", "Latest Android source-anchor resolver request required-field decode no-device gate", "Roadmap must name the Android source-anchor resolver request required-field decode gate."),
         ("roadmap", "Latest Android source-anchor resolver required-field decode no-device gate", "Roadmap must name the Android source-anchor resolver required-field decode gate."),
         ("roadmap", "Latest Android source-anchor canonical decode no-device gate", "Roadmap must name the Android source-anchor canonical decode gate."),
+        ("roadmap", "Latest Android unsolicited source-anchor resolver future-metadata boundary no-device gate", "Roadmap must name the Android unsolicited source-anchor resolver future-metadata boundary gate."),
         ("roadmap", "Latest protocol source-anchor ID sample validation no-device gate", "Roadmap must name the protocol source-anchor sample validation gate."),
         ("roadmap", "Latest Android document retrieval source anchor canonical transient-state no-device gate", "Roadmap must name the Android source-anchor transient-state gate."),
         ("roadmap", "Latest Android document search disconnect transient clear no-device gate", "Roadmap must name the Android document search disconnect transient clear gate."),
@@ -37135,6 +39575,7 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("progress", "Android Source-Anchor Canonical Decode No-Device Gate", "Progress docs must record Android source-anchor canonical decode evidence."),
         ("progress", "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate", "Progress docs must record Android source-anchor resolver request required-field decode evidence."),
         ("progress", "Android Source-Anchor Resolver Required-Field Decode No-Device Gate", "Progress docs must record Android source-anchor resolver required-field decode evidence."),
+        ("progress", "Android Unsolicited Source-Anchor Resolver Future-Metadata Boundary No-Device Gate", "Progress docs must record Android unsolicited source-anchor resolver future-metadata boundary evidence."),
         ("progress", "macOS Document Retrieval Source Anchor Exact-Shape No-Device Gate", "Progress docs must record macOS source-anchor exact-shape evidence."),
         ("qa_evidence", "Document Retrieval Source Anchor Canonicality No-Device Gate", "QA evidence must record source-anchor canonicality evidence."),
         ("qa_evidence", "Document Retrieval Source Anchor Query-Window No-Device Gate", "QA evidence must record source-anchor query-window evidence."),
@@ -37172,6 +39613,7 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("qa_evidence", "Android Source-Anchor Canonical Decode No-Device Gate", "QA evidence must record Android source-anchor canonical decode evidence."),
         ("qa_evidence", "Android Source-Anchor Resolver Request Required-Field Decode No-Device Gate", "QA evidence must record Android source-anchor resolver request required-field decode evidence."),
         ("qa_evidence", "Android Source-Anchor Resolver Required-Field Decode No-Device Gate", "QA evidence must record Android source-anchor resolver required-field decode evidence."),
+        ("qa_evidence", "Android Unsolicited Source-Anchor Resolver Future-Metadata Boundary No-Device Gate", "QA evidence must record Android unsolicited source-anchor resolver future-metadata boundary evidence."),
         ("qa_evidence", "macOS Document Retrieval Source Anchor Exact-Shape No-Device Gate", "QA evidence must record macOS source-anchor exact-shape evidence."),
     )
     for name, snippet, guidance in required_snippets:

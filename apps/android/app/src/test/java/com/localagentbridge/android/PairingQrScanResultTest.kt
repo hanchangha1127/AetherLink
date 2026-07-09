@@ -17,6 +17,16 @@ class PairingQrScanResultTest {
     }
 
     @Test
+    fun validCompactPrivateOverlayRouteQrReturnsValid() {
+        val rawUri = sharedProtocolFixture("macos-compact-private-overlay-pairing-uri.txt")
+
+        assertEquals(
+            PairingQrScanResult.Valid(rawUri),
+            listOf(rawUri).aetherLinkPairingScanResultOrNull(),
+        )
+    }
+
+    @Test
     fun identityOnlyPairQrIsInvalidWhenRemoteRouteIsRequired() {
         val identityOnlyPairQr = "aetherlink://pair?v=1&n=nonce-identity&c=123456" +
             "&rid=runtime-identity&rn=AetherLink%20Runtime&rf=fp-identity" +

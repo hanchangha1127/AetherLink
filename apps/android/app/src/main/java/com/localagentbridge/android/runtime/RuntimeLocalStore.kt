@@ -5,6 +5,7 @@ import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
+import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
@@ -1297,7 +1298,7 @@ private fun PersistedChatMessage.withCleanAttachments(): PersistedChatMessage {
     )
 }
 
-private fun ChatAttachmentPayload.toPersistedMessageAttachment(
+private fun ChatStoredAttachmentPayload.toPersistedMessageAttachment(
     messageId: String,
     index: Int,
 ): PersistedMessageAttachment? {

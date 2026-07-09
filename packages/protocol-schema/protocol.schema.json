@@ -442,10 +442,37 @@
           "required": ["model", "status"],
           "properties": {
             "model": { "$ref": "#/$defs/nonEmptyString" },
+            "id": { "type": "string" },
             "backend": { "enum": ["ollama"] },
             "provider": { "enum": ["ollama"] },
-            "status": { "enum": ["success", "failed"] },
-            "installed": { "type": "boolean" }
+            "accepted": { "type": "boolean" },
+            "success": { "type": "boolean" },
+            "status": {
+              "enum": [
+                "accepted",
+                "queued",
+                "pending",
+                "started",
+                "pulling",
+                "downloading",
+                "installing",
+                "in_progress",
+                "success",
+                "succeeded",
+                "installed",
+                "complete",
+                "completed",
+                "ready",
+                "ok",
+                "failed",
+                "failure",
+                "error",
+                "cancelled",
+                "canceled"
+              ]
+            },
+            "installed": { "type": "boolean" },
+            "message": { "type": "string" }
           },
           "additionalProperties": false
         }
@@ -1338,11 +1365,16 @@
             "model_not_installed",
             "generation_not_found",
             "generation_cancelled",
+            "route_refresh_unavailable",
             "unsupported_operation",
             "unsupported_attachment",
             "unreadable_attachment",
+            "chat_session_not_found",
+            "chat_session_must_be_archived_before_delete",
+            "chat_session_must_be_restored_before_send",
             "chat_store_unavailable",
             "document_index_unavailable",
+            "source_anchor_not_found",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",

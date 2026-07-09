@@ -85,7 +85,7 @@ Discovery identity hints must not contain backend URLs, Ollama/LM Studio host de
 
 `index.documents.list` is the active read-only runtime document catalog message. Its request payload may be empty or may include `limit` as an integer from 0 through 100. Its response contains a `documents` array capped at 100 rows and a `summary` object. Each document row is metadata-only: `id`, `display_name`, `mime_type` as a runtime-canonical lowercase `type/subtype` token capped at 128 characters, `content_fingerprint` as a 16-character lowercase hex value, `extracted_character_count`, `chunk_count`, and `quality`; `id` is capped at 128 characters and `display_name` is capped at 256 characters. Document `quality` is derived from `chunk_count`: `0` maps to `no_usable_text`, `1` maps to `single_chunk`, and `2` or more maps to `chunked`. The summary `quality_counts` object always contains `no_usable_text`, `single_chunk`, and `chunked` integer counts, including zero values for qualities that are absent from the current catalog. The response must not carry chunk text, chunk IDs, source paths, workspace or project IDs, retrieval context, embeddings, citations, trusted-source fields, approval state, backend URLs, or route material.
 
-`retrieval.query` is the active deterministic lexical document retrieval message. Its request payload requires nonblank `query` text capped at 1024 characters and may include `limit` from 0 through 100 and `max_snippet_characters` from 0 through 500. Its response `results` array is capped at 100 rows. Each result row contains the same bounded safe document metadata as `index.documents.list`, `source_anchor_id`, `chunk_index`, `start_character_offset`, `end_character_offset`, positive integer `rank`, non-empty `matched_terms` capped at 16 terms of 64 characters each, and non-empty response `snippet` capped at 500 characters. Character offsets are zero-based half-open ranges, so `end_character_offset` must be greater than or equal to `start_character_offset`. The current runtime orders rows by descending deterministic lexical rank with stable metadata tie-breakers, but clients must treat positive `rank` as implementation metadata, not semantic relevance. `source_anchor_id` is response-only metadata for `retrieval.query` requests and must match `source_anchor_[16 lowercase hex]`.
+`retrieval.query` is the active deterministic lexical document retrieval message. Its request payload requires nonblank `query` text capped at 1024 characters and may include `limit` from 0 through 100 and `max_snippet_characters` from 0 through 500. It does not send or use selected embedding models in `retrieval.query` request payloads; semantic retrieval and embedding-backed ranking remain future protocol work. Its response `results` array is capped at 100 rows. Each result row contains the same bounded safe document metadata as `index.documents.list`, `source_anchor_id`, `chunk_index`, `start_character_offset`, `end_character_offset`, positive integer `rank`, non-empty `matched_terms` capped at 16 terms of 64 characters each, and non-empty response `snippet` capped at 500 characters. Character offsets are zero-based half-open ranges, so `end_character_offset` must be greater than or equal to `start_character_offset`. The current runtime orders rows by descending deterministic lexical rank with stable metadata tie-breakers, but clients must treat positive `rank` as implementation metadata, not semantic relevance. `source_anchor_id` is response-only metadata for `retrieval.query` requests and must match `source_anchor_[16 lowercase hex]`.
 
 `source_anchor.resolve` is the active read-only runtime source-anchor resolver message. Its request payload accepts only `source_anchor_id`. Its response returns only `source_anchor_id`, `document`, and `chunk_summary`, where `document` uses the same safe metadata-only document shape as `index.documents.list`, and `chunk_summary` contains `chunk_index`, `start_character_offset`, `end_character_offset`, and `character_count`. A syntactically valid but stale anchor can return `source_anchor_not_found`. The resolver must not return chunk text, snippets, source paths, workspace or project IDs, retrieval context, embeddings, citations, trusted-source fields, approval state, backend URLs, or route material.
 
@@ -276,6 +276,8 @@ Direction: Runtime -> Client.
 
 If rejected, `accepted` is `false` and `message` explains whether the code expired, credentials were invalid, identity material was malformed, or the active attempt limit was exceeded. The client app must persist the trusted runtime only after an accepted result. When `runtime_public_key` or `runtime_key_fingerprint` are present, the client must verify they match the scanned QR identity before writing the trusted runtime record.
 
+`pairing.result` payloads accept only `accepted`, `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, and `message`. Pairing results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material. Android clients reject unsupported pairing.result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout; canonical pairing results on the same request path can still complete trust creation.
+
 ## `hello`
 
 Direction: Client -> Runtime.
@@ -321,6 +323,8 @@ For a trusted device id, the AetherLink Runtime replies with a one-time nonce sc
 }
 ```
 
+Runtime `auth.challenge` payloads accept only `device_id`, `nonce`, `runtime_key_fingerprint`, and `runtime_signature`. Auth challenges must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material. Android clients reject unsupported auth.challenge metadata before device identity loading, runtime proof verification, auth.response signing/sending, authenticated session state, route-refresh scheduling, or runtime refresh fanout.
+
 ## `auth.response`
 
 Direction: Client -> Runtime, Runtime -> Client.
@@ -357,6 +361,8 @@ Accepted response:
   }
 }
 ```
+
+Runtime `auth.response` result payloads accept only `accepted`, `device_id`, and `message`. `accepted` is required for a successful result, `device_id` and `message` are optional result metadata, and malformed allowed fields return `invalid_payload` before authenticated runtime access. Auth response results must not carry nonces, signatures, runtime proof fields, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material. Android clients reject unsupported auth.response result metadata before authenticated session state, route-refresh scheduling, or runtime refresh fanout.
 
 If verification fails, the AetherLink Runtime returns `error` with `code = "authentication_failed"`. If the client app sends a runtime command before this succeeds, the AetherLink Runtime returns `error` with `code = "authentication_required"`.
 
@@ -408,7 +414,7 @@ Response:
 }
 ```
 
-When both local backends are enabled, the response includes `ollama` and `lm_studio` objects. `status` is `ok` if at least one local backend is reachable, otherwise `unavailable`. Each backend object includes `available`; unavailable backends include `code`, `message`, and `retryable`.
+When both local backends are enabled, the response includes `ollama` and `lm_studio` objects. `status` is `ok` if at least one local backend is reachable, otherwise `unavailable`. Each backend object requires `available`; `code`, `message`, and `retryable` are optional provider-health metadata.
 
 Aggregate runtime hosts may include `model_residency` to report the runtime-owned model residency policy snapshot. `supported` indicates whether the runtime host can report model residency, `active_provider` and `active_model_id` identify the currently resident model when one exists, `in_flight_generations` counts active generations protected from idle unload, and `idle_unload_delay_seconds` reports the current idle-unload policy delay. `last_unload_failure`, when present, is a structured runtime-owned summary of the most recent failed unload attempt for a provider/model/reason. Known reasons are `model_switch`, `idle_timeout`, and runtime-host-owned `manual` unload. It must not contain raw provider error strings, backend URLs, route material, relay secrets, or endpoint paths. Clients must treat this as runtime status metadata; the residency policy remains enforced by the runtime host.
 
@@ -517,6 +523,8 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 `models.pull.payload` accepts only `model` and optional legacy `backend`. `model` must be a non-blank string and legacy `backend`, when present, must be `ollama`. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, or direct-provider route material. Provider routing and credential configuration remain runtime-host concerns, not mobile-client payload metadata.
 
+`models.pull` result payloads accept only `model`, compatibility `id`, `backend`, `provider`, `accepted`, `success`, `status`, `installed`, and `message`. `backend` and `provider` are provider identifiers, not provider URLs. Results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material. Clients ignore stale `models.pull` result frames whose `request_id` does not match the active pull request.
+
 Request:
 
 ```json
@@ -542,6 +550,7 @@ Result:
   "payload": {
     "model": "deepseek-v4-pro:cloud",
     "backend": "ollama",
+    "provider": "ollama",
     "status": "success",
     "installed": true
   }
@@ -663,6 +672,8 @@ When a backend streams reasoning or thinking text, the AetherLink Runtime sends 
 
 The AetherLink Runtime should send reasoning text as `reasoning_delta`. Client apps also accept `thinking_delta` as a compatibility alias, but runtime adapters should normalize Ollama/LM Studio/OpenAI-compatible thinking fields to `reasoning_delta` before sending them. The client app appends reasoning deltas to the active message's reasoning section, separate from the final assistant content.
 
+`chat.delta.payload` accepts only `delta`, `text`, `reasoning_delta`, and `thinking_delta`. Runtime streaming deltas must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material.
+
 ## `chat.done`
 
 Direction: Runtime -> Client.
@@ -684,6 +695,8 @@ Direction: Runtime -> Client.
 ```
 
 If a request is cancelled, `finish_reason` may be `cancelled`.
+
+`chat.done.payload` accepts only `finish_reason` and `usage`; nested `usage` accepts only `input_tokens` and `output_tokens`. Runtime stream completion payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material.
 
 ## `chat.sessions.list`
 
@@ -871,6 +884,8 @@ Direction: Runtime -> Client.
 
 The client app may use `title` as local UI metadata for the chat only if the user has not manually renamed that chat. Empty or invalid backend output is represented as an empty title string rather than streamed assistant text. When the runtime accepts a generated title, it stores it as runtime-owned session metadata so later `chat.sessions.list` calls can return the summarized title.
 
+The `chat.title.result.payload` object is closed. The chat.title.result.payload accepts only `title`. Runtime title results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material.
+
 ## `chat.session.rename`
 
 Direction: Client -> Runtime, Runtime -> Client.
@@ -909,6 +924,8 @@ Acknowledgement:
   }
 }
 ```
+
+`chat.session.rename` acknowledgement payloads accept only `session_id`, `title`, and `renamed_at`. Runtime rename acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata.
 
 If the session is missing, deleted, or not visible to the authenticated device, the runtime returns `error` with `code: "chat_session_not_found"`.
 
@@ -974,6 +991,8 @@ Acknowledgement payload:
 }
 ```
 
+`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` acknowledgement payloads accept only `session_id`, `status`, `archived_at`, `restored_at`, and `deleted_at`. Runtime lifecycle acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata.
+
 ## `chat.session.delete`
 
 Direction: Client -> Runtime, Runtime -> Client.
@@ -1002,7 +1021,7 @@ Acknowledgement payload:
 
 Direction: Client -> Runtime, Runtime -> Client.
 
-`chat.cancel.payload` accepts only `target_request_id`. `target_request_id` must be a non-blank string; malformed or blank allowed fields return `invalid_payload` before backend cancel dispatch, and acknowledgement payloads echo the same non-blank target request id. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata. Cancellation targets runtime-owned in-flight request ids; provider-specific cancellation and routing remain runtime-host concerns.
+For requests, `chat.cancel.payload` accepts only `target_request_id`. Acknowledgement payloads accept only `target_request_id` and `cancelled`. `target_request_id` must be a non-blank string; malformed or blank allowed fields return `invalid_payload` before backend cancel dispatch, and acknowledgement payloads echo the same non-blank target request id. `chat.cancel` payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata. Cancellation targets runtime-owned in-flight request ids; provider-specific cancellation and routing remain runtime-host concerns.
 
 Request:
 
@@ -1055,6 +1074,8 @@ Direction: either side -> other side.
 }
 ```
 
+`error` result/response payloads accept only `code`, `message`, and `retryable`. `code` must be one of the canonical error codes below, `message` must be a string when present, and `retryable` must be a boolean when present. Error payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material. Android clients reject unsupported error metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation; canonical errors on the same request id still drive the existing failure/retry behavior.
+
 Common v0.1 error codes:
 
 - `unknown_message_type`
@@ -1075,10 +1096,15 @@ Common v0.1 error codes:
 - `unsupported_operation`
 - `unsupported_attachment`
 - `unreadable_attachment`
+- `chat_session_not_found`
 - `chat_session_must_be_archived_before_delete`
 - `chat_session_must_be_restored_before_send`
 - `chat_store_unavailable`
+- `document_index_unavailable`
+- `source_anchor_not_found`
 - `memory_store_unavailable`
+- `memory_summary_draft_unavailable`
+- `memory_summary_draft_stale`
 - `transport_error`
 - `internal_error`
 
@@ -1163,6 +1189,8 @@ Creates or updates one runtime-owned memory entry. If `id` is omitted, the runti
 
 The response uses the same `type` and returns the saved entry:
 
+`memory.upsert` result payloads accept only `entry`. The saved result `entry` uses the same closed memory-entry shape as `memory.list`: top-level `entry` accepts only `id`, `content`, `enabled`, `created_at`, `updated_at`, `source`, and `search`; `entry.source` accepts only `kind`, `draft_id`, `summary_method`, `session`, `source_message_count`, `source_range`, and `source_pointers`; nested `source_pointers` accept only `session_id`, `message_index`, `role`, `created_at`, and `excerpt`. Upsert results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material.
+
 ```json
 {
   "version": 1,
@@ -1200,6 +1228,8 @@ Deletes one runtime-owned memory entry by id. Implementations may keep append-on
 ```
 
 Response:
+
+`memory.delete` result payloads accept only `id` and `deleted_at`. Delete results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material.
 
 ```json
 {
@@ -1278,6 +1308,8 @@ Approves one currently available long-inactivity memory summary draft into runti
 
 `memory.summary.draft.approve.payload` accepts only string `draft_id`, optional string `content`, optional boolean `enabled`, optional string `expected_session_id`, and optional integer `expected_source_message_count`. Malformed allowed fields, such as blank `draft_id`, non-string or blank `content`, non-boolean `enabled`, non-string or blank `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `status` or `entry`; they are response-only approval data. Approval requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
 
+`memory.summary.draft.approve` result payloads accept only `draft_id`, `status`, and `entry`. The approved-memory result `entry` uses the same closed memory-entry shape as `memory.list`: top-level `entry` accepts only `id`, `content`, `enabled`, `created_at`, `updated_at`, `source`, and `search`; `entry.source` accepts only `kind`, `draft_id`, `summary_method`, `session`, `source_message_count`, `source_range`, and `source_pointers`. Approved-memory result `entry.source.source_pointers` accepts only `session_id`, `message_index`, `role`, `created_at`, and `excerpt`. Clients preserve pending draft decisions when unsupported result metadata is rejected, so a canonical retry on the same request id can still approve the draft. Approval results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, or direct-provider route material.
+
 Request:
 
 ```json
@@ -1346,6 +1378,8 @@ Response:
 Dismisses one currently available long-inactivity memory summary draft for the authenticated trusted device without creating runtime-owned memory. The runtime must recompute the owner-scoped draft by `draft_id`; it must not trust client-supplied session ids as authority. If `expected_session_id` or `expected_source_message_count` is supplied and no longer matches the recomputed draft, the runtime returns `memory_summary_draft_stale`. If the draft is unavailable or belongs to another owner, the runtime returns `memory_summary_draft_unavailable`. Dismissed drafts are hidden from later draft-list responses for that owner. Repeating dismiss for the same current draft id is idempotent.
 
 `memory.summary.draft.dismiss.payload` accepts only string `draft_id`, optional string `expected_session_id`, and optional integer `expected_source_message_count`. Malformed allowed fields, such as blank `draft_id`, non-string or blank `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `status` or `dismissed_at`; they are response-only dismissal data. Dismiss requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
+
+`memory.summary.draft.dismiss` result payloads accept only `draft_id`, `status`, and `dismissed_at`. Clients preserve pending draft decisions when unsupported result metadata is rejected, so a canonical retry on the same request id can still dismiss the draft. Dismissal results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material.
 
 Request:
 

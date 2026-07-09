@@ -5,6 +5,8 @@ import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.protocol.ChatMessagesListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListResultPayload
+import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
+import com.localagentbridge.android.core.protocol.ChatSessionRenamePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
@@ -27,11 +29,14 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -86,7 +91,7 @@ class RuntimeClientChatSessionMutationFailureTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "rename_rejected",
+                        code = "chat_session_not_found",
                         message = "Runtime refused rename",
                         retryable = true,
                     ),
@@ -152,7 +157,7 @@ class RuntimeClientChatSessionMutationFailureTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "archive_rejected",
+                        code = "chat_session_not_found",
                         message = "Runtime refused archive",
                         retryable = true,
                     ),
@@ -214,7 +219,7 @@ class RuntimeClientChatSessionMutationFailureTest {
                     type = MessageType.Error,
                     serializer = ErrorPayload.serializer(),
                     payload = ErrorPayload(
-                        code = "delete_rejected",
+                        code = "chat_session_not_found",
                         message = "Runtime refused delete",
                         retryable = true,
                     ),
@@ -238,6 +243,183 @@ class RuntimeClientChatSessionMutationFailureTest {
                 messageCount = 2,
             )
             assertEquals(listOf("runtime-archived"), fixture.viewModel.state.value.archivedChatSessions.map { it.id })
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
+    fun chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication() = runTest {
+        withMainDispatcher {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(
+                    sessions = listOf(
+                        PersistedChatSession(
+                            id = "runtime-session",
+                            title = "Runtime title",
+                            modelId = "ollama:llama3.1:8b",
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                            runtimeOwned = true,
+                            runtimeMessageCount = 2,
+                        ),
+                    ),
+                ),
+            )
+            try {
+                val initialSessionListCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionsList
+                }
+
+                fixture.viewModel.renameChatSession("runtime-session", "Optimistic title")
+                runCurrent()
+
+                val renameRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionRename }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionRename,
+                        requestId = renameRequest.requestId,
+                        payload = buildJsonObject {
+                            put("session_id", "runtime-session")
+                            put("title", "Leaky Runtime Title")
+                            put("renamed_at", "2026-06-23T09:02:00Z")
+                            put("backend_url", "http://127.0.0.1:11434")
+                        },
+                    ),
+                )
+                runCurrent()
+
+                val rejectedState = fixture.viewModel.state.value
+                assertEquals("invalid_payload", rejectedState.error?.code)
+                assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.session.rename"))
+                assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+                assertEquals(
+                    "Optimistic title",
+                    rejectedState.chatSessions.single { it.id == "runtime-session" }.title,
+                )
+                assertTrue(!json.encodeToString(fixture.localStore.data).contains("Leaky Runtime Title"))
+                assertTrue(!json.encodeToString(fixture.localStore.data).contains("127.0.0.1:11434"))
+                assertEquals(
+                    initialSessionListCount,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionRename,
+                        serializer = ChatSessionRenamePayload.serializer(),
+                        payload = ChatSessionRenamePayload(
+                            sessionId = "runtime-session",
+                            title = "Canonical Runtime Title",
+                            renamedAt = "2026-06-23T09:02:00Z",
+                        ),
+                        requestId = renameRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                val acceptedState = fixture.viewModel.state.value
+                assertEquals(null, acceptedState.error)
+                assertEquals(
+                    "Canonical Runtime Title",
+                    acceptedState.chatSessions.single { it.id == "runtime-session" }.title,
+                )
+                assertEquals(
+                    initialSessionListCount + 1,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
+    fun chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication() = runTest {
+        withMainDispatcher {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(
+                    activeSessionId = "runtime-session",
+                    sessions = listOf(
+                        PersistedChatSession(
+                            id = "runtime-session",
+                            title = "Runtime title",
+                            modelId = "ollama:llama3.1:8b",
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                            runtimeOwned = true,
+                            runtimeMessageCount = 2,
+                        ),
+                    ),
+                ),
+            )
+            try {
+                val initialSessionListCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionsList
+                }
+
+                fixture.viewModel.archiveChatSession("runtime-session")
+                runCurrent()
+
+                val archiveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+                val optimisticArchiveMillis = fixture.localStore.data.sessions.single { it.id == "runtime-session" }
+                    .archivedAtMillis
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionArchive,
+                        requestId = archiveRequest.requestId,
+                        payload = buildJsonObject {
+                            put("session_id", "runtime-session")
+                            put("status", "archived")
+                            put("archived_at", "2026-06-23T09:03:00Z")
+                            put("workspace_id", "workspace-canary")
+                        },
+                    ),
+                )
+                runCurrent()
+
+                val rejectedState = fixture.viewModel.state.value
+                assertEquals("invalid_payload", rejectedState.error?.code)
+                assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("chat.session.archive"))
+                assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("workspace_id"))
+                assertEquals(
+                    optimisticArchiveMillis,
+                    fixture.localStore.data.sessions.single { it.id == "runtime-session" }.archivedAtMillis,
+                )
+                assertTrue(!json.encodeToString(fixture.localStore.data).contains("workspace-canary"))
+                assertEquals(
+                    initialSessionListCount,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionArchive,
+                        serializer = ChatSessionLifecyclePayload.serializer(),
+                        payload = ChatSessionLifecyclePayload(
+                            sessionId = "runtime-session",
+                            status = "archived",
+                            archivedAt = "2026-06-23T09:03:00Z",
+                        ),
+                        requestId = archiveRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                val acceptedState = fixture.viewModel.state.value
+                assertEquals(null, acceptedState.error)
+                assertTrue(acceptedState.chatSessions.none { it.id == "runtime-session" })
+                assertEquals(
+                    1_782_205_380_000L,
+                    fixture.localStore.data.sessions.single { it.id == "runtime-session" }.archivedAtMillis,
+                )
+                assertEquals(
+                    initialSessionListCount + 1,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
             } finally {
                 fixture.viewModel.disconnect()
                 runCurrent()

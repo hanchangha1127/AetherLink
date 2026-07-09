@@ -3551,6 +3551,73 @@ def check_chat_messages_list_payload_schema_contract(schema: dict[str, object]) 
             failures.append("$defs.chatMessagesListPayload request limit must stay bounded 0...500")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.chatMessagesListPayload request additionalProperties must be false")
+
+    response_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["session_id", "messages"]
+        ),
+        None,
+    )
+    if not isinstance(response_option, dict):
+        failures.append("$defs.chatMessagesListPayload must include a session_id/messages response payload option")
+    else:
+        response_properties = response_option.get("properties")
+        if not isinstance(response_properties, dict):
+            failures.append("$defs.chatMessagesListPayload response properties must be an object")
+        else:
+            response_allowed_keys = {"session_id", "messages"}
+            response_actual_keys = set(response_properties.keys())
+            if response_actual_keys != response_allowed_keys:
+                failures.append(
+                    "$defs.chatMessagesListPayload response properties must stay limited to session_id and messages"
+                )
+            if response_properties.get("session_id", {}).get("$ref") != "#/$defs/nonEmptyString":
+                failures.append("$defs.chatMessagesListPayload response session_id must use nonEmptyString")
+            messages = response_properties.get("messages")
+            message_items = messages.get("items") if isinstance(messages, dict) else None
+            if not isinstance(message_items, dict) or message_items.get("$ref") != "#/$defs/chatStoredMessage":
+                failures.append(
+                    "$defs.chatMessagesListPayload response messages must reference chatStoredMessage"
+                )
+        if response_option.get("additionalProperties") is not False:
+            failures.append("$defs.chatMessagesListPayload response additionalProperties must be false")
+
+    chat_stored_message = defs.get("chatStoredMessage")
+    if not isinstance(chat_stored_message, dict):
+        failures.append("$defs.chatStoredMessage schema is missing")
+    else:
+        stored_message_properties = chat_stored_message.get("properties")
+        if not isinstance(stored_message_properties, dict):
+            failures.append("$defs.chatStoredMessage.properties must be an object")
+        else:
+            attachments = stored_message_properties.get("attachments")
+            attachment_items = attachments.get("items") if isinstance(attachments, dict) else None
+            if not isinstance(attachment_items, dict) or attachment_items.get("$ref") != "#/$defs/storedChatAttachment":
+                failures.append("$defs.chatStoredMessage.attachments must reference storedChatAttachment")
+
+    stored_chat_attachment = defs.get("storedChatAttachment")
+    if not isinstance(stored_chat_attachment, dict):
+        failures.append("$defs.storedChatAttachment schema is missing")
+    else:
+        if stored_chat_attachment.get("required") != ["type", "mime_type"]:
+            failures.append("$defs.storedChatAttachment must require only type and mime_type")
+        stored_attachment_properties = stored_chat_attachment.get("properties")
+        if not isinstance(stored_attachment_properties, dict):
+            failures.append("$defs.storedChatAttachment.properties must be an object")
+        else:
+            stored_allowed_keys = {"type", "mime_type", "name", "text"}
+            stored_actual_keys = set(stored_attachment_properties.keys())
+            if stored_actual_keys != stored_allowed_keys:
+                failures.append(
+                    "$defs.storedChatAttachment.properties must stay limited to type, mime_type, name, and text"
+                )
+            if "data_base64" in stored_attachment_properties:
+                failures.append("$defs.storedChatAttachment must not include data_base64")
+        if stored_chat_attachment.get("additionalProperties") is not False:
+            failures.append("$defs.storedChatAttachment.additionalProperties must be false")
     return failures
 
 
@@ -3720,6 +3787,8 @@ def check_memory_list_payload_schema_contract(schema: dict[str, object]) -> list
         actual_keys = set(properties.keys())
         if actual_keys != allowed_keys:
             failures.append("$defs.memoryListPayload request properties must stay limited to query")
+        if properties.get("query", {}).get("$ref") != "#/$defs/nonEmptyString":
+            failures.append("$defs.memoryListPayload request query must use nonEmptyString")
         forbidden_keys = {
             "entries",
             "backend_url",
@@ -4135,6 +4204,7 @@ def check_runtime_health_model_residency_schema(schema: dict) -> list[str]:
     failures: list[str] = []
     defs = schema.get("$defs", {})
     runtime_health = defs.get("runtimeHealthPayload", {})
+    backend_health = defs.get("backendHealth", {})
     model_residency = defs.get("modelResidencyHealth", {})
     unload_failure = defs.get("modelResidencyUnloadFailure", {})
     runtime_options = runtime_health.get("oneOf", [])
@@ -4149,6 +4219,19 @@ def check_runtime_health_model_residency_schema(schema: dict) -> list[str]:
         {},
     )
     runtime_properties = runtime_object.get("properties", {})
+    backend_properties = backend_health.get("properties", {})
+    if backend_health.get("required") != ["available"]:
+        failures.append("backendHealth schema must require only available")
+    if backend_properties.get("message", {}).get("type") != "string":
+        failures.append("backendHealth message must stay optional string metadata")
+    if backend_properties.get("code", {}).get("type") != "string":
+        failures.append("backendHealth code must stay optional string metadata")
+    if backend_properties.get("retryable", {}).get("type") != "boolean":
+        failures.append("backendHealth retryable must stay optional boolean metadata")
+    if backend_health.get("additionalProperties") is not False:
+        failures.append("backendHealth must reject unspecified fields")
+    if runtime_properties.get("status", {}).get("enum") != ["ok", "degraded", "unavailable"]:
+        failures.append("runtime.health payload status must be limited to ok/degraded/unavailable")
     if runtime_properties.get("model_residency", {}).get("$ref") != "#/$defs/modelResidencyHealth":
         failures.append("runtime.health payload schema must allow optional model_residency snapshot")
 
@@ -4534,11 +4617,40 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         .get("code", {})
         .get("enum", [])
     )
-    for error_code in [
+    expected_error_codes = [
+        "unknown_message_type",
         "unexpected_message_direction",
+        "invalid_payload",
+        "not_connected",
+        "pairing_required",
+        "authentication_required",
+        "authentication_failed",
+        "backend_unavailable",
+        "bad_backend_response",
+        "no_models",
+        "model_not_found",
+        "model_not_installed",
+        "generation_not_found",
+        "generation_cancelled",
+        "route_refresh_unavailable",
+        "unsupported_operation",
+        "unsupported_attachment",
+        "unreadable_attachment",
+        "chat_session_not_found",
+        "chat_session_must_be_archived_before_delete",
+        "chat_session_must_be_restored_before_send",
+        "chat_store_unavailable",
+        "document_index_unavailable",
+        "source_anchor_not_found",
+        "memory_store_unavailable",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",
-    ]:
+        "transport_error",
+        "internal_error",
+    ]
+    if error_codes != expected_error_codes:
+        failures.append("errorPayload code enum must match the canonical protocol error code list")
+    for error_code in expected_error_codes:
         if error_code not in error_codes:
             failures.append(f"errorPayload code enum missing {error_code}")
 

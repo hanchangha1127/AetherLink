@@ -108,6 +108,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -389,6 +390,51 @@ private fun runtimeClientJson(): Json = Json {
     encodeDefaults = true
 }
 
+private val ERROR_PAYLOAD_KEYS = setOf(
+    "code",
+    "message",
+    "retryable",
+)
+
+private fun JsonObject.errorPayloadUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in ERROR_PAYLOAD_KEYS }
+}
+
+private val AUTH_RESPONSE_RESULT_PAYLOAD_KEYS = setOf(
+    "accepted",
+    "device_id",
+    "message",
+)
+
+private fun JsonObject.authResponseResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in AUTH_RESPONSE_RESULT_PAYLOAD_KEYS }
+}
+
+private val PAIRING_RESULT_PAYLOAD_KEYS = setOf(
+    "accepted",
+    "mac_device_id",
+    "runtime_device_id",
+    "runtime_public_key",
+    "runtime_key_fingerprint",
+    "trusted_device_id",
+    "message",
+)
+
+private fun JsonObject.pairingResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in PAIRING_RESULT_PAYLOAD_KEYS }
+}
+
+private val AUTH_CHALLENGE_PAYLOAD_KEYS = setOf(
+    "device_id",
+    "nonce",
+    "runtime_key_fingerprint",
+    "runtime_signature",
+)
+
+private fun JsonObject.authChallengeUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in AUTH_CHALLENGE_PAYLOAD_KEYS }
+}
+
 private val ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS = setOf(
     "runtime_device_id",
     "runtime_key_fingerprint",
@@ -409,6 +455,480 @@ private val ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS = setOf(
 
 private fun JsonObject.hasOnlyRouteRefreshResponsePayloadKeys(): Boolean =
     keys.all { it in ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS }
+
+private val MODELS_RESULT_PAYLOAD_KEYS = setOf("models")
+
+private val MODEL_INFO_PAYLOAD_KEYS = setOf(
+    "id",
+    "name",
+    "backend",
+    "provider",
+    "model_kind",
+    "kind",
+    "capabilities",
+    "provider_model_id",
+    "qualified_id",
+    "installed",
+    "running",
+    "source",
+    "description",
+    "size_bytes",
+    "context_window_tokens",
+    "modified_at",
+    "remote_model",
+)
+
+private fun JsonObject.modelsResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MODELS_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val models = this["models"] as? JsonArray ?: return null
+    models.forEachIndexed { index, element ->
+        val model = element as? JsonObject ?: return@forEachIndexed
+        model.keys.firstOrNull { it !in MODEL_INFO_PAYLOAD_KEYS }?.let {
+            return "models[$index].$it"
+        }
+    }
+    return null
+}
+
+private val MODEL_PULL_RESULT_PAYLOAD_KEYS = setOf(
+    "model",
+    "id",
+    "backend",
+    "provider",
+    "accepted",
+    "success",
+    "status",
+    "installed",
+    "message",
+)
+
+private fun JsonObject.modelPullResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in MODEL_PULL_RESULT_PAYLOAD_KEYS }
+}
+
+private val RUNTIME_HEALTH_PAYLOAD_KEYS = setOf(
+    "status",
+    "ollama",
+    "lm_studio",
+    "model_residency",
+)
+
+private val RUNTIME_BACKEND_HEALTH_PAYLOAD_KEYS = setOf(
+    "available",
+    "message",
+    "code",
+    "retryable",
+)
+
+private val RUNTIME_MODEL_RESIDENCY_PAYLOAD_KEYS = setOf(
+    "supported",
+    "active_provider",
+    "active_model_id",
+    "in_flight_generations",
+    "idle_unload_delay_seconds",
+    "last_unload_failure",
+)
+
+private val RUNTIME_MODEL_RESIDENCY_UNLOAD_FAILURE_PAYLOAD_KEYS = setOf(
+    "provider",
+    "model_id",
+    "reason",
+)
+
+private fun JsonObject.runtimeHealthUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in RUNTIME_HEALTH_PAYLOAD_KEYS }?.let { return it }
+    val ollama = this["ollama"] as? JsonObject
+    ollama?.keys?.firstOrNull { it !in RUNTIME_BACKEND_HEALTH_PAYLOAD_KEYS }?.let {
+        return "ollama.$it"
+    }
+    val lmStudio = this["lm_studio"] as? JsonObject
+    lmStudio?.keys?.firstOrNull { it !in RUNTIME_BACKEND_HEALTH_PAYLOAD_KEYS }?.let {
+        return "lm_studio.$it"
+    }
+    val modelResidency = this["model_residency"] as? JsonObject
+    modelResidency?.keys?.firstOrNull { it !in RUNTIME_MODEL_RESIDENCY_PAYLOAD_KEYS }?.let {
+        return "model_residency.$it"
+    }
+    val lastUnloadFailure = modelResidency?.get("last_unload_failure") as? JsonObject
+    lastUnloadFailure?.keys?.firstOrNull { it !in RUNTIME_MODEL_RESIDENCY_UNLOAD_FAILURE_PAYLOAD_KEYS }?.let {
+        return "model_residency.last_unload_failure.$it"
+    }
+    return null
+}
+
+private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf("sessions")
+
+private val CHAT_SESSION_SUMMARY_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "title",
+    "model",
+    "last_activity_at",
+    "message_count",
+    "status",
+    "archived_at",
+    "last_event",
+    "last_finish_reason",
+    "last_error_code",
+    "search",
+)
+
+private val CHAT_SESSION_SEARCH_PAYLOAD_KEYS = setOf(
+    "rank",
+    "snippet",
+    "matched_fields",
+)
+
+private fun JsonObject.chatSessionsListUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val sessions = this["sessions"] as? JsonArray ?: return null
+    sessions.forEachIndexed { index, element ->
+        val session = element as? JsonObject ?: return@forEachIndexed
+        session.keys.firstOrNull { it !in CHAT_SESSION_SUMMARY_PAYLOAD_KEYS }?.let {
+            return "sessions[$index].$it"
+        }
+        val search = session["search"] as? JsonObject ?: return@forEachIndexed
+        search.keys.firstOrNull { it !in CHAT_SESSION_SEARCH_PAYLOAD_KEYS }?.let {
+            return "sessions[$index].search.$it"
+        }
+    }
+    return null
+}
+
+private val CHAT_MESSAGES_LIST_RUNTIME_ONLY_PAYLOAD_KEYS = setOf(
+    "compaction_metadata",
+    "source_pointers",
+)
+
+private val CHAT_MESSAGES_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "messages",
+) + CHAT_MESSAGES_LIST_RUNTIME_ONLY_PAYLOAD_KEYS
+
+private val CHAT_STORED_MESSAGE_PAYLOAD_KEYS = setOf(
+    "role",
+    "content",
+    "reasoning",
+    "attachments",
+    "created_at",
+) + CHAT_MESSAGES_LIST_RUNTIME_ONLY_PAYLOAD_KEYS
+
+private val CHAT_STORED_ATTACHMENT_PAYLOAD_KEYS = setOf(
+    "type",
+    "mime_type",
+    "name",
+    "text",
+)
+
+private fun JsonObject.chatMessagesListUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in CHAT_MESSAGES_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val messages = this["messages"] as? JsonArray ?: return null
+    messages.forEachIndexed { messageIndex, element ->
+        val message = element as? JsonObject ?: return@forEachIndexed
+        message.keys.firstOrNull { it !in CHAT_STORED_MESSAGE_PAYLOAD_KEYS }?.let {
+            return "messages[$messageIndex].$it"
+        }
+        val attachments = message["attachments"] as? JsonArray ?: return@forEachIndexed
+        attachments.forEachIndexed { attachmentIndex, attachmentElement ->
+            val attachment = attachmentElement as? JsonObject ?: return@forEachIndexed
+            attachment.keys.firstOrNull { it !in CHAT_STORED_ATTACHMENT_PAYLOAD_KEYS }?.let {
+                return "messages[$messageIndex].attachments[$attachmentIndex].$it"
+            }
+        }
+    }
+    return null
+}
+
+private val CHAT_DELTA_PAYLOAD_KEYS = setOf(
+    "delta",
+    "text",
+    "reasoning_delta",
+    "thinking_delta",
+)
+
+private fun JsonObject.chatDeltaUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_DELTA_PAYLOAD_KEYS }
+}
+
+private val CHAT_DONE_PAYLOAD_KEYS = setOf(
+    "finish_reason",
+    "usage",
+)
+
+private val CHAT_DONE_USAGE_PAYLOAD_KEYS = setOf(
+    "input_tokens",
+    "output_tokens",
+)
+
+private fun JsonObject.chatDoneUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in CHAT_DONE_PAYLOAD_KEYS }?.let { return it }
+    val usage = this["usage"] as? JsonObject ?: return null
+    usage.keys.firstOrNull { it !in CHAT_DONE_USAGE_PAYLOAD_KEYS }?.let {
+        return "usage.$it"
+    }
+    return null
+}
+
+private val CHAT_CANCEL_ACK_PAYLOAD_KEYS = setOf(
+    "target_request_id",
+    "cancelled",
+)
+
+private fun JsonObject.chatCancelAckUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_CANCEL_ACK_PAYLOAD_KEYS }
+}
+
+private val CHAT_TITLE_RESULT_PAYLOAD_KEYS = setOf("title")
+
+private fun JsonObject.chatTitleResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_TITLE_RESULT_PAYLOAD_KEYS }
+}
+
+private val CHAT_SESSION_RENAME_RESULT_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "title",
+    "renamed_at",
+)
+
+private fun JsonObject.chatSessionRenameResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_SESSION_RENAME_RESULT_PAYLOAD_KEYS }
+}
+
+private val CHAT_SESSION_LIFECYCLE_RESULT_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "status",
+    "archived_at",
+    "restored_at",
+    "deleted_at",
+)
+
+private fun JsonObject.chatSessionLifecycleResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_SESSION_LIFECYCLE_RESULT_PAYLOAD_KEYS }
+}
+
+private val RUNTIME_DOCUMENT_INDEX_DOCUMENT_PAYLOAD_KEYS = setOf(
+    "id",
+    "display_name",
+    "mime_type",
+    "content_fingerprint",
+    "extracted_character_count",
+    "chunk_count",
+    "quality",
+)
+
+private val INDEX_DOCUMENTS_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "documents",
+    "summary",
+)
+
+private val INDEX_DOCUMENTS_SUMMARY_PAYLOAD_KEYS = setOf(
+    "document_count",
+    "chunk_count",
+    "extracted_character_count",
+    "quality_counts",
+)
+
+private val INDEX_DOCUMENTS_QUALITY_COUNTS_PAYLOAD_KEYS = setOf(
+    "no_usable_text",
+    "single_chunk",
+    "chunked",
+)
+
+private val RETRIEVAL_QUERY_RESULT_PAYLOAD_KEYS = setOf("results")
+
+private val RETRIEVAL_QUERY_RESULT_ITEM_PAYLOAD_KEYS = setOf(
+    "document",
+    "source_anchor_id",
+    "chunk_index",
+    "start_character_offset",
+    "end_character_offset",
+    "rank",
+    "matched_terms",
+    "snippet",
+)
+
+private fun JsonObject.indexDocumentsListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in INDEX_DOCUMENTS_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val documents = this["documents"] as? JsonArray
+    documents?.forEachIndexed { index, element ->
+        val document = element as? JsonObject ?: return@forEachIndexed
+        document.keys.firstOrNull { it !in RUNTIME_DOCUMENT_INDEX_DOCUMENT_PAYLOAD_KEYS }?.let {
+            return "documents[$index].$it"
+        }
+    }
+    val summary = this["summary"] as? JsonObject
+    summary?.keys?.firstOrNull { it !in INDEX_DOCUMENTS_SUMMARY_PAYLOAD_KEYS }?.let {
+        return "summary.$it"
+    }
+    val qualityCounts = summary?.get("quality_counts") as? JsonObject
+    qualityCounts?.keys?.firstOrNull { it !in INDEX_DOCUMENTS_QUALITY_COUNTS_PAYLOAD_KEYS }?.let {
+        return "summary.quality_counts.$it"
+    }
+    return null
+}
+
+private fun JsonObject.retrievalQueryResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in RETRIEVAL_QUERY_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val results = this["results"] as? JsonArray ?: return null
+    results.forEachIndexed { index, element ->
+        val result = element as? JsonObject ?: return@forEachIndexed
+        result.keys.firstOrNull { it !in RETRIEVAL_QUERY_RESULT_ITEM_PAYLOAD_KEYS }?.let {
+            return "results[$index].$it"
+        }
+        val document = result["document"] as? JsonObject ?: return@forEachIndexed
+        document.keys.firstOrNull { it !in RUNTIME_DOCUMENT_INDEX_DOCUMENT_PAYLOAD_KEYS }?.let {
+            return "results[$index].document.$it"
+        }
+    }
+    return null
+}
+
+private val MEMORY_LIST_RESULT_PAYLOAD_KEYS = setOf("entries")
+
+private val MEMORY_UPSERT_RESULT_PAYLOAD_KEYS = setOf("entry")
+
+private val MEMORY_DELETE_RESULT_PAYLOAD_KEYS = setOf(
+    "id",
+    "deleted_at",
+)
+
+private val MEMORY_ENTRY_PAYLOAD_KEYS = setOf(
+    "id",
+    "content",
+    "enabled",
+    "created_at",
+    "updated_at",
+    "source",
+    "search",
+)
+
+private val MEMORY_ENTRY_SOURCE_PAYLOAD_KEYS = setOf(
+    "kind",
+    "draft_id",
+    "summary_method",
+    "session",
+    "source_message_count",
+    "source_range",
+    "source_pointers",
+)
+
+private val MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "title",
+    "model",
+    "last_activity_at",
+    "message_count",
+    "inactive_seconds",
+)
+
+private val MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS = setOf(
+    "session_id",
+    "message_index",
+    "role",
+    "created_at",
+    "excerpt",
+)
+
+private val MEMORY_SUMMARY_DRAFTS_LIST_RESULT_PAYLOAD_KEYS = setOf("drafts")
+
+private val MEMORY_SUMMARY_DRAFT_APPROVE_RESULT_PAYLOAD_KEYS = setOf(
+    "draft_id",
+    "status",
+    "entry",
+)
+
+private val MEMORY_SUMMARY_DRAFT_DISMISS_RESULT_PAYLOAD_KEYS = setOf(
+    "draft_id",
+    "status",
+    "dismissed_at",
+)
+
+private val MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS = setOf(
+    "id",
+    "session",
+    "source_message_count",
+    "source_range",
+    "source_pointers",
+    "summary_preview",
+)
+
+private fun JsonObject.memorySummaryDraftsListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFTS_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val drafts = this["drafts"] as? JsonArray ?: return null
+    drafts.forEachIndexed { draftIndex, element ->
+        val draft = element as? JsonObject ?: return@forEachIndexed
+        draft.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS }?.let {
+            return "drafts[$draftIndex].$it"
+        }
+        val session = draft["session"] as? JsonObject
+        session?.keys?.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS }?.let {
+            return "drafts[$draftIndex].session.$it"
+        }
+        val sourcePointers = draft["source_pointers"] as? JsonArray ?: return@forEachIndexed
+        sourcePointers.forEachIndexed { pointerIndex, pointerElement ->
+            val pointer = pointerElement as? JsonObject ?: return@forEachIndexed
+            pointer.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS }?.let {
+                return "drafts[$draftIndex].source_pointers[$pointerIndex].$it"
+            }
+        }
+    }
+    return null
+}
+
+private fun JsonObject.memoryEntryUnknownMetadataKey(pathPrefix: String): String? {
+    keys.firstOrNull { it !in MEMORY_ENTRY_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.$it"
+    }
+    val search = this["search"] as? JsonObject
+    search?.keys?.firstOrNull { it !in CHAT_SESSION_SEARCH_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.search.$it"
+    }
+    val source = this["source"] as? JsonObject ?: return null
+    source.keys.firstOrNull { it !in MEMORY_ENTRY_SOURCE_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.source.$it"
+    }
+    val session = source["session"] as? JsonObject
+    session?.keys?.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.source.session.$it"
+    }
+    val sourcePointers = source["source_pointers"] as? JsonArray ?: return null
+    sourcePointers.forEachIndexed { pointerIndex, pointerElement ->
+        val pointer = pointerElement as? JsonObject ?: return@forEachIndexed
+        pointer.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS }?.let {
+            return "$pathPrefix.source.source_pointers[$pointerIndex].$it"
+        }
+    }
+    return null
+}
+
+private fun JsonObject.memoryListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val entries = this["entries"] as? JsonArray ?: return null
+    entries.forEachIndexed { entryIndex, element ->
+        val entry = element as? JsonObject ?: return@forEachIndexed
+        entry.memoryEntryUnknownMetadataKey("entries[$entryIndex]")?.let { return it }
+    }
+    return null
+}
+
+private fun JsonObject.memoryUpsertResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_UPSERT_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val entry = this["entry"] as? JsonObject ?: return null
+    return entry.memoryEntryUnknownMetadataKey("entry")
+}
+
+private fun JsonObject.memoryDeleteResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in MEMORY_DELETE_RESULT_PAYLOAD_KEYS }
+}
+
+private fun JsonObject.memorySummaryDraftApproveResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_APPROVE_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val entry = this["entry"] as? JsonObject ?: return null
+    return entry.memoryEntryUnknownMetadataKey("entry")
+}
+
+private fun JsonObject.memorySummaryDraftDismissResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_DISMISS_RESULT_PAYLOAD_KEYS }
+}
 
 internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.RuntimeHealth,
@@ -2701,6 +3221,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private suspend fun handleAuthChallenge(envelope: ProtocolEnvelope) {
+        envelope.payload.authChallengeUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "auth.challenge response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(AuthChallengePayload.serializer(), envelope.payload) ?: return
         runCatching {
             val identity = deviceIdentityStore.loadOrCreate()
@@ -2750,6 +3274,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleAuthResponse(envelope: ProtocolEnvelope) {
+        envelope.payload.authResponseResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "auth.response response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(AuthResponsePayload.serializer(), envelope.payload) ?: return
         if (payload.accepted == true) {
             isSessionAuthenticated = true
@@ -2772,6 +3300,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handlePairingResult(envelope: ProtocolEnvelope) {
+        envelope.payload.pairingResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "pairing.result response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(PairingResultPayload.serializer(), envelope.payload) ?: return
         val pending = pendingPairingPayload
         if (!payload.accepted || pending == null) {
@@ -2969,6 +3501,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
+        envelope.payload.runtimeHealthUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "runtime.health response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
         if (payload.status.isPairingRequiredRuntimeCode()) {
             isSessionAuthenticated = false
@@ -2999,6 +3535,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleModels(envelope: ProtocolEnvelope) {
+        envelope.payload.modelsResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "models.result response contains unsupported metadata: $unknownKey")
+            mutableState.update { it.copy(isLoadingModels = false) }
+            return
+        }
         val payload = decodePayload(ModelsResultPayload.serializer(), envelope.payload) ?: return
         val models = payload.models.map {
             val provider = it.provider?.takeIf(String::isNotBlank)
@@ -3064,6 +3605,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleModelPull(envelope: ProtocolEnvelope) {
+        if (pendingModelPullRequestId != envelope.requestId) return
+        envelope.payload.modelPullResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "models.pull response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(ModelPullResultPayload.serializer(), envelope.payload) ?: return
         val modelId = payload.model ?: payload.id ?: state.value.installingModelId ?: modelIdToSelectAfterRefresh
         val status = payload.status?.lowercase()
@@ -3107,6 +3653,10 @@ class RuntimeClientViewModel internal constructor(
     private fun handleChatSessionsList(envelope: ProtocolEnvelope) {
         if (pendingChatSessionsRequestId != null && pendingChatSessionsRequestId != envelope.requestId) return
         pendingChatSessionsRequestId = null
+        envelope.payload.chatSessionsListUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.sessions.list response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(ChatSessionsListResultPayload.serializer(), envelope.payload) ?: return
         val syncedData = persistedRuntimeData.withRuntimeChatSessionSummaries(
             sessions = payload.sessions,
@@ -3126,6 +3676,10 @@ class RuntimeClientViewModel internal constructor(
         pendingChatMessagesRequestId = null
         pendingChatMessagesSessionId = null
         clearChatMessagesLoading(expectedSessionId)
+        envelope.payload.chatMessagesListUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.messages.list response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(ChatMessagesListResultPayload.serializer(), envelope.payload) ?: return
         if (expectedSessionId != null && expectedSessionId != payload.sessionId) return
         publishPersistedRuntimeData(
@@ -3135,12 +3689,15 @@ class RuntimeClientViewModel internal constructor(
                 nowMillis = nowMillis(),
             ),
             save = true,
-            clearError = false,
         )
     }
 
     private fun handleChatDelta(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
+        envelope.payload.chatDeltaUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.delta response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(ChatDeltaPayload.serializer(), envelope.payload) ?: return
         val updatedState = state.value.withChatDelta(envelope, payload)
         mutableState.value = updatedState
@@ -3149,8 +3706,17 @@ class RuntimeClientViewModel internal constructor(
 
     private fun handleChatDone(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
+        envelope.payload.chatDoneUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.done response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload)
-        val updatedState = state.value.withChatDone(envelope, payload)
+        val completedState = state.value.withChatDone(envelope, payload)
+        val updatedState = if (payload?.finishReason == "cancelled") {
+            completedState
+        } else {
+            completedState.copy(error = null)
+        }
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
         if (payload?.finishReason != "cancelled") {
@@ -3188,6 +3754,10 @@ class RuntimeClientViewModel internal constructor(
 
     private fun handleChatTitleResult(envelope: ProtocolEnvelope) {
         if (pendingTitleRequestId != envelope.requestId) return
+        envelope.payload.chatTitleResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.title.result response contains unsupported metadata: $unknownKey")
+            return
+        }
         val sessionId = pendingTitleSessionId
         clearPendingTitleRequest()
         if (sessionId == null) return
@@ -3199,12 +3769,16 @@ class RuntimeClientViewModel internal constructor(
                 nowMillis = nowMillis(),
             ),
             save = true,
-            clearError = false,
         )
         requestRuntimeChatSessions()
     }
 
     private fun handleChatSessionRename(envelope: ProtocolEnvelope) {
+        if (envelope.requestId !in pendingChatSessionRenameRequestIds) return
+        envelope.payload.chatSessionRenameResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.session.rename response contains unsupported metadata: $unknownKey")
+            return
+        }
         pendingChatSessionRenameRequestIds -= envelope.requestId
         pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
         val payload = decodePayload(ChatSessionRenamePayload.serializer(), envelope.payload) ?: return
@@ -3215,12 +3789,16 @@ class RuntimeClientViewModel internal constructor(
                 nowMillis = nowMillis(),
             ),
             save = true,
-            clearError = false,
         )
         requestRuntimeChatSessions()
     }
 
     private fun handleChatSessionLifecycle(envelope: ProtocolEnvelope) {
+        if (envelope.requestId !in pendingChatSessionLifecycleRequestIds) return
+        envelope.payload.chatSessionLifecycleResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "${envelope.type} response contains unsupported metadata: $unknownKey")
+            return
+        }
         pendingChatSessionLifecycleRequestIds -= envelope.requestId
         pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
         val payload = decodePayload(ChatSessionLifecyclePayload.serializer(), envelope.payload) ?: return
@@ -3230,7 +3808,6 @@ class RuntimeClientViewModel internal constructor(
                 nowMillis = nowMillis(),
             ),
             save = true,
-            clearError = false,
         )
         requestRuntimeChatSessions()
     }
@@ -3238,6 +3815,11 @@ class RuntimeClientViewModel internal constructor(
     private fun handleIndexDocumentsList(envelope: ProtocolEnvelope) {
         if (pendingDocumentCatalogRequestId != envelope.requestId) return
         pendingDocumentCatalogRequestId = null
+        envelope.payload.indexDocumentsListResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "index.documents.list response contains unsupported metadata: $unknownKey")
+            mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+            return
+        }
         val payload = decodePayload(IndexDocumentsListResultPayload.serializer(), envelope.payload) ?: run {
             mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
             return
@@ -3259,6 +3841,11 @@ class RuntimeClientViewModel internal constructor(
     private fun handleRetrievalQuery(envelope: ProtocolEnvelope) {
         if (pendingDocumentSearchRequestId != envelope.requestId) return
         pendingDocumentSearchRequestId = null
+        envelope.payload.retrievalQueryResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "retrieval.query response contains unsupported metadata: $unknownKey")
+            mutableState.update { it.copy(isSearchingDocuments = false) }
+            return
+        }
         val payload = decodePayload(RetrievalQueryResultPayload.serializer(), envelope.payload) ?: run {
             mutableState.update { it.copy(isSearchingDocuments = false) }
             return
@@ -3288,6 +3875,10 @@ class RuntimeClientViewModel internal constructor(
         if (pendingMemoryListRequestId == envelope.requestId) {
             pendingMemoryListRequestId = null
         }
+        envelope.payload.memoryListResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.list response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(MemoryListResultPayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntries(payload.entries, nowMillis()),
@@ -3299,6 +3890,10 @@ class RuntimeClientViewModel internal constructor(
         if (pendingMemorySummaryDraftsRequestId == envelope.requestId) {
             pendingMemorySummaryDraftsRequestId = null
         }
+        envelope.payload.memorySummaryDraftsListResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.summary.drafts.list response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(MemorySummaryDraftsListResultPayload.serializer(), envelope.payload) ?: return
         mutableState.update {
             it.copy(
@@ -3309,16 +3904,19 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemorySummaryDraftApprove(envelope: ProtocolEnvelope) {
-        val pendingDraftId = pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
+        val pendingDraftId = pendingMemorySummaryDraftApprovalDraftIdsByRequestId[envelope.requestId] ?: return
+        envelope.payload.memorySummaryDraftApproveResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.summary.draft.approve response contains unsupported metadata: $unknownKey")
+            return
+        }
+        pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
         val payload = decodePayload(MemorySummaryDraftApproveResultPayload.serializer(), envelope.payload) ?: run {
-            pendingDraftId?.let { draftId ->
-                mutableState.update {
-                    it.copy(approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - draftId)
-                }
+            mutableState.update {
+                it.copy(approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - pendingDraftId)
             }
             return
         }
-        val approvedDraftId = payload.draftId.trim().ifBlank { pendingDraftId } ?: return
+        val approvedDraftId = payload.draftId.trim().ifBlank { pendingDraftId }
         val draftIdsToClear = setOfNotNull(pendingDraftId, approvedDraftId)
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
@@ -3334,16 +3932,19 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemorySummaryDraftDismiss(envelope: ProtocolEnvelope) {
-        val pendingDraftId = pendingMemorySummaryDraftDismissalDraftIdsByRequestId.remove(envelope.requestId)
+        val pendingDraftId = pendingMemorySummaryDraftDismissalDraftIdsByRequestId[envelope.requestId] ?: return
+        envelope.payload.memorySummaryDraftDismissResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.summary.draft.dismiss response contains unsupported metadata: $unknownKey")
+            return
+        }
+        pendingMemorySummaryDraftDismissalDraftIdsByRequestId.remove(envelope.requestId)
         val payload = decodePayload(MemorySummaryDraftDismissResultPayload.serializer(), envelope.payload) ?: run {
-            pendingDraftId?.let { draftId ->
-                mutableState.update {
-                    it.copy(dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - draftId)
-                }
+            mutableState.update {
+                it.copy(dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - pendingDraftId)
             }
             return
         }
-        val dismissedDraftId = payload.draftId.trim().ifBlank { pendingDraftId } ?: return
+        val dismissedDraftId = payload.draftId.trim().ifBlank { pendingDraftId }
         val draftIdsToClear = setOfNotNull(pendingDraftId, dismissedDraftId)
         mutableState.update {
             it.copy(
@@ -3355,6 +3956,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemoryUpsert(envelope: ProtocolEnvelope) {
+        envelope.payload.memoryUpsertResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.upsert response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(MemoryUpsertResultPayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
@@ -3363,6 +3968,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemoryDelete(envelope: ProtocolEnvelope) {
+        envelope.payload.memoryDeleteResultUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "memory.delete response contains unsupported metadata: $unknownKey")
+            return
+        }
         val payload = decodePayload(MemoryDeleteResultPayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
             persistedRuntimeData.withoutRuntimeMemoryEntry(payload.id),
@@ -3372,18 +3981,22 @@ class RuntimeClientViewModel internal constructor(
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
         val activeRequestId = state.value.activeRequestId ?: return
-        val payload = if (envelope.requestId != activeRequestId) {
-            if (envelope.payload.isEmpty()) return
-            decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
-        } else {
-            null
+        if (envelope.payload.isEmpty()) return
+        envelope.payload.chatCancelAckUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "chat.cancel acknowledgement contains unsupported metadata: $unknownKey")
+            return
         }
+        val payload = decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
         val updatedState = state.value.withChatCancelAck(envelope, payload)
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
+        envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+            showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
+            return
+        }
         if (pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)) {
             val mutation = pendingChatSessionLifecycleMutationsByRequestId.remove(envelope.requestId)
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
@@ -4305,10 +4918,10 @@ internal fun runtimeModelResidencyStatus(payload: RuntimeHealthPayload): Runtime
     )
 }
 
-internal fun runtimeProviderSafeMessage(message: String): String {
+internal fun runtimeProviderSafeMessage(message: String?): String {
     return message
-        .trim()
-        .takeUnless { it.containsBackendEndpointMaterial() }
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
         .orEmpty()
 }
 

@@ -1,6 +1,6 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-09 KST.
+Last updated: 2026-07-10 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
@@ -31,6 +31,1026 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
+
+### 2026-07-10 Android Private-Overlay QR Scanner Acceptance No-Device Gate
+
+- Scope: keep the Android scanner raw-value classifier aligned with the QR-only private-overlay route bootstrap path before the ViewModel pairing flow receives a decoded QR string.
+- Result: `PairingQrScanResult.kt` already routes decoded scanner values through `parseRuntimePairingQrPayload(...)` with the default remote-route requirement. This pass adds focused no-device coverage proving the shared compact private-overlay relay QR fixture is accepted by the scanner classifier as route-capable product QR material.
+- Guardrail: `PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid` reads `shared/protocol/fixtures/macos-compact-private-overlay-pairing-uri.txt` and asserts the decoded-result helper returns `PairingQrScanResult.Valid(rawUri)`.
+- Default-gate summary: `Android private-overlay QR scanner acceptance addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM/parser evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Harvey the 3rd` completed a read-only review and confirmed no production-code change was needed for this scanner acceptance gate.
+- Caveat: this is not physical Android proof and does not prove optical/camera QR scanning, physical Android rendering on hardware, live phone pairing, production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-private-overlay-scanner-acceptance-20260710-021610.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Retrieval.Query Embedding Isolation No-Device Gate
+
+- Scope: keep Android Settings document search aligned with the current deterministic lexical `retrieval.query` contract while semantic document retrieval and embedding-backed ranking remain future work.
+- Result: `RuntimeClientViewModel` already serializes document search with `RetrievalQueryRequestPayload(query, limit, maxSnippetCharacters)` only. This pass adds focused no-device coverage proving the selected embedding model is not sent as `embedding_model_id` in `retrieval.query` payloads, and that `source_anchor_id` plus model-id text stay out of the request.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint` selects an embedding model, sends a trimmed document search, verifies `query = "source approval notes"`, `limit = 10`, and `max_snippet_characters = 480`, and asserts the raw request payload has no `embedding_model_id`, no request-side `source_anchor_id`, and does not contain the selected embedding model id.
+- Default-gate summary: `Android retrieval.query selected embedding-model isolation addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `James the 3rd` completed a read-only candidate scan and identified private-overlay QR scanner acceptance as a strong follow-up; this smaller retrieval.query embedding-isolation slice was implemented locally because it was already validated as a nonduplicative request-boundary gap.
+- Caveat: this is not physical Android proof and does not implement semantic retrieval, embedding-backed ranking, source approval, citations, trusted-source review, permission/audit behavior, physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-retrieval-query-embedding-isolation-20260710-020247.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Memory.List Embedding Isolation No-Device Gate
+
+- Scope: keep Android `memory.list` query refresh aligned with the current deterministic lexical memory search contract while embedding-backed semantic memory search remains future work.
+- Result: `RuntimeClientViewModel` already serializes memory search refreshes with `MemoryListRequestPayload(query = normalizedQuery)` only. This pass adds focused no-device coverage proving a selected memory-indexing/embedding model is not sent as `embedding_model_id` or model-id text in `memory.list` payloads.
+- Guardrail: `RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint` selects an embedding model, completes the initial memory-list refresh, sends a trimmed memory query, verifies `query = "durable route notes"`, and asserts the raw request payload has no `embedding_model_id` and does not contain the selected embedding model id.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Euclid the 3rd` completed a read-only scan and confirmed there is no remaining nonduplicative `RuntimeClientViewModel` closed-payload response-path gap; this smaller memory.list embedding-isolation slice was selected locally from the roadmap memory/embedding boundary.
+- Caveat: this is not physical Android proof and does not implement semantic memory search, embedding-backed ranking, source approval, citations, trusted-source review, permission/audit behavior, physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider behavior, production relay/session/encryption, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-list-embedding-isolation-20260710-014942.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Auth.Challenge Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw runtime `auth.challenge` responses cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, direct-store, or direct-provider metadata into device identity loading, runtime proof verification, response signing, authenticated session state, route refresh, or authenticated refresh fanout.
+- Result: `RuntimeClientViewModel` now rejects keys outside `device_id`, `nonce`, `runtime_key_fingerprint`, and `runtime_signature` before `handleAuthChallenge` can load/create device identity, verify a runtime proof, sign or send `auth.response`, authenticate the session, schedule route refresh, or send runtime health/history/memory refresh requests. Canonical auth challenge retries still produce a signed `auth.response`.
+- Guardrail: `RuntimeClientViewModelTest.authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning` injects `backend_url` into a trusted-relay `auth.challenge`, proves Android reports `invalid_payload`, keeps the session unauthenticated, sends no `auth.response` or authenticated refresh requests, keeps the canary out of local storage, then signs a canonical `auth.challenge` retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Leibniz the 3rd` completed a read-only scan and identified the smallest auth.challenge app-path closed-payload guard/test shape.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider authentication behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-auth-challenge-closed-payload-20260710-013615.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Pairing.Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `pairing.result` responses cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, direct-store, or direct-provider metadata into trusted runtime storage, pending pairing cleanup, authenticated session state, or authenticated refresh fanout.
+- Result: `RuntimeClientViewModel` now rejects keys outside `accepted`, `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, and `message` before `handlePairingResult` decodes the result, clears pending route material, stores trust, authenticates the session, or sends runtime health/history/memory refresh requests. Canonical pairing result retries still complete trust creation on the same compact relay QR path.
+- Guardrail: `RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation` injects `backend_url` into an accepted compact-relay `pairing.result`, proves Android reports `invalid_payload`, keeps pending route and relay secret state intact, stores no trusted runtime, sends no authenticated refresh requests, keeps the canary out of local storage, then accepts a canonical retry and clears pending pairing state.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hubble the 3rd` completed a read-only check and confirmed the code/test guard was present before the docs/gate update.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider pairing behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-pairing-result-closed-payload-20260710-012042.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Auth.Response Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw runtime `auth.response` results cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, direct-store, or direct-provider metadata into authenticated session state or authenticated refresh fanout.
+- Result: `RuntimeClientViewModel` now rejects keys outside `accepted`, `device_id`, and `message` before `handleAuthResponse` can set `isSessionAuthenticated`, publish `runtimeStatus = "authenticated"`, schedule route refresh, or send runtime health, chat-history, memory, and memory-summary refresh requests. Canonical auth result retries still authenticate normally.
+- Guardrail: `RuntimeClientViewModelTest.authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation` injects `backend_url` into an accepted auth result, proves Android reports `invalid_payload`, keeps the session unauthenticated, sends no authenticated refresh requests, then accepts a canonical `auth.response` retry and resumes the normal refresh fanout.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Mendel the 3rd` completed a read-only scan and identified `pairing.result` as the next app-path gap after this auth-response slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider authentication behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-auth-response-result-closed-payload-20260710-010838.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Error Payload Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `error` responses cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, direct-store, or direct-provider metadata into pending cleanup, route/auth state, active streams, runtime state, or device storage.
+- Result: `RuntimeClientViewModel` now rejects keys outside `code`, `message`, and `retryable` before any `handleError` branch removes pending request ids, terminates active streams, mutates route/auth state, or changes device storage. Canonical error retries on the same request id still drive the existing failure and retry behavior.
+- Guardrail: `RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation` injects `backend_url` into a pending `memory.list` error, proves Android reports `invalid_payload`, preserves the pending request, then accepts a canonical `memory_store_unavailable` retry. `RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination` injects `workspace_id` into an active `chat.send` stream error, proves the blank assistant placeholder and active request stay intact, then accepts a canonical `backend_unavailable` retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hume the 3rd` completed a read-only scan and identified the `Error` app-path gap for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider error behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-error-payload-closed-payload-20260710-005431.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Memory CRUD Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `memory.upsert` and `memory.delete` results cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, direct-store, or direct-provider metadata into runtime memory state or device storage.
+- Result: `RuntimeClientViewModel` now rejects unsupported `memory.upsert` result keys before `MemoryUpsertResultPayload` decode and runtime memory publication, rejects unsupported `memory.delete` result keys before removing cached memory, and still accepts canonical retries on the same request path.
+- Guardrail: `RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation` injects `entry.source.source_pointers[0].backend_url`, proves Android reports `invalid_payload`, keeps existing memory state/storage canary-free, then accepts a canonical upsert retry. `RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation` injects `workspace_id`, proves the target memory remains in state/storage, then accepts a canonical delete retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Copernicus the 3rd` completed a read-only scan and identified the memory CRUD result app-path gap for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider memory mutation behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-crud-result-closed-payload-20260710-003837.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Memory Summary Draft Decision Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `memory.summary.draft.approve` and `memory.summary.draft.dismiss` results cannot carry backend URL, route, workspace, permission, source-approval, citation, trusted-source, audit, or direct-provider metadata into runtime memory, memory review state, or device storage.
+- Result: `RuntimeClientViewModel` now requires approve/dismiss results to match a pending draft-decision request id, rejects unsupported approve result keys before `MemorySummaryDraftApproveResultPayload` decode and runtime memory publication, rejects unsupported dismiss result keys before review-state mutation, and preserves pending draft-decision state for canonical retry on the same request id.
+- Guardrail: `RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation` injects `entry.source.source_pointers[0].backend_url`, proves Android reports `invalid_payload`, keeps the draft pending, keeps memory state/storage canary-free, then accepts a canonical approval retry. `RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation` injects `workspace_id`, proves the draft remains under review with pending dismissal state intact, then accepts a canonical dismissal retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Helmholtz the 3rd` completed a read-only scan and identified the memory-summary draft decision result app-path gap for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider memory mutation behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-draft-decision-result-closed-payload-20260710-002352.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Models.Pull Result And Chat.Cancel Acknowledgement Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `models.pull` results and `chat.cancel` acknowledgements cannot carry backend URL, provider URL, route, workspace, permission, source, tool, or retrieval metadata into model-install state, model refresh fanout, streaming cancellation, or device storage.
+- Result: `RuntimeClientViewModel` now ignores stale `models.pull` result frames whose `request_id` does not match the active pull request, rejects unsupported `models.pull` result keys before `ModelPullResultPayload` decode, and rejects unsupported `chat.cancel` acknowledgement keys before streaming state can be cleared. The Android result DTO now explicitly declares the current runtime/schema `models.pull` result fields `backend`, `provider`, and `installed`, so the guard blocks unknown metadata without breaking normal macOS runtime responses.
+- Guardrail: `RuntimeClientViewModelTest.modelPullResultRejectsUnknownMetadataBeforeInstallStateMutation` drives an uninstalled model selection, proves a stale result is ignored, injects `provider_url`, proves Android reports `invalid_payload` without clearing pending install state or requesting model refresh, then accepts a canonical retry. `RuntimeClientViewModelTest.chatCancelAckRejectsUnknownMetadataBeforeStreamingClear` starts a real chat/cancel flow, injects `backend_url` into the acknowledgement, proves streaming stays active and storage stays canary-free, then accepts a canonical acknowledgement carrying `target_request_id` and `cancelled`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Dewey the 3rd` completed a read-only scan and identified the models.pull result request-id gap plus the chat.cancel acknowledgement unknown-key gap for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider model pull or chat/cancel behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelPullResultRejectsUnknownMetadataBeforeInstallStateMutation --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatCancelAckRejectsUnknownMetadataBeforeStreamingClear -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt packages/protocol-schema/protocol.schema.json script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-model-pull-cancel-ack-closed-payload-20260710-000518.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Stream Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `chat.delta` and `chat.done` stream responses cannot carry backend, route, workspace, permission, source, usage-extension, or tool metadata into streaming message publication, completion side effects, title/history follow-up, or device storage.
+- Result: `RuntimeClientViewModel` now rejects unsupported `chat.delta` response keys and unsupported top-level or nested `chat.done.usage` keys before payload decode. Rejected stream frames leave the active stream and request id intact for canonical retry, keep assistant content and local storage unchanged, and accepted canonical stream frames clear stale `invalid_payload` for non-cancelled completions.
+- Guardrail: `RuntimeClientViewModelTest.chatDeltaRejectsUnknownMetadataBeforeMessagePublication` injects a raw `chat.delta` carrying `backend_url`, proves Android reports `invalid_payload`, keeps the assistant placeholder unchanged, keeps canaries out of device storage, then accepts a canonical delta on the same request id. `RuntimeClientViewModelTest.chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects` injects a raw `chat.done.usage.workspace_id`, proves streaming stays active with no title/history follow-up and no storage canary, then accepts a canonical done on the same request id.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Godel the 3rd` completed a read-only scan and confirmed the stream-response allowlists, guard placement, and stale-error clearing risk for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat streaming, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaRejectsUnknownMetadataBeforeMessagePublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-stream-closed-payload-20260709-234509.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat.Session Mutation Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, and `chat.session.delete` acknowledgements cannot carry backend, route, workspace, permission, source, or tool metadata into runtime session cache publication.
+- Result: `RuntimeClientViewModel` now rejects unsupported rename and lifecycle acknowledgement keys before payload decode, before pending mutation state is consumed, before runtime session cache publication, and before device storage mutation. Rejected acknowledgements keep the pending mutation request available for a canonical retry, and accepted canonical retries clear the stale `invalid_payload` error.
+- Guardrail: `RuntimeClientChatSessionMutationFailureTest.chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication` injects a raw `chat.session.rename` acknowledgement carrying `backend_url`, proves Android reports `invalid_payload`, keeps only the optimistic local title, keeps the runtime acknowledgement title and canary out of device storage, then accepts a canonical retry on the same request id. `RuntimeClientChatSessionMutationFailureTest.chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication` performs the same boundary check for a raw `chat.session.archive` acknowledgement carrying `workspace_id`, proves the runtime timestamp is not applied before acceptance, then accepts the canonical retry on the same request id.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Bacon the 3rd` completed a read-only scan and confirmed the rename/lifecycle allowlists, pending-request ordering, and stale-error clearing risk for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/session mutation behavior, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientChatSessionMutationFailureTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-session-mutation-result-closed-payload-20260709-233000.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat.Title.Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `chat.title.result` responses cannot carry backend, route, workspace, permission, source, or tool metadata into generated chat-title publication.
+- Result: `RuntimeClientViewModel` now rejects unsupported `chat.title.result` response keys before `ChatTitleResultPayload` decode, before generated-title publication, and before device storage mutation. Invalid title results keep the pending title request available for a canonical retry, and accepted canonical retries clear the stale `invalid_payload` error.
+- Guardrail: `RuntimeClientViewModelTest.chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication` drives a real `chat.send` / `chat.done` title-request flow, injects a raw `chat.title.result` carrying `backend_url`, proves Android reports `invalid_payload`, keeps active user/assistant messages and the untitled session unchanged, keeps the canary out of device storage, then accepts `ChatTitleResultPayload(title = "Canonical Generated Title")` on the same request id and refreshes runtime chat history.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Aquinas the 3rd` completed a read-only scan and confirmed the title-result allowlist, pending-request ordering, and protocol/doc gate scope for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider title generation, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateBuildsAfterFirstCompletedExchange --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-title-result-closed-payload-20260709-231213.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Memory.Summary.Drafts.List Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `memory.summary.drafts.list` responses cannot carry unknown top-level, per-draft, draft-session, or draft source-pointer metadata into memory review state.
+- Result: `RuntimeClientViewModel` now rejects unsupported `memory.summary.drafts.list` response keys before `MemorySummaryDraftsListResultPayload` decode and before `RuntimeUiState.memorySummaryDrafts` publication. Draft review rows remain display-only and still do not mutate device storage.
+- Guardrail: `RuntimeClientViewModelTest.memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication` first publishes an existing canonical draft, then injects `backend_url`, `drafts[0].workspace_id`, `drafts[0].session.backend_url`, and `drafts[0].source_pointers[0].source_path` canaries. Android reports `invalid_payload`, keeps the existing review state and device storage unchanged, and then accepts a canonical retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Lovelace the 3rd` completed a read-only scan and identified `chat.title.result` as the next smaller app-path closed-payload follow-up after this memory-summary draft slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, LLM-generated memory summaries, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-summary-drafts-closed-payload-20260709-225345.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Messages List Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `chat.messages.list` responses cannot carry unknown top-level, stored-message, or stored-attachment metadata into transcript state or device storage.
+- Result: `RuntimeClientViewModel` now rejects unsupported `chat.messages.list` response keys before `ChatMessagesListResultPayload` decode, before transcript state publication, and before saved runtime-owned session messages are replaced. Runtime-only `compaction_metadata` and `source_pointers` remain tolerated for projection compatibility and are still excluded from UI/storage.
+- Guardrail: `RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication` injects raw responses carrying `backend_url` and `messages[0].workspace_id` canaries, proves Android reports `invalid_payload`, keeps the existing transcript and storage unchanged, and then accepts a canonical retry. Existing regressions continue to cover runtime-only compaction metadata projection and stored attachment `data_base64` rejection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Aristotle the 3rd` completed a read-only scan and confirmed the allowlist shape, existing projection tests, and no-device/doc gate risks for this slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, workspace search, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-messages-closed-payload-20260709-224100.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Memory.List Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `memory.list` responses cannot carry unknown top-level, per-entry, nested search, or approved-memory source metadata into runtime memory state or device storage.
+- Result: `RuntimeClientViewModel` now rejects unsupported `memory.list` response keys before `MemoryListResultPayload` decode, before runtime memory state publication, and before saved runtime memory entries are replaced.
+- Guardrail: `RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication` injects raw `memory.list` responses carrying `backend_url`, `entries[0].workspace_id`, `entries[0].source.source_path`, and `entries[0].source.source_pointers[0].backend_url` canaries, proves Android reports `invalid_payload`, keeps existing memory state and storage unchanged, and then accepts a canonical retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Lorentz the 3rd` completed a read-only scan and listed this `memory.list` app-path closed-payload slice as a no-device-verifiable roadmap candidate; the same scan identified full `chat.messages.list` response closed-payload parity as the next closest follow-up.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic memory search, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-list-closed-payload-20260709-222611.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Messages List Stored Attachment Safe-Metadata No-Device Gate
+
+- Scope: align Android stored `chat.messages.list` transcript attachments with the shared safe-metadata response schema so stored messages cannot carry inline `data_base64` while outbound `chat.send` attachments still can.
+- Result: `ChatStoredAttachmentPayload` now models stored transcript attachments with only `type`, `mime_type`, `name`, and `text`; `ChatStoredMessagePayload.attachments` uses that type, and `RuntimeClientViewModel` rejects unsupported stored attachment keys before permissive app-path decode can publish transcript state or mutate device storage.
+- Guardrail: `ProtocolCodecTest.chatMessagesListRejectsInlineStoredAttachmentBytes` proves protocol decode rejects inline stored attachment bytes, and `RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication` proves the app path reports `invalid_payload`, keeps the existing transcript and storage unchanged, and does not persist the base64 canary. `chat.send` continues to use `ChatAttachmentPayload.dataBase64` for outbound runtime-mediated uploads.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol/ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Averroes the 3rd` completed a read-only scan and confirmed the remaining durable gate/doc coverage needed for this stored attachment safe-metadata slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, workspace search, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatHistoryMessagePayloadsUseProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRejectsInlineStoredAttachmentBytes -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesReplaceSessionTranscriptAndPreserveReasoningWithStableIds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-stored-attachment-safe-metadata-20260709-221015.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Sessions List Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `chat.sessions.list` responses cannot carry unknown top-level, per-session, or nested search metadata into runtime chat-history state or device storage.
+- Result: `RuntimeClientViewModel` now rejects unsupported `chat.sessions.list` response keys before `ChatSessionsListResultPayload` decode, before runtime chat-history state publication, and before runtime-owned session summaries are saved.
+- Guardrail: `RuntimeClientViewModelTest.chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication` injects raw `chat.sessions.list` responses carrying `backend_url`, `sessions[0].workspace_id`, and `sessions[0].search.source_path` canaries, proves Android reports `invalid_payload`, keeps runtime chat-history state and device storage unchanged, and then publishes a canonical retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Ramanujan the 3rd` completed a read-only scan and identified Android stored chat attachment safe-metadata DTO parity as a next low-blast-radius candidate; this `chat.sessions.list` app-path slice was selected locally from the same permissive-decoder boundary family already under inspection.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, workspace search, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-sessions-closed-payload-20260709-215137.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android runtime.health Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `runtime.health` responses cannot carry unknown top-level, provider-health, model-residency, or nested model-residency unload-failure metadata into runtime/provider/residency state.
+- Result: `RuntimeClientViewModel` now rejects unsupported `runtime.health` keys before `RuntimeHealthPayload` decode, before runtime/provider/model-residency state publication, and before authenticated follow-up refresh fanout for models, chat sessions, memory, or memory-summary drafts.
+- Guardrail: `RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication` injects raw `runtime.health` responses carrying `backend_url`, `ollama.provider_url`, `model_residency.workspace_id`, and `model_residency.last_unload_failure.backend_url` canaries, proves Android reports `invalid_payload`, keeps prior runtime/provider/residency state, suppresses refresh fanout on rejection, and then recovers on a canonical `runtime.health` retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Poincare the 3rd` completed a read-only scan and confirmed the schema/DTO allowlist and app-path test placement before being closed.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, provider API access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-runtime-health-closed-payload-20260709-212846.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat And Memory Timestamp Date-Time Decode No-Device Gate
+
+- Scope: align Android chat-history and memory-related response DTO timestamp metadata with the shared protocol `date-time` contract before malformed timestamps can reach Android chat-history state, memory review state, local persistence, or future source/citation flows.
+- Result: Android DTO decode now rejects malformed, date-only, and timezone-less timestamp values for chat session summaries, stored chat messages, chat session rename/lifecycle result timestamps, memory entries, memory delete results, memory summary draft dismiss results, memory summary draft sessions, and memory summary draft source pointers.
+- Guardrail: `ProtocolCodecTest.chatAndMemoryPayloadsRejectInvalidTimestampMetadata` covers invalid `last_activity_at`, `archived_at`, `created_at`, `renamed_at`, `restored_at`, `deleted_at`, `updated_at`, and `dismissed_at` values across chat and memory payload families before Android UI or local persistence can consume them.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Pauli the 3rd` completed a read-only scan and identified Android `runtime.health` app-path closed-payload parity as the next low-blast-radius candidate; this timestamp slice was selected locally from the active schema/DTO gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, source approval, citation, trusted-source review, permission/audit behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatAndMemoryPayloadsRejectInvalidTimestampMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatHistoryMessagePayloadsUseProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListPayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftDismissPayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-memory-timestamps-20260709-211234.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Models.Result Closed-Payload App-Path No-Device Gate
+
+- Scope: close the Android runtime-client app path where `runtimeClientJson()` uses `ignoreUnknownKeys = true`, so raw `models.result` responses cannot carry unknown top-level model-list metadata or per-model route/provider metadata into model refresh handling.
+- Result: `RuntimeClientViewModel` now rejects unsupported `models.result` top-level keys and unsupported per-model keys before `ModelsResultPayload` decode and before model state publication. The app-path allowlist preserves existing Android legacy `kind` and `description` handling, so this is a fail-closed route/provider metadata guard rather than a claim of full strict schema parity for legacy fields.
+- Guardrail: `RuntimeClientViewModelTest.modelsResultRejectsUnknownMetadataBeforeModelStatePublication` injects raw `models.result` responses carrying `route_token`, `provider_url`, and `backend_url` canaries, proves Android reports `invalid_payload`, keeps the previous model list after rejection, and then accepts a canonical retry.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Newton the 3rd` inspected the app-path decode seam, existing document-response guard pattern, and model metadata tests read-only, then was closed after the audit.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, provider API access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelsResultRejectsUnknownMetadataBeforeModelStatePublication -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-models-result-closed-payload-20260709-205939.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Model Modified-At Date-Time Decode No-Device Gate
+
+- Scope: align Android `models.result` `ModelInfoPayload.modified_at` decode with the shared `modelInfo.modified_at` `date-time` schema contract before malformed model timestamps can reach Android model selection state or future client-side model metadata consumers.
+- Result: `ModelInfoPayload` now rejects malformed, date-only, and timezone-less `modified_at` values during decode.
+- Guardrail: `ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata` proves invalid model timestamp metadata fails during `models.result` decode before Android model selection state, runtime-side compaction budgets, provider API access, live-provider behavior, direct Android backend access, physical Android proof, optical QR, production relay/session/encryption, or real different-network proof.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. This slice was selected locally from the active schema/DTO gap; a GPT-5.5 explorer completed a read-only scan and identified app-path `models.result` closed-payload parity as the next candidate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, runtime-side compaction behavior, provider API access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-model-modified-at-date-time-20260709-204606.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Model Scalar Metadata Decode No-Device Gate
+
+- Scope: align Android `models.result` `ModelInfoPayload` scalar metadata decode with the shared `modelInfo` required-field, enum, and unique-capability contracts before invalid model metadata can reach Android model selection state or future client-side model metadata consumers.
+- Result: `ModelInfoPayload` now rejects empty `id` values, missing or empty `name` values, unsupported `backend`, `provider`, `model_kind`, and `source` values, and duplicate `capabilities` entries during decode.
+- Guardrail: `ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata` proves invalid scalar model metadata fails during `models.result` decode before Android model selection state, runtime-side compaction budgets, provider API access, live-provider behavior, direct Android backend access, physical Android proof, optical QR, production relay/session/encryption, or real different-network proof.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Einstein the 2nd` inspected the schema, Android DTO, ViewModel use, and test fixtures read-only, then was closed after the audit.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, runtime-side compaction behavior, provider API access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-model-scalar-metadata-20260709-203425.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Route Refresh Complete Route Material Decode No-Device Gate
+
+- Scope: align Android `route.refresh` DTO decode with the shared schema requirement that non-empty route refresh responses carry runtime identity plus a complete relay or P2P route-material family.
+- Result: `RouteRefreshPayload` now uses a custom JSON serializer that accepts `{}` and complete relay/P2P route-material responses, while rejecting identity-only, missing-runtime-identity, partial relay, `relay_scope`-only, partial P2P, and missing-`p2p_class` payloads during DTO decode.
+- Guardrail: `ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies` proves family completeness is enforced before trusted route storage, route-refresh retry handling, live relay/P2P behavior, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 explorer (`Confucius the 2nd`) scanned read-only and identified a separate `models.result` metadata scalar follow-up candidate; this route-refresh family-completeness slice was implemented locally from the active schema/DTO gap already under inspection.
+- Caveat: this is not physical Android proof and does not prove optical QR scanning, live phone pairing, live relay/P2P connectivity, production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-route-refresh-complete-material-20260709-201943.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Route Refresh Scalar Route Material Decode No-Device Gate
+
+- Scope: align Android `route.refresh` DTO decode with the shared scalar route-material schema before malformed authenticated refresh payloads can reach trusted route conversion or retry handling.
+- Result: `RouteRefreshPayload` now rejects schema-invalid scalar relay and P2P route material during JSON DTO decode, including noncanonical or oversized opaque route values, invalid relay ports, nonpositive expiries, unsupported `relay_scope` values, unsupported `p2p_class` values, oversized encrypted bodies, and unsupported `p2p_protocol_version` values.
+- Guardrail: `ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial` proves malformed scalar route material fails before trusted route storage, route-refresh retry handling, live relay/P2P behavior, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Plato the 2nd` previously inspected schema/checker/Android DTO/test/gate paths read-only and identified this `route.refresh` DTO parity candidate; this slice was implemented locally without changing direct `RouteRefreshPayload(...)` construction semantics used by app-layer validation tests.
+- Caveat: this is not physical Android proof and does not prove optical QR scanning, live phone pairing, live relay/P2P connectivity, production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-route-refresh-scalar-material-20260709-200601.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android runtime.health Status Enum Decode No-Device Gate
+
+- Scope: align Android `runtime.health` response status DTO decode with the shared schema enum before malformed runtime-health frames can update Android runtime status state.
+- Result: `RuntimeHealthPayload` now rejects unsupported `status` values outside `ok`, `degraded`, or `unavailable` during DTO decode.
+- Result: `script/check_protocol_schema.py` now fails if the shared `runtime.health.status` enum drifts away from the same three values.
+- Guardrail: `ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus` proves invalid status values fail before Android runtime-health status state, provider status UI state, live-provider behavior, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol/schema evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Plato the 2nd` inspected schema/checker/Android DTO/test/gate paths read-only and identified a larger `route.refresh` DTO parity follow-up; this narrower runtime-health status enum slice was selected locally to keep the current pass low-blast-radius.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live provider health from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-runtime-health-status-enum-20260709-195045.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android runtime.health Backend Status Minimal Decode No-Device Gate
+
+- Scope: align Android `runtime.health` backend provider-status DTO decode with the shared schema before schema-valid minimal provider-health responses are rejected on the client.
+- Result: `RuntimeBackendStatusPayload` now accepts backend health objects that carry only required `available`; omitted `message`, `code`, and `retryable` are treated as absent metadata and map to the existing empty/safe UI message behavior.
+- Result: `script/check_protocol_schema.py` now fails if `backendHealth` stops requiring only `available` or stops keeping `message`, `code`, and `retryable` optional typed metadata.
+- Guardrail: `ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload` proves minimal schema-valid provider-health runtime responses decode before Android runtime-health provider status UI state, live-provider behavior, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol/schema evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Pauli the 2nd` inspected schema/checker/Android DTO/test/gate paths read-only and identified this schema-valid minimal backend-health decode gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live provider health from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-runtime-health-backend-status-minimal-20260709-193735.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Memory List Request Bounds Decode No-Device Gate
+
+- Scope: align Android `memory.list` request DTO decode with the shared schema before malformed search requests can reach runtime memory-store dispatch.
+- Result: `MemoryListRequestPayload` now rejects empty `query` values during DTO decode. Omitted `query` still represents an unfiltered memory list, while present `query` must be non-empty to match `memoryListPayload.query: nonEmptyString`.
+- Result: `script/check_protocol_schema.py` now fails if `memoryListPayload.query` drifts away from `nonEmptyString`.
+- Guardrail: `ProtocolCodecTest.memoryListRequestRejectsInvalidBounds` proves malformed memory-list search requests fail before runtime memory-store search dispatch, local persistence, memory source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol/schema evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Mencius the 2nd` inspected schema/checker/Android DTO/test/gate paths read-only and confirmed this is a low-blast-radius no-device gate/docs parity slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live memory search from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryListRequestRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-list-request-bounds-20260709-192432.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Retrieval Query Response Array Bounds Decode No-Device Gate
+
+- Scope: align Android `retrieval.query` response DTO decode with the shared schema response-array ceiling before oversized runtime retrieval responses can reach Android transient document search state.
+- Result: `RetrievalQueryResultPayload` now rejects over-100 retrieval.query result arrays during DTO decode, matching the shared `results.maxItems: 100` protocol contract.
+- Guardrail: `ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults` proves 101-row retrieval responses fail before Android transient document search state, resolver consumption, local persistence, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Ptolemy the 2nd` inspected schema/checker/Android DTO/test/gate paths read-only and confirmed this is a low-blast-radius no-device gate/docs parity slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live document search from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-retrieval-response-array-bounds-20260709-191152.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Document Metadata Response Bounds Decode No-Device Gate
+
+- Scope: align Android document catalog, retrieval, and source-anchor resolver document metadata DTO decode with the shared schema before malformed runtime document metadata can update Android transient document state.
+- Result: `RuntimeDocumentIndexDocumentPayload` now rejects empty or overlong document ids/display names, malformed or overlong MIME values, negative document counts, invalid quality values, and `quality`/`chunk_count` mismatches during DTO decode.
+- Result: `IndexDocumentsListResultPayload`, `IndexDocumentsSummaryPayload`, and `IndexDocumentsQualityCountsPayload` now reject over-100 catalog document arrays plus negative summary and quality-count values during DTO decode.
+- Guardrail: `ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds`, `ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds`, and `ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds` prove malformed catalog, retrieval, and source-anchor resolver document metadata fails before Android transient document state, resolver consumption, local persistence, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Guardrail: existing ViewModel document metadata tests now treat schema-invalid catalog summary values before transient state, schema-invalid MIME values before transient state, and schema-invalid quality/chunk_count combinations before transient state as `invalid_payload`, while preserving schema-valid catalog rows, schema-valid summary rows, and schema-valid document id/display-name cleanup in transient state only. schema-invalid empty or overlong document ids and display names before transient state are covered by the shared DTO decode guard.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol/ViewModel evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Parfit the 2nd` inspected the schema, checker, Android DTOs, and tests read-only and confirmed document metadata bounds DTO parity as the next candidate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live document catalog/search from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-document-metadata-response-bounds-20260709-185921.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Memory Summary Draft Response Bounds Decode No-Device Gate
+
+- Scope: align Android memory-summary draft list responses and approved-memory source metadata DTO decode with the shared schema before malformed runtime memory-review data can update Android memory review UI state or runtime-owned memory state.
+- Result: `MemorySummaryDraftPayload`, `MemorySummaryDraftSessionPayload`, and `MemorySummaryDraftSourcePointerPayload` reject empty draft/session/pointer fields, nonpositive `source_message_count` values, negative session counters, empty `source_pointers`, invalid pointer roles, and empty `summary_preview` values during decode.
+- Result: `MemoryEntryPayload` and `MemoryEntrySourcePayload` reject empty memory ids/content/source fields, nonpositive approved-source message counts, empty approved-source pointer lists, and invalid approved-memory source `kind` or `summary_method` values during decode.
+- Guardrail: `ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds` proves malformed memory-summary draft list responses and approved-memory source metadata fail before Android memory review UI state, runtime-owned memory state, local persistence, source approval, citations, trusted-source review, permission/audit semantics, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Dalton the 2nd` independently scanned for the next low-blast-radius protocol parity candidate and identified document metadata bounds as a follow-up candidate; this memory response slice was selected locally because implementation was already in progress.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live memory approval from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListPayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftApprovePayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-summary-draft-response-bounds-20260709-183709.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Error Payload Code Enum Decode No-Device Gate
+
+- Scope: align shared `error.payload.code` schema, protocol docs, schema hygiene, and Android `ErrorPayload` DTO decode around one canonical protocol error-code enum before malformed runtime error frames can update Android runtime UI state.
+- Result: shared protocol schema/docs/checker now include active route-refresh, chat-session, document-index, source-anchor, and memory-summary draft error codes in the canonical `error.payload.code` set.
+- Result: Android `ErrorPayload` rejects unknown, blank, or whitespace-mutated error codes during DTO decode; Android runtime tests that construct protocol error frames now use canonical wire codes instead of ad hoc runtime error names.
+- Guardrail: `ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes` proves every canonical code decodes, and `ProtocolCodecTest.errorPayloadRejectsUnknownCodes` proves invalid error codes fail before Android runtime UI state, local persistence, source approval, citations, trusted-source review, permission/audit semantics, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Archimedes the 2nd` reviewed the active schema/docs/runtime emission paths read-only and confirmed this as a parity guard slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live error handling from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadRejectsUnknownCodes -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openPreviousRuntimeChatMessagesErrorClearsLoadingState --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryErrorShowsLoadFailureAndAllowsRetry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemoryErrorShowsFailureAndAllowsRetry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySummaryDraftsErrorShowsFailureAndAllowsRetry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.cancelAckAndErrorForUnrelatedRequestsDoNotClearActiveStreaming --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeCompletionCancellationAndErrorRemoveOnlyBlankAssistantPlaceholder --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeStreamTerminationClosesTrailingAssistantReasoningState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- packages/protocol-schema/protocol.schema.json docs/protocol.md apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientChatSessionMutationFailureTest.kt script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-error-payload-code-enum-20260709-182358.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Sessions List Response Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.sessions.list` response DTO decode with the shared protocol schema before malformed runtime-owned chat-history summaries can update Android chat-history UI state.
+- Result: `ChatSessionSummaryPayload` rejects empty `session_id` values, negative `message_count` values, unsupported `status` values, and unsupported `last_event` values during decode.
+- Result: `ChatSessionSearchPayload` rejects nonpositive `rank` values, empty `matched_fields` arrays, empty matched-field entries, and duplicate `matched_fields` values during decode.
+- Guardrail: `ProtocolCodecTest.chatSessionsListResponseRejectsInvalidBounds` proves invalid response bounds fail before Android chat-history UI state, local persistence, workspace search, source approval, citations, trusted-source review, permission/audit semantics, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Kierkegaard the 2nd` was used read-only for the next candidate scan and identified `error.payload.code` enum parity as a follow-up candidate; this slice was selected locally because it was already narrow and in progress.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live chat-history updates from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListResponseRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-sessions-response-bounds-20260709-180442.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android runtime.health Model Residency Numeric Bounds Decode No-Device Gate
+
+- Scope: align Android `runtime.health.payload.model_residency` numeric DTO decode with the shared protocol schema before malformed runtime-health frames can update Android runtime status or model residency UI state.
+- Result: `RuntimeModelResidencyPayload` rejects negative `in_flight_generations` values and negative `idle_unload_delay_seconds` values during decode.
+- Guardrail: `ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidModelResidencyBounds` proves invalid model-residency numeric bounds fail before Android runtime-health status state, model residency UI, provider lifecycle hints, live-provider behavior, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Pasteur the 2nd` independently identified this low-blast-radius runtime-health DTO parity gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live runtime-health updates from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidModelResidencyBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-runtime-health-model-residency-bounds-20260709-174427.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Stream Response Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.delta` and `chat.done` response DTO decode with the shared protocol schema before malformed runtime stream frames can update Android streaming UI state.
+- Result: `ChatDeltaPayload` rejects empty stream delta payloads that carry none of `delta`, `text`, `reasoning_delta`, or `thinking_delta` during decode.
+- Result: `ChatDonePayload` rejects unsupported `finish_reason` values, and `UsagePayload` rejects negative `input_tokens` or `output_tokens` values during decode.
+- Guardrail: `ProtocolCodecTest.chatStreamResponsePayloadsRejectInvalidBounds` proves invalid chat stream response bounds fail before Android streaming UI state, local persistence, title generation, live-provider behavior, production relay/session/encryption, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Pasteur the 2nd` was used read-only to check the next low-blast-radius protocol DTO parity candidate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live streaming chat from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatStreamResponsePayloadsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-stream-response-bounds-20260709-173431.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Send Request Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.send` request DTO decode with the shared protocol schema before malformed active chat dispatch payloads can be reused by future Android protocol consumers.
+- Result: `ChatSendPayload` rejects blank `session_id` values, blank `model` values, and empty `messages` arrays during decode.
+- Result: nested `ChatMessagePayload` rejects invalid `role` values, and `ChatAttachmentPayload` rejects invalid `type` values plus empty `mime_type` values during decode.
+- Guardrail: `ProtocolCodecTest.chatSendRequestRejectsInvalidBounds` proves invalid top-level and nested chat-send request bounds fail before runtime chat dispatch, local persistence, context compaction, live-provider behavior, production relay/session/encryption, direct Android backend access, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Avicenna the 2nd` independently identified the nested `chat.send` DTO parity gap after the top-level guard was added locally.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live chat dispatch from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSendRequestRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-send-request-bounds-20260709-172126.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Model Pull, Chat Cancel, And Memory CRUD Request Bounds Decode No-Device Gate
+
+- Scope: align Android `models.pull`, `chat.cancel`, `memory.upsert`, and `memory.delete` request DTO decode with the shared protocol schema before malformed active mutation requests can be reused by future Android protocol consumers.
+- Result: `ModelPullPayload` rejects blank `model` values, and `ChatCancelPayload` rejects blank `target_request_id` values during decode.
+- Result: `MemoryUpsertPayload` rejects blank optional `id` values and blank `content` values, and `MemoryDeletePayload` rejects blank `id` values during decode.
+- Guardrail: `ProtocolCodecTest.modelPullAndChatCancelRequestsRejectInvalidBounds` and `ProtocolCodecTest.memoryCrudRequestsRejectInvalidBounds` prove invalid active model-install, cancel, and memory CRUD request bounds fail before runtime model installation dispatch, active generation cancellation, runtime memory-store mutation, local persistence, memory source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `McClintock the 2nd` independently identified the adjacent `memory.upsert` request-bound DTO parity gap; local implementation also closed the adjacent `memory.delete`, `models.pull`, and `chat.cancel` request bounds.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live model pull or cancellation from hardware, production relay/session/encryption, direct Android backend access, live-provider behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelPullAndChatCancelRequestsRejectInvalidBounds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryCrudRequestsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-model-pull-chat-cancel-memory-crud-20260709-170941.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-09 Android Chat Title And Session Mutation Request Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.title.request`, `chat.session.rename`, and chat session lifecycle request DTO decode with the shared protocol schema before malformed title or session mutation requests can be reused by future Android protocol consumers.
+- Result: `ChatTitleRequestPayload` now rejects blank `session_id` values, blank `model` values, and empty `messages` arrays during decode.
+- Result: `ChatSessionRenamePayload` rejects blank `session_id` and `title` values, and `ChatSessionLifecyclePayload` rejects blank `session_id` values during decode.
+- Guardrail: `ProtocolCodecTest.chatTitleAndSessionMutationRequestsRejectInvalidBounds` proves invalid title, rename, archive, restore, and delete request bounds fail before backend title generation, runtime title mutation, runtime chat-store lifecycle mutation, local persistence, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Ramanujan the 2nd` independently identified the `chat.title.request` DTO parity gap; local implementation also closed the adjacent session rename/lifecycle request bounds.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live title generation from hardware, production relay/session/encryption, direct Android backend access, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatTitleAndSessionMutationRequestsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-title-session-request-bounds-20260709-165601.log 2>&1`
+
+### 2026-07-09 Android Memory Summary Draft Request Bounds Decode No-Device Gate
+
+- Scope: align Android memory-summary draft list and decision request DTO decode with the shared protocol schema before malformed review requests can be reused by future Android protocol consumers.
+- Result: `MemorySummaryDraftsListRequestPayload` now rejects negative and over-maximum `limit` values during decode.
+- Result: `MemorySummaryDraftApprovePayload` and `MemorySummaryDraftDismissPayload` now reject blank `draft_id` values, blank optional `content` or `expected_session_id` values, and nonpositive `expected_source_message_count` values during decode.
+- Guardrail: `ProtocolCodecTest.memorySummaryDraftsListRequestRejectsInvalidBounds` and `ProtocolCodecTest.memorySummaryDraftDecisionRequestsRejectInvalidBounds` prove invalid memory-summary draft request bounds fail before runtime chat-store draft listing or recomputation, memory upsert, dismiss mutation, local persistence, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Lorentz the 2nd` was used read-only and independently identified the adjacent `memory.summary.drafts.list` limit DTO parity gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live memory-summary review from hardware, production relay/session/encryption, direct Android backend access, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListRequestRejectsInvalidBounds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftDecisionRequestsRejectInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-memory-summary-request-bounds-20260709-164355.log 2>&1`
+
+### 2026-07-09 Android Chat Messages List Request Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.messages.list` request DTO decode with the shared protocol schema before malformed history message request bounds can be reused by future Android protocol consumers.
+- Result: `ChatMessagesListRequestPayload` now rejects blank `session_id` values plus negative and over-maximum `limit` values during decode.
+- Guardrail: `ProtocolCodecTest.chatMessagesListRequestRejectsInvalidBounds` proves invalid `chat.messages.list` request bounds fail before runtime chat-store dispatch, local persistence, chat compaction metadata projection, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Darwin the 2nd` independently identified the same `chat.messages.list` request-bound DTO parity gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, chat compaction behavior, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRequestRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-chat-messages-list-request-bounds-20260709-162959.log 2>&1` reached the final no-device coverage summary under `set -euo pipefail`; the surrounding zsh wrapper then failed on the reserved variable name `status`, so this log is the gate-body evidence rather than a clean wrapper-exit artifact.
+
+### 2026-07-09 Android Model Numeric Metadata Decode No-Device Gate
+
+- Scope: align Android `models.result` model metadata DTO decode with the shared protocol schema before invalid numeric metadata can reach Android model selection state or future client-side model metadata consumers.
+- Result: `ModelInfoPayload` now rejects negative `size_bytes` values and nonpositive `context_window_tokens` values during decode.
+- Guardrail: `ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata` proves invalid model numeric metadata fails during `models.result` decode before Android model selection state, runtime-side compaction budgets, provider API access, live-provider behavior, direct Android backend access, physical Android proof, optical QR, production relay/session/encryption, or real different-network proof.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Singer the 2nd` was used read-only to cross-check the next roadmap candidate.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, runtime-side compaction behavior, provider API access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Chat Sessions List Request Bounds Decode No-Device Gate
+
+- Scope: align Android `chat.sessions.list` request DTO decode with the shared protocol schema before malformed history search bounds can be reused by future Android protocol consumers.
+- Result: `ChatSessionsListRequestPayload` now rejects negative and over-maximum `limit` values, empty `query` text, and empty `embedding_model_id` values during decode.
+- Guardrail: `ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds` proves invalid `chat.sessions.list` request bounds fail before runtime chat-store dispatch, embedding search-hint handling, local persistence, workspace search, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Kuhn the 2nd` suggested a separate `models.result` context-window token DTO parity candidate; local inspection selected this smaller `chat.sessions.list` request-bound gap first.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, workspace search, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Retrieval Request Bounds Decode No-Device Gate
+
+- Scope: align Android document retrieval request DTO decode with the shared protocol schema before malformed request bounds can be reused by future Android protocol consumers.
+- Result: `IndexDocumentsListRequestPayload` now rejects negative and over-maximum `limit` values during decode. `RetrievalQueryRequestPayload` now rejects blank or overlong `query` text, negative and over-maximum `limit` values, and negative and over-maximum `max_snippet_characters` values during decode.
+- Guardrail: `ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds` and `ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds` prove invalid document retrieval request bounds fail before runtime dispatch, semantic retrieval, resolver dispatch, local persistence, chat context injection, source approval, citations, trusted-source review, permission/audit semantics, or Android UI consumption.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM protocol evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Zeno the 2nd` independently identified the `retrieval.query` request-bound DTO parity gap; local implementation also closed the adjacent `index.documents.list` request `limit` gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval Lexical Metadata Decode No-Device Gate
+
+- Scope: tighten Android retrieval DTO decode so malformed lexical evidence next to a `source_anchor_id` cannot be silently repaired into transient search state.
+- Result: `RetrievalQueryResultItemPayload` now rejects empty `matched_terms` arrays, more than 16 matched terms, empty matched term entries, matched term entries longer than 64 characters, empty snippets, and snippets longer than 500 characters during decode.
+- Guardrail: `ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata` proves the DTO rejects the invalid `retrieval.query` lexical metadata family, and `RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState` proves invalid `retrieval.query` lexical metadata and malformed `retrieval.query` lexical responses fail with `invalid_payload`, keep malformed rows out of transient `RuntimeUiState`, preserve retry behavior, and keep `source_anchor_id` handles out of transient state until lexical metadata is canonical.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Euler the 2nd` identified the `retrieval.query` lexical metadata fail-closed gap; local implementation kept the existing schema-valid transient snippet display bound test intact.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Retrieval/Source-Anchor Coordinate Decode No-Device Gate
+
+- Scope: tighten Android retrieval/source-anchor DTO decode so source-anchor-bearing coordinate metadata cannot be silently repaired into future approval or citation handles.
+- Result: `RetrievalQueryResultItemPayload` now rejects negative `chunk_index`, negative `start_character_offset`, negative `end_character_offset`, end-before-start offsets, and nonpositive `rank` values during decode. `SourceAnchorChunkSummaryPayload` now rejects invalid resolver `chunk_summary` coordinate values with the same nonnegative and `end >= start` constraints before resolver consumption.
+- Guardrail: `ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank`, `ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues`, and `RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState` prove invalid `retrieval.query` coordinate/rank values fail with `invalid_payload`, keep malformed rows out of transient `RuntimeUiState`, preserve retry behavior, and keep `source_anchor_id` handles out of transient state until their coordinates are canonical.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Hypatia the 2nd` identified the `retrieval.query` coordinate/rank fail-closed gap; local implementation also closed the adjacent resolver `chunk_summary` value decode gap.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Response Future-Metadata Fail-Closed No-Device Gate
+
+- Scope: tighten active Android document response handling so unknown future/private metadata cannot be silently ignored by permissive DTO decoding before transient app state is updated.
+- Result: `RuntimeClientViewModel` now checks raw `index.documents.list` and `retrieval.query` response payload keys before `runtimeClientJson()` deserialization. Catalog responses may only carry `documents` and `summary`, catalog documents may only carry safe `indexDocument` fields, summaries may only carry current aggregate fields, retrieval responses may only carry `results`, and retrieval result rows/documents may only carry schema-owned lexical result and document metadata.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState` injects raw active catalog/search responses with `source_path` and `retrieval_context` canaries and proves Android reports `invalid_payload`, clears the pending transient operation, keeps malformed rows out of `RuntimeUiState`, and then accepts canonical retries without local persistence or chat context injection. This covers unknown future/private metadata in active `index.documents.list` and `retrieval.query` responses.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Gibbs the 2nd` confirmed the active `retrieval.query` unknown future/private metadata gap; this implementation also closes the same active catalog response boundary for `index.documents.list`.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Document Content-Fingerprint Canonical Decode No-Device Gate
+
+- Scope: tighten Android document metadata decode so runtime-owned `content_fingerprint` values fail closed before transient app state can sanitize malformed fingerprints.
+- Result: `RuntimeDocumentIndexDocumentPayload.contentFingerprint` now uses a Kotlin serialization guard for the shared 16-character lowercase hex contract. `ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints`, `ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints`, and `ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints` reject whitespace-mutated, uppercase, non-hex, short, overlong, and empty `content_fingerprint` values during DTO decode for catalog, retrieval, and resolver document payloads.
+- Guardrail: `RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState` injects raw malformed catalog and retrieval payloads and proves Android reports `invalid_payload`, clears the pending transient operation, keeps malformed document rows out of `RuntimeUiState`, and then accepts a fresh canonical retry without persisting document metadata or adding chat context injection.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Newton the 2nd` suggested the next active `retrieval.query` future-metadata candidate; this content-fingerprint decode slice was already in progress and was finished locally.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `git diff --check -- apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+
+### 2026-07-09 Android Unsolicited Source-Anchor Resolver Future-Metadata Boundary No-Device Gate
+
+- Scope: keep Android `source_anchor.resolve` at protocol DTO parity only while proving unsolicited future resolver metadata is ignored at the ViewModel boundary.
+- Result: `RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting` now injects a raw unsolicited `source_anchor.resolve` result that includes future/private `chunk_text`, `snippet`, `source_path`, `retrieval_context`, `citations`, `trusted_source`, `approval_state`, and `backend_url` canaries. Android still does not advertise `source_anchor.resolve`, does not send resolver requests, preserves the existing transient `retrieval.query` rows, leaves local persistence unchanged, and keeps every resolver/future metadata canary out of later `chat.send` payloads.
+- Guardrail: this keeps Android UI/client resolver consumption blocked until product surface, source approval, citation, trusted-source review, permission, and audit semantics are designed. It does not add Android handler dispatch, UI consumption, local persistence, chat context injection, semantic retrieval, or direct backend access.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM evidence only.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 explorer `Socrates the 2nd` recommended this future-metadata boundary as the smallest next no-device roadmap slice.
+- Caveat: this is not physical Android proof and does not prove physical Android rendering on hardware, optical QR scanning, live phone pairing, live-provider chat/cancel, production relay/session/encryption, direct Android backend access, semantic retrieval, source approval, citations, trusted-source review, permission/audit semantics, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no devices listed)
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
 
 ### 2026-07-09 Android Source-Anchor Canonical Decode No-Device Gate
 

@@ -15,6 +15,80 @@ import java.util.UUID
 const val PROTOCOL_VERSION = 1
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
+private val DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")
+private val DOCUMENT_MIME_TYPE_PATTERN = Regex("^[a-z0-9!#\$%&'*+.^_`|~-]+/[a-z0-9!#\$%&'*+.^_`|~-]+$")
+private const val MAX_CHAT_SESSION_LIST_LIMIT = 200
+private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500
+private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50
+private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
+private const val MAX_DOCUMENT_ID_LENGTH = 128
+private const val MAX_DOCUMENT_DISPLAY_NAME_LENGTH = 256
+private const val MAX_DOCUMENT_MIME_TYPE_LENGTH = 128
+private const val MAX_RETRIEVAL_QUERY_LENGTH = 1024
+private const val MAX_RETRIEVAL_MATCHED_TERMS = 16
+private const val MAX_RETRIEVAL_MATCHED_TERM_LENGTH = 64
+private const val MAX_RETRIEVAL_SNIPPET_LENGTH = 500
+private val DOCUMENT_QUALITIES = setOf("no_usable_text", "single_chunk", "chunked")
+private val CHAT_MESSAGE_ROLES = setOf("system", "user", "assistant")
+private val CHAT_ATTACHMENT_TYPES = setOf("image", "document", "file")
+private val CHAT_DONE_FINISH_REASONS = setOf("stop", "cancelled", "error")
+private val RUNTIME_HEALTH_STATUSES = setOf("ok", "degraded", "unavailable")
+private val MODEL_INFO_PROVIDERS = setOf("ollama", "lm_studio")
+private val MODEL_INFO_KINDS = setOf("chat", "embedding")
+private val MODEL_INFO_SOURCES = setOf("local", "cloud")
+private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")
+private val CHAT_SESSION_STATUSES = setOf("active", "archived")
+private val CHAT_SESSION_LAST_EVENTS = setOf(
+    "request",
+    "assistant_delta",
+    "reasoning_delta",
+    "done",
+    "cancelled",
+    "error",
+)
+private val ERROR_CODES = setOf(
+    "unknown_message_type",
+    "unexpected_message_direction",
+    "invalid_payload",
+    "not_connected",
+    "pairing_required",
+    "authentication_required",
+    "authentication_failed",
+    "backend_unavailable",
+    "bad_backend_response",
+    "no_models",
+    "model_not_found",
+    "model_not_installed",
+    "generation_not_found",
+    "generation_cancelled",
+    "route_refresh_unavailable",
+    "unsupported_operation",
+    "unsupported_attachment",
+    "unreadable_attachment",
+    "chat_session_not_found",
+    "chat_session_must_be_archived_before_delete",
+    "chat_session_must_be_restored_before_send",
+    "chat_store_unavailable",
+    "document_index_unavailable",
+    "source_anchor_not_found",
+    "memory_store_unavailable",
+    "memory_summary_draft_unavailable",
+    "memory_summary_draft_stale",
+    "transport_error",
+    "internal_error",
+)
+private const val MEMORY_ENTRY_SOURCE_KIND = "long_inactivity_summary_draft"
+private const val MEMORY_ENTRY_SOURCE_SUMMARY_METHOD = "deterministic_preview"
+private val MEMORY_SUMMARY_SOURCE_POINTER_ROLES = setOf("user", "assistant")
+
+private fun requireProtocolDateTime(value: String?, fieldName: String) {
+    if (value == null) return
+    try {
+        Instant.parse(value)
+    } catch (error: Exception) {
+        throw IllegalArgumentException("$fieldName must be date-time", error)
+    }
+}
 
 private object SourceAnchorIdSerializer : KSerializer<String> {
     override val descriptor: SerialDescriptor =
@@ -32,6 +106,267 @@ private object SourceAnchorIdSerializer : KSerializer<String> {
         encoder.encodeString(value)
     }
 }
+
+private object DocumentContentFingerprintSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("DocumentContentFingerprint", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(DOCUMENT_CONTENT_FINGERPRINT_PATTERN.matches(value)) {
+            "content_fingerprint must match 16 lowercase hex characters"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
+private object RouteRefreshOpaqueValueSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshOpaqueValue", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(value.isNotEmpty() && value.length <= 512 && value.none { it.isWhitespace() }) {
+            "route.refresh opaque route value must be nonempty, at most 512 characters, and whitespace-free"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
+private object RouteRefreshOpaqueBodySerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshOpaqueBody", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(value.isNotEmpty() && value.length <= 2048 && value.none { it.isWhitespace() }) {
+            "route.refresh opaque route body must be nonempty, at most 2048 characters, and whitespace-free"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
+private object RouteRefreshRelayPortSerializer : KSerializer<Int> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshRelayPort", PrimitiveKind.INT)
+
+    override fun deserialize(decoder: Decoder): Int {
+        val value = decoder.decodeInt()
+        require(value in 1..65_535) {
+            "route.refresh relay_port must be between 1 and 65535"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: Int) {
+        encoder.encodeInt(value)
+    }
+}
+
+private object RouteRefreshExpirySerializer : KSerializer<Long> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshExpiry", PrimitiveKind.LONG)
+
+    override fun deserialize(decoder: Decoder): Long {
+        val value = decoder.decodeLong()
+        require(value >= 1L) {
+            "route.refresh route expiry must be positive"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: Long) {
+        encoder.encodeLong(value)
+    }
+}
+
+private object RouteRefreshRelayScopeSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshRelayScope", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(value in ROUTE_REFRESH_RELAY_SCOPES) {
+            "route.refresh relay_scope must be remote, private_overlay, or usb_reverse"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
+private object RouteRefreshP2pClassSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshP2pClass", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): String {
+        val value = decoder.decodeString()
+        require(value == "p2p_rendezvous") {
+            "route.refresh p2p_class must be p2p_rendezvous"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+}
+
+private object RouteRefreshP2pProtocolVersionSerializer : KSerializer<Int> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("RouteRefreshP2pProtocolVersion", PrimitiveKind.INT)
+
+    override fun deserialize(decoder: Decoder): Int {
+        val value = decoder.decodeInt()
+        require(value == 1) {
+            "route.refresh p2p_protocol_version must be 1"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: Int) {
+        encoder.encodeInt(value)
+    }
+}
+
+@Serializable
+private data class RouteRefreshPayloadSurrogate(
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("runtime_device_id") val runtimeDeviceId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
+    @SerialName("relay_host") val relayHost: String? = null,
+    @Serializable(with = RouteRefreshRelayPortSerializer::class)
+    @SerialName("relay_port") val relayPort: Int? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("relay_id") val relayId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("relay_secret") val relaySecret: String? = null,
+    @Serializable(with = RouteRefreshExpirySerializer::class)
+    @SerialName("relay_expires_at") val relayExpiresAtEpochMillis: Long? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("relay_nonce") val relayNonce: String? = null,
+    @Serializable(with = RouteRefreshRelayScopeSerializer::class)
+    @SerialName("relay_scope") val relayScope: String? = null,
+    @Serializable(with = RouteRefreshP2pClassSerializer::class)
+    @SerialName("p2p_class") val p2pRouteClass: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("p2p_record_id") val p2pRecordId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueBodySerializer::class)
+    @SerialName("p2p_encrypted_body") val p2pEncryptedBody: String? = null,
+    @Serializable(with = RouteRefreshExpirySerializer::class)
+    @SerialName("p2p_expires_at") val p2pExpiresAtEpochMillis: Long? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
+    @SerialName("p2p_anti_replay_nonce") val p2pAntiReplayNonce: String? = null,
+    @Serializable(with = RouteRefreshP2pProtocolVersionSerializer::class)
+    @SerialName("p2p_protocol_version") val p2pProtocolVersion: Int? = null,
+)
+
+object RouteRefreshPayloadSerializer : KSerializer<RouteRefreshPayload> {
+    override val descriptor: SerialDescriptor = RouteRefreshPayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): RouteRefreshPayload {
+        val surrogate = decoder.decodeSerializableValue(RouteRefreshPayloadSurrogate.serializer())
+        validateRouteRefreshPayloadSurrogate(surrogate)
+        return surrogate.toRouteRefreshPayload()
+    }
+
+    override fun serialize(encoder: Encoder, value: RouteRefreshPayload) {
+        encoder.encodeSerializableValue(RouteRefreshPayloadSurrogate.serializer(), value.toRouteRefreshPayloadSurrogate())
+    }
+}
+
+private fun validateRouteRefreshPayloadSurrogate(payload: RouteRefreshPayloadSurrogate) {
+    val hasRuntimeIdentity = payload.runtimeDeviceId != null && payload.runtimeKeyFingerprint != null
+    val relayValues = listOf(
+        payload.relayHost,
+        payload.relayPort,
+        payload.relayId,
+        payload.relaySecret,
+        payload.relayExpiresAtEpochMillis,
+        payload.relayNonce,
+    )
+    val p2pValues = listOf(
+        payload.p2pRouteClass,
+        payload.p2pRecordId,
+        payload.p2pEncryptedBody,
+        payload.p2pExpiresAtEpochMillis,
+        payload.p2pAntiReplayNonce,
+        payload.p2pProtocolVersion,
+    )
+    val hasRelayField = relayValues.any { it != null } || payload.relayScope != null
+    val hasP2pField = p2pValues.any { it != null }
+    val hasAnyField = hasRelayField || hasP2pField || payload.runtimeDeviceId != null || payload.runtimeKeyFingerprint != null
+    if (!hasAnyField) return
+
+    require(hasRuntimeIdentity) {
+        "route.refresh payload must include runtime_device_id and runtime_key_fingerprint when route material is present"
+    }
+
+    val hasCompleteRelay = relayValues.all { it != null }
+    val hasCompleteP2p = p2pValues.all { it != null }
+    require(!hasRelayField || hasCompleteRelay) {
+        "route.refresh relay route material must include relay_host, relay_port, relay_id, relay_secret, relay_expires_at, and relay_nonce together"
+    }
+    require(!hasP2pField || hasCompleteP2p) {
+        "route.refresh P2P route material must include p2p_class, p2p_record_id, p2p_encrypted_body, p2p_expires_at, p2p_anti_replay_nonce, and p2p_protocol_version together"
+    }
+    require(hasCompleteRelay || hasCompleteP2p) {
+        "route.refresh payload must be empty or include complete relay or P2P route material"
+    }
+}
+
+private fun RouteRefreshPayloadSurrogate.toRouteRefreshPayload(): RouteRefreshPayload =
+    RouteRefreshPayload(
+        runtimeDeviceId = runtimeDeviceId,
+        runtimeKeyFingerprint = runtimeKeyFingerprint,
+        relayHost = relayHost,
+        relayPort = relayPort,
+        relayId = relayId,
+        relaySecret = relaySecret,
+        relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
+        relayNonce = relayNonce,
+        relayScope = relayScope,
+        p2pRouteClass = p2pRouteClass,
+        p2pRecordId = p2pRecordId,
+        p2pEncryptedBody = p2pEncryptedBody,
+        p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+        p2pAntiReplayNonce = p2pAntiReplayNonce,
+        p2pProtocolVersion = p2pProtocolVersion,
+    )
+
+private fun RouteRefreshPayload.toRouteRefreshPayloadSurrogate(): RouteRefreshPayloadSurrogate =
+    RouteRefreshPayloadSurrogate(
+        runtimeDeviceId = runtimeDeviceId,
+        runtimeKeyFingerprint = runtimeKeyFingerprint,
+        relayHost = relayHost,
+        relayPort = relayPort,
+        relayId = relayId,
+        relaySecret = relaySecret,
+        relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
+        relayNonce = relayNonce,
+        relayScope = relayScope,
+        p2pRouteClass = p2pRouteClass,
+        p2pRecordId = p2pRecordId,
+        p2pEncryptedBody = p2pEncryptedBody,
+        p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+        p2pAntiReplayNonce = p2pAntiReplayNonce,
+        p2pProtocolVersion = p2pProtocolVersion,
+    )
 
 @Serializable
 data class ProtocolEnvelope(
@@ -141,7 +476,38 @@ data class ModelInfoPayload(
     @SerialName("context_window_tokens") val contextWindowTokens: Int? = null,
     @SerialName("modified_at") val modifiedAt: String? = null,
     @SerialName("remote_model") val remoteModel: String? = null,
-)
+) {
+    init {
+        require(id.isNotEmpty()) {
+            "model info id must be nonempty"
+        }
+        require(!name.isNullOrEmpty()) {
+            "model info name must be nonempty"
+        }
+        require(backend == null || backend in MODEL_INFO_PROVIDERS) {
+            "model info backend must be ollama or lm_studio"
+        }
+        require(provider == null || provider in MODEL_INFO_PROVIDERS) {
+            "model info provider must be ollama or lm_studio"
+        }
+        require(modelKind == null || modelKind in MODEL_INFO_KINDS) {
+            "model info model_kind must be chat or embedding"
+        }
+        require(capabilities.distinct() == capabilities) {
+            "model info capabilities must be unique"
+        }
+        require(source == null || source in MODEL_INFO_SOURCES) {
+            "model info source must be local or cloud"
+        }
+        require(sizeBytes == null || sizeBytes >= 0) {
+            "model info size_bytes must be nonnegative"
+        }
+        require(contextWindowTokens == null || contextWindowTokens > 0) {
+            "model info context_window_tokens must be positive"
+        }
+        requireProtocolDateTime(modifiedAt, "model info modified_at")
+    }
+}
 
 @Serializable
 data class ModelsResultPayload(
@@ -151,34 +517,57 @@ data class ModelsResultPayload(
 @Serializable
 data class ModelPullPayload(
     val model: String,
-)
+) {
+    init {
+        require(model.isNotBlank()) {
+            "models.pull request model must be nonblank"
+        }
+    }
+}
 
 @Serializable
 data class ModelPullResultPayload(
     val model: String? = null,
     val id: String? = null,
+    val backend: String? = null,
+    val provider: String? = null,
     val accepted: Boolean? = null,
     val success: Boolean? = null,
     val status: String? = null,
+    val installed: Boolean? = null,
     val message: String? = null,
 )
 
-@Serializable
+@Serializable(with = RouteRefreshPayloadSerializer::class)
 data class RouteRefreshPayload(
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("runtime_device_id") val runtimeDeviceId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("relay_host") val relayHost: String? = null,
+    @Serializable(with = RouteRefreshRelayPortSerializer::class)
     @SerialName("relay_port") val relayPort: Int? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("relay_id") val relayId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("relay_secret") val relaySecret: String? = null,
+    @Serializable(with = RouteRefreshExpirySerializer::class)
     @SerialName("relay_expires_at") val relayExpiresAtEpochMillis: Long? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("relay_nonce") val relayNonce: String? = null,
+    @Serializable(with = RouteRefreshRelayScopeSerializer::class)
     @SerialName("relay_scope") val relayScope: String? = null,
+    @Serializable(with = RouteRefreshP2pClassSerializer::class)
     @SerialName("p2p_class") val p2pRouteClass: String? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("p2p_record_id") val p2pRecordId: String? = null,
+    @Serializable(with = RouteRefreshOpaqueBodySerializer::class)
     @SerialName("p2p_encrypted_body") val p2pEncryptedBody: String? = null,
+    @Serializable(with = RouteRefreshExpirySerializer::class)
     @SerialName("p2p_expires_at") val p2pExpiresAtEpochMillis: Long? = null,
+    @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
     @SerialName("p2p_anti_replay_nonce") val p2pAntiReplayNonce: String? = null,
+    @Serializable(with = RouteRefreshP2pProtocolVersionSerializer::class)
     @SerialName("p2p_protocol_version") val p2pProtocolVersion: Int? = null,
 )
 
@@ -187,7 +576,13 @@ data class ChatMessagePayload(
     val role: String,
     val content: String,
     val attachments: List<ChatAttachmentPayload> = emptyList(),
-)
+) {
+    init {
+        require(role in CHAT_MESSAGE_ROLES) {
+            "chat.send message role must be system, user, or assistant"
+        }
+    }
+}
 
 @Serializable
 data class ChatAttachmentPayload(
@@ -196,7 +591,33 @@ data class ChatAttachmentPayload(
     val name: String? = null,
     @SerialName("data_base64") val dataBase64: String? = null,
     val text: String? = null,
-)
+) {
+    init {
+        require(type in CHAT_ATTACHMENT_TYPES) {
+            "chat.send attachment type must be image, document, or file"
+        }
+        require(mimeType.isNotEmpty()) {
+            "chat.send attachment mime_type must be nonempty"
+        }
+    }
+}
+
+@Serializable
+data class ChatStoredAttachmentPayload(
+    val type: String,
+    @SerialName("mime_type") val mimeType: String,
+    val name: String? = null,
+    val text: String? = null,
+) {
+    init {
+        require(type in CHAT_ATTACHMENT_TYPES) {
+            "chat.messages.list attachment type must be image, document, or file"
+        }
+        require(mimeType.isNotEmpty()) {
+            "chat.messages.list attachment mime_type must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class ChatSendPayload(
@@ -204,7 +625,19 @@ data class ChatSendPayload(
     val model: String,
     val messages: List<ChatMessagePayload>,
     val locale: String? = null,
-)
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.send request session_id must be nonblank"
+        }
+        require(model.isNotBlank()) {
+            "chat.send request model must be nonblank"
+        }
+        require(messages.isNotEmpty()) {
+            "chat.send request messages must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class ChatDeltaPayload(
@@ -213,6 +646,12 @@ data class ChatDeltaPayload(
     @SerialName("reasoning_delta") val reasoningDelta: String? = null,
     @SerialName("thinking_delta") val thinkingDelta: String? = null,
 ) {
+    init {
+        require(delta != null || text != null || reasoningDelta != null || thinkingDelta != null) {
+            "chat.delta payload must include delta, text, reasoning_delta, or thinking_delta"
+        }
+    }
+
     val content: String
         get() = delta ?: text.orEmpty()
 
@@ -224,18 +663,39 @@ data class ChatDeltaPayload(
 data class ChatDonePayload(
     @SerialName("finish_reason") val finishReason: String? = null,
     val usage: UsagePayload? = null,
-)
+) {
+    init {
+        require(finishReason == null || finishReason in CHAT_DONE_FINISH_REASONS) {
+            "chat.done finish_reason must be stop, cancelled, or error"
+        }
+    }
+}
 
 @Serializable
 data class UsagePayload(
     @SerialName("input_tokens") val inputTokens: Int = 0,
     @SerialName("output_tokens") val outputTokens: Int = 0,
-)
+) {
+    init {
+        require(inputTokens >= 0) {
+            "chat.done usage input_tokens must be nonnegative"
+        }
+        require(outputTokens >= 0) {
+            "chat.done usage output_tokens must be nonnegative"
+        }
+    }
+}
 
 @Serializable
 data class ChatCancelPayload(
     @SerialName("target_request_id") val targetRequestId: String,
-)
+) {
+    init {
+        require(targetRequestId.isNotBlank()) {
+            "chat.cancel request target_request_id must be nonblank"
+        }
+    }
+}
 
 @Serializable
 data class ChatSessionsListRequestPayload(
@@ -243,7 +703,22 @@ data class ChatSessionsListRequestPayload(
     @SerialName("include_archived") val includeArchived: Boolean = false,
     val query: String? = null,
     @SerialName("embedding_model_id") val embeddingModelId: String? = null,
-)
+) {
+    init {
+        require(limit == null || limit >= 0) {
+            "chat.sessions.list request limit must be nonnegative"
+        }
+        require(limit == null || limit <= MAX_CHAT_SESSION_LIST_LIMIT) {
+            "chat.sessions.list request limit must be at most 200"
+        }
+        require(query == null || query.isNotEmpty()) {
+            "chat.sessions.list request query must be nonempty"
+        }
+        require(embeddingModelId == null || embeddingModelId.isNotEmpty()) {
+            "chat.sessions.list request embedding_model_id must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class ChatSessionsListResultPayload(
@@ -263,25 +738,72 @@ data class ChatSessionSummaryPayload(
     @SerialName("last_finish_reason") val lastFinishReason: String? = null,
     @SerialName("last_error_code") val lastErrorCode: String? = null,
     val search: ChatSessionSearchPayload? = null,
-)
+) {
+    init {
+        require(sessionId.isNotEmpty()) {
+            "chat.sessions.list response session_id must be nonempty"
+        }
+        require(messageCount >= 0) {
+            "chat.sessions.list response message_count must be nonnegative"
+        }
+        require(status == null || status in CHAT_SESSION_STATUSES) {
+            "chat.sessions.list response status must be active or archived"
+        }
+        require(lastEvent == null || lastEvent in CHAT_SESSION_LAST_EVENTS) {
+            "chat.sessions.list response last_event must be a known chat event"
+        }
+        requireProtocolDateTime(lastActivityAt, "chat.sessions.list response last_activity_at")
+        requireProtocolDateTime(archivedAt, "chat.sessions.list response archived_at")
+    }
+}
 
 @Serializable
 data class ChatSessionSearchPayload(
     val rank: Int,
     val snippet: String,
     @SerialName("matched_fields") val matchedFields: List<String> = emptyList(),
-)
+) {
+    init {
+        require(rank >= 1) {
+            "chat session search rank must be positive"
+        }
+        require(matchedFields.isNotEmpty()) {
+            "chat session search matched_fields must be nonempty"
+        }
+        require(matchedFields.all { it.isNotEmpty() }) {
+            "chat session search matched_fields entries must be nonempty"
+        }
+        require(matchedFields.toSet().size == matchedFields.size) {
+            "chat session search matched_fields entries must be unique"
+        }
+    }
+}
 
 @Serializable
 data class IndexDocumentsListRequestPayload(
     val limit: Int? = null,
-)
+) {
+    init {
+        require(limit == null || limit >= 0) {
+            "index.documents.list request limit must be nonnegative"
+        }
+        require(limit == null || limit <= MAX_DOCUMENT_REQUEST_LIMIT) {
+            "index.documents.list request limit must be at most 100"
+        }
+    }
+}
 
 @Serializable
 data class IndexDocumentsListResultPayload(
     val documents: List<RuntimeDocumentIndexDocumentPayload>,
     val summary: IndexDocumentsSummaryPayload,
-)
+) {
+    init {
+        require(documents.size <= MAX_DOCUMENT_REQUEST_LIMIT) {
+            "index.documents.list response documents must contain at most 100 items"
+        }
+    }
+}
 
 @Serializable
 data class IndexDocumentsSummaryPayload(
@@ -289,26 +811,77 @@ data class IndexDocumentsSummaryPayload(
     @SerialName("chunk_count") val chunkCount: Int,
     @SerialName("extracted_character_count") val extractedCharacterCount: Int,
     @SerialName("quality_counts") val qualityCounts: IndexDocumentsQualityCountsPayload,
-)
+) {
+    init {
+        require(documentCount >= 0) {
+            "index.documents.list summary document_count must be nonnegative"
+        }
+        require(chunkCount >= 0) {
+            "index.documents.list summary chunk_count must be nonnegative"
+        }
+        require(extractedCharacterCount >= 0) {
+            "index.documents.list summary extracted_character_count must be nonnegative"
+        }
+    }
+}
 
 @Serializable
 data class IndexDocumentsQualityCountsPayload(
     @SerialName("no_usable_text") val noUsableText: Int,
     @SerialName("single_chunk") val singleChunk: Int,
     val chunked: Int,
-)
+) {
+    init {
+        require(noUsableText >= 0) {
+            "index.documents.list summary quality_counts.no_usable_text must be nonnegative"
+        }
+        require(singleChunk >= 0) {
+            "index.documents.list summary quality_counts.single_chunk must be nonnegative"
+        }
+        require(chunked >= 0) {
+            "index.documents.list summary quality_counts.chunked must be nonnegative"
+        }
+    }
+}
 
 @Serializable
 data class RetrievalQueryRequestPayload(
     val query: String,
     val limit: Int? = null,
     @SerialName("max_snippet_characters") val maxSnippetCharacters: Int? = null,
-)
+) {
+    init {
+        require(query.isNotBlank()) {
+            "retrieval.query request query must be nonblank"
+        }
+        require(query.length <= MAX_RETRIEVAL_QUERY_LENGTH) {
+            "retrieval.query request query must be at most 1024 characters"
+        }
+        require(limit == null || limit >= 0) {
+            "retrieval.query request limit must be nonnegative"
+        }
+        require(limit == null || limit <= MAX_DOCUMENT_REQUEST_LIMIT) {
+            "retrieval.query request limit must be at most 100"
+        }
+        require(maxSnippetCharacters == null || maxSnippetCharacters >= 0) {
+            "retrieval.query request max_snippet_characters must be nonnegative"
+        }
+        require(maxSnippetCharacters == null || maxSnippetCharacters <= MAX_RETRIEVAL_SNIPPET_LENGTH) {
+            "retrieval.query request max_snippet_characters must be at most 500"
+        }
+    }
+}
 
 @Serializable
 data class RetrievalQueryResultPayload(
     val results: List<RetrievalQueryResultItemPayload>,
-)
+) {
+    init {
+        require(results.size <= MAX_DOCUMENT_REQUEST_LIMIT) {
+            "retrieval.query response results must contain at most 100 items"
+        }
+    }
+}
 
 @Serializable
 data class RetrievalQueryResultItemPayload(
@@ -321,7 +894,43 @@ data class RetrievalQueryResultItemPayload(
     val snippet: String,
     @Serializable(with = SourceAnchorIdSerializer::class)
     @SerialName("source_anchor_id") val sourceAnchorId: String,
-)
+) {
+    init {
+        require(chunkIndex >= 0) {
+            "retrieval.query result chunk_index must be nonnegative"
+        }
+        require(startCharacterOffset >= 0) {
+            "retrieval.query result start_character_offset must be nonnegative"
+        }
+        require(endCharacterOffset >= 0) {
+            "retrieval.query result end_character_offset must be nonnegative"
+        }
+        require(endCharacterOffset >= startCharacterOffset) {
+            "retrieval.query result end_character_offset must be greater than or equal to start_character_offset"
+        }
+        require(rank >= 1) {
+            "retrieval.query result rank must be positive"
+        }
+        require(matchedTerms.isNotEmpty()) {
+            "retrieval.query result matched_terms must be nonempty"
+        }
+        require(matchedTerms.size <= MAX_RETRIEVAL_MATCHED_TERMS) {
+            "retrieval.query result matched_terms must contain at most 16 terms"
+        }
+        require(matchedTerms.all { it.isNotEmpty() }) {
+            "retrieval.query result matched_terms entries must be nonempty"
+        }
+        require(matchedTerms.all { it.length <= MAX_RETRIEVAL_MATCHED_TERM_LENGTH }) {
+            "retrieval.query result matched_terms entries must be at most 64 characters"
+        }
+        require(snippet.isNotEmpty()) {
+            "retrieval.query result snippet must be nonempty"
+        }
+        require(snippet.length <= MAX_RETRIEVAL_SNIPPET_LENGTH) {
+            "retrieval.query result snippet must be at most 500 characters"
+        }
+    }
+}
 
 @Serializable
 data class SourceAnchorResolveRequestPayload(
@@ -343,24 +952,96 @@ data class SourceAnchorChunkSummaryPayload(
     @SerialName("start_character_offset") val startCharacterOffset: Int,
     @SerialName("end_character_offset") val endCharacterOffset: Int,
     @SerialName("character_count") val characterCount: Int,
-)
+) {
+    init {
+        require(chunkIndex >= 0) {
+            "chunk_summary.chunk_index must be nonnegative"
+        }
+        require(startCharacterOffset >= 0) {
+            "chunk_summary.start_character_offset must be nonnegative"
+        }
+        require(endCharacterOffset >= 0) {
+            "chunk_summary.end_character_offset must be nonnegative"
+        }
+        require(characterCount >= 0) {
+            "chunk_summary.character_count must be nonnegative"
+        }
+        require(endCharacterOffset >= startCharacterOffset) {
+            "chunk_summary.end_character_offset must be greater than or equal to start_character_offset"
+        }
+    }
+}
 
 @Serializable
 data class RuntimeDocumentIndexDocumentPayload(
     val id: String,
     @SerialName("display_name") val displayName: String,
     @SerialName("mime_type") val mimeType: String,
+    @Serializable(with = DocumentContentFingerprintSerializer::class)
     @SerialName("content_fingerprint") val contentFingerprint: String,
     @SerialName("extracted_character_count") val extractedCharacterCount: Int,
     @SerialName("chunk_count") val chunkCount: Int,
     val quality: String,
-)
+) {
+    init {
+        require(id.isNotEmpty()) {
+            "index document id must be nonempty"
+        }
+        require(id.length <= MAX_DOCUMENT_ID_LENGTH) {
+            "index document id must be at most 128 characters"
+        }
+        require(displayName.isNotEmpty()) {
+            "index document display_name must be nonempty"
+        }
+        require(displayName.length <= MAX_DOCUMENT_DISPLAY_NAME_LENGTH) {
+            "index document display_name must be at most 256 characters"
+        }
+        require(mimeType.isNotEmpty()) {
+            "index document mime_type must be nonempty"
+        }
+        require(mimeType.length <= MAX_DOCUMENT_MIME_TYPE_LENGTH) {
+            "index document mime_type must be at most 128 characters"
+        }
+        require(DOCUMENT_MIME_TYPE_PATTERN.matches(mimeType)) {
+            "index document mime_type must match lowercase type/subtype"
+        }
+        require(extractedCharacterCount >= 0) {
+            "index document extracted_character_count must be nonnegative"
+        }
+        require(chunkCount >= 0) {
+            "index document chunk_count must be nonnegative"
+        }
+        require(quality in DOCUMENT_QUALITIES) {
+            "index document quality must be no_usable_text, single_chunk, or chunked"
+        }
+        val expectedQuality = when {
+            chunkCount == 0 -> "no_usable_text"
+            chunkCount == 1 -> "single_chunk"
+            else -> "chunked"
+        }
+        require(quality == expectedQuality) {
+            "index document quality must match chunk_count"
+        }
+    }
+}
 
 @Serializable
 data class ChatMessagesListRequestPayload(
     @SerialName("session_id") val sessionId: String,
     val limit: Int? = null,
-)
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.messages.list request session_id must be nonblank"
+        }
+        require(limit == null || limit >= 0) {
+            "chat.messages.list request limit must be nonnegative"
+        }
+        require(limit == null || limit <= MAX_CHAT_MESSAGES_LIST_LIMIT) {
+            "chat.messages.list request limit must be at most 500"
+        }
+    }
+}
 
 @Serializable
 data class ChatMessagesListResultPayload(
@@ -373,9 +1054,13 @@ data class ChatStoredMessagePayload(
     val role: String,
     val content: String,
     val reasoning: String? = null,
-    val attachments: List<ChatAttachmentPayload> = emptyList(),
+    val attachments: List<ChatStoredAttachmentPayload> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
-)
+) {
+    init {
+        requireProtocolDateTime(createdAt, "chat.messages.list response created_at")
+    }
+}
 
 @Serializable
 data class ChatTitleRequestPayload(
@@ -383,7 +1068,19 @@ data class ChatTitleRequestPayload(
     val model: String,
     val messages: List<ChatMessagePayload>,
     val locale: String? = null,
-)
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.title.request session_id must be nonblank"
+        }
+        require(model.isNotBlank()) {
+            "chat.title.request model must be nonblank"
+        }
+        require(messages.isNotEmpty()) {
+            "chat.title.request messages must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class ChatTitleResultPayload(
@@ -395,7 +1092,17 @@ data class ChatSessionRenamePayload(
     @SerialName("session_id") val sessionId: String,
     val title: String,
     @SerialName("renamed_at") val renamedAt: String? = null,
-)
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.session.rename session_id must be nonblank"
+        }
+        require(title.isNotBlank()) {
+            "chat.session.rename title must be nonblank"
+        }
+        requireProtocolDateTime(renamedAt, "chat.session.rename renamed_at")
+    }
+}
 
 @Serializable
 data class ChatSessionLifecyclePayload(
@@ -404,12 +1111,27 @@ data class ChatSessionLifecyclePayload(
     @SerialName("archived_at") val archivedAt: String? = null,
     @SerialName("restored_at") val restoredAt: String? = null,
     @SerialName("deleted_at") val deletedAt: String? = null,
-)
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.session lifecycle session_id must be nonblank"
+        }
+        requireProtocolDateTime(archivedAt, "chat.session lifecycle archived_at")
+        requireProtocolDateTime(restoredAt, "chat.session lifecycle restored_at")
+        requireProtocolDateTime(deletedAt, "chat.session lifecycle deleted_at")
+    }
+}
 
 @Serializable
 data class MemoryListRequestPayload(
     val query: String? = null,
-)
+) {
+    init {
+        require(query == null || query.isNotEmpty()) {
+            "memory.list request query must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class MemoryListResultPayload(
@@ -425,7 +1147,18 @@ data class MemoryEntryPayload(
     @SerialName("updated_at") val updatedAt: String? = null,
     val source: MemoryEntrySourcePayload? = null,
     val search: ChatSessionSearchPayload? = null,
-)
+) {
+    init {
+        require(id.isNotEmpty()) {
+            "memory entry id must be nonempty"
+        }
+        require(content.isNotEmpty()) {
+            "memory entry content must be nonempty"
+        }
+        requireProtocolDateTime(createdAt, "memory entry created_at")
+        requireProtocolDateTime(updatedAt, "memory entry updated_at")
+    }
+}
 
 @Serializable
 data class MemoryEntrySourcePayload(
@@ -436,14 +1169,44 @@ data class MemoryEntrySourcePayload(
     @SerialName("source_message_count") val sourceMessageCount: Int,
     @SerialName("source_range") val sourceRange: String,
     @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
-)
+) {
+    init {
+        require(kind == MEMORY_ENTRY_SOURCE_KIND) {
+            "memory entry source kind must be long_inactivity_summary_draft"
+        }
+        require(draftId.isNotEmpty()) {
+            "memory entry source draft_id must be nonempty"
+        }
+        require(summaryMethod == MEMORY_ENTRY_SOURCE_SUMMARY_METHOD) {
+            "memory entry source summary_method must be deterministic_preview"
+        }
+        require(sourceMessageCount > 0) {
+            "memory entry source source_message_count must be positive"
+        }
+        require(sourceRange.isNotEmpty()) {
+            "memory entry source source_range must be nonempty"
+        }
+        require(sourcePointers.isNotEmpty()) {
+            "memory entry source source_pointers must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class MemoryUpsertPayload(
     val id: String? = null,
     val content: String,
     val enabled: Boolean? = null,
-)
+) {
+    init {
+        require(id == null || id.isNotBlank()) {
+            "memory.upsert request id must be nonblank"
+        }
+        require(content.isNotBlank()) {
+            "memory.upsert request content must be nonblank"
+        }
+    }
+}
 
 @Serializable
 data class MemoryUpsertResultPayload(
@@ -453,18 +1216,37 @@ data class MemoryUpsertResultPayload(
 @Serializable
 data class MemoryDeletePayload(
     val id: String,
-)
+) {
+    init {
+        require(id.isNotBlank()) {
+            "memory.delete request id must be nonblank"
+        }
+    }
+}
 
 @Serializable
 data class MemoryDeleteResultPayload(
     val id: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
-)
+) {
+    init {
+        requireProtocolDateTime(deletedAt, "memory.delete result deleted_at")
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftsListRequestPayload(
     val limit: Int? = null,
-)
+) {
+    init {
+        require(limit == null || limit >= 0) {
+            "memory.summary.drafts.list request limit must be nonnegative"
+        }
+        require(limit == null || limit <= MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT) {
+            "memory.summary.drafts.list request limit must be at most 50"
+        }
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftsListResultPayload(
@@ -478,7 +1260,22 @@ data class MemorySummaryDraftApprovePayload(
     val enabled: Boolean? = null,
     @SerialName("expected_session_id") val expectedSessionId: String? = null,
     @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int? = null,
-)
+) {
+    init {
+        require(draftId.isNotBlank()) {
+            "memory.summary.draft.approve request draft_id must be nonblank"
+        }
+        require(content == null || content.isNotBlank()) {
+            "memory.summary.draft.approve request content must be nonblank"
+        }
+        require(expectedSessionId == null || expectedSessionId.isNotBlank()) {
+            "memory.summary.draft.approve request expected_session_id must be nonblank"
+        }
+        require(expectedSourceMessageCount == null || expectedSourceMessageCount > 0) {
+            "memory.summary.draft.approve request expected_source_message_count must be positive"
+        }
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftApproveResultPayload(
@@ -492,14 +1289,30 @@ data class MemorySummaryDraftDismissPayload(
     @SerialName("draft_id") val draftId: String,
     @SerialName("expected_session_id") val expectedSessionId: String? = null,
     @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int? = null,
-)
+) {
+    init {
+        require(draftId.isNotBlank()) {
+            "memory.summary.draft.dismiss request draft_id must be nonblank"
+        }
+        require(expectedSessionId == null || expectedSessionId.isNotBlank()) {
+            "memory.summary.draft.dismiss request expected_session_id must be nonblank"
+        }
+        require(expectedSourceMessageCount == null || expectedSourceMessageCount > 0) {
+            "memory.summary.draft.dismiss request expected_source_message_count must be positive"
+        }
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftDismissResultPayload(
     @SerialName("draft_id") val draftId: String,
     val status: String,
     @SerialName("dismissed_at") val dismissedAt: String? = null,
-)
+) {
+    init {
+        requireProtocolDateTime(dismissedAt, "memory.summary.draft.dismiss result dismissed_at")
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftPayload(
@@ -509,7 +1322,25 @@ data class MemorySummaryDraftPayload(
     @SerialName("source_range") val sourceRange: String,
     @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
     @SerialName("summary_preview") val summaryPreview: String,
-)
+) {
+    init {
+        require(id.isNotEmpty()) {
+            "memory summary draft id must be nonempty"
+        }
+        require(sourceMessageCount > 0) {
+            "memory summary draft source_message_count must be positive"
+        }
+        require(sourceRange.isNotEmpty()) {
+            "memory summary draft source_range must be nonempty"
+        }
+        require(sourcePointers.isNotEmpty()) {
+            "memory summary draft source_pointers must be nonempty"
+        }
+        require(summaryPreview.isNotEmpty()) {
+            "memory summary draft summary_preview must be nonempty"
+        }
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftSessionPayload(
@@ -519,7 +1350,20 @@ data class MemorySummaryDraftSessionPayload(
     @SerialName("last_activity_at") val lastActivityAt: String,
     @SerialName("message_count") val messageCount: Int,
     @SerialName("inactive_seconds") val inactiveSeconds: Long,
-)
+) {
+    init {
+        require(sessionId.isNotEmpty()) {
+            "memory summary draft session_id must be nonempty"
+        }
+        require(messageCount >= 0) {
+            "memory summary draft message_count must be nonnegative"
+        }
+        require(inactiveSeconds >= 0) {
+            "memory summary draft inactive_seconds must be nonnegative"
+        }
+        requireProtocolDateTime(lastActivityAt, "memory summary draft session last_activity_at")
+    }
+}
 
 @Serializable
 data class MemorySummaryDraftSourcePointerPayload(
@@ -528,14 +1372,36 @@ data class MemorySummaryDraftSourcePointerPayload(
     val role: String,
     @SerialName("created_at") val createdAt: String? = null,
     val excerpt: String,
-)
+) {
+    init {
+        require(sessionId.isNotEmpty()) {
+            "memory summary draft source pointer session_id must be nonempty"
+        }
+        require(messageIndex > 0) {
+            "memory summary draft source pointer message_index must be positive"
+        }
+        require(role in MEMORY_SUMMARY_SOURCE_POINTER_ROLES) {
+            "memory summary draft source pointer role must be user or assistant"
+        }
+        require(excerpt.isNotEmpty()) {
+            "memory summary draft source pointer excerpt must be nonempty"
+        }
+        requireProtocolDateTime(createdAt, "memory summary draft source pointer created_at")
+    }
+}
 
 @Serializable
 data class ErrorPayload(
     val code: String,
     val message: String,
     val retryable: Boolean,
-)
+) {
+    init {
+        require(code in ERROR_CODES) {
+            "error payload code must be a known protocol error code"
+        }
+    }
+}
 
 @Serializable
 data class RuntimeHealthPayload(
@@ -543,12 +1409,18 @@ data class RuntimeHealthPayload(
     val ollama: RuntimeBackendStatusPayload? = null,
     @SerialName("lm_studio") val lmStudio: RuntimeBackendStatusPayload? = null,
     @SerialName("model_residency") val modelResidency: RuntimeModelResidencyPayload? = null,
-)
+) {
+    init {
+        require(status in RUNTIME_HEALTH_STATUSES) {
+            "runtime.health status must be ok, degraded, or unavailable"
+        }
+    }
+}
 
 @Serializable
 data class RuntimeBackendStatusPayload(
     val available: Boolean,
-    val message: String,
+    val message: String? = null,
     val code: String? = null,
     val retryable: Boolean? = null,
 )
@@ -561,7 +1433,16 @@ data class RuntimeModelResidencyPayload(
     @SerialName("in_flight_generations") val inFlightGenerations: Int = 0,
     @SerialName("idle_unload_delay_seconds") val idleUnloadDelaySeconds: Int? = null,
     @SerialName("last_unload_failure") val lastUnloadFailure: RuntimeModelResidencyUnloadFailurePayload? = null,
-)
+) {
+    init {
+        require(inFlightGenerations >= 0) {
+            "runtime.health model_residency in_flight_generations must be nonnegative"
+        }
+        require(idleUnloadDelaySeconds == null || idleUnloadDelaySeconds >= 0) {
+            "runtime.health model_residency idle_unload_delay_seconds must be nonnegative"
+        }
+    }
+}
 
 @Serializable
 data class RuntimeModelResidencyUnloadFailurePayload(
