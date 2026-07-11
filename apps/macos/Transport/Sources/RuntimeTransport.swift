@@ -1,6 +1,10 @@
 import BridgeProtocol
 import Foundation
 
+public protocol RuntimeDisconnectReporting: AnyObject {
+    var onDisconnect: (@Sendable (UUID) -> Void)? { get set }
+}
+
 public protocol RuntimeTransport {
     var status: PeerServerStatus { get }
 

@@ -36,6 +36,7 @@ public enum MessageType {
     public static let memoryUpsert = "memory.upsert"
     public static let memoryDelete = "memory.delete"
     public static let memorySummaryDraftsList = "memory.summary.drafts.list"
+    public static let memorySummaryDraftGenerate = "memory.summary.draft.generate"
     public static let memorySummaryDraftApprove = "memory.summary.draft.approve"
     public static let memorySummaryDraftDismiss = "memory.summary.draft.dismiss"
     public static let error = "error"

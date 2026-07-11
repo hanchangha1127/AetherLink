@@ -31,9 +31,13 @@ confirm immediate matches or authenticated same-source waiting replacement,
 retain global/source reserve provenance, reject per-source reserve discharge
 against another source and cross-source reserve replacement, and preserve established active-bridge
 forwarding (`E011`). Bounded waiting gives unmatched rooms a monotonic
-first-insertion deadline capped by lease expiry, with 60 seconds as the default, while each
-verified authenticated identity for a runtime or paired client receives a role-separated, cross-source
-waiting quotas of four by default. Identity accounting begins only after the
+first-insertion deadline capped by lease expiry, with 60 seconds as the default.
+Registration and readiness probes remove expired rooms under the matcher lock
+before matching, replacement, or visibility decisions. Each waiting result
+carries its deadline out of the same matcher transaction instead of a
+post-publication room lookup. Each
+authenticated identity for a runtime or paired client receives a role-separated,
+cross-source waiting quota of four by default. Identity accounting begins only after the
 corresponding proof succeeds; bootstrap clients and legacy peers remain
 source-only, and active bridges are not charged (`E012`). These tactical development-relay
 controls do not authenticate the allocation service, protect credentials with

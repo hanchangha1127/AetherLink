@@ -1,0 +1,16 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        Runtime["Runtime host"]
+        Client["Android client"]
+    end
+    subgraph UntrustedInfra["Untrusted infrastructure"]
+        Rendezvous["Authenticated rendezvous mailbox"]
+        Relay["Blind relay fallback data path"]
+    end
+    Runtime -->|"sealed pair-scoped offer"| Rendezvous
+    Client -->|"sealed pair-scoped answer"| Rendezvous
+    Rendezvous -->|"opaque bounded records"| Runtime
+    Rendezvous -->|"opaque bounded records"| Client
+    Runtime -->|"short-lived relay capability"| Relay
+    Client -->|"short-lived relay capability"| Relay
+    Runtime <-->|"identity-bound encrypted session"| Client

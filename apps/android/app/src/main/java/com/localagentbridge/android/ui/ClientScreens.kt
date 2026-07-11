@@ -1988,6 +1988,7 @@ fun SettingsScreen(
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onGenerateMemorySummaryDraft: (String) -> Unit = {},
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit = {},
@@ -2138,7 +2139,10 @@ fun SettingsScreen(
             ) {
                 MemoryPanel(
                     entries = state.memoryEntries,
+                    remoteSearchQuery = state.memorySearchQuery,
+                    remoteSearchResults = state.memorySearchResults,
                     summaryDrafts = state.memorySummaryDrafts,
+                    generatingSummaryDraftIds = state.generatingMemorySummaryDraftIds,
                     approvingSummaryDraftIds = state.approvingMemorySummaryDraftIds,
                     dismissingSummaryDraftIds = state.dismissingMemorySummaryDraftIds,
                     actionsEnabled = memoryActionsEnabled(state),
@@ -2149,6 +2153,7 @@ fun SettingsScreen(
                     onAddMemoryEntry = onAddMemoryEntry,
                     onRemoveMemoryEntry = onRemoveMemoryEntry,
                     onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                    onGenerateMemorySummaryDraft = onGenerateMemorySummaryDraft,
                     onApproveMemorySummaryDraft = onApproveMemorySummaryDraft,
                     onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                     onRefreshMemory = onRefreshMemory,
@@ -2179,6 +2184,8 @@ fun SettingsScreen(
                     onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
                     onArchiveAllChatSessions = onArchiveAllChatSessions,
                     onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
+                    remoteSearchQuery = state.chatSessionSearchQuery,
+                    remoteSearchResults = state.chatSessionSearchResults,
                     showHeader = false,
                 )
             }
@@ -6038,6 +6045,8 @@ internal fun ChatHistorySettingsPanel(
     onPermanentlyDeleteChatSession: (String) -> Unit,
     onArchiveAllChatSessions: () -> Unit,
     onPermanentlyDeleteArchivedChatSessions: () -> Unit,
+    remoteSearchQuery: String? = null,
+    remoteSearchResults: List<RuntimeChatSession> = emptyList(),
     showHeader: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -6046,18 +6055,39 @@ internal fun ChatHistorySettingsPanel(
     var showBulkActions by rememberSaveable { mutableStateOf(false) }
     var chatSearchQuery by rememberSaveable { mutableStateOf("") }
     val untitledTitle = stringResource(R.string.untitled_chat)
-    val filteredActiveSessions = filterChatHistorySessions(
-        sessions = activeSessions,
-        query = chatSearchQuery,
-        untitledTitle = untitledTitle,
-        models = models,
-    )
-    val filteredArchivedSessions = filterChatHistorySessions(
-        sessions = archivedSessions,
-        query = chatSearchQuery,
-        untitledTitle = untitledTitle,
-        models = models,
-    )
+    val normalizedChatSearchQuery = chatSearchQuery.trim().ifBlank { null }
+    val useRemoteSearchResults = normalizedChatSearchQuery != null &&
+        normalizedChatSearchQuery == remoteSearchQuery?.trim()?.ifBlank { null }
+    val filteredActiveSessions = if (useRemoteSearchResults) {
+        remoteSearchResults
+            .filter { it.archivedAtMillis == null }
+            .sortedWith(
+                compareBy<RuntimeChatSession> { it.searchRank ?: Int.MAX_VALUE }
+                    .thenByDescending(RuntimeChatSession::updatedAtMillis),
+            )
+    } else {
+        filterChatHistorySessions(
+            sessions = activeSessions,
+            query = chatSearchQuery,
+            untitledTitle = untitledTitle,
+            models = models,
+        )
+    }
+    val filteredArchivedSessions = if (useRemoteSearchResults) {
+        remoteSearchResults
+            .filter { it.archivedAtMillis != null }
+            .sortedWith(
+                compareBy<RuntimeChatSession> { it.searchRank ?: Int.MAX_VALUE }
+                    .thenByDescending(RuntimeChatSession::updatedAtMillis),
+            )
+    } else {
+        filterChatHistorySessions(
+            sessions = archivedSessions,
+            query = chatSearchQuery,
+            untitledTitle = untitledTitle,
+            models = models,
+        )
+    }
     val hasSearchQuery = chatSearchQuery.trim().isNotEmpty()
     val chatSearchClearContentDescription = stringResource(
         R.string.clear_chat_search_named,
@@ -6084,7 +6114,6 @@ internal fun ChatHistorySettingsPanel(
     val deleteArchivedActionLabel = stringResource(R.string.permanently_delete_archived_chats)
     val refreshChatHistoryContentDescription = stringResource(R.string.chat_history_refresh)
     val refreshChatHistoryStateDescription = stringResource(refreshStateDescriptionRes)
-    val normalizedChatSearchQuery = chatSearchQuery.trim().ifBlank { null }
     val hasBulkActions = chatHistoryBulkActionsAvailable(
         activeSessionCount = activeSessions.size,
         archivedSessionCount = archivedSessions.size,
@@ -7451,7 +7480,10 @@ private fun documentQualityLabel(quality: String): String {
 @Composable
 internal fun MemoryPanel(
     entries: List<RuntimeMemoryEntry>,
+    remoteSearchQuery: String? = null,
+    remoteSearchResults: List<RuntimeMemoryEntry> = emptyList(),
     summaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
+    generatingSummaryDraftIds: Set<String> = emptySet(),
     approvingSummaryDraftIds: Set<String> = emptySet(),
     dismissingSummaryDraftIds: Set<String> = emptySet(),
     actionsEnabled: Boolean,
@@ -7459,6 +7491,7 @@ internal fun MemoryPanel(
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onGenerateMemorySummaryDraft: (String) -> Unit = {},
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit,
@@ -7469,7 +7502,16 @@ internal fun MemoryPanel(
     var memorySearchQuery by rememberSaveable { mutableStateOf("") }
     val normalizedMemorySearchQuery = memorySearchQuery.trim().ifBlank { null }
     val hasMemorySearchQuery = normalizedMemorySearchQuery != null
-    val filteredEntries = filterMemoryEntries(entries, memorySearchQuery)
+    val useRemoteSearchResults = normalizedMemorySearchQuery != null &&
+        normalizedMemorySearchQuery == remoteSearchQuery?.trim()?.ifBlank { null }
+    val filteredEntries = if (useRemoteSearchResults) {
+        remoteSearchResults.sortedWith(
+            compareBy<RuntimeMemoryEntry> { it.searchRank ?: Int.MAX_VALUE }
+                .thenByDescending(RuntimeMemoryEntry::updatedAtMillis),
+        )
+    } else {
+        filterMemoryEntries(entries, memorySearchQuery)
+    }
     val showAddedMemoryNotice = rememberSaveable { mutableStateOf(false) }
     val canAdd = actionsEnabled && draft.value.isNotBlank()
     val hapticFeedback = LocalHapticFeedback.current
@@ -7683,10 +7725,12 @@ internal fun MemoryPanel(
             if (summaryDrafts.isNotEmpty()) {
                 MemorySummaryDraftsSection(
                     drafts = summaryDrafts,
+                    generatingDraftIds = generatingSummaryDraftIds,
                     approvingDraftIds = approvingSummaryDraftIds,
                     dismissingDraftIds = dismissingSummaryDraftIds,
                     actionsEnabled = actionsEnabled,
                     disabledActionStateDescription = if (actionsEnabled) null else actionsDisabledReason,
+                    onGenerateMemorySummaryDraft = onGenerateMemorySummaryDraft,
                     onApproveMemorySummaryDraft = onApproveMemorySummaryDraft,
                     onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                     hapticFeedback = hapticFeedback,
@@ -7770,10 +7814,12 @@ private fun MemorySummary(summary: String) {
 @Composable
 private fun MemorySummaryDraftsSection(
     drafts: List<RuntimeMemorySummaryDraft>,
+    generatingDraftIds: Set<String>,
     approvingDraftIds: Set<String>,
     dismissingDraftIds: Set<String>,
     actionsEnabled: Boolean,
     disabledActionStateDescription: String?,
+    onGenerateMemorySummaryDraft: (String) -> Unit,
     onApproveMemorySummaryDraft: (String) -> Unit,
     onDismissMemorySummaryDraft: (String) -> Unit,
     hapticFeedback: HapticFeedback,
@@ -7808,10 +7854,12 @@ private fun MemorySummaryDraftsSection(
         drafts.forEach { draft ->
             MemorySummaryDraftRow(
                 draft = draft,
+                generating = draft.id in generatingDraftIds,
                 approving = draft.id in approvingDraftIds,
                 dismissing = draft.id in dismissingDraftIds,
                 actionsEnabled = actionsEnabled,
                 disabledActionStateDescription = disabledActionStateDescription,
+                onGenerateMemorySummaryDraft = onGenerateMemorySummaryDraft,
                 onApproveMemorySummaryDraft = onApproveMemorySummaryDraft,
                 onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                 hapticFeedback = hapticFeedback,
@@ -7824,10 +7872,12 @@ private fun MemorySummaryDraftsSection(
 @Composable
 private fun MemorySummaryDraftRow(
     draft: RuntimeMemorySummaryDraft,
+    generating: Boolean,
     approving: Boolean,
     dismissing: Boolean,
     actionsEnabled: Boolean,
     disabledActionStateDescription: String?,
+    onGenerateMemorySummaryDraft: (String) -> Unit,
     onApproveMemorySummaryDraft: (String) -> Unit,
     onDismissMemorySummaryDraft: (String) -> Unit,
     hapticFeedback: HapticFeedback,
@@ -7840,10 +7890,23 @@ private fun MemorySummaryDraftRow(
         draft.sourcePointers.size,
     )
     val sourceRange = draft.sourceRange.takeIf { it.isNotBlank() }
+    val isDeterministicPreview = draft.summaryMethod == "deterministic_preview"
+    val isGeneratedSummary = draft.summaryMethod == "llm_summary_v1"
+    val generateLabel = stringResource(R.string.memory_summary_draft_generate)
+    val generatingLabel = stringResource(R.string.memory_summary_draft_generating)
+    val generateContentDescription = stringResource(R.string.memory_summary_draft_generate_named, title)
+    val generateStateDescription = when {
+        generating -> generatingLabel
+        approving -> stringResource(R.string.memory_summary_draft_approving)
+        dismissing -> stringResource(R.string.memory_summary_draft_dismissing)
+        !actionsEnabled -> disabledActionStateDescription
+        else -> stringResource(R.string.memory_summary_draft_generate_state_ready)
+    }
     val approveLabel = stringResource(R.string.memory_summary_draft_approve)
     val approvingLabel = stringResource(R.string.memory_summary_draft_approving)
     val approveContentDescription = stringResource(R.string.memory_summary_draft_approve_named, title)
     val approveStateDescription = when {
+        generating -> generatingLabel
         approving -> approvingLabel
         dismissing -> stringResource(R.string.memory_summary_draft_dismissing)
         !actionsEnabled -> disabledActionStateDescription
@@ -7853,6 +7916,7 @@ private fun MemorySummaryDraftRow(
     val dismissingLabel = stringResource(R.string.memory_summary_draft_dismissing)
     val dismissContentDescription = stringResource(R.string.memory_summary_draft_dismiss_named, title)
     val dismissStateDescription = when {
+        generating -> generatingLabel
         dismissing -> dismissingLabel
         approving -> approvingLabel
         !actionsEnabled -> disabledActionStateDescription
@@ -7915,6 +7979,14 @@ private fun MemorySummaryDraftRow(
                 text = draft.summaryPreview,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (isGeneratedSummary) {
+                Text(
+                    text = stringResource(R.string.memory_summary_draft_generated_review_required),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             draft.sourcePointers.take(2).forEach { pointer ->
                 val roleLabel = stringResource(
                     if (pointer.role == "user") {
@@ -7931,12 +8003,38 @@ private fun MemorySummaryDraftRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (isDeterministicPreview) {
+                OutlinedButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        onGenerateMemorySummaryDraft(draft.id)
+                    },
+                    enabled = actionsEnabled && !generating && !approving && !dismissing,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(memorySummaryDraftGenerateTestTag(draft.id))
+                        .semantics {
+                            contentDescription = generateContentDescription
+                            generateStateDescription?.let { stateDescription = it }
+                            onClick(label = generateContentDescription, action = null)
+                        },
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (generating) generatingLabel else generateLabel,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
             Button(
                 onClick = {
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onApproveMemorySummaryDraft(draft.id)
                 },
-                enabled = actionsEnabled && !approving && !dismissing,
+                enabled = actionsEnabled && !generating && !approving && !dismissing,
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics {
@@ -7947,14 +8045,19 @@ private fun MemorySummaryDraftRow(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (approving) approvingLabel else approveLabel)
+                Text(
+                    text = if (approving) approvingLabel else approveLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
             OutlinedButton(
                 onClick = {
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onDismissMemorySummaryDraft(draft.id)
                 },
-                enabled = actionsEnabled && !approving && !dismissing,
+                enabled = actionsEnabled && !generating && !approving && !dismissing,
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics {
@@ -7965,7 +8068,12 @@ private fun MemorySummaryDraftRow(
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (dismissing) dismissingLabel else dismissLabel)
+                Text(
+                    text = if (dismissing) dismissingLabel else dismissLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }
@@ -8608,6 +8716,9 @@ internal fun memorySummaryDraftRowTestTag(draftId: String): String =
 
 internal fun memorySummaryDraftMetadataTestTag(draftId: String): String =
     "memory_summary_draft_metadata_$draftId"
+
+internal fun memorySummaryDraftGenerateTestTag(draftId: String): String =
+    "memory_summary_draft_generate_$draftId"
 
 private fun memoryAccessibilityActionLabel(
     content: String,
@@ -9804,6 +9915,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "memory_runtime_required" -> stringResource(R.string.error_memory_runtime_required)
         "memory_load_failed" -> stringResource(R.string.error_memory_load_failed)
         "memory_summary_drafts_load_failed" -> stringResource(R.string.error_memory_summary_drafts_load_failed)
+        "memory_summary_draft_generation_failed" -> stringResource(R.string.error_memory_summary_draft_generation_failed)
         "memory_summary_draft_approval_failed" -> stringResource(R.string.error_memory_summary_draft_approval_failed)
         "memory_summary_draft_dismiss_failed" -> stringResource(R.string.error_memory_summary_draft_dismiss_failed)
         "document_search_runtime_required" -> stringResource(R.string.error_document_search_runtime_required)
@@ -9811,6 +9923,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "document_search_failed" -> stringResource(R.string.error_document_search_failed)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
+        "chat_context_window_exceeded" -> stringResource(R.string.error_chat_context_window_exceeded)
         "regenerate_unavailable" -> stringResource(R.string.error_regenerate_unavailable)
         "regenerate_attachment_context_unavailable" -> stringResource(R.string.error_regenerate_attachment_context_unavailable)
         "reuse_message_unavailable" -> stringResource(R.string.error_reuse_message_unavailable)

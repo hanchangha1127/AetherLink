@@ -28,7 +28,7 @@ public extension RuntimeMessageSink {
 
 public typealias LocalPeerMessageHandler = @Sendable (ProtocolEnvelope, any RuntimeMessageSink) -> Void
 
-public final class LocalPeerServer: RuntimeTransport, @unchecked Sendable {
+public final class LocalPeerServer: RuntimeTransport, RuntimeDisconnectReporting, @unchecked Sendable {
     private var listener: NWListener?
     private let codec = ProtocolCodec()
     private let lock = NSLock()

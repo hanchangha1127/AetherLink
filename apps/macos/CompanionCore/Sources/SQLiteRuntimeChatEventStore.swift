@@ -21,14 +21,17 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private let legacyJSONLFileURL: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let semanticEmbeddingRowLimitPerOwnerModel: Int
     private let lock = NSLock()
 
     public init(
         databaseURL: URL = SQLiteRuntimeChatEventStore.defaultDatabaseURL(),
-        legacyJSONLFileURL: URL? = nil
+        legacyJSONLFileURL: URL? = nil,
+        semanticEmbeddingRowLimitPerOwnerModel: Int = 10_000
     ) {
         self.databaseURL = databaseURL
         self.legacyJSONLFileURL = legacyJSONLFileURL
+        self.semanticEmbeddingRowLimitPerOwnerModel = max(1, semanticEmbeddingRowLimitPerOwnerModel)
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -39,7 +42,14 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     public func append(_ event: RuntimeChatStoredEvent) throws {
         try lock.withLock {
             try withDatabase { database in
-                try appendUnlocked(event, database: database)
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    try appendUnlocked(event, database: database)
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
             }
         }
     }
@@ -185,6 +195,112 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
+    public func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        sessionLimit: Int,
+        messageLimit: Int,
+        includeArchived: Bool
+    ) throws -> [RuntimeChatSemanticSearchSource] {
+        guard sessionLimit > 0, messageLimit > 0 else { return [] }
+        return try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN DEFERRED")
+                do {
+                    let scopedOwnerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
+                    let events = try readEventsUnlocked(
+                        database,
+                        matchingOwnerDeviceID: scopedOwnerDeviceID
+                    )
+                    let sources = try JSONLRuntimeChatEventStore.sessions(
+                        from: events,
+                        limit: sessionLimit,
+                        includeArchived: includeArchived
+                    ).map { session in
+                        RuntimeChatSemanticSearchSource(
+                            session: session,
+                            messages: JSONLRuntimeChatEventStore.messages(
+                                from: events,
+                                sessionID: session.sessionID,
+                                limit: messageLimit
+                            ),
+                            sourceRevision: try sessionRevisionUnlocked(
+                                database,
+                                ownerDeviceID: scopedOwnerDeviceID,
+                                sessionID: session.sessionID
+                            )
+                        )
+                    }
+                    try Self.execute(database, "COMMIT")
+                    return sources
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func cachedSemanticEmbeddings(
+        for keys: [RuntimeChatSemanticEmbeddingKey]
+    ) throws -> [RuntimeChatSemanticEmbeddingRecord] {
+        guard !keys.isEmpty else { return [] }
+        let uniqueKeys = keys.reduce(into: [RuntimeChatSemanticEmbeddingKey]()) { result, key in
+            if !result.contains(key) { result.append(key) }
+        }
+        try uniqueKeys.forEach(Self.validateSemanticEmbeddingKey)
+        return try lock.withLock {
+            try withDatabase { database in
+                var records: [RuntimeChatSemanticEmbeddingRecord] = []
+                for key in uniqueKeys {
+                    if let record = try semanticEmbeddingUnlocked(for: key, database: database) {
+                        records.append(record)
+                    }
+                }
+                return records
+            }
+        }
+    }
+
+    public func upsertSemanticEmbeddings(
+        _ records: [RuntimeChatSemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {
+        guard !records.isEmpty else { return }
+        try records.forEach(Self.validateSemanticEmbeddingRecord)
+        try lock.withLock {
+            guard shouldCommit() else { return }
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    var scopes = Set<RuntimeChatSemanticEmbeddingScope>()
+                    for record in records {
+                        if let sourceRevision = record.sourceRevision {
+                            let currentRevision = try sessionRevisionUnlocked(
+                                database,
+                                ownerDeviceID: record.key.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+                                sessionID: record.key.sessionID
+                            )
+                            guard currentRevision == sourceRevision else { continue }
+                        }
+                        try upsertSemanticEmbeddingUnlocked(record, database: database)
+                        scopes.insert(RuntimeChatSemanticEmbeddingScope(key: record.key))
+                    }
+                    for scope in scopes {
+                        try enforceSemanticEmbeddingRowLimitUnlocked(scope, database: database)
+                    }
+                    guard shouldCommit() else {
+                        try Self.execute(database, "ROLLBACK")
+                        return
+                    }
+                    try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
     public func listAllMessages(
         sessionID: String,
         limit: Int = 200
@@ -210,37 +326,45 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     ) throws -> RuntimeChatSessionMutationResult {
         try lock.withLock {
             try withDatabase { database in
-                let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
-                let scopedOwnerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
-                let events = try readEventsUnlocked(database, matchingOwnerDeviceID: scopedOwnerDeviceID)
-                let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
-                let visibleSession = try JSONLRuntimeChatEventStore.sessions(
-                    from: sessionEvents,
-                    limit: 1,
-                    includeArchived: true
-                ).first
-                guard !cleanSessionID.isEmpty,
-                      !sessionEvents.isEmpty,
-                      let visibleSession else {
-                    throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
-                }
-                if mutation == .delete, visibleSession.status != "archived" {
-                    throw RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete(cleanSessionID)
-                }
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let scopedOwnerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
+                    let events = try readEventsUnlocked(database, matchingOwnerDeviceID: scopedOwnerDeviceID)
+                    let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
+                    let visibleSession = try JSONLRuntimeChatEventStore.sessions(
+                        from: sessionEvents,
+                        limit: 1,
+                        includeArchived: true
+                    ).first
+                    guard !cleanSessionID.isEmpty,
+                          !sessionEvents.isEmpty,
+                          let visibleSession else {
+                        throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+                    }
+                    if mutation == .delete, visibleSession.status != "archived" {
+                        throw RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete(cleanSessionID)
+                    }
 
-                try appendUnlocked(RuntimeChatStoredEvent(
-                    timestamp: timestamp,
-                    kind: mutation.eventKind,
-                    requestID: requestID,
-                    sessionID: cleanSessionID,
-                    model: JSONLRuntimeChatEventStore.latestModel(from: sessionEvents),
-                    ownerDeviceID: scopedOwnerDeviceID
-                ), database: database)
-                return RuntimeChatSessionMutationResult(
-                    sessionID: cleanSessionID,
-                    mutation: mutation,
-                    timestamp: timestamp
-                )
+                    try appendUnlocked(RuntimeChatStoredEvent(
+                        timestamp: timestamp,
+                        kind: mutation.eventKind,
+                        requestID: requestID,
+                        sessionID: cleanSessionID,
+                        model: JSONLRuntimeChatEventStore.latestModel(from: sessionEvents),
+                        ownerDeviceID: scopedOwnerDeviceID
+                    ), database: database)
+                    let result = RuntimeChatSessionMutationResult(
+                        sessionID: cleanSessionID,
+                        mutation: mutation,
+                        timestamp: timestamp
+                    )
+                    try Self.execute(database, "COMMIT")
+                    return result
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
             }
         }
     }
@@ -261,6 +385,11 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
         try insertEventUnlocked(sanitized, database: database, skipExisting: false)
         try rebuildSearchIndexUnlocked(database)
+        try deleteSemanticEmbeddingsUnlocked(
+            database,
+            ownerDeviceID: sanitized.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+            sessionID: sanitized.sessionID
+        )
     }
 
     @discardableResult
@@ -498,6 +627,177 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         return sessionIDs
     }
 
+    private func semanticEmbeddingUnlocked(
+        for key: RuntimeChatSemanticEmbeddingKey,
+        database: OpaquePointer
+    ) throws -> RuntimeChatSemanticEmbeddingRecord? {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT dimension, vector_blob
+            FROM runtime_chat_semantic_embeddings
+            WHERE owner_key = ?
+              AND session_id = ?
+              AND embedding_model_id = ?
+              AND model_fingerprint = ?
+              AND document_fingerprint = ?
+            LIMIT 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(Self.ownerKey(key.ownerDeviceID.sqliteNormalizedOwnerDeviceID), to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.canonicalQualifiedEmbeddingModelID, to: statement, at: 3)
+        try Self.bindText(key.modelFingerprint, to: statement, at: 4)
+        try Self.bindText(key.documentFingerprint, to: statement, at: 5)
+
+        let result = sqlite3_step(statement)
+        guard result == SQLITE_ROW else {
+            if result == SQLITE_DONE { return nil }
+            throw Self.failure(database, "Could not read runtime chat semantic embedding.")
+        }
+        let dimension = Int(sqlite3_column_int64(statement, 0))
+        let blobSize = Int(sqlite3_column_bytes(statement, 1))
+        let blob = sqlite3_column_blob(statement, 1).map { Data(bytes: $0, count: blobSize) }
+        guard sqlite3_column_type(statement, 0) == SQLITE_INTEGER,
+              sqlite3_column_type(statement, 1) == SQLITE_BLOB,
+              let blob,
+              let embedding = Self.decodeSemanticEmbedding(blob, dimension: dimension) else {
+            return nil
+        }
+        return RuntimeChatSemanticEmbeddingRecord(key: key, embedding: embedding)
+    }
+
+    private func sessionRevisionUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?,
+        sessionID: String
+    ) throws -> Int64? {
+        let ownerPredicate = ownerDeviceID == nil ? "owner_device_id IS NULL" : "owner_device_id = ?"
+        let statement = try Self.prepare(
+            database,
+            "SELECT MAX(sequence) FROM runtime_chat_events WHERE \(ownerPredicate) AND session_id = ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        var bindIndex: Int32 = 1
+        if let ownerDeviceID {
+            try Self.bindText(ownerDeviceID, to: statement, at: bindIndex)
+            bindIndex += 1
+        }
+        try Self.bindText(sessionID, to: statement, at: bindIndex)
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw Self.failure(database, "Could not read runtime chat session revision.")
+        }
+        guard sqlite3_column_type(statement, 0) == SQLITE_INTEGER else { return nil }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    private func upsertSemanticEmbeddingUnlocked(
+        _ record: RuntimeChatSemanticEmbeddingRecord,
+        database: OpaquePointer
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            """
+            INSERT INTO runtime_chat_semantic_embeddings(
+                owner_key,
+                session_id,
+                embedding_model_id,
+                model_fingerprint,
+                document_fingerprint,
+                dimension,
+                vector_blob,
+                last_accessed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(
+                owner_key,
+                session_id,
+                embedding_model_id,
+                model_fingerprint,
+                document_fingerprint
+            ) DO UPDATE SET
+                dimension = excluded.dimension,
+                vector_blob = excluded.vector_blob,
+                last_accessed_at = excluded.last_accessed_at
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        let key = record.key
+        try Self.bindText(Self.ownerKey(key.ownerDeviceID.sqliteNormalizedOwnerDeviceID), to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.canonicalQualifiedEmbeddingModelID, to: statement, at: 3)
+        try Self.bindText(key.modelFingerprint, to: statement, at: 4)
+        try Self.bindText(key.documentFingerprint, to: statement, at: 5)
+        try Self.bindInt(record.embedding.count, to: statement, at: 6)
+        try Self.bindBlob(Self.encodeSemanticEmbedding(record.embedding), to: statement, at: 7)
+        try Self.bindDouble(Date().timeIntervalSince1970, to: statement, at: 8)
+        try Self.stepDone(statement, database: database)
+    }
+
+    private func deleteSemanticEmbeddingUnlocked(
+        _ key: RuntimeChatSemanticEmbeddingKey,
+        database: OpaquePointer
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            """
+            DELETE FROM runtime_chat_semantic_embeddings
+            WHERE owner_key = ?
+              AND session_id = ?
+              AND embedding_model_id = ?
+              AND model_fingerprint = ?
+              AND document_fingerprint = ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(Self.ownerKey(key.ownerDeviceID.sqliteNormalizedOwnerDeviceID), to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.canonicalQualifiedEmbeddingModelID, to: statement, at: 3)
+        try Self.bindText(key.modelFingerprint, to: statement, at: 4)
+        try Self.bindText(key.documentFingerprint, to: statement, at: 5)
+        try Self.stepDone(statement, database: database)
+    }
+
+    private func deleteSemanticEmbeddingsUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?,
+        sessionID: String
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            "DELETE FROM runtime_chat_semantic_embeddings WHERE owner_key = ? AND session_id = ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
+        try Self.bindText(sessionID, to: statement, at: 2)
+        try Self.stepDone(statement, database: database)
+    }
+
+    private func enforceSemanticEmbeddingRowLimitUnlocked(
+        _ scope: RuntimeChatSemanticEmbeddingScope,
+        database: OpaquePointer
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            """
+            DELETE FROM runtime_chat_semantic_embeddings
+            WHERE rowid IN (
+                SELECT rowid
+                FROM runtime_chat_semantic_embeddings
+                WHERE owner_key = ?
+                  AND embedding_model_id = ?
+                ORDER BY last_accessed_at DESC, rowid DESC
+                LIMIT -1 OFFSET ?
+            )
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(scope.ownerKey, to: statement, at: 1)
+        try Self.bindText(scope.embeddingModelID, to: statement, at: 2)
+        try Self.bindInt(semanticEmbeddingRowLimitPerOwnerModel, to: statement, at: 3)
+        try Self.stepDone(statement, database: database)
+    }
+
     private func pruneDeletedSessionsUnlocked(
         _ database: OpaquePointer,
         ownerDeviceID: String?,
@@ -536,6 +836,11 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 deletedAt: candidate.deletedAt
             )
             prunedEventCount += try deleteEventsUnlocked(
+                database,
+                ownerDeviceID: ownerDeviceID,
+                sessionID: candidate.sessionID
+            )
+            try deleteSemanticEmbeddingsUnlocked(
                 database,
                 ownerDeviceID: ownerDeviceID,
                 sessionID: candidate.sessionID
@@ -687,11 +992,44 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         )
         try execute(
             database,
+            """
+            CREATE TABLE IF NOT EXISTS runtime_chat_semantic_embeddings(
+                owner_key TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                embedding_model_id TEXT NOT NULL,
+                model_fingerprint TEXT NOT NULL,
+                document_fingerprint TEXT NOT NULL,
+                dimension INTEGER NOT NULL,
+                vector_blob BLOB NOT NULL,
+                last_accessed_at REAL NOT NULL,
+                PRIMARY KEY(
+                    owner_key,
+                    session_id,
+                    embedding_model_id,
+                    model_fingerprint,
+                    document_fingerprint
+                )
+            )
+            """
+        )
+        try execute(
+            database,
             "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_owner_session ON runtime_chat_events(owner_device_id, session_id, sequence)"
         )
         try execute(
             database,
             "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_timestamp ON runtime_chat_events(timestamp)"
+        )
+        try execute(
+            database,
+            """
+            CREATE INDEX IF NOT EXISTS idx_runtime_chat_semantic_embeddings_owner_model_lru
+            ON runtime_chat_semantic_embeddings(
+                owner_key,
+                embedding_model_id,
+                last_accessed_at DESC
+            )
+            """
         )
         try execute(
             database,
@@ -816,6 +1154,27 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try bindText(value, to: statement, at: index)
     }
 
+    private static func bindInt(_ value: Int, to statement: OpaquePointer, at index: Int32) throws {
+        guard sqlite3_bind_int64(statement, index, sqlite3_int64(value)) == SQLITE_OK else {
+            throw SQLiteRuntimeChatEventStoreError("Could not bind runtime chat SQLite integer.")
+        }
+    }
+
+    private static func bindDouble(_ value: Double, to statement: OpaquePointer, at index: Int32) throws {
+        guard sqlite3_bind_double(statement, index, value) == SQLITE_OK else {
+            throw SQLiteRuntimeChatEventStoreError("Could not bind runtime chat SQLite double.")
+        }
+    }
+
+    private static func bindBlob(_ value: Data, to statement: OpaquePointer, at index: Int32) throws {
+        let result = value.withUnsafeBytes { bytes in
+            sqlite3_bind_blob(statement, index, bytes.baseAddress, Int32(bytes.count), sqliteTransient)
+        }
+        guard result == SQLITE_OK else {
+            throw SQLiteRuntimeChatEventStoreError("Could not bind runtime chat SQLite blob.")
+        }
+    }
+
     private static func stepDone(_ statement: OpaquePointer, database: OpaquePointer) throws {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw failure(database, "Could not write runtime chat SQLite row.")
@@ -833,6 +1192,81 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
     private static func ownerKey(_ ownerDeviceID: String?) -> String {
         ownerDeviceID ?? ""
+    }
+
+    private static func validateSemanticEmbeddingKey(_ key: RuntimeChatSemanticEmbeddingKey) throws {
+        guard key.ownerDeviceID == key.ownerDeviceID.sqliteNormalizedOwnerDeviceID else {
+            throw SQLiteRuntimeChatEventStoreError("Runtime chat semantic embedding owner is not canonical.")
+        }
+        for (value, label) in [
+            (key.sessionID, "session id"),
+            (key.canonicalQualifiedEmbeddingModelID, "embedding model id"),
+            (key.modelFingerprint, "model fingerprint"),
+            (key.documentFingerprint, "document fingerprint"),
+        ] {
+            guard !value.isEmpty,
+                  value == value.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+                throw SQLiteRuntimeChatEventStoreError(
+                    "Runtime chat semantic embedding \(label) is not canonical."
+                )
+            }
+        }
+        guard let qualifiedModel = ModelProvider.splitQualifiedModelID(
+            key.canonicalQualifiedEmbeddingModelID
+        ),
+              !qualifiedModel.modelID.isEmpty,
+              qualifiedModel.provider.qualifiedModelID(qualifiedModel.modelID)
+                == key.canonicalQualifiedEmbeddingModelID else {
+            throw SQLiteRuntimeChatEventStoreError(
+                "Runtime chat semantic embedding model id is not canonical and qualified."
+            )
+        }
+    }
+
+    private static func validateSemanticEmbeddingRecord(
+        _ record: RuntimeChatSemanticEmbeddingRecord
+    ) throws {
+        try validateSemanticEmbeddingKey(record.key)
+        guard !record.embedding.isEmpty,
+              record.embedding.count <= semanticEmbeddingDimensionLimit,
+              record.embedding.allSatisfy(\.isFinite),
+              record.embedding.contains(where: { $0 != 0 }) else {
+            throw SQLiteRuntimeChatEventStoreError(
+                "Runtime chat semantic embedding vector must be finite, nonempty, and nonzero."
+            )
+        }
+    }
+
+    private static func encodeSemanticEmbedding(_ embedding: [Double]) -> Data {
+        var data = Data(capacity: embedding.count * MemoryLayout<UInt64>.size)
+        for value in embedding {
+            var bits = value.bitPattern.littleEndian
+            withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
+        }
+        return data
+    }
+
+    private static func decodeSemanticEmbedding(_ data: Data, dimension: Int) -> [Double]? {
+        guard dimension > 0,
+              dimension <= semanticEmbeddingDimensionLimit,
+              data.count == dimension * MemoryLayout<UInt64>.size else {
+            return nil
+        }
+        var embedding: [Double] = []
+        embedding.reserveCapacity(dimension)
+        for offset in stride(from: 0, to: data.count, by: MemoryLayout<UInt64>.size) {
+            var bits: UInt64 = 0
+            _ = withUnsafeMutableBytes(of: &bits) { destination in
+                data.copyBytes(to: destination, from: offset..<(offset + MemoryLayout<UInt64>.size))
+            }
+            embedding.append(Double(bitPattern: UInt64(littleEndian: bits)))
+        }
+        guard embedding.allSatisfy(\.isFinite),
+              embedding.contains(where: { $0 != 0 }) else {
+            return nil
+        }
+        return embedding
     }
 
     private static func ftsMatchQuery(for query: RuntimeChatSessionSearchQuery) -> String {
@@ -858,12 +1292,23 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     }
 
     private static let legacyImportMetadataKey = "legacy_jsonl_imported"
+    private static let semanticEmbeddingDimensionLimit = 65_536
 }
 
 private struct RuntimeChatRetentionCandidate {
     var sessionID: String
     var deletedAt: Date
     var eventCount: Int
+}
+
+private struct RuntimeChatSemanticEmbeddingScope: Hashable {
+    var ownerKey: String
+    var embeddingModelID: String
+
+    init(key: RuntimeChatSemanticEmbeddingKey) {
+        self.ownerKey = key.ownerDeviceID ?? ""
+        self.embeddingModelID = key.canonicalQualifiedEmbeddingModelID
+    }
 }
 
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -40,6 +40,7 @@
         "memory.upsert",
         "memory.delete",
         "memory.summary.drafts.list",
+        "memory.summary.draft.generate",
         "memory.summary.draft.approve",
         "memory.summary.draft.dismiss",
         "error"
@@ -173,6 +174,10 @@
     {
       "if": { "properties": { "type": { "const": "memory.summary.drafts.list" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memorySummaryDraftsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.summary.draft.generate" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySummaryDraftGeneratePayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "memory.summary.draft.approve" } }, "required": ["type"] },
@@ -1311,7 +1316,8 @@
         {
           "type": "object",
           "properties": {
-            "query": { "$ref": "#/$defs/nonEmptyString" }
+            "query": { "$ref": "#/$defs/nonEmptyString" },
+            "embedding_model_id": { "$ref": "#/$defs/nonEmptyString" }
           },
           "additionalProperties": false
         },
@@ -1393,6 +1399,29 @@
         }
       ]
     },
+    "memorySummaryDraftGeneratePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["draft_id", "model", "expected_session_id", "expected_source_message_count"],
+          "properties": {
+            "draft_id": { "$ref": "#/$defs/nonBlankString" },
+            "model": { "$ref": "#/$defs/nonBlankString" },
+            "expected_session_id": { "$ref": "#/$defs/nonBlankString" },
+            "expected_source_message_count": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["draft"],
+          "properties": {
+            "draft": { "$ref": "#/$defs/memorySummaryDraft" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "memorySummaryDraftApprovePayload": {
       "oneOf": [
         {
@@ -1463,7 +1492,10 @@
           "items": { "$ref": "#/$defs/memorySummaryDraftSourcePointer" },
           "minItems": 1
         },
-        "summary_preview": { "$ref": "#/$defs/nonEmptyString" }
+        "summary_preview": { "$ref": "#/$defs/nonEmptyString" },
+        "summary_method": { "enum": ["deterministic_preview", "llm_summary_v1"] },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "generated_model_id": { "$ref": "#/$defs/nonBlankString" }
       },
       "additionalProperties": false
     },
@@ -1527,11 +1559,13 @@
             "chat_session_must_be_archived_before_delete",
             "chat_session_must_be_restored_before_send",
             "chat_store_unavailable",
+            "chat_context_window_exceeded",
             "document_index_unavailable",
             "source_anchor_not_found",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",
+            "memory_summary_draft_generation_failed",
             "transport_error",
             "internal_error"
           ]

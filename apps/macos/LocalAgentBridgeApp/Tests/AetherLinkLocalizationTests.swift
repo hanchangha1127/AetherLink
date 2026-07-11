@@ -2817,14 +2817,16 @@ final class AetherLinkLocalizationTests: XCTestCase {
             "Runtime tried /api/chat directly",
         ]
 
-        for diagnostic in unsafeDiagnostics {
-            XCTAssertEqual(sanitizedTechnicalDiagnostic(diagnostic), "Provider address hidden.")
-        }
+        withStoredAppLanguage("en") {
+            for diagnostic in unsafeDiagnostics {
+                XCTAssertEqual(sanitizedTechnicalDiagnostic(diagnostic), "Provider address hidden.")
+            }
 
-        XCTAssertEqual(
-            sanitizedTechnicalDiagnostic("Remote route failed: relay.example.test:43171"),
-            "Remote route failed: relay.example.test:43171"
-        )
+            XCTAssertEqual(
+                sanitizedTechnicalDiagnostic("Remote route failed: relay.example.test:43171"),
+                "Remote route failed: relay.example.test:43171"
+            )
+        }
     }
 
     func testActivityTechnicalDetailsRedactRouteSecrets() {
@@ -2839,8 +2841,13 @@ final class AetherLinkLocalizationTests: XCTestCase {
             "pc=p2p_rendezvous prid=record-3 peb=opaque-body-3 px=4102444800000 pn=nonce-3 pv=1",
         ]
 
-        for diagnostic in diagnostics {
-            XCTAssertEqual(sanitizedTechnicalDiagnostic(diagnostic), "Sensitive technical detail redacted.")
+        withStoredAppLanguage("en") {
+            for diagnostic in diagnostics {
+                XCTAssertEqual(
+                    sanitizedTechnicalDiagnostic(diagnostic),
+                    "Sensitive technical detail redacted."
+                )
+            }
         }
     }
 
@@ -3838,33 +3845,37 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testProviderStatusTechnicalDetailsRedactEndpointsButKeepSafeFields() {
-        XCTAssertEqual(
-            providerStatusDiagnosticDetail(
-                message: "Model list failed: http://192.168.1.23:11434/api/tags",
-                code: "backend_unavailable",
-                retryable: true
-            ),
-            [
-                "Provider address hidden.",
-                "code=backend_unavailable",
-                "retryable=true",
-            ].joined(separator: "\n")
-        )
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(
+                providerStatusDiagnosticDetail(
+                    message: "Model list failed: http://192.168.1.23:11434/api/tags",
+                    code: "backend_unavailable",
+                    retryable: true
+                ),
+                [
+                    "Provider address hidden.",
+                    "code=backend_unavailable",
+                    "retryable=true",
+                ].joined(separator: "\n")
+            )
+        }
     }
 
     func testProviderStatusTechnicalDetailsRedactUnsafeCodes() {
-        XCTAssertEqual(
-            providerStatusDiagnosticDetail(
-                message: "Remote route failed: relay.example.test:43171",
-                code: "route_token=secret",
-                retryable: false
-            ),
-            [
-                "Remote route failed: relay.example.test:43171",
-                "code=Sensitive technical detail redacted.",
-                "retryable=false",
-            ].joined(separator: "\n")
-        )
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(
+                providerStatusDiagnosticDetail(
+                    message: "Remote route failed: relay.example.test:43171",
+                    code: "route_token=secret",
+                    retryable: false
+                ),
+                [
+                    "Remote route failed: relay.example.test:43171",
+                    "code=Sensitive technical detail redacted.",
+                    "retryable=false",
+                ].joined(separator: "\n")
+            )
+        }
     }
 
     func testProviderStatusTechnicalDetailsAccessibilityLabelUsesProviderContext() {

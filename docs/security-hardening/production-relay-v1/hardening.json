@@ -5,7 +5,7 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink development-relay source snapshot supporting a production security design review",
-    "collectionSha256": "ee7af3d5ecf1a90e95f731417b0901602584c094e15acb6d04f6b2db414667ee",
+    "collectionSha256": "4a6ab46a0ba36feacd1f8f23402223dd33194c3449ac0a41d118a1453cdca092",
     "artifactCount": 17,
     "targetRevision": "72d5d7b740099a6c7937910dd4cb7ad378245e21",
     "sourceDrift": "present"
@@ -82,7 +82,7 @@
           "sourceKind": "source",
           "evidenceId": "E012",
           "path": "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift",
-          "claim": "Unmatched rooms have a first-insertion monotonic deadline capped by lease expiry, and verified runtime or paired-client identities have role-separated cross-source waiting quotas. Bootstrap and legacy peers remain source-only. This development control does not authenticate the service or sign leases."
+          "claim": "Unmatched rooms have a first-insertion monotonic deadline capped by lease expiry, registration or readiness decisions atomically expire late rooms before matching or replacement, and waiting results carry the deadline without a post-publication room lookup. Verified runtime or paired-client identities have role-separated cross-source waiting quotas. Bootstrap and legacy peers remain source-only. This development control does not authenticate the service or sign leases."
         }
       ],
       "desiredInvariants": [
@@ -469,7 +469,7 @@
           "sourceKind": "source",
           "evidenceId": "E012",
           "path": "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift",
-          "claim": "Unmatched rooms have lease-capped first-insertion deadlines, and verified runtime or paired-client identities have role-separated cross-source waiting quotas after proof. Bootstrap and legacy peers remain source-only. This adds no pair epoch, recovery authority, or revocation transition."
+          "claim": "Unmatched rooms have lease-capped first-insertion deadlines, registration or readiness decisions atomically expire late rooms before matching or replacement, and waiting results carry the deadline without a post-publication room lookup. Verified runtime or paired-client identities have role-separated cross-source waiting quotas after proof. Bootstrap and legacy peers remain source-only. This does not add a pair epoch, recovery authority, or revocation transition."
         }
       ],
       "desiredInvariants": [

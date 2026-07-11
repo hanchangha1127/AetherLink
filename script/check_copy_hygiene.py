@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -21756,6 +21757,72 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
+            "allowedMemorySummaryDraftGeneratePayloadKeys",
+            "Runtime router must keep the memory.summary.draft.generate request shape closed.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memorySummaryGenerationCoordinator.generate",
+            "Runtime router must coalesce concurrent generation for one owner-scoped draft.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "currentDraft.hasSameMemorySummarySource(as: baseDraft)",
+            "Runtime router must revalidate the exact summary source after inference before caching.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Summarize only the supplied visible conversation excerpts",
+            "Runtime summary generation must use the bounded visible-excerpt prompt boundary.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftGenerateCachesReviewDraftAndApprovalPreservesGeneratedSource",
+            "Runtime router tests must prove generated summary cache, reopen, and review-only approval behavior.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftGenerateRevalidatesSourceAfterInferenceBeforeCaching",
+            "Runtime router tests must prove post-inference source mutation persists no generated draft.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "review-required long-inactivity memory summary generation addendum",
+            "Default no-device summary must name review-required runtime summary generation coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android transient memory summary generation addendum",
+            "Default no-device summary must name transient Android generation coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "### `memory.summary.draft.generate`",
+            "Protocol docs must describe the active memory summary generation command.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Review-Required Long-Inactivity Memory Summary Generation",
+            "Progress docs must record the generated memory summary slice.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Review-Required Long-Inactivity Memory Summary Generation",
+            "QA evidence must record the generated memory summary slice.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
             "allowedMemorySummaryDraftApprovePayloadKeys",
             "Runtime router must keep a memory.summary.draft.approve payload key allowlist before runtime store mutation.",
         ),
@@ -23111,6 +23178,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
     android_protocol_path = ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
     android_protocol_test_path = ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    android_ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    android_ui_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     macos_store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
     macos_sqlite_store_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift"
     macos_memory_store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeMemoryStore.swift"
@@ -23122,6 +23191,29 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_trusted_test_path = ROOT / "apps/macos/TrustedDevices/Tests/TrustedDeviceStoreTests.swift"
     macos_identity_store_path = ROOT / "apps/macos/Pairing/Sources/FileRuntimeIdentityKeyStore.swift"
     macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_semantic_search_path = (
+        ROOT / "apps/macos/CompanionCore/Sources/RuntimeSemanticChatSessionSearch.swift"
+    )
+    macos_semantic_search_test_path = (
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeSemanticChatSessionSearchTests.swift"
+    )
+    macos_memory_semantic_search_path = (
+        ROOT / "apps/macos/CompanionCore/Sources/RuntimeSemanticMemorySearch.swift"
+    )
+    macos_memory_semantic_cache_path = (
+        ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeMemorySemanticEmbeddingCache.swift"
+    )
+    macos_memory_semantic_search_test_path = (
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeSemanticMemorySearchTests.swift"
+    )
+    macos_memory_semantic_cache_test_path = (
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeMemorySemanticEmbeddingCacheTests.swift"
+    )
+    llm_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
+    ollama_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
+    lm_studio_backend_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
+    aggregate_backend_path = ROOT / "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift"
+    runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
     macos_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
     macos_identity_test_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeIdentityKeyStoreTests.swift"
     macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
@@ -23129,6 +23221,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_inactivity_test_path = (
         ROOT / "apps/macos/CompanionCore/Tests/RuntimeLongInactivityMemorySummarizationPolicyTests.swift"
     )
+    runtime_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
@@ -23144,6 +23237,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         android_protocol_path,
         android_protocol_test_path,
         android_test_path,
+        android_ui_path,
+        android_ui_test_path,
         macos_store_path,
         macos_sqlite_store_path,
         macos_memory_store_path,
@@ -23153,6 +23248,18 @@ def runtime_history_storage_guard_failures() -> list[str]:
         macos_trusted_test_path,
         macos_identity_store_path,
         macos_router_path,
+        macos_semantic_search_path,
+        macos_semantic_search_test_path,
+        macos_memory_semantic_search_path,
+        macos_memory_semantic_cache_path,
+        macos_memory_semantic_search_test_path,
+        macos_memory_semantic_cache_test_path,
+        llm_backend_path,
+        ollama_backend_path,
+        lm_studio_backend_path,
+        aggregate_backend_path,
+        runtime_dev_server_path,
+        runtime_smoke_path,
         macos_model_path,
         macos_identity_test_path,
         macos_test_path,
@@ -23175,6 +23282,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
     android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
+    android_ui_text = android_ui_path.read_text(encoding="utf-8", errors="replace")
+    android_ui_test_text = android_ui_test_path.read_text(encoding="utf-8", errors="replace")
     macos_store_text = macos_store_path.read_text(encoding="utf-8", errors="replace")
     macos_sqlite_store_text = macos_sqlite_store_path.read_text(encoding="utf-8", errors="replace")
     macos_memory_store_text = macos_memory_store_path.read_text(encoding="utf-8", errors="replace")
@@ -23184,6 +23293,18 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_trusted_test_text = macos_trusted_test_path.read_text(encoding="utf-8", errors="replace")
     macos_identity_store_text = macos_identity_store_path.read_text(encoding="utf-8", errors="replace")
     macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
+    macos_semantic_search_text = macos_semantic_search_path.read_text(encoding="utf-8", errors="replace")
+    macos_semantic_search_test_text = macos_semantic_search_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_semantic_search_text = macos_memory_semantic_search_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_semantic_cache_text = macos_memory_semantic_cache_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_semantic_search_test_text = macos_memory_semantic_search_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_semantic_cache_test_text = macos_memory_semantic_cache_test_path.read_text(encoding="utf-8", errors="replace")
+    llm_backend_text = llm_backend_path.read_text(encoding="utf-8", errors="replace")
+    ollama_backend_text = ollama_backend_path.read_text(encoding="utf-8", errors="replace")
+    lm_studio_backend_text = lm_studio_backend_path.read_text(encoding="utf-8", errors="replace")
+    aggregate_backend_text = aggregate_backend_path.read_text(encoding="utf-8", errors="replace")
+    runtime_dev_server_text = runtime_dev_server_path.read_text(encoding="utf-8", errors="replace")
+    runtime_smoke_text = runtime_smoke_path.read_text(encoding="utf-8", errors="replace")
     macos_model_text = macos_model_path.read_text(encoding="utf-8", errors="replace")
     macos_identity_test_text = macos_identity_test_path.read_text(encoding="utf-8", errors="replace")
     macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
@@ -23203,6 +23324,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
     android_protocol_relative = android_protocol_path.relative_to(ROOT)
     android_protocol_test_relative = android_protocol_test_path.relative_to(ROOT)
     android_test_relative = android_test_path.relative_to(ROOT)
+    android_ui_relative = android_ui_path.relative_to(ROOT)
+    android_ui_test_relative = android_ui_test_path.relative_to(ROOT)
     macos_store_relative = macos_store_path.relative_to(ROOT)
     macos_sqlite_store_relative = macos_sqlite_store_path.relative_to(ROOT)
     macos_memory_store_relative = macos_memory_store_path.relative_to(ROOT)
@@ -23212,6 +23335,18 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_trusted_test_relative = macos_trusted_test_path.relative_to(ROOT)
     macos_identity_store_relative = macos_identity_store_path.relative_to(ROOT)
     macos_router_relative = macos_router_path.relative_to(ROOT)
+    macos_semantic_search_relative = macos_semantic_search_path.relative_to(ROOT)
+    macos_semantic_search_test_relative = macos_semantic_search_test_path.relative_to(ROOT)
+    macos_memory_semantic_search_relative = macos_memory_semantic_search_path.relative_to(ROOT)
+    macos_memory_semantic_cache_relative = macos_memory_semantic_cache_path.relative_to(ROOT)
+    macos_memory_semantic_search_test_relative = macos_memory_semantic_search_test_path.relative_to(ROOT)
+    macos_memory_semantic_cache_test_relative = macos_memory_semantic_cache_test_path.relative_to(ROOT)
+    llm_backend_relative = llm_backend_path.relative_to(ROOT)
+    ollama_backend_relative = ollama_backend_path.relative_to(ROOT)
+    lm_studio_backend_relative = lm_studio_backend_path.relative_to(ROOT)
+    aggregate_backend_relative = aggregate_backend_path.relative_to(ROOT)
+    runtime_dev_server_relative = runtime_dev_server_path.relative_to(ROOT)
+    runtime_smoke_relative = runtime_smoke_path.relative_to(ROOT)
     macos_model_relative = macos_model_path.relative_to(ROOT)
     macos_identity_test_relative = macos_identity_test_path.relative_to(ROOT)
     macos_test_relative = macos_test_path.relative_to(ROOT)
@@ -23318,6 +23453,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android protocol constants must expose the long-inactivity memory summary draft listing message.",
         ),
         (
+            'const val MemorySummaryDraftGenerate = "memory.summary.draft.generate"',
+            "Android protocol constants must expose review-required memory summary generation.",
+        ),
+        (
             'const val MemorySummaryDraftApprove = "memory.summary.draft.approve"',
             "Android protocol constants must expose the long-inactivity memory summary draft approval message.",
         ),
@@ -23390,7 +23529,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Protocol docs must show the optional selected embedding model search hint.",
         ),
         (
-            "it is a runtime-side semantic search/ranking hint for future embedding-backed recall",
+            "the runtime resolves that provider-qualified installed local embedding model",
             "Protocol docs must keep embedding_model_id scoped to runtime-side search/ranking.",
         ),
         (
@@ -23398,11 +23537,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Protocol docs must not let embedding_model_id become a chat model override or client-provider path.",
         ),
         (
-            "must not echo the hint in response payloads",
+            "must not echo the model id or vectors in response payloads",
             "Protocol docs must keep embedding_model_id out of chat.sessions.list responses.",
         ),
         (
-            "Nonblank queries are normalized by the runtime and filter owner-scoped memory entries",
+            "Without `embedding_model_id`, nonblank queries use deterministic lexical filtering over memory content",
             "Protocol docs must describe runtime-owned memory.list query filtering.",
         ),
         (
@@ -23452,12 +23591,20 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android memory query refresh must not refresh summary drafts for nonblank memory searches.",
         ),
         (
-            "payload = MemoryListRequestPayload(query = normalizedQuery)",
+            "payload = MemoryListRequestPayload(",
             "Android memory.list query refresh must encode the optional memory search payload.",
         ),
         (
             "MessageType.MemorySummaryDraftsList,",
             "Android client capabilities must advertise the read-only memory summary draft listing command.",
+        ),
+        (
+            "MessageType.MemorySummaryDraftGenerate,",
+            "Android client capabilities must advertise review-required memory summary generation.",
+        ),
+        (
+            "fun generateMemorySummaryDraft(draftId: String)",
+            "Android runtime state must expose the transient generated-summary action.",
         ),
         (
             "MessageType.MemorySummaryDraftApprove,",
@@ -23539,13 +23686,16 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'assertEquals("ollama:nomic-embed-text", requestJson["embedding_model_id"]?.jsonPrimitive?.content)',
         "ChatSessionSearchPayload(",
         'assertEquals("Runtime history matched relay route.", decoded.sessions.first().search?.snippet)',
-        "MemoryListRequestPayload(query = \"concise answers\")",
+        "val listRequest = MemoryListRequestPayload(",
         'assertEquals("concise answers", listRequestJson["query"]?.jsonPrimitive?.content)',
         "memoryListRequestRejectsInvalidBounds",
         '"""{"query":""}"""',
         'assertEquals("Prefers concise answers.", decodedList.entries.first().search?.snippet)',
         "memorySummaryDraftsListPayloadUsesProtocolFieldNames",
         'assertEquals(MessageType.MemorySummaryDraftsList, "memory.summary.drafts.list")',
+        "memorySummaryDraftGeneratePayloadRoundTripsExactWireShape",
+        'assertEquals(MessageType.MemorySummaryDraftGenerate, "memory.summary.draft.generate")',
+        "memorySummaryDraftGeneratePayloadRejectsBoundsMalformedValuesAndUnknownMetadata",
         "MemorySummaryDraftsListResultPayload(",
         "memorySummaryDraftApprovePayloadUsesProtocolFieldNames",
         'assertEquals(MessageType.MemorySummaryDraftApprove, "memory.summary.draft.approve")',
@@ -23563,6 +23713,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     required_android_test_snippets = (
         "runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage",
+        "generateMemorySummaryDraftSendsStaleGuardsBlocksDuplicateDecisionsAndStaysTransient",
+        "generateMemorySummaryDraftStaleErrorClearsPendingKeepsPreviewAndRefreshesDrafts",
+        "generateMemorySummaryDraftSendFailureClearsPendingAndKeepsDeterministicPreview",
         "approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly",
         "approveMemorySummaryDraftErrorClearsPendingAndAllowsRetry",
         "dismissMemorySummaryDraftSendsExpectedDecisionAndRemovesDraft",
@@ -23590,9 +23743,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage",
         'assertEquals("relay recovery", queryPayload.query)',
         'assertEquals(listOf("content", "source_excerpt"), runtimeEntry.searchMatchedFields)',
-        "refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint",
-        'assertNull(queryRequest.payload["embedding_model_id"])',
-        "assertFalse(json.encodeToString(queryRequest.payload).contains(selectedEmbeddingModel.id))",
+        "refreshRuntimeMemorySearchSendsSelectedEmbeddingModelHint",
+        "assertEquals(selectedEmbeddingModel.id, queryPayload.embeddingModelId)",
+        "runtimeMemorySearchResultsStayTransientAndIgnoreLateResponses",
+        "malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults",
         "ChatSessionSearchPayload(",
         "assertNull(savedRedaction.runtimeSearchSnippet)",
     )
@@ -23742,6 +23896,448 @@ def runtime_history_storage_guard_failures() -> list[str]:
         if snippet not in macos_router_text:
             failures.append(f"{macos_router_relative}: {guidance}")
 
+    required_embedding_backed_chat_search_snippets = (
+        (
+            llm_backend_text,
+            llm_backend_relative,
+            "func embed(request: EmbeddingRequest) async throws -> EmbeddingResult",
+            "LlmBackend must keep the runtime-host batch embedding contract.",
+        ),
+        (
+            ollama_backend_text,
+            ollama_backend_relative,
+            'let endpoint = "POST /api/embed"',
+            "Ollama embedding inference must stay on the runtime-host /api/embed endpoint.",
+        ),
+        (
+            ollama_backend_text,
+            ollama_backend_relative,
+            "var truncate = false",
+            "Ollama semantic search must reject oversized inputs instead of silently truncating them.",
+        ),
+        (
+            lm_studio_backend_text,
+            lm_studio_backend_relative,
+            'let endpoint = "POST /v1/embeddings"',
+            "LM Studio embedding inference must stay on its documented OpenAI-compatible endpoint.",
+        ),
+        (
+            lm_studio_backend_text,
+            lm_studio_backend_relative,
+            "Embedding index \\(item.index) is duplicated.",
+            "LM Studio embedding responses must reject duplicate indexes before ranking.",
+        ),
+        (
+            aggregate_backend_text,
+            aggregate_backend_relative,
+            "requiredKind: .embedding",
+            "The aggregate backend must route embedding calls only to installed local embedding models.",
+        ),
+        (
+            aggregate_backend_text,
+            aggregate_backend_relative,
+            "await prepareResidency(for: residencyModel)",
+            "Embedding inference must participate in the runtime model-residency policy.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "sessions = try await semanticChatSessions(",
+            "chat.sessions.list must dispatch selected embedding models to real semantic ranking.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "texts: [query] + candidates.map(\\.document)",
+            "Semantic ranking must embed the bounded query and owner-scoped candidate documents together.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "chatEventStore.listSemanticSearchSources(",
+            "Semantic chat search must read owner-scoped sessions and messages from one store snapshot.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "requestTasks.forEach { $0.cancel() }",
+            "Connection closure must cancel in-flight runtime request tasks, including embedding inference.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            ".map(RuntimeSemanticChatSessionSearch.canonicalModelName)",
+            "Embedding context budgets must use the aggregate router's latest-tag alias semantics.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "private let maximumConcurrentSemanticSearches = 4",
+            "Semantic chat search must keep a bounded cross-connection concurrency ceiling.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testChatSessionsListSemanticSearchFailureDoesNotFallBackToLexicalSearch",
+            "Semantic backend failures must not be silently converted into lexical results.",
+        ),
+        (
+            macos_semantic_search_text,
+            macos_semantic_search_relative,
+            "static let maximumCandidateCount = 200",
+            "Semantic chat search must keep a bounded owner-scoped candidate window.",
+        ),
+        (
+            macos_semantic_search_text,
+            macos_semantic_search_relative,
+            "static let maximumMessagesPerCandidate = 100",
+            "Semantic chat search must bound per-session message reads.",
+        ),
+        (
+            macos_semantic_search_text,
+            macos_semantic_search_relative,
+            "static let maximumDocumentUTF8Bytes = 8_192",
+            "Semantic chat search must bound each candidate document by UTF-8 bytes.",
+        ),
+        (
+            macos_semantic_search_text,
+            macos_semantic_search_relative,
+            "for message in messages.reversed()",
+            "Semantic document truncation must prioritize the newest stored messages.",
+        ),
+        (
+            macos_semantic_search_test_text,
+            macos_semantic_search_test_relative,
+            "testCandidateBoundsUTF8AndNeverIncludesInlineAttachmentBytes",
+            "Semantic chat search needs a durable inline-byte exclusion and UTF-8 bound regression.",
+        ),
+        (
+            macos_semantic_search_test_text,
+            macos_semantic_search_test_relative,
+            "testCandidateDocumentPrioritizesNewestMessagesInsideByteBudget",
+            "Semantic chat search needs a durable newest-message-priority regression.",
+        ),
+        (
+            runtime_dev_server_text,
+            runtime_dev_server_relative,
+            "embeddings: request.texts.map(Self.deterministicEmbedding)",
+            "RuntimeDevServer must provide deterministic local embeddings for authenticated relay smoke.",
+        ),
+        (
+            runtime_dev_server_text,
+            runtime_dev_server_relative,
+            "throw mockEmbeddingModelNotInstalled(request.model)",
+            "RuntimeDevServer must reject missing or non-embedding model ids like the production aggregate backend.",
+        ),
+        (
+            runtime_dev_server_text,
+            runtime_dev_server_relative,
+            "kind: ModelKind.from(capabilities: $0.capabilities, fallbackName: $0.name)",
+            "RuntimeDevServer additional models must derive model kind from their capabilities.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testConnectionCloseKeepsGlobalSemanticSlotUntilNoncooperativeEmbeddingEnds",
+            "Semantic concurrency must retain global slots until noncooperative canceled tasks actually end.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testChatSessionsListEmbeddingBudgetMatchesLatestAliasRouting",
+            "Semantic context-budget lookup needs latest-tag alias parity coverage.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_relative,
+            'requestID: "smoke-sessions-invalid-embedding-model"',
+            "Authenticated relay smoke must reject a chat model used as embedding_model_id.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_relative,
+            'requestID: "smoke-sessions-unqualified-embedding-model"',
+            "Authenticated relay smoke must reject unqualified embedding model ids.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "persistent runtime chat semantic embedding cache addendum",
+            "Default no-device output must state the persistent semantic-cache proof boundary.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Runtime Embedding-Backed Chat Semantic Search",
+            "Progress docs must record the first real embedding-backed chat search slice.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Runtime Embedding-Backed Chat Semantic Search",
+            "QA evidence must record embedding-backed chat semantic search verification.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Runtime embedding-backed chat semantic search addendum",
+            "Roadmap gate coverage must name embedding-backed chat semantic search.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_embedding_backed_chat_search_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+
+    required_persistent_chat_semantic_cache_snippets = (
+        (
+            macos_semantic_search_text,
+            macos_semantic_search_relative,
+            'revision.hasPrefix("ollama-sha256:")',
+            "Persistent semantic cache must require a canonical strong Ollama artifact revision.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "sourceRevision: candidates[index].sourceRevision",
+            "Semantic cache writes must retain the source snapshot revision.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "upsertSemanticEmbeddings(records, if:",
+            "Semantic cache writes must pass a cancellation-aware commit guard.",
+        ),
+        (
+            macos_sqlite_store_text,
+            macos_sqlite_store_relative,
+            'try Self.execute(database, "BEGIN DEFERRED")',
+            "SQLite semantic sources must capture events and source revisions in one read transaction.",
+        ),
+        (
+            macos_sqlite_store_text,
+            macos_sqlite_store_relative,
+            "guard currentRevision == sourceRevision else { continue }",
+            "SQLite semantic cache must reject stale source revisions inside the write transaction.",
+        ),
+        (
+            macos_sqlite_store_text,
+            macos_sqlite_store_relative,
+            "guard shouldCommit() else",
+            "SQLite semantic cache must recheck cancellation around its write transaction.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testChatSessionsListPersistentEmbeddingCacheEmbedsOnlyQueryAfterColdFill",
+            "Router tests must prove candidate reuse after a cold semantic-cache fill.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testConnectionCloseBeforeSemanticCacheCommitPreventsPersistentWrite",
+            "Router tests must prove connection cancellation prevents semantic-cache commit.",
+        ),
+        (
+            macos_sqlite_test_text,
+            macos_sqlite_test_relative,
+            "testSQLiteSemanticEmbeddingCacheRejectsStaleSourceRevisionAfterAppend",
+            "SQLite tests must prove stale in-flight embeddings cannot repopulate invalidated rows.",
+        ),
+        (
+            android_viewmodel_text,
+            android_viewmodel_relative,
+            "chatSessionSearchResults = orderedResults",
+            "Android queried chat history must publish transient search results.",
+        ),
+        (
+            android_test_text,
+            android_test_relative,
+            "runtimeChatSearchResultsStayTransientAndDoNotReplaceFullHistoryCache",
+            "Android tests must prove queried history does not replace the full persisted cache.",
+        ),
+        (
+            runtime_dev_server_text,
+            runtime_dev_server_relative,
+            '"input_count": request.texts.count',
+            "RuntimeDevServer embedding audit must record counts without input text.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_relative,
+            'requestID: "smoke-sessions-search-persistent-cache-hit"',
+            "Authenticated runtime smoke must repeat semantic search to prove persistent cache reuse.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Persistent Runtime Chat Semantic Embedding Cache",
+            "Progress docs must record the persistent prior-chat semantic cache slice.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Persistent Runtime Chat Semantic Embedding Cache",
+            "QA evidence must record persistent prior-chat semantic cache verification.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Persistent Runtime Chat Semantic Embedding Cache No-Device Gate",
+            "Roadmap must record the persistent prior-chat semantic cache gate.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_persistent_chat_semantic_cache_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+
+    required_approved_memory_semantic_cache_snippets = (
+        (
+            macos_router_text,
+            macos_router_relative,
+            "entries = try await semanticMemoryEntries(",
+            "memory.list must dispatch selected embedding models to approved-memory semantic ranking.",
+        ),
+        (
+            macos_router_text,
+            macos_router_relative,
+            "currentRevisions[candidates[index].entry.id] == candidates[index].sourceRevision",
+            "Semantic memory responses must drop entries changed or deleted during inference.",
+        ),
+        (
+            macos_memory_semantic_search_text,
+            macos_memory_semantic_search_relative,
+            "let content = source.entry.content",
+            "Semantic memory documents must derive only from approved entry content.",
+        ),
+        (
+            macos_memory_semantic_search_text,
+            macos_memory_semantic_search_relative,
+            "static let maximumCandidateCount = 200",
+            "Semantic memory search must keep a bounded approved-entry candidate window.",
+        ),
+        (
+            macos_memory_semantic_search_text,
+            macos_memory_semantic_search_relative,
+            "static let maximumDocumentUTF8Bytes = 4_096",
+            "Semantic memory search must bound approved content documents by UTF-8 bytes.",
+        ),
+        (
+            macos_memory_semantic_cache_text,
+            macos_memory_semantic_cache_relative,
+            "source_revision TEXT NOT NULL",
+            "Persistent memory vectors must bind the full approved-entry source revision.",
+        ),
+        (
+            macos_memory_semantic_cache_text,
+            macos_memory_semantic_cache_relative,
+            "guard shouldCommit() else",
+            "Persistent memory cache writes must recheck cancellation around commit.",
+        ),
+        (
+            macos_memory_store_text,
+            macos_memory_store_relative,
+            "try semanticEmbeddingCache.deleteEmbeddings(",
+            "Memory changes and deletion must synchronously purge derived vectors before mutation.",
+        ),
+        (
+            macos_memory_semantic_search_test_text,
+            macos_memory_semantic_search_test_relative,
+            "testCandidateEmbedsApprovedContentOnlyAndExcludesSourceAuditText",
+            "Helper tests must pin the approved-content-only embedding boundary.",
+        ),
+        (
+            macos_memory_semantic_cache_test_text,
+            macos_memory_semantic_cache_test_relative,
+            "testCachePurgeFailurePreventsPrivacySensitiveMutation",
+            "Cache tests must prove purge failure blocks a privacy-sensitive memory mutation.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testMemoryListSemanticSearchDropsEntryDeletedDuringInference",
+            "Router tests must prove deleted entries cannot reappear after semantic inference.",
+        ),
+        (
+            android_viewmodel_text,
+            android_viewmodel_relative,
+            "if (pendingMemoryListRequestId != envelope.requestId) return",
+            "Android must reject late or unsolicited memory.list responses.",
+        ),
+        (
+            android_viewmodel_text,
+            android_viewmodel_relative,
+            "memorySearchResults = orderedResults",
+            "Android queried memory results must remain transient.",
+        ),
+        (
+            android_test_text,
+            android_test_relative,
+            "memorySemanticSearchRetriesLexicallyWhenRuntimeRejectsEmbeddingHint",
+            "Android tests must pin strict older-runtime lexical fallback.",
+        ),
+        (
+            android_test_text,
+            android_test_relative,
+            "malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults",
+            "Android tests must release malformed memory.list requests and ignore late results.",
+        ),
+        (
+            android_ui_text,
+            android_ui_relative,
+            "normalizedMemorySearchQuery == remoteSearchQuery?.trim()?.ifBlank { null }",
+            "Settings must use remote semantic memory results only for the exact visible query.",
+        ),
+        (
+            android_ui_test_text,
+            android_ui_test_relative,
+            "settingsMemorySearchUsesMatchingRemoteSemanticResultsOnlyForCurrentQuery",
+            "Compose tests must pin exact-query semantic result presentation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_relative,
+            'requestID: "smoke-memory-list-semantic-cache-hit"',
+            "Authenticated smoke must repeat semantic memory search to prove candidate reuse.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "approved runtime memory semantic search and cache addendum",
+            "Default no-device output must state the approved-memory semantic proof boundary.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Approved Runtime Memory Semantic Search And Cache",
+            "Progress docs must record approved-memory semantic search and persistence.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Approved Runtime Memory Semantic Search And Cache",
+            "QA evidence must record approved-memory semantic verification.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Approved Runtime Memory Semantic Search And Cache No-Device Gate",
+            "Roadmap must record the approved-memory semantic gate.",
+        ),
+        (
+            docs_security_text,
+            docs_security_path.relative_to(ROOT),
+            "Approved Memory Semantic Cache",
+            "Security docs must state the approved-memory semantic cache boundary.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_approved_memory_semantic_cache_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    if "touchSemanticEmbeddingUnlocked" in macos_sqlite_store_text:
+        failures.append(
+            f"{macos_sqlite_store_relative}: Semantic cache lookup must remain read-only instead of touching LRU state."
+        )
+
     required_macos_router_memory_search_snippets = (
         (
             "query: boundedQuery",
@@ -23888,6 +24484,18 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             'append("source_excerpt", pointer.excerpt, weight: 40)',
             "Runtime memory query filtering must cover bounded source excerpts without exposing full transcripts.",
+        ),
+        (
+            'case generatedMemorySummaryDraft = "generated_memory_summary_draft"',
+            "Runtime memory storage must persist generated review drafts separately from approved entries.",
+        ),
+        (
+            "func cacheGeneratedMemorySummaryDraft(",
+            "Runtime memory storage must expose owner-scoped generated draft caching.",
+        ),
+        (
+            "public static let summaryMethod = \"llm_summary_v1\"",
+            "Generated draft source metadata must use the stable llm_summary_v1 method.",
         ),
     )
     for snippet, guidance in required_macos_memory_store_snippets:
@@ -24039,12 +24647,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime chat session reads must use trusted-device owner scope.",
         ),
         (
-            "let query = try optionalRequestString(\"query\", in: envelope.payload)",
-            "chat.sessions.list must parse the optional runtime-owned session search query.",
+            "let query = try boundedChatSessionSearchQuery(",
+            "chat.sessions.list must parse and bound the optional runtime-owned session search query.",
         ),
         (
-            "includeArchived: includeArchived,\n                query: query",
-            "chat.sessions.list must pass search query through the owner-scoped store boundary.",
+            "query: query,\n                    embeddingModelID: nil",
+            "chat.sessions.list must preserve owner-scoped lexical store dispatch when no embedding model is selected.",
         ),
         (
             "private let memoryListQueryMaxCharacters = 256",
@@ -24501,7 +25109,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_relative,
-            "Nonblank lexical queries are bounded to 256 characters and 16 distinct normalized terms",
+            "Nonblank queries are bounded to 256 characters and 16 distinct normalized terms",
             "Protocol docs must document runtime memory.list query resource bounds.",
         ),
         (
@@ -24743,8 +25351,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_relative,
-            "The current implementation is deterministic lexical filtering",
-            "Protocol docs must keep memory.list query scoped away from semantic embedding search.",
+            "Without `embedding_model_id`, nonblank queries use deterministic lexical filtering",
+            "Protocol docs must preserve the memory.list lexical fallback beside semantic ranking.",
         ),
     )
     for haystack, relative, snippet, guidance in required_runtime_memory_search_docs:
@@ -24778,50 +25386,54 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention Android Settings memory runtime search coverage."
         )
-    if "RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint" not in no_device_text:
+    if "RuntimeClientViewModelTest.refreshRuntimeMemorySearchSendsSelectedEmbeddingModelHint" not in no_device_text:
         failures.append(
-            f"{no_device_relative}: Default no-device gate must run Android memory.list selected embedding-model isolation regression."
+            f"{no_device_relative}: Default no-device gate must run Android semantic memory hint regression."
         )
-    if "Android memory.list selected embedding-model isolation addendum" not in no_device_text:
+    if "RuntimeClientViewModelTest.malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults" not in no_device_text:
         failures.append(
-            f"{no_device_relative}: Default no-device gate must mention Android memory.list selected embedding-model isolation coverage."
+            f"{no_device_relative}: Default no-device gate must run malformed memory.list recovery regression."
+        )
+    if "Android memory.list semantic-model hint and transient-cache addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android semantic memory hint and transient-cache coverage."
         )
     required_android_memory_embedding_isolation_docs = (
         (
             docs_progress_text,
             docs_progress_relative,
-            "Android Memory.List Embedding Isolation No-Device Gate",
-            "Progress docs must record the Android memory.list selected embedding-model isolation no-device gate.",
+            "Approved Runtime Memory Semantic Search And Cache",
+            "Progress docs must record the active approved-memory semantic gate.",
         ),
         (
             docs_progress_text,
             docs_progress_relative,
-            "RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint",
-            "Progress docs must record the focused Android memory.list selected embedding-model isolation regression.",
+            "selected embedding hints are query-only",
+            "Progress docs must record query-only Android embedding hints.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_relative,
-            "Android Memory.List Embedding Isolation No-Device Gate",
-            "QA evidence must record the Android memory.list selected embedding-model isolation no-device gate.",
+            "Approved Runtime Memory Semantic Search And Cache",
+            "QA evidence must record the approved-memory semantic gate.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_relative,
-            "Android memory.list selected embedding-model isolation addendum",
-            "QA evidence must record the no-device summary phrase for Android memory.list selected embedding-model isolation coverage.",
+            "selected model hint emission",
+            "QA evidence must record Android semantic memory model-hint coverage.",
         ),
         (
             docs_roadmap_text,
             docs_roadmap_relative,
-            "Latest Android memory.list selected embedding-model isolation no-device gate",
-            "Roadmap must record the latest Android memory.list selected embedding-model isolation no-device gate.",
+            "Approved Runtime Memory Semantic Search And Cache No-Device Gate",
+            "Roadmap must record the active approved-memory semantic no-device gate.",
         ),
         (
             docs_protocol_text,
             docs_protocol_relative,
-            "it does not use embeddings, selected embedding models, semantic indexes, or a separate `memory.search` command",
-            "Protocol docs must keep memory.list query scoped away from selected embedding models.",
+            "There is no separate `memory.search` command",
+            "Protocol docs must keep semantic memory ranking inside memory.list.",
         ),
     )
     for haystack, relative, snippet, guidance in required_android_memory_embedding_isolation_docs:
@@ -24839,7 +25451,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention deterministic long-inactivity memory draft coverage."
         )
-    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation" not in no_device_text:
+    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateCachesReviewDraftAndApprovalPreservesGeneratedSource|LocalRuntimeMessageRouterTests/testAuthenticatedMemorySummaryDraftGenerateReusesOwnerScopedCache|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateMalformedResponseLeavesPreviewAndMemoryUnchanged|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateRevalidatesSourceAfterInferenceBeforeCaching|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run memory summary draft protocol listing and approval regressions."
         )
@@ -32020,34 +32632,42 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     failures: list[str] = []
     store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    planner_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatContextCompactionPlanner.swift"
     tests_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    planner_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeChatContextCompactionPlannerTests.swift"
     sqlite_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
     llm_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
     ollama_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
     lmstudio_backend_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
     android_protocol_path = ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
     android_protocol_test_path = ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
+    android_compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     android_state_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt"
     android_view_model_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
     android_view_model_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     protocol_doc_path = ROOT / "docs/protocol.md"
 
     required_paths = (
         store_path,
         router_path,
+        planner_path,
         tests_path,
+        planner_tests_path,
         sqlite_tests_path,
         llm_backend_path,
         ollama_backend_path,
         lmstudio_backend_path,
         android_protocol_path,
         android_protocol_test_path,
+        android_compose_test_path,
         android_state_path,
         android_view_model_path,
         android_view_model_test_path,
         schema_path,
+        runtime_mock_smoke_path,
         no_device_path,
         protocol_doc_path,
     )
@@ -32056,17 +32676,21 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
 
     store_text = store_path.read_text(encoding="utf-8", errors="replace")
     router_text = router_path.read_text(encoding="utf-8", errors="replace")
+    planner_text = planner_path.read_text(encoding="utf-8", errors="replace")
     tests_text = tests_path.read_text(encoding="utf-8", errors="replace")
+    planner_tests_text = planner_tests_path.read_text(encoding="utf-8", errors="replace")
     sqlite_tests_text = sqlite_tests_path.read_text(encoding="utf-8", errors="replace")
     llm_backend_text = llm_backend_path.read_text(encoding="utf-8", errors="replace")
     ollama_backend_text = ollama_backend_path.read_text(encoding="utf-8", errors="replace")
     lmstudio_backend_text = lmstudio_backend_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
+    android_compose_test_text = android_compose_test_path.read_text(encoding="utf-8", errors="replace")
     android_state_text = android_state_path.read_text(encoding="utf-8", errors="replace")
     android_view_model_text = android_view_model_path.read_text(encoding="utf-8", errors="replace")
     android_view_model_test_text = android_view_model_test_path.read_text(encoding="utf-8", errors="replace")
     schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
+    runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
     router_snippets = (
@@ -32075,8 +32699,12 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             "chat.send compaction must persist structural runtime source-pointer metadata.",
         ),
         (
-            "chatRequestWithRuntimeConversationCompaction(\n                request,\n                contextWindowTokens: model.contextWindowTokens",
+            "compactionResult = try Self.chatRequestWithRuntimeConversationCompaction(",
             "chat.send must use resolved model context-window metadata before backend.chat compaction.",
+        ),
+        (
+            "contextWindowTokens: model.contextWindowTokens",
+            "chat.send must pass resolved model context-window metadata into compaction.",
         ),
         (
             "runtimeConversationCompactionPrefix = \"Runtime conversation summary:\"",
@@ -32115,6 +32743,36 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         if snippet not in router_text:
             failures.append(f"{router_path.relative_to(ROOT)}: {guidance}")
 
+    planner_snippets = (
+        'content: "Runtime-owned conversation compaction provenance.',
+        'private static let summaryPrefix = "Historical conversation summary (untrusted source text):\\n"',
+        "let reserve = max(512, min(4_096, contextWindowTokens / 8))",
+        "case newestUserExceedsInputBudget",
+        "RuntimeChatContextCompactionAccounting",
+    )
+    for snippet in planner_snippets:
+        if snippet not in planner_text:
+            failures.append(
+                f"{planner_path.relative_to(ROOT)}: missing adaptive compaction planner guard {snippet!r}."
+            )
+
+    planner_test_snippets = (
+        "testWithinBudgetReturnsExactlyEqualRequest",
+        "testAdaptivePlannerRetainsFewerThanTwelveNewestTurns",
+        "testMultilingualAndEmojiSourceIsNormalizedAndBounded",
+        "testEstimatorCountsAllAttachmentPayloadFields",
+        "testEstimatorAccountsForDecodedVisionPixelCost",
+        "testCompactedResultNeverExceedsHardInputBudget",
+        "testOversizedNewestUserRequestIsRejected",
+        "testSourcePointerDescribesOnlyContiguousOldestPrefix",
+        "testPromptInjectionSourceNeverAppearsInGeneratedSystemMessage",
+    )
+    for snippet in planner_test_snippets:
+        if snippet not in planner_tests_text:
+            failures.append(
+                f"{planner_tests_path.relative_to(ROOT)}: missing adaptive compaction planner regression {snippet}."
+            )
+
     store_snippets = (
         "public struct RuntimeChatCompactionSourcePointer",
         "public struct RuntimeChatCompactionMetadata",
@@ -32132,11 +32790,16 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testChatSendDoesNotCompactShortConversation",
         "testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
         "testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
-        "Source span: client-visible conversation turns 1-6 of 18.",
-        'XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)',
+        "RuntimeChatContextCompactionPlanner.provenanceMessage.content",
+        'Historical conversation summary (untrusted source text):',
+        'XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v2")',
+        'XCTAssertEqual(metadata.estimatorIdentifier, "conservative_utf8_bytes_vision_framing_v2")',
         "requestEvent.compactionMetadata",
         "testChatMessagesListDoesNotExposeRuntimeCompactionMetadata",
         "testChatSendUsesModelContextWindowMetadataForCompactionBudget",
+        "testChatSendRejectsOversizedNewestMessageBeforeBackendDispatch",
+        'XCTAssertEqual(message?.payload["code"], .string("chat_context_window_exceeded"))',
+        "XCTAssertNil(capturedRequest.value)",
         "testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
     )
     for snippet in test_snippets:
@@ -32147,6 +32810,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
 
     sqlite_test_snippets = (
         "testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt",
+        "testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting",
         "testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata",
         "rawSQLiteEvents(at: databaseURL)",
         "sourcepointerftssentinel9f31",
@@ -32155,6 +32819,9 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "chat compaction source pointer range is invalid",
         "chat compaction retained range starts before compacted range",
         "chat compaction retained range exceeds total turns",
+        "adaptive chat compaction source pointer is inconsistent with request event",
+        'XCTAssertEqual(encodedLegacyMetadata["strategy"] as? String, "backend_only_summary_v1")',
+        'XCTAssertNil(encodedLegacyMetadata["estimated_input_tokens_before"])',
     )
     for snippet in sqlite_test_snippets:
         if snippet not in sqlite_tests_text:
@@ -32203,6 +32870,9 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             android_protocol_test_path,
             android_protocol_test_text,
             (
+                "errorPayloadDecodesNonRetryableChatContextWindowExceeded",
+                'assertEquals("chat_context_window_exceeded", decoded.code)',
+                "assertFalse(decoded.retryable)",
                 "modelInfoPayloadCanCarryContextWindowMetadata",
                 "modelInfoPayloadRejectsInvalidNumericMetadata",
                 '"context_window_tokens"',
@@ -32230,9 +32900,34 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             ),
         ),
         (
+            android_compose_test_path,
+            android_compose_test_text,
+            (
+                "chatContextWindowExceededErrorLocalizesAndStaysBoundedAtLargeFont",
+                "R.string.error_chat_context_window_exceeded",
+                'code = "chat_context_window_exceeded"',
+                'assertBoundsInside("${expected.languageTag} context-window error banner", bannerBounds, rootBounds)',
+            ),
+        ),
+        (
             schema_path,
             schema_text,
-            ('"context_window_tokens": { "type": "integer", "minimum": 1 }',),
+            (
+                '"context_window_tokens": { "type": "integer", "minimum": 1 }',
+                '"chat_context_window_exceeded"',
+            ),
+        ),
+        (
+            runtime_mock_smoke_path,
+            runtime_mock_smoke_text,
+            (
+                "func runAuthenticatedCompactionSmoke",
+                '"Runtime-owned conversation compaction provenance."',
+                '"Historical conversation summary (untrusted source text):"',
+                '"IGNORE_RUNTIME_SYSTEM_INSTRUCTIONS_COMPACTION_CANARY"',
+                '"chat_context_window_exceeded"',
+                "rejectedAuditEntries.isEmpty",
+            ),
         ),
         (
             no_device_path,
@@ -32240,8 +32935,15 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             (
                 "LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget",
                 "LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
+                "RuntimeChatContextCompactionPlannerTests",
+                "LocalRuntimeMessageRouterTests/testChatSendRejectsOversizedNewestMessageBeforeBackendDispatch",
+                "SQLiteRuntimeChatEventStoreTests/testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting",
+                "ProtocolCodecTest.errorPayloadDecodesNonRetryableChatContextWindowExceeded",
+                "ClientScreensNoDeviceComposeTest.chatContextWindowExceededErrorLocalizesAndStaysBoundedAtLargeFont",
                 "LocalRuntimeMessageRouterTests/testChatMessagesListDoesNotExposeRuntimeCompactionMetadata",
                 "context-window compaction addendum",
+                "adaptive context compaction budget and pre-dispatch rejection addendum",
+                "RuntimeDevServer adaptive compaction trust-boundary smoke addendum",
                 "durable source-pointer metadata",
                 "runtime compaction metadata validation addendum",
                 "RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload",
@@ -32252,8 +32954,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             protocol_doc_path,
             protocol_doc_text,
             (
-                "Runtime event stores may persist structural source-pointer metadata",
-                "source-pointer metadata is not exposed through `chat.messages.list`",
+                "Runtime event stores may persist `adaptive_backend_only_summary_v2` metadata",
+                "compaction metadata is not exposed through transcript reads or session search indexes",
             ),
         ),
     ):
@@ -34676,12 +35378,19 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         "func runAuthenticatedCompactionSmoke",
         '"smoke-chat-compaction-relay"',
         '"smoke-chat-compaction-messages"',
-        '"Runtime conversation summary:"',
-        '"Source span: client-visible conversation turns"',
+        '"Runtime-owned conversation compaction provenance."',
+        '"Historical conversation summary (untrusted source text):"',
+        '"IGNORE_RUNTIME_SYSTEM_INSTRUCTIONS_COMPACTION_CANARY"',
         '"relay compaction source span turn \\(index) "',
+        "provenanceMessages.count == 1",
+        "summaryMessages.count == 1",
+        "!generatedSystemContents.contains(where: { $0.contains(promptInjectionCanary) })",
         "!auditContents.contains(firstVisibleContent)",
-        '!visibleContents.contains(where: { $0.hasPrefix("Runtime conversation summary:") })',
-        "!visibleContents.contains(where: { $0.contains(\"Source span: client-visible conversation turns\") })",
+        '!visibleContents.contains(where: { $0.hasPrefix("Runtime-owned conversation compaction provenance.") })',
+        '!visibleContents.contains(where: { $0.hasPrefix("Historical conversation summary (untrusted source text):") })',
+        '"smoke-chat-compaction-rejected"',
+        '"chat_context_window_exceeded"',
+        "rejectedAuditEntries.isEmpty",
         "try runAuthenticatedCompactionSmoke(client: client, chatRequestAuditFile: chatRequestAuditFile)",
         '"chat.sessions.list"',
         '"smoke-sessions"',
@@ -34765,7 +35474,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"smoke-memory-summary-dismiss-unavailable"',
         '"memory_summary_draft_unavailable"',
         '"smoke-missing-memory-summary-draft"',
-        "try runAuthenticatedHistoryAndMemoryChecks(client: client, chatRequestAuditFile: chatRequestAuditFile)",
+        "embeddingRequestAuditFile: embeddingRequestAuditFile",
         "seedTrustedDevicesFile",
         "runMultiDeviceOwnerIsolationChecks",
         'requestPrefix: "smoke-owner-a"',
@@ -34802,9 +35511,11 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
 
     for snippet in (
         "RuntimeDevServer history/title/session lifecycle/memory smoke addendum",
-        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, chat.send context compaction backend-only audit, visible history separation, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.approve, memory.summary.draft.dismiss, approved memory-summary memory.list visibility, memory-summary stale expected-metadata rejection, client-supplied memory source rejection, approved memory source-preserving edit/list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer",
+        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, chat.send context compaction backend-only audit, visible history separation, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.generate success/cache/malformed fallback/source isolation, memory.summary.draft.approve, memory.summary.draft.dismiss, generated-summary approval source metadata, approved memory-summary memory.list visibility, memory-summary stale expected-metadata rejection, client-supplied memory source rejection, approved memory source-preserving edit/list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer",
         "RuntimeDevServer chat compaction backend-only audit addendum",
         "authenticated relay smoke validates chat.send context compaction backend-only audit and visible history separation over RuntimeDevServer",
+        "RuntimeDevServer adaptive compaction trust-boundary smoke addendum",
+        "authenticated relay smoke requires fixed system provenance, an untrusted assistant summary, a prompt-injection canary confined outside generated system messages, chat_context_window_exceeded for an oversized newest request, and no backend dispatch for that rejection",
         "RuntimeDevServer chat.sessions.list query search metadata smoke",
         "RuntimeDevServer authenticated relay smoke sends embedding_model_id with chat.sessions.list query and verifies no response echo or chat model override",
         "RuntimeDevServer memory.list query search metadata smoke addendum",
@@ -36160,13 +36871,13 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "Protocol schema hygiene rejects active message enum entries under `transport.` and `crypto.`",
         "Protocol schema hygiene rejects active message enum entries under `permission.`, `approval.`, and `audit.`",
         "Protocol schema hygiene rejects active message enum entries under `file.`, `terminal.`, `network.`, and `backend.`",
-        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, unsupported `source_anchor.` beyond `source_anchor.resolve`, `trusted_source.`, and `source_control.`",
+        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, unsupported `source_anchor.*` beyond `source_anchor.resolve`, `trusted_source.`, and `source_control.`",
         "Protocol schema hygiene rejects active message enum entries under generic `tool.`",
         "current `models.list` embedding model metadata",
-        "current deterministic lexical `memory.list` query filter",
-        "current deterministic lexical `retrieval.query` document-index filter",
-        "current `chat.sessions.list` `embedding_model_id` search hint",
-        "The current implementation is deterministic lexical filtering",
+        "current embedding-backed chat and approved-memory search",
+        "the deterministic lexical `retrieval.query` document-index filter",
+        "current `chat.sessions.list` and `memory.list` `embedding_model_id` hints",
+        "Without `embedding_model_id`, nonblank queries use deterministic lexical filtering",
         "separate `memory.search` command",
         "Advanced memory: `memory.search`",
         "Do not add active message names until the product shape is ready",
@@ -41486,8 +42197,8 @@ def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
             "try allocationRegistry.commit(",
             "try authorizeRuntimeRegistration(",
             "RelayRuntimeRegistrationProofRequest.parse(",
-            "registrationResult = try allocationRegistry.withRevalidatedBinding(allocationBinding)",
-            "matcher.register(",
+            "registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding)",
+            "matcher.registerWithExpiredWaitingPeers(",
         ),
         "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
             "identityAuthorizationSigner: any RelayIdentityAuthorizationSigning",
@@ -41637,9 +42348,11 @@ def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
     server_text = texts.get(server_relative, "")
     authorization_position = server_text.find("try authorizeRuntimeRegistration(")
     recheck_position = server_text.find(
-        "registrationResult = try allocationRegistry.withRevalidatedBinding(allocationBinding)"
+        "registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding)"
     )
-    matcher_position = server_text.find("matcher.register(", recheck_position)
+    matcher_position = server_text.find(
+        "matcher.registerWithExpiredWaitingPeers(", recheck_position
+    )
     if not (0 <= authorization_position < recheck_position < matcher_position):
         failures.append(
             f"{server_relative}: Runtime proof verification and ticket recheck must precede matcher admission."
@@ -42316,6 +43029,130 @@ def initial_pairing_mutual_proof_guard_failures() -> list[str]:
     for name, snippet in doc_snippets.items():
         if snippet not in texts[name]:
             failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
+    return failures
+
+
+def p2p_nat_security_design_guard_failures() -> list[str]:
+    failures: list[str] = []
+    design_root = ROOT / "docs/security-hardening/production-p2p-nat-v1"
+    paths = {
+        "validator": ROOT / "script/check_p2p_nat_security_design.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "context": design_root / "context.md",
+        "threat_model": design_root / "threat-model.md",
+        "standards": design_root / "standards.md",
+        "portfolio": design_root / "hardening.md",
+        "analysis": design_root / "hardening.json",
+        "manifest": design_root / "evidence.sha256",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "security": ROOT / "docs/security.md",
+        "protocol": ROOT / "docs/protocol.md",
+        "overlay": ROOT / "docs/connection-overlay.md",
+    }
+    texts: dict[str, str] = {}
+    for name, path in paths.items():
+        if not path.is_file():
+            failures.append(f"Missing P2P/NAT security design artifact: {path.relative_to(ROOT)}")
+            continue
+        texts[name] = path.read_text(encoding="utf-8", errors="replace")
+
+    required_snippets = {
+        "validator": (
+            "EVIDENCE_COLLECTION_SHA256",
+            '"authenticated-rendezvous-and-candidate-protection": "authenticated-encrypted-ice-turn"',
+            '"identity-bound-traversal-and-relay-fallback": "transport-neutral-identity-session"',
+            'DESIGN_ROOT / "implementation"',
+        ),
+        "gate": (
+            "script/check_p2p_nat_security_design.py",
+            "Covered production P2P/NAT security design addendum:",
+            "This validates static design artifacts only; it does not claim a concrete P2P connector",
+        ),
+        "analysis": (
+            '"analysisId": "production_p2p_nat_v1_20260711"',
+            '"recommendedOptionId": "authenticated-encrypted-ice-turn"',
+            '"recommendedOptionId": "transport-neutral-identity-session"',
+            "paired long-term endpoint identities",
+            "Consent freshness",
+        ),
+        "threat_model": (
+            "Candidate disclosure and IP correlation",
+            "Rendezvous/signaling service",
+            "Hole punching proves reachability, not identity",
+            "Reserved namespaces",
+            "`T016`",
+            "Candidate authentication never bypasses destination policy",
+        ),
+        "standards": (
+            "RFC 8445",
+            "RFC 8489",
+            "RFC 8656",
+            "RFC 7675",
+            "RFC 9000",
+            "RFC 9221",
+        ),
+        "portfolio": (
+            "authenticated encrypted ICE",
+            "transport-neutral identity-bound secure session",
+            "selection authorizes implementation.",
+        ),
+    }
+    for name, snippets in required_snippets.items():
+        text = texts.get(name, "")
+        for snippet in snippets:
+            if snippet.lower() not in text.lower():
+                failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
+
+    manifest_lines = [line for line in texts.get("manifest", "").splitlines() if line]
+    if len(manifest_lines) != 13:
+        failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
+    manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
+    expected_manifest_hash = "3e778069ab57755e350b287355993d9bd27fe836f450d477354c8d34201a117c"
+    if manifest_hash != expected_manifest_hash:
+        failures.append(
+            "P2P/NAT security design evidence manifest collection hash drifted: "
+            f"expected {expected_manifest_hash}, got {manifest_hash}."
+        )
+    for name in ("context", "analysis", "roadmap", "progress", "qa"):
+        text = texts.get(name, "")
+        if expected_manifest_hash not in text or "13" not in text:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} must pin the 13-artifact P2P/NAT evidence collection."
+            )
+
+    def section_text(name: str, heading: str) -> str:
+        text = texts.get(name, "")
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            text,
+        )
+        if match is None:
+            failures.append(f"{paths[name].relative_to(ROOT)} is missing section {heading!r}.")
+            return ""
+        return match.group("body")
+
+    portfolio_reference = "security-hardening/production-p2p-nat-v1/hardening.md"
+    doc_sections = {
+        "roadmap": "Production P2P/NAT Security Design Static Gate (Selection Pending)",
+        "progress": "2026-07-11 Production P2P/NAT Security Design Static Gate (Selection Pending)",
+        "qa": "2026-07-11 Production P2P/NAT Security Design Static Gate",
+        "security": "Production P2P/NAT Security Design Review",
+        "protocol": "Production P2P/NAT Design Boundary",
+        "overlay": "Production P2P/NAT Design Decision Boundary",
+    }
+    for name, heading in doc_sections.items():
+        section = section_text(name, heading)
+        if portfolio_reference not in section:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} section {heading!r} must reference "
+                f"{portfolio_reference}."
+            )
+        if "not implemented" not in section:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} section {heading!r} must preserve the not implemented boundary."
+            )
     return failures
 
 
@@ -43014,6 +43851,10 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
             "maximumWaitingDeadlineUptime:",
             "waitingDeadlineUptime - ProcessInfo.processInfo.systemUptime",
             "waitingPeerLimiter.recordWaitingPeerTimeout()",
+            "registrationAttempt.expiredWaitingPeers",
+            "registrationAttempt.waitingDeadlineUptime",
+            "waitingStatus.expiredWaitingPeers",
+            "let removedWaitingPeer = self.matcher.unregisterWaiting",
             "reason != .authenticatedIdentityWaitingQuota",
             "timeoutTimer.schedule(deadline: .now() + timeoutSeconds)",
             "self?.expireIfWaiting(onClosed: onClosed)",
@@ -43022,9 +43863,14 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
         "apps/macos/RelayServerCore/Sources/RelayMatcher.swift": (
             "let authenticatedIdentity: RelayAuthenticatedPeerIdentity?",
             "let deadlineUptime: TimeInterval",
+            "let waitingDeadlineUptime: TimeInterval?",
             "maximumWaitingDurationSeconds",
             "maximumWaitingDeadlineUptime",
             "func waitingDeadlineUptime(",
+            "func registerWithExpiredWaitingPeers(",
+            "func waitingRuntimeStatus(",
+            "func expireWaitingRoomIfNeededLocked(",
+            "now >= room.deadlineUptime",
             "replaced.authenticatedIdentity == peer.authenticatedIdentity",
             "waitingPeerLimiter?.releaseWaitingPeer(",
             "sourceQuotaLimiter?.releaseWaitingPeer(source: sourceIdentity)",
@@ -43038,6 +43884,9 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
         ),
         "apps/macos/RelayServerCore/Tests/RelayMatcherTests.swift": (
             "testWaitingDeadlinePersistsAcrossSameRoleReplacement",
+            "testExpiredWaitingRoomCannotMatchLateCounterpart",
+            "testExpiredWaitingRoomCannotBeReplacedOrReportedByProbe",
+            "testWaitingRegistrationAttemptRetainsDeadlineAfterCounterpartMatches",
             "testAuthenticatedIdentityQuotaIsCrossSourceAndReleasesEveryWaitingPath",
         ),
         "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
@@ -43093,7 +43942,9 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
     runtime_auth = relay_server_text.find("try authorizeRuntimeRegistration(")
     client_auth = relay_server_text.find("try authorizePairedClientRegistration(")
     identity_creation = relay_server_text.find("let authenticatedIdentity =")
-    matcher_registration = relay_server_text.find("matcher.register(", identity_creation)
+    matcher_registration = relay_server_text.find(
+        "matcher.registerWithExpiredWaitingPeers(", identity_creation
+    )
     if min(runtime_auth, client_auth, identity_creation, matcher_registration) < 0 or not (
         runtime_auth < identity_creation < matcher_registration
         and client_auth < identity_creation < matcher_registration
@@ -43117,6 +43968,11 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
         failures.append(
             "apps/macos/RelayServerCore/Sources/RelayMatcher.swift: identity waiting "
             "rejection must roll back source waiting ownership before returning."
+        )
+    if "matcher.waitingDeadlineUptime(" in relay_server_text:
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayServer.swift: waiting handler must "
+            "use the deadline returned by atomic matcher registration instead of re-reading it."
         )
 
     doc_requirements = {
@@ -43153,7 +44009,193 @@ def relay_waiting_peer_policy_guard_failures() -> list[str]:
     return failures
 
 
+def macos_runtime_connection_manager_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        "apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift": (
+            "public protocol MacRuntimePrivateOverlayTransport: RuntimeDisconnectReporting, Sendable",
+            "public final class MacRuntimeConnectionManager",
+            "private let localTransport: any RuntimeTransport",
+            "private let advertiser: any RuntimeAdvertiser",
+            "private var activeLocalPort: UInt16?",
+            "private var localMessageLease: MacRuntimeCallbackLease?",
+            "private var bootstrapMessageLease: MacRuntimeCallbackLease?",
+            "private let lock = NSRecursiveLock()",
+            "defer { lock.unlock() }",
+            "private final class MacRuntimeStopLease",
+            "func claimStop() -> Bool",
+            "messageLease.performIfActive",
+            "public func startLocal(",
+            "public func refreshLocalAdvertisement(",
+            "private func forwardDisconnects(from transport: any RuntimeTransport)",
+            "private func stopLocalOwnership() -> Bool",
+            "private var bootstrapState = BootstrapState.inactive",
+            "private var pairConnections: [String: PairConnection]",
+            "private var pairPrivateOverlayConnections: [String: PairPrivateOverlayConnection]",
+            "private let pairPrivateOverlayTransportFactory:",
+            "case .active(let currentGenerationID) = self.bootstrapState",
+            "current.generationID == generationID",
+            "public func startPairPrivateOverlay(",
+            "transport.onDisconnect = onDisconnect",
+            "stopLease.markTerminal()",
+            "connection.stopLease.claimStop()",
+            "public func stopPair(fingerprint: String)",
+            "public func retireBootstrapAfterCurrentConnection()",
+        ),
+        "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "private var runtimeConnectionManager: MacRuntimeConnectionManager!",
+            "runtimeConnectionManager.startLocal(",
+            "runtimeConnectionManager.refreshLocalAdvertisement(",
+            "runtimeConnectionManager.startBootstrap(",
+            "runtimeConnectionManager.startPairPrivateOverlay(",
+            "runtimeConnectionManager.startPair(",
+            "private func startPairScopedTransports(",
+            "private func startRestoredPairScopedTransports(",
+            "private var pendingPairedRelayActivations: [String: PendingPairScopedRelayActivation]",
+            "private var runtimeLifecycleGeneration = UUID()",
+            "private var pairLifecycleGenerations: [String: UUID]",
+            "private var pairRefreshSequences: [String: UInt64]",
+            "private var inFlightPairRefreshSequences: [String: Set<UInt64>]",
+            "private func beginPairLifecycleRefresh(",
+            "private func finishPairLifecycleRefresh(fingerprint: String, sequence: UInt64)",
+            "private func invalidatePairLifecycle(fingerprint: String)",
+            "private func reconcilePendingPairActivation(fingerprint: String)",
+            "currentRoute.route == storedRoute",
+            ".activationRequested = true",
+            "runtimeConnectionManager.stopPair(fingerprint: clientKeyFingerprint)",
+            "runtimeConnectionManager.retireBootstrapAfterCurrentConnection()",
+            "runtimeConnectionManager.stopAll()",
+        ),
+        "apps/macos/CompanionCore/Tests/MacRuntimeConnectionManagerTests.swift": (
+            "testStartLocalStartsListenerBeforeAdvertisingWithExactValues",
+            "testFailedLocalStartSuppressesAdvertisement",
+            "testRepeatedLocalStartStopsPriorOwnershipBeforeReplacement",
+            "testRefreshLocalAdvertisementRestartsOnlyAdvertiserForActivePort",
+            "testRefreshLocalAdvertisementIsInertForStoppedAndFailedStarts",
+            "testRefreshLocalAdvertisementCleansUpAsynchronouslyFailedListener",
+            "testSupersededAndStoppedLocalMessageCallbacksAreIgnored",
+            "testStopAllWaitsForAdmittedLocalMessageCallbackBeforeReturning",
+            "testReplacedRetiredAndStoppedRelayMessageCallbacksAreIgnored",
+            "testLocalMessageHandlerPassesThroughUnchanged",
+            "testConcreteLocalPeerServerForwardsDisconnect",
+            "testStopAllStopsLocalAdvertiserBootstrapAndPairsExactlyOnce",
+            "testLatePairStatusFromSupersededGenerationIsIgnoredAndReplacementStopsOnce",
+            "testPairPrivateOverlayForwardsCurrentStatusMessageAndDisconnect",
+            "testPairPrivateOverlayReplacementInvalidatesStaleStatusAndMessagesBeforeStop",
+            "testPairPrivateOverlayAndRelayStoppedStatusesRemoveOnlyTheirOwnCandidate",
+            "testPairPrivateOverlayAndRelayFailuresPreserveTheOtherCandidateUntilPairStop",
+            "testStopPairAndStopAllReleasePairOverlayAndRelayOwnershipExactlyOnce",
+            "testPairPrivateOverlayStartReturnsFalseWithoutInjectedFactory",
+            "testInjectedLocalAndRelayDisconnectCapabilitiesForwardExactConnectionIDs",
+            "testLateBootstrapStatusFromSupersededGenerationIsIgnored",
+            "testRetiredBootstrapIgnoresLateStatusButRemainsOwnedUntilStopAll",
+            "testPairReplacementInvalidatesGenerationBeforeStoppingOldTransport",
+            "testStopPairRemovesOnlyRequestedFingerprint",
+            "testStopAllStopsEachCurrentlyOwnedTransportExactlyOnce",
+            "testMessageHandlersPassThroughUnchanged",
+        ),
+        "apps/macos/CompanionCore/Tests/PairedRuntimeRouteRefreshTests.swift": (
+            'XCTAssertEqual(lifecycle.events, ["overlay-start", "pair-start", "bootstrap-retire"])',
+            "testRestoredPairScopedRouteStartsPrivateOverlayBeforeRelayAndStopsBoth",
+            "testInFlightPairedRefreshCannotActivateAfterRuntimeStopAndPreservesAdvancedLease",
+            "testInFlightPairedRefreshCannotRecreateRemovedPairRoute",
+            "testOlderCommittedRefreshWaitsForNewerFailureThenActivatesExactlyOnce",
+            "testOlderConflictingResponseCannotOverwriteNewerCommittedRefresh",
+            "testPendingPairActivationsAreKeyedByFingerprint",
+            'XCTAssertEqual(lifecycle.events, ["overlay-start", "pair-start"])',
+        ),
+        "script/check_no_device_quality.sh": (
+            "run swift test --filter MacRuntimeConnectionManagerTests",
+            "macOS runtime connection ownership completion addendum",
+            "macOS pair-scoped private-overlay lifecycle seam addendum",
+        ),
+        "docs/roadmap.md": (
+            "## macOS Pair-Scoped Private-Overlay Lifecycle Seam No-Device Gate",
+            "## macOS Local Listener And Bonjour Ownership Completion No-Device Gate",
+            "## macOS Relay Connection Ownership And Generation No-Device Gate",
+        ),
+        "docs/progress.md": (
+            "## 2026-07-11 macOS Pair-Scoped Private-Overlay Lifecycle Seam",
+            "## 2026-07-11 macOS Local Listener And Bonjour Ownership Completion",
+            "## 2026-07-11 macOS Relay Connection Ownership And Generation",
+        ),
+        "docs/qa-evidence.md": (
+            "## 2026-07-11 macOS Pair-Scoped Private-Overlay Lifecycle Seam",
+            "## 2026-07-11 macOS Local Listener And Bonjour Ownership Completion",
+            "## 2026-07-11 macOS Relay Connection Ownership And Generation",
+        ),
+        "docs/connection-overlay.md": (
+            "## macOS Pair-Scoped Private-Overlay Lifecycle Seam",
+            "## macOS Runtime Connection Ownership Completion",
+        ),
+    }
+    for relative_path, snippets in requirements.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"Missing macOS runtime connection-manager artifact: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing {snippet!r}.")
+
+    model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    model_text = model_path.read_text(encoding="utf-8", errors="replace")
+    if "pairedRelayClients" in model_text:
+        failures.append(
+            "CompanionAppModel must not retain a second pair-scoped relay ownership map."
+        )
+    for forbidden in (
+        "private let peerServer: any RuntimeTransport",
+        "private let advertiser: any RuntimeAdvertiser",
+        "peerServer.start(",
+        "peerServer.stop()",
+        "advertiser.start(",
+        "advertiser.stop()",
+        "if let localPeerServer = peerServer as? LocalPeerServer",
+    ):
+        if forbidden in model_text:
+            failures.append(
+                f"CompanionAppModel must delegate local transport ownership; found {forbidden!r}."
+            )
+    disconnect_contracts = {
+        "apps/macos/Transport/Sources/RuntimeTransport.swift": (
+            "public protocol RuntimeDisconnectReporting: AnyObject",
+        ),
+        "apps/macos/Transport/Sources/LocalPeerServer.swift": (
+            "RuntimeDisconnectReporting",
+        ),
+        "apps/macos/Transport/Sources/RelayPeerClient.swift": (
+            "RuntimeDisconnectReporting",
+        ),
+    }
+    for relative_path, snippets in disconnect_contracts.items():
+        text = (ROOT / relative_path).read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative_path} is missing disconnect capability {snippet!r}."
+                )
+    activation_start = model_text.find("private func reconcilePendingPairActivation(")
+    pair_start = model_text.find("startPairScopedTransports(", activation_start)
+    bootstrap_rotation = model_text.find("rotateBootstrapRouteAfterPairClaim()", pair_start)
+    if min(activation_start, pair_start, bootstrap_rotation) < 0 or not (
+        activation_start < pair_start < bootstrap_rotation
+    ):
+        failures.append(
+            "CompanionAppModel must start the pair-scoped relay client before bootstrap rotation."
+        )
+    return failures
+
+
 def main() -> int:
+    macos_connection_manager_failures = macos_runtime_connection_manager_guard_failures()
+    if macos_connection_manager_failures:
+        print("macOS runtime connection-manager guard failed:", file=sys.stderr)
+        for failure in macos_connection_manager_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     relay_abuse_controls_failures = relay_abuse_controls_guard_failures()
     if relay_abuse_controls_failures:
         print("Relay abuse-control foundation guard failed:", file=sys.stderr)
@@ -43179,6 +44221,13 @@ def main() -> int:
     if relay_waiting_peer_policy_failures:
         print("Relay waiting-peer-policy guard failed:", file=sys.stderr)
         for failure in relay_waiting_peer_policy_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    p2p_nat_security_design_failures = p2p_nat_security_design_guard_failures()
+    if p2p_nat_security_design_failures:
+        print("P2P/NAT security design guard failed:", file=sys.stderr)
+        for failure in p2p_nat_security_design_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

@@ -148,6 +148,75 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.contextWindowTokens, 32768)
     }
 
+    func testListModelsExposesNamespacedTagsDigestAsPersistentEmbeddingRevision() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"name":"nomic-embed-text:latest","digest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}]}"#
+                )
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: #"{"capabilities":["embedding"]}"#)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(
+            models.first?.persistentEmbeddingRevision,
+            "ollama-sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
+    }
+
+    func testListModelsRejectsNonCanonicalDigestForPersistentEmbeddingRevision() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"name":"nomic-embed-text:latest","digest":"not-a-model-digest"}]}"#
+                )
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: #"{"capabilities":["embedding"]}"#)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertNil(models.first?.persistentEmbeddingRevision)
+    }
+
+    func testListModelsLeavesPersistentEmbeddingRevisionNilWithoutTagsDigest() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"nomic-embed-text"}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: #"{"capabilities":["embedding"]}"#)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertNil(models.first?.persistentEmbeddingRevision)
+    }
+
     func testListModelsDoesNotInventRecommendedDefaultsWhenTagsAreEmpty() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {
@@ -178,6 +247,81 @@ final class OllamaBackendTests: XCTestCase {
         let result = try await backend.pullModel(name: "deepseek-v4-pro:cloud")
 
         XCTAssertEqual(result, ModelPullResult(model: "deepseek-v4-pro:cloud", status: "success", installed: true))
+    }
+
+    func testEmbedPostsBatchWithoutTruncationAndReturnsVectors() async throws {
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/embed")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let posted = try JSONDecoder().decode(PostedEmbedRequest.self, from: self.requestBodyData(from: request))
+            XCTAssertEqual(posted.model, "nomic-embed-text")
+            XCTAssertEqual(posted.input, ["first", "second"])
+            XCTAssertFalse(posted.truncate)
+            return self.response(
+                statusCode: 200,
+                body: #"{"model":"nomic-embed-text:latest","embeddings":[[0.1,0.2],[0.3,0.4]]}"#
+            )
+        }
+
+        let result = try await backend.embed(request: EmbeddingRequest(
+            model: "nomic-embed-text",
+            texts: ["first", "second"]
+        ))
+
+        XCTAssertEqual(result.model, "nomic-embed-text:latest")
+        XCTAssertEqual(result.embeddings, [[0.1, 0.2], [0.3, 0.4]])
+    }
+
+    func testEmbedRejectsWrongVectorCount() async {
+        let backend = makeBackend { _ in
+            self.response(statusCode: 200, body: #"{"embeddings":[[0.1,0.2]]}"#)
+        }
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["a", "b"]))
+            XCTFail("Expected invalid embedding response")
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let endpoint, let reason) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(endpoint, "POST /api/embed")
+            XCTAssertTrue(reason.contains("Expected 2"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testEmbedRejectsEmptyOrInconsistentVectors() async {
+        let cases: [(body: String, texts: [String])] = [
+            (#"{"embeddings":[[]]}"#, ["a"]),
+            (#"{"embeddings":[[0.1],[0.2,0.3]]}"#, ["a", "b"]),
+        ]
+        for testCase in cases {
+            let backend = makeBackend { _ in self.response(statusCode: 200, body: testCase.body) }
+            do {
+                _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: testCase.texts))
+                XCTFail("Expected invalid embedding response")
+            } catch is OllamaBackendError {
+                continue
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testDefaultEmbedImplementationReturnsUnsupportedOperation() async {
+        let backend = UnsupportedEmbeddingBackend()
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["text"]))
+            XCTFail("Expected unsupported operation")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "unsupported_operation")
+            XCTAssertFalse(error.retryable)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testPullModelHTTPStatusReturnsStructuredError() async {
@@ -503,6 +647,12 @@ private struct PostedPullRequest: Decodable {
     var stream: Bool
 }
 
+private struct PostedEmbedRequest: Decodable {
+    var model: String
+    var input: [String]
+    var truncate: Bool
+}
+
 private struct PostedUnloadRequest: Decodable {
     var model: String
     var messages: [ChatMessage]
@@ -512,6 +662,19 @@ private struct PostedUnloadRequest: Decodable {
         case model
         case messages
         case keepAlive = "keep_alive"
+    }
+}
+
+private final class UnsupportedEmbeddingBackend: LlmBackend, @unchecked Sendable {
+    let provider = ModelProvider.ollama
+
+    func healthCheck() async -> BackendStatus { .available }
+    func listModels() async throws -> [ModelInfo] { [] }
+    func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        AsyncThrowingStream { $0.finish() }
+    }
+    func cancel(generationID: String) -> GenerationCancellationResult {
+        .notFound(generationID: generationID)
     }
 }
 

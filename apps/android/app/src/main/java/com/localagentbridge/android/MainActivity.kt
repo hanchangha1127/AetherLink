@@ -774,6 +774,7 @@ private fun LocalAgentBridgeApp(
                                     onAddMemoryEntry = viewModel::addMemoryEntry,
                                     onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                                     onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                                    onGenerateMemorySummaryDraft = viewModel::generateMemorySummaryDraft,
                                     onApproveMemorySummaryDraft = viewModel::approveMemorySummaryDraft,
                                     onDismissMemorySummaryDraft = viewModel::dismissMemorySummaryDraft,
                                     onRefreshMemory = viewModel::refreshRuntimeMemory,

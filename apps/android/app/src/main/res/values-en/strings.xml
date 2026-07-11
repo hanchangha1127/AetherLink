@@ -563,6 +563,11 @@
     <string name="memory_summary_draft_preview_label">Preview</string>
     <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
     <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_summary_draft_generate">Generate Summary</string>
+    <string name="memory_summary_draft_generating">Generating summary…</string>
+    <string name="memory_summary_draft_generate_named">Generate summary for %1$s</string>
+    <string name="memory_summary_draft_generate_state_ready">Ready to generate summary.</string>
+    <string name="memory_summary_draft_generated_review_required">AI-generated summary. Review required.</string>
     <string name="memory_source_from_chat">From older chat: %1$s</string>
     <string name="memory_source_show">Show source</string>
     <string name="memory_source_hide">Hide source</string>
@@ -650,6 +655,7 @@
     <string name="error_memory_runtime_required">Connect to the trusted runtime before changing memory.</string>
     <string name="error_memory_load_failed">Could not load memory from AetherLink Runtime.</string>
     <string name="error_memory_summary_drafts_load_failed">Could not load memory suggestions from AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_generation_failed">Could not generate the memory summary with AetherLink Runtime.</string>
     <string name="error_memory_summary_draft_approval_failed">Could not add suggested memory from AetherLink Runtime.</string>
     <string name="error_memory_summary_draft_dismiss_failed">Could not dismiss suggested memory from AetherLink Runtime.</string>
     <string name="error_document_search_runtime_required">Connect to the trusted runtime before searching documents.</string>
@@ -657,6 +663,7 @@
     <string name="error_document_search_failed">Could not search documents from AetherLink Runtime.</string>
     <string name="error_runtime_error">AetherLink Runtime could not complete the request.</string>
     <string name="error_send_failed">Could not send the message to AetherLink Runtime.</string>
+    <string name="error_chat_context_window_exceeded">The current message and required context do not fit the selected model. Shorten the message or choose a model with a larger context window.</string>
     <string name="error_regenerate_unavailable">There is no completed assistant response to regenerate.</string>
     <string name="error_regenerate_attachment_context_unavailable">This response used an attachment that is no longer available for regeneration.</string>
     <string name="error_reuse_message_unavailable">This message cannot be reused as a draft.</string>

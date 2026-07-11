@@ -563,6 +563,11 @@
     <string name="memory_summary_draft_preview_label">预览</string>
     <string name="memory_summary_draft_source_excerpt">%1$s：%2$s</string>
     <string name="memory_summary_draft_row_summary">%1$s。%2$s。%3$s。%4$s</string>
+    <string name="memory_summary_draft_generate">生成摘要</string>
+    <string name="memory_summary_draft_generating">正在生成摘要…</string>
+    <string name="memory_summary_draft_generate_named">为 %1$s 生成摘要</string>
+    <string name="memory_summary_draft_generate_state_ready">已准备好生成摘要。</string>
+    <string name="memory_summary_draft_generated_review_required">AI 生成的摘要。需要审核。</string>
     <string name="memory_source_from_chat">来自较早聊天：%1$s</string>
     <string name="memory_source_show">显示来源</string>
     <string name="memory_source_hide">隐藏来源</string>
@@ -650,6 +655,7 @@
     <string name="error_memory_runtime_required">更改记忆前，请先连接受信任的运行时。</string>
     <string name="error_memory_load_failed">无法从 AetherLink Runtime 加载记忆。</string>
     <string name="error_memory_summary_drafts_load_failed">无法从 AetherLink Runtime 加载记忆建议。</string>
+    <string name="error_memory_summary_draft_generation_failed">无法使用 AetherLink Runtime 生成记忆摘要。</string>
     <string name="error_memory_summary_draft_approval_failed">无法从 AetherLink Runtime 添加建议记忆。</string>
     <string name="error_memory_summary_draft_dismiss_failed">无法从 AetherLink Runtime 隐藏建议记忆。</string>
     <string name="error_document_search_runtime_required">搜索文档前，请先连接受信任的运行时。</string>
@@ -657,6 +663,7 @@
     <string name="error_document_search_failed">无法从 AetherLink Runtime 搜索文档。</string>
     <string name="error_runtime_error">运行时错误。</string>
     <string name="error_send_failed">无法向 AetherLink Runtime 发送消息。</string>
+    <string name="error_chat_context_window_exceeded">当前消息和所需上下文超出了所选模型的上下文窗口。请缩短消息，或选择上下文窗口更大的模型。</string>
     <string name="error_regenerate_unavailable">没有可重新生成的已完成助手回复。</string>
     <string name="error_regenerate_attachment_context_unavailable">此回复使用的附件数据已无法用于重新生成。</string>
     <string name="error_reuse_message_unavailable">此消息无法重新用作草稿。</string>

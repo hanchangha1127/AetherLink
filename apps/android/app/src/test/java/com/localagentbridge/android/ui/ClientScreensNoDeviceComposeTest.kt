@@ -11266,6 +11266,132 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatContextWindowExceededErrorLocalizesAndStaysBoundedAtLargeFont() {
+        data class ExpectedMessage(
+            val languageTag: String,
+            val message: String,
+        )
+
+        val expectedMessages = listOf(
+            ExpectedMessage(
+                languageTag = "en",
+                message = "The current message and required context do not fit the selected model. " +
+                    "Shorten the message or choose a model with a larger context window.",
+            ),
+            ExpectedMessage(
+                languageTag = "ko",
+                message = "현재 메시지와 필요한 컨텍스트가 선택한 모델에 맞지 않습니다. " +
+                    "메시지를 줄이거나 컨텍스트 창이 더 큰 모델을 선택하세요.",
+            ),
+            ExpectedMessage(
+                languageTag = "ja",
+                message = "現在のメッセージと必要なコンテキストは、選択したモデルに収まりません。" +
+                    "メッセージを短くするか、コンテキストウィンドウがより大きいモデルを選択してください。",
+            ),
+            ExpectedMessage(
+                languageTag = "zh-CN",
+                message = "当前消息和所需上下文超出了所选模型的上下文窗口。" +
+                    "请缩短消息，或选择上下文窗口更大的模型。",
+            ),
+            ExpectedMessage(
+                languageTag = "fr",
+                message = "Le message actuel et le contexte requis dépassent la fenêtre de contexte du modèle " +
+                    "sélectionné. Raccourcissez le message ou choisissez un modèle avec une fenêtre de contexte plus grande.",
+            ),
+        )
+        val currentLanguage = mutableStateOf(expectedMessages.first().languageTag)
+        val fontScale = 1.5f
+        val rawDetail = "requested context requires 131072 tokens"
+        val chatModel = RuntimeModel(
+            id = "local:compact-context",
+            name = "Compact Context",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                key(currentLanguage.value) {
+                    MaterialTheme {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(chatGenericErrorBannerNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-1",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = currentLanguage.value,
+                                    selectedModelId = chatModel.id,
+                                    models = listOf(chatModel),
+                                    error = RuntimeUiError(
+                                        code = "chat_context_window_exceeded",
+                                        detail = rawDetail,
+                                    ),
+                                ),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        expectedMessages.forEach { expected ->
+            compose.runOnUiThread { currentLanguage.value = expected.languageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider.getApplicationContext<Context>()
+                .localizedContext(expected.languageTag, fontScale = fontScale)
+            assertEquals(
+                expected.message,
+                localizedContext.getString(R.string.error_chat_context_window_exceeded),
+            )
+            val errorTitle = localizedContext.getString(R.string.error_title)
+            val accessibilitySummary = localizedContext.getString(
+                R.string.error_accessibility_summary,
+                errorTitle,
+                expected.message,
+            )
+            val rootBounds = compose.onNodeWithTag(chatGenericErrorBannerNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val bannerBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assert(hasContentDescription(accessibilitySummary))
+                .assert(hasPoliteLiveRegion())
+                .getUnclippedBoundsInRoot()
+            val messageBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assertTextContains(expected.message, substring = false)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("${expected.languageTag} context-window error banner", bannerBounds, rootBounds)
+            assertBoundsInside("${expected.languageTag} context-window error message", messageBounds, bannerBounds)
+            compose.onAllNodesWithText(rawDetail, useUnmergedTree = true).assertCountEquals(0)
+        }
+    }
+
+    @Test
     fun chatScreenGenericErrorBannerExposesAccessibilitySummaryAndRedactsUnsafeDetail() {
         val unsafeDetail = "http://127.0.0.1:11434/api/tags route_token=secret"
         val chatModel = RuntimeModel(
@@ -19774,6 +19900,75 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsMemorySearchUsesMatchingRemoteSemanticResultsOnlyForCurrentQuery() {
+        val entries = listOf(
+            RuntimeMemoryEntry(
+                id = "memory-local",
+                content = "Prefer concise Korean answers.",
+                enabled = true,
+                createdAtMillis = 1_000L,
+                updatedAtMillis = 2_000L,
+            ),
+        )
+        val remoteResults = listOf(
+            RuntimeMemoryEntry(
+                id = "memory-semantic",
+                content = "Use the latest QR for relay recovery.",
+                enabled = true,
+                createdAtMillis = 3_000L,
+                updatedAtMillis = 4_000L,
+                searchRank = 1,
+                searchSnippet = "Use the latest QR for relay recovery.",
+                searchMatchedFields = listOf("content"),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(720.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = entries,
+                            remoteSearchQuery = "restore connectivity",
+                            remoteSearchResults = remoteResults,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onRefreshMemory = {},
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(MEMORY_SEARCH_TEST_TAG)
+            .performTextInput("restore connectivity")
+        compose.waitForIdle()
+        compose.onNodeWithTag(MEMORY_ENTRY_CONTENT_TEST_TAG, useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextContains("Use the latest QR for relay recovery.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Prefer concise Korean answers.")
+            .assertDoesNotExist()
+        compose.onNodeWithTag(memoryEntrySearchMetadataTestTag("memory-semantic"), useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextContains("Match 1", substring = true)
+
+        compose.onNodeWithTag(MEMORY_SEARCH_TEST_TAG)
+            .performTextClearance()
+        compose.onNodeWithTag(MEMORY_SEARCH_TEST_TAG)
+            .performTextInput("concise")
+        compose.waitForIdle()
+        compose.onNodeWithText("Prefer concise Korean answers.")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText("Use the latest QR for relay recovery.")
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun settingsDocumentPanelShowsCatalogSummaryAndRows() {
         val catalog = RuntimeDocumentCatalog(
             documents = listOf(
@@ -20420,6 +20615,144 @@ class ClientScreensNoDeviceComposeTest {
             ),
             useUnmergedTree = true,
         ).assertExists()
+    }
+
+    @Test
+    fun settingsMemoryPanelGenerateSummaryActionTransitionsToLockedGeneratingState() {
+        val draft = RuntimeMemorySummaryDraft(
+            id = "draft-generate",
+            session = RuntimeMemorySummaryDraftSession(
+                sessionId = "session-1",
+                title = "Long idle planning chat",
+                modelId = "ollama:qwen3:8b",
+                lastActivityAtMillis = testLocalMillis(2026, Calendar.JUNE, 1, 10),
+                messageCount = 4,
+                inactiveSeconds = 1_209_600L,
+            ),
+            sourceMessageCount = 4,
+            sourceRange = "visible messages 1-4 of 4",
+            sourcePointers = listOf(
+                RuntimeMemorySummaryDraftSourcePointer(
+                    sessionId = "session-1",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAtMillis = testLocalMillis(2026, Calendar.JUNE, 1, 10),
+                    excerpt = "Prefer concise Korean release notes.",
+                ),
+            ),
+            summaryPreview = "Prefer concise Korean release-note summaries.",
+        )
+        val generatingIds = mutableStateOf(emptySet<String>())
+        var generatedDraftId: String? = null
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "en") {
+                    Surface(modifier = Modifier.width(360.dp).height(760.dp)) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            MemoryPanel(
+                                entries = emptyList(),
+                                summaryDrafts = listOf(draft),
+                                generatingSummaryDraftIds = generatingIds.value,
+                                actionsEnabled = true,
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onGenerateMemorySummaryDraft = {
+                                    generatedDraftId = it
+                                    generatingIds.value = setOf(it)
+                                },
+                                onApproveMemorySummaryDraft = {},
+                                onDismissMemorySummaryDraft = {},
+                                onRefreshMemory = {},
+                                showHeader = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        val generateButton = compose.onNodeWithTag(memorySummaryDraftGenerateTestTag(draft.id))
+        generateButton
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(draft.id, generatedDraftId)
+        generateButton.assertIsNotEnabled()
+        compose.onNodeWithText("Generating summary…").assertExists()
+        compose.onNodeWithContentDescription("Add suggested memory from Long idle planning chat")
+            .assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Dismiss suggested memory from Long idle planning chat")
+            .assertIsNotEnabled()
+        compose.onNode(
+            hasContentDescription("Generate summary for Long idle planning chat") and
+                hasStateDescription("Generating summary…"),
+            useUnmergedTree = true,
+        ).assertExists()
+    }
+
+    @Test
+    fun settingsMemoryPanelGeneratedSummaryShowsReviewLabelWithoutGenerateAction() {
+        val draft = RuntimeMemorySummaryDraft(
+            id = "draft-generated",
+            session = RuntimeMemorySummaryDraftSession(
+                sessionId = "session-1",
+                title = "Long idle planning chat",
+                modelId = "ollama:qwen3:8b",
+                lastActivityAtMillis = testLocalMillis(2026, Calendar.JUNE, 1, 10),
+                messageCount = 4,
+                inactiveSeconds = 1_209_600L,
+            ),
+            sourceMessageCount = 4,
+            sourceRange = "visible messages 1-4 of 4",
+            sourcePointers = listOf(
+                RuntimeMemorySummaryDraftSourcePointer(
+                    sessionId = "session-1",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAtMillis = testLocalMillis(2026, Calendar.JUNE, 1, 10),
+                    excerpt = "Prefer concise Korean release notes.",
+                ),
+            ),
+            summaryPreview = "Generated concise Korean release-note preference.",
+            summaryMethod = "llm_summary_v1",
+            generatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 25, 9),
+            generatedModelId = "ollama:qwen3:8b",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "en") {
+                    Surface(modifier = Modifier.width(360.dp).height(760.dp)) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            MemoryPanel(
+                                entries = emptyList(),
+                                summaryDrafts = listOf(draft),
+                                actionsEnabled = true,
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onApproveMemorySummaryDraft = {},
+                                onDismissMemorySummaryDraft = {},
+                                onRefreshMemory = {},
+                                showHeader = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithText("AI-generated summary. Review required.")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(memorySummaryDraftGenerateTestTag(draft.id)).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add suggested memory from Long idle planning chat")
+            .assertIsEnabled()
+        compose.onNodeWithContentDescription("Dismiss suggested memory from Long idle planning chat")
+            .assertIsEnabled()
     }
 
     @Test

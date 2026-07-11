@@ -153,6 +153,28 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
+    public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let resolved = try await resolveEmbeddingRoute(for: request.model)
+        let backend = try backend(for: resolved.provider)
+        let residencyModel = RuntimeModelResidencyKey(
+            provider: resolved.provider,
+            modelID: resolved.modelID
+        )
+        await prepareResidency(for: residencyModel)
+        do {
+            let result = try await backend.embed(request: EmbeddingRequest(
+                model: resolved.modelID,
+                texts: request.texts
+            ))
+            await finishResidency(for: residencyModel)
+            return result
+        } catch {
+            await finishResidency(for: residencyModel)
+            try Task.checkCancellation()
+            throw error
+        }
+    }
+
     @discardableResult
     public func cancel(generationID: String) -> GenerationCancellationResult {
         if let provider = lock.withLock({ generationProviders[generationID] }),
@@ -216,6 +238,22 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         }
 
         throw Self.modelNotInstalledError(model, provider: .aggregate)
+    }
+
+    private func resolveEmbeddingRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
+        let models = try await listModels()
+        if let resolved = ModelProvider.splitQualifiedModelID(model),
+           let match = Self.matchingInstalledModel(
+               requestedModel: resolved.modelID,
+               requestedProvider: resolved.provider,
+               requiredKind: .embedding,
+               models: models
+           ) {
+            return (match.provider, match.providerModelID)
+        }
+
+        let provider = ModelProvider.splitQualifiedModelID(model)?.provider ?? .aggregate
+        throw Self.modelNotInstalledError(model, provider: provider)
     }
 
     private func resolveModelReference(_ model: String) -> (provider: ModelProvider, modelID: String) {
@@ -388,21 +426,30 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private static func matchingInstalledModel(
         requestedModel: String,
         requestedProvider: ModelProvider? = nil,
+        requiredKind: ModelKind = .chat,
         models: [ModelInfo]
     ) -> ModelInfo? {
         let requestedCanonical = canonicalModelName(requestedModel)
-        return models.first { candidate in
+        let eligibleModels = models.filter { candidate in
             guard candidate.installed else { return false }
             guard candidate.source == .local else { return false }
-            guard candidate.kind == .chat else { return false }
+            guard candidate.kind == requiredKind else { return false }
             if let requestedProvider, candidate.provider != requestedProvider {
                 return false
             }
+            return true
+        }
+        if let exactMatch = eligibleModels.first(where: { candidate in
             let providerModelID = candidate.providerModelID
             return candidate.id == requestedModel
                 || candidate.name == requestedModel
                 || providerModelID == requestedModel
-                || canonicalModelName(candidate.id) == requestedCanonical
+        }) {
+            return exactMatch
+        }
+        return eligibleModels.first { candidate in
+            let providerModelID = candidate.providerModelID
+            return canonicalModelName(candidate.id) == requestedCanonical
                 || canonicalModelName(candidate.name) == requestedCanonical
                 || canonicalModelName(providerModelID) == requestedCanonical
         }

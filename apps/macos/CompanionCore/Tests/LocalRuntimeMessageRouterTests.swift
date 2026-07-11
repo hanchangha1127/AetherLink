@@ -997,7 +997,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let capturedRequests = LockedBox<[ChatRequest]>([])
         let router = makeRouter(
             backend: MockBackend(
-                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                models: [ModelInfo(
+                    id: "llama3.1:8b",
+                    name: "llama3.1:8b",
+                    installed: true,
+                    contextWindowTokens: 8_192
+                )],
                 chatEventBatches: [
                     [
                         .delta("The runtime mediates model access after QR pairing."),
@@ -2328,6 +2333,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
     func testChatSessionsListEmbeddingModelHintStaysSearchOnly() async throws {
         let sink = RecordingSink()
+        let backend = MockBackend(embeddingResult: EmbeddingResult(
+            model: "nomic-embed-text",
+            embeddings: [[1, 0], [0.9, 0.1]]
+        ))
         let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
             RuntimeChatStoredSession(
                 sessionID: "session-search-route",
@@ -2343,7 +2352,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             )
         ])
         let router = makeRouter(
-            backend: MockBackend(),
+            backend: backend,
             chatEventStore: store
         )
 
@@ -2359,8 +2368,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         let response = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(response?.type, MessageType.chatSessionsList)
-        XCTAssertEqual(store.searchRequests.first?.query, "fresh QR")
-        XCTAssertEqual(store.searchRequests.first?.embeddingModelID, "ollama:nomic-embed-text")
+        XCTAssertEqual(backend.embeddingRequests.first?.model, "ollama:nomic-embed-text")
+        XCTAssertEqual(backend.embeddingRequests.first?.texts.first, "fresh QR")
+        XCTAssertTrue(backend.embeddingRequests.first?.texts.dropFirst().first?.contains("Remote relay route") == true)
+        XCTAssertEqual(store.searchRequests, [])
         guard case .array(let sessions)? = response?.payload["sessions"],
               case .object(let session)? = sessions.first,
               case .object(let search)? = session["search"],
@@ -2370,8 +2381,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
         XCTAssertNil(session["embedding_model_id"])
         XCTAssertEqual(search["rank"], .number(1))
-        XCTAssertEqual(search["snippet"], .string("Scan a fresh QR before reconnecting."))
-        XCTAssertEqual(matchedFields, [.string("transcript")])
+        XCTAssertEqual(search["snippet"], .string("Remote relay route"))
+        XCTAssertEqual(matchedFields, [.string("semantic")])
 
         router.handle(ProtocolEnvelope(
             type: MessageType.chatSessionsList,
@@ -2384,9 +2395,541 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         ), sink: sink)
 
         _ = try await sink.waitForMessages(count: 2)
-        XCTAssertEqual(store.searchRequests.count, 2)
-        XCTAssertEqual(store.searchRequests.last?.query, "   ")
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+        XCTAssertEqual(store.searchRequests.count, 1)
+        XCTAssertNil(store.searchRequests.last?.query)
         XCTAssertNil(store.searchRequests.last?.embeddingModelID)
+    }
+
+    func testChatSessionsListPersistentEmbeddingCacheEmbedsOnlyQueryAfterColdFill() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "test-revision-v1")])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-cache-a",
+                title: "Fresh QR recovery",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 1
+            ),
+            RuntimeChatStoredSession(
+                sessionID: "semantic-cache-b",
+                title: "Relay allocation recovery",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 400),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "limit": .number(10),
+            "query": .string("recover connection"),
+            "embedding_model_id": .string("ollama:nomic-embed-text:latest")
+        ]
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-cache-cold",
+            payload: payload
+        ), sink: sink)
+        let coldResponse = try await sink.waitForMessages(count: 1).first
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-cache-hit",
+            payload: payload
+        ), sink: sink)
+        let responses = try await sink.waitForMessages(count: 2)
+        let hitResponse = responses.first { $0.requestID == "semantic-cache-hit" }
+
+        XCTAssertEqual(coldResponse?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(hitResponse?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(coldResponse?.payload["sessions"], hitResponse?.payload["sessions"])
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [3, 1])
+        XCTAssertEqual(store.cachedSemanticEmbeddingCount, 2)
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [2])
+    }
+
+    func testChatSessionsListDoesNotPersistEmbeddingsWithoutStrongModelRevision() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: nil)])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-no-revision",
+                title: "Private overlay route",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("overlay route"),
+            "embedding_model_id": .string("ollama:nomic-embed-text")
+        ]
+
+        for offset in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "semantic-no-revision-\(offset)",
+                payload: payload
+            ), sink: sink)
+            _ = try await sink.waitForMessages(count: offset + 1)
+        }
+
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [2, 2])
+        XCTAssertEqual(store.cachedSemanticEmbeddingCount, 0)
+        XCTAssertTrue(store.semanticEmbeddingWriteBatches.isEmpty)
+    }
+
+    func testChatSessionsListModelRevisionChangeDoesNotReusePriorCachedVectors() async throws {
+        let sink = RecordingSink()
+        let revisionV1 = semanticEmbeddingModel(revision: "test-revision-v1")
+        let revisionV2 = semanticEmbeddingModel(revision: "test-revision-v2")
+        let backend = MockBackend(modelListBatches: [revisionV1, revisionV1, revisionV2, revisionV2].map { [$0] })
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-revision",
+                title: "Rotated relay room",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("relay room"),
+            "embedding_model_id": .string("ollama:nomic-embed-text")
+        ]
+
+        for offset in 0..<2 {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "semantic-revision-\(offset)",
+                payload: payload
+            ), sink: sink)
+            _ = try await sink.waitForMessages(count: offset + 1)
+        }
+
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [2, 2])
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [1, 1])
+        XCTAssertNotEqual(
+            store.semanticEmbeddingWriteBatches[0][0].key.modelFingerprint,
+            store.semanticEmbeddingWriteBatches[1][0].key.modelFingerprint
+        )
+    }
+
+    func testChatSessionsListMalformedCachedDimensionTriggersFullRefresh() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "test-revision-v1")])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-dimension",
+                title: "Embedding dimension recovery",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("dimension recovery"),
+            "embedding_model_id": .string("ollama:nomic-embed-text")
+        ]
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-dimension-cold",
+            payload: payload
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 1)
+        store.replaceCachedSemanticEmbedding(sessionID: "semantic-dimension", embedding: [1, 0])
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-dimension-refresh",
+            payload: payload
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 2).last
+
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [2, 1, 2])
+        XCTAssertEqual(store.semanticEmbeddingWriteBatches.map(\.count), [1, 1])
+    }
+
+    func testChatSessionsListSemanticCacheFailureDegradesToOnDemandEmbedding() async throws {
+        let sink = RecordingSink()
+        let cacheError = NSError(domain: "SemanticCacheTests", code: 1)
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "test-revision-v1")])
+        let store = SearchHintRecordingRuntimeChatEventStore(
+            sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: "semantic-cache-failure",
+                    title: "Cache fallback",
+                    model: "ollama:llama3.1:8b",
+                    lastActivityAt: Date(),
+                    messageCount: 1
+                )
+            ],
+            semanticCacheReadError: cacheError,
+            semanticCacheWriteError: cacheError
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-cache-failure",
+            payload: [
+                "query": .string("cache fallback"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 1).first
+
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [2])
+        XCTAssertEqual(store.cachedSemanticEmbeddingCount, 0)
+    }
+
+    func testConnectionCloseBeforeSemanticCacheCommitPreventsPersistentWrite() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "test-revision-v1")])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-cancelled-commit",
+                title: "Cancelled cache commit",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        store.onBeforeSemanticEmbeddingCommit = {
+            router.connectionDidClose(sink.connectionID)
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-cancelled-commit",
+            payload: [
+                "query": .string("cancelled commit"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<100 where store.semanticCommitAttempts == 0 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertEqual(store.semanticCommitAttempts, 1)
+        XCTAssertTrue(store.semanticEmbeddingWriteBatches.isEmpty)
+        XCTAssertEqual(store.cachedSemanticEmbeddingCount, 0)
+        let messages = try await sink.waitForMessages(count: 1, timeout: 0.05)
+        XCTAssertTrue(messages.isEmpty)
+    }
+
+    func testChatSessionsListSemanticSearchFailureDoesNotFallBackToLexicalSearch() async throws {
+        let sink = RecordingSink()
+        let backendError = BackendError(
+            provider: .ollama,
+            code: "embedding_model_not_installed",
+            message: "The selected embedding model is not installed.",
+            retryable: false
+        )
+        let backend = MockBackend(embeddingError: backendError)
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-failure",
+                title: "Fresh QR recovery",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 400),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-semantic-failure",
+            payload: [
+                "limit": .number(10),
+                "query": .string("fresh QR"),
+                "embedding_model_id": .string("ollama:missing-embed")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("embedding_model_not_installed"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertEqual(store.searchRequests, [])
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+    }
+
+    func testChatSessionsListInvalidEmbeddingResponseUsesKnownBackendErrorCode() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(embeddingResult: EmbeddingResult(
+            model: "nomic-embed-text",
+            embeddings: [[1, 0]]
+        ))
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-invalid-vector",
+                title: "Semantic response",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-semantic-invalid-vector",
+            payload: [
+                "query": .string("semantic response"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertEqual(store.searchRequests, [])
+    }
+
+    func testChatSessionsListEmbeddingBudgetMatchesLatestAliasRouting() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(models: [
+            ModelInfo(
+                id: "all-minilm:latest",
+                name: "all-minilm:latest",
+                provider: .ollama,
+                kind: .embedding,
+                contextWindowTokens: 160
+            )
+        ])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-latest-alias",
+                title: "Alias " + String(repeating: "bounded text ", count: 50),
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-semantic-latest-alias",
+            payload: [
+                "query": .string("alias"),
+                "embedding_model_id": .string("ollama:all-minilm")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatSessionsList)
+        let candidateDocument = try XCTUnwrap(backend.embeddingRequests.first?.texts.dropFirst().first)
+        XCTAssertLessThanOrEqual(candidateDocument.utf8.count, 128)
+    }
+
+    func testChatSessionsListRejectsResourceHeavyQueriesBeforeEmbeddingOrStoreSearch() async throws {
+        let payloads: [[String: JSONValue]] = [
+            [
+                "query": .string(String(repeating: "q", count: 257)),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ],
+            [
+                "query": .string((1...17).map { "term\($0)" }.joined(separator: " ")),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ]
+
+        for (offset, payload) in payloads.enumerated() {
+            let sink = RecordingSink()
+            let backend = MockBackend()
+            let store = SearchHintRecordingRuntimeChatEventStore(sessions: [])
+            let router = makeRouter(backend: backend, chatEventStore: store)
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "sessions-query-resource-\(offset)",
+                payload: payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(backend.embeddingRequests, [])
+            XCTAssertEqual(store.searchRequests, [])
+        }
+    }
+
+    func testChatSessionsListSerializesPerConnectionAndConnectionCloseCancelsEmbedding() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(
+            models: [
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding,
+                    contextWindowTokens: 2_048
+                )
+            ],
+            holdEmbeddingUntilCancelled: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-suspended",
+                title: "Semantic search",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("semantic search"),
+            "embedding_model_id": .string("ollama:nomic-embed-text")
+        ]
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-suspended-first",
+            payload: payload
+        ), sink: sink)
+        for _ in 0..<100 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-suspended-second",
+            payload: payload
+        ), sink: sink)
+        let busyResponse = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(busyResponse?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(busyResponse?.payload["retryable"], .bool(true))
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.connectionDidClose(sink.connectionID)
+        for _ in 0..<100 where backend.embeddingCancellationCount == 0 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingCancellationCount, 1)
+        let messagesAfterCancellation = try await sink.waitForMessages(count: 2, timeout: 0.05)
+        XCTAssertEqual(messagesAfterCancellation.count, 1)
+    }
+
+    func testConnectionCloseKeepsGlobalSemanticSlotUntilNoncooperativeEmbeddingEnds() async throws {
+        let backend = MockBackend(
+            models: [
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding,
+                    contextWindowTokens: 2_048
+                )
+            ],
+            holdEmbeddingUntilReleased: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-global-slot",
+                title: "Semantic search",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("semantic search"),
+            "embedding_model_id": .string("ollama:nomic-embed-text")
+        ]
+        let occupiedSinks = (0..<4).map { _ in RecordingSink() }
+
+        for (offset, sink) in occupiedSinks.enumerated() {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "semantic-global-\(offset)",
+                payload: payload
+            ), sink: sink)
+        }
+        for _ in 0..<200 where backend.embeddingRequests.count < 4 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 4)
+        occupiedSinks.forEach { router.connectionDidClose($0.connectionID) }
+
+        let fifthSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-global-fifth",
+            payload: payload
+        ), sink: fifthSink)
+        let busyResponse = try await fifthSink.waitForMessages(count: 1).first
+        XCTAssertEqual(busyResponse?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(busyResponse?.payload["retryable"], .bool(true))
+        XCTAssertEqual(backend.embeddingRequests.count, 4)
+
+        backend.releaseHeldEmbeddings()
+        for _ in 0..<200 where backend.embeddingCancellationCount < 4 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingCancellationCount, 4)
+    }
+
+    func testConnectionCloseSuppressesSuccessfulResultFromEmbeddingThatIgnoresCancellation() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(
+            models: [
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding,
+                    contextWindowTokens: 2_048
+                )
+            ],
+            holdEmbeddingUntilReleased: true,
+            ignoreEmbeddingCancellationAfterRelease: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "semantic-noncooperative-success",
+                title: "Semantic search",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(backend: backend, chatEventStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-noncooperative-success",
+            payload: [
+                "query": .string("semantic search"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<100 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.connectionDidClose(sink.connectionID)
+        backend.releaseHeldEmbeddings()
+        for _ in 0..<100 where backend.embeddingCancellationCount == 0 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertEqual(backend.embeddingCancellationCount, 1)
+        let messages = try await sink.waitForMessages(count: 1, timeout: 0.05)
+        XCTAssertEqual(messages.count, 0)
     }
 
     func testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch() async throws {
@@ -3383,6 +3926,184 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(blankFirstEntry["search"])
     }
 
+    func testMemoryListSemanticSearchPersistsApprovedContentAndEmbedsOnlyQueryOnHit() async throws {
+        let sink = RecordingSink()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("memory-semantic-router-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = JSONLRuntimeMemoryStore(
+            fileURL: directory.appendingPathComponent("memory.jsonl"),
+            semanticCacheDatabaseURL: directory.appendingPathComponent("semantic.sqlite")
+        )
+        _ = try store.upsert(
+            id: "memory-a",
+            content: "Use the latest QR for relay recovery.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 20)
+        )
+        _ = try store.upsert(
+            id: "memory-b",
+            content: "Keep answers concise.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 10)
+        )
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "memory-v1")])
+        let router = makeRouter(backend: backend, memoryStore: store)
+        let payload: [String: JSONValue] = [
+            "query": .string("recover connection"),
+            "embedding_model_id": .string("ollama:nomic-embed-text:latest")
+        ]
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-semantic-cold",
+            payload: payload
+        ), sink: sink)
+        let cold = try await sink.waitForMessages(count: 1).last
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-semantic-hit",
+            payload: payload
+        ), sink: sink)
+        let hit = try await sink.waitForMessages(count: 2).last
+
+        XCTAssertEqual(cold?.type, MessageType.memoryList)
+        XCTAssertEqual(cold?.payload, hit?.payload)
+        XCTAssertEqual(backend.embeddingRequests.map { $0.texts.count }, [3, 1])
+        XCTAssertEqual(backend.embeddingRequests.first?.texts.first, "recover connection")
+        XCTAssertEqual(Set(backend.embeddingRequests.first?.texts.dropFirst() ?? []), Set([
+            "Use the latest QR for relay recovery.",
+            "Keep answers concise."
+        ]))
+        XCTAssertFalse(String(describing: hit?.payload).contains("embedding_model_id"))
+    }
+
+    func testMemoryListSemanticSearchDoesNotEmbedReviewDraftOrSourceAuditText() async throws {
+        let sink = RecordingSink()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("memory-semantic-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = JSONLRuntimeMemoryStore(
+            fileURL: directory.appendingPathComponent("memory.jsonl"),
+            semanticCacheDatabaseURL: directory.appendingPathComponent("semantic.sqlite")
+        )
+        _ = try store.upsert(
+            ownerDeviceID: nil,
+            id: "approved-memory",
+            content: "Approved memory content only.",
+            enabled: true,
+            source: runtimeMemorySource(
+                sessionID: "private-session",
+                title: "Private source title",
+                model: "private-model",
+                summaryPreview: "Unapproved source excerpt"
+            ),
+            timestamp: Date(timeIntervalSince1970: 10)
+        )
+        _ = try store.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: nil,
+            draft: RuntimeGeneratedMemorySummaryDraft(
+                draftID: "review-draft",
+                sessionID: "draft-session",
+                sourceMessageCount: 2,
+                content: "Generated draft still awaiting approval.",
+                modelID: "ollama:test",
+                generatedAt: Date(timeIntervalSince1970: 11)
+            )
+        )
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: nil)])
+        let router = makeRouter(backend: backend, memoryStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-semantic-source-boundary",
+            payload: [
+                "query": .string("approved"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 1)
+
+        let inputs = backend.embeddingRequests.first?.texts ?? []
+        XCTAssertEqual(inputs, ["approved", "Approved memory content only."])
+        XCTAssertFalse(inputs.joined().contains("Private source title"))
+        XCTAssertFalse(inputs.joined().contains("Unapproved source excerpt"))
+        XCTAssertFalse(inputs.joined().contains("Generated draft"))
+    }
+
+    func testMemoryListSemanticSearchDropsEntryDeletedDuringInference() async throws {
+        let sink = RecordingSink()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("memory-semantic-stale-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = JSONLRuntimeMemoryStore(
+            fileURL: directory.appendingPathComponent("memory.jsonl"),
+            semanticCacheDatabaseURL: directory.appendingPathComponent("semantic.sqlite")
+        )
+        _ = try store.upsert(
+            id: "deleted-during-search",
+            content: "Content that must not reappear after deletion.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 10)
+        )
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(revision: "memory-v1")],
+            holdEmbeddingUntilReleased: true
+        )
+        let router = makeRouter(backend: backend, memoryStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-semantic-stale",
+            payload: [
+                "query": .string("deletion"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<200 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+        _ = try store.delete(
+            ownerDeviceID: nil,
+            id: "deleted-during-search",
+            timestamp: Date(timeIntervalSince1970: 20)
+        )
+        backend.releaseHeldEmbeddings()
+        let response = try await sink.waitForMessages(count: 1).last
+
+        XCTAssertEqual(response?.type, MessageType.memoryList)
+        XCTAssertEqual(response?.payload["entries"], .array([]))
+    }
+
+    func testMemoryListSemanticHintWithoutQueryStaysLexicalAndDoesNotEmbed() async throws {
+        let sink = RecordingSink()
+        let store = RecordingRuntimeMemoryStore(entries: [
+            RuntimeMemoryEntry(
+                id: "memory",
+                content: "Existing approved memory.",
+                createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+        ])
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "memory-v1")])
+        let router = makeRouter(backend: backend, memoryStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-hint-without-query",
+            payload: ["embedding_model_id": .string("ollama:nomic-embed-text")]
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 1).last
+
+        XCTAssertEqual(response?.type, MessageType.memoryList)
+        XCTAssertTrue(backend.embeddingRequests.isEmpty)
+        XCTAssertEqual(store.listRequests.count, 1)
+    }
+
     func testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation() async throws {
         let sink = RecordingSink()
         let store = RecordingRuntimeMemoryStore()
@@ -3832,6 +4553,378 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             XCTAssertEqual(chatStore.sessionListRequests, [])
             XCTAssertEqual(memoryStore.listRequests, [])
         }
+    }
+
+    func testMemorySummaryDraftGenerateRequiresAuthentication() async throws {
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(backend: MockBackend(status: .available))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "summary-draft-generate-unauthenticated",
+            payload: [
+                "draft_id": .string("long-inactivity:session-1:1000:6"),
+                "model": .string("llama3.1:8b"),
+                "expected_session_id": .string("session-1"),
+                "expected_source_message_count": .number(6)
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "summary-draft-generate-unauthenticated")
+        XCTAssertEqual(message?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+    }
+
+    func testMemorySummaryDraftGenerateCachesReviewDraftAndApprovalPreservesGeneratedSource() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStoreURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: memoryStoreURL)
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: "generated-summary-session",
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Generated source"
+        )
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let chatCallCount = LockedBox(0)
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .reasoningDelta("private backend reasoning"),
+                .delta("<think>inline private reasoning</think>"),
+                .delta(#"{"summary":"Generated durable summary."}"#),
+                .done(inputTokens: 12, outputTokens: 4)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+                chatCallCount.value += 1
+            }
+        )
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "summary-drafts-before-generation"
+        ), sink: sink)
+        let listResponse = try await sink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let baseDraft)? = drafts.first,
+              case .string(let draftID)? = baseDraft["id"] else {
+            XCTFail("Expected deterministic summary draft")
+            return
+        }
+        XCTAssertEqual(baseDraft["summary_method"], .string("deterministic_preview"))
+
+        let generatePayload: [String: JSONValue] = [
+            "draft_id": .string(draftID),
+            "model": .string("llama3.1:8b"),
+            "expected_session_id": .string("generated-summary-session"),
+            "expected_source_message_count": .number(6)
+        ]
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "summary-draft-generate",
+            payload: generatePayload
+        ), sink: sink)
+
+        let generateResponse = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(
+            generateResponse?.type,
+            MessageType.memorySummaryDraftGenerate,
+            String(describing: generateResponse?.payload)
+        )
+        guard case .object(let generatedDraft)? = generateResponse?.payload["draft"] else {
+            XCTFail("Expected generated summary draft")
+            return
+        }
+        XCTAssertEqual(generatedDraft["summary_preview"], .string("Generated durable summary."))
+        XCTAssertEqual(generatedDraft["summary_method"], .string("llm_summary_v1"))
+        XCTAssertEqual(generatedDraft["generated_model_id"], .string("llama3.1:8b"))
+        XCTAssertNotNil(generatedDraft["generated_at"])
+        XCTAssertTrue(try memoryStore.list().isEmpty, "Generation must not approve memory automatically")
+        XCTAssertEqual(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count, 1)
+        XCTAssertEqual(chatCallCount.value, 1)
+
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertEqual(request.messages.count, 2)
+        XCTAssertEqual(request.messages.map(\.role), ["system", "user"])
+        XCTAssertTrue(request.messages[1].content.contains("Generated source question 0"))
+        XCTAssertTrue(request.messages[1].content.contains("Generated source answer 2"))
+        XCTAssertFalse(request.messages[1].content.contains("Runtime user memory"))
+        XCTAssertFalse(request.messages[1].content.contains("Runtime conversation summary"))
+        XCTAssertFalse(request.messages[1].content.contains("private reasoning"))
+
+        let reopenedChatCallCount = LockedBox(0)
+        let reopenedRouter = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.delta("not valid JSON")],
+                onChatRequest: { _ in reopenedChatCallCount.value += 1 }
+            ),
+            chatEventStore: chatStore,
+            memoryStore: JSONLRuntimeMemoryStore(fileURL: memoryStoreURL)
+        )
+        let reopenedSink = RecordingSink()
+        reopenedRouter.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "summary-draft-generate-cached",
+            payload: generatePayload
+        ), sink: reopenedSink)
+        let cachedResponse = try await reopenedSink.waitForMessages(count: 1).last
+        guard case .object(let cachedDraft)? = cachedResponse?.payload["draft"] else {
+            XCTFail("Expected cached generated summary draft")
+            return
+        }
+        XCTAssertEqual(cachedDraft["summary_preview"], .string("Generated durable summary."))
+        XCTAssertEqual(reopenedChatCallCount.value, 0)
+
+        reopenedRouter.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "summary-draft-approve-generated",
+            payload: [
+                "draft_id": .string(draftID),
+                "expected_session_id": .string("generated-summary-session"),
+                "expected_source_message_count": .number(6)
+            ]
+        ), sink: reopenedSink)
+        let approveResponse = try await reopenedSink.waitForMessages(count: 2).last
+        guard case .object(let approvedEntry)? = approveResponse?.payload["entry"],
+              case .object(let approvedSource)? = approvedEntry["source"] else {
+            XCTFail("Expected approved generated memory")
+            return
+        }
+        XCTAssertEqual(approvedEntry["content"], .string("Generated durable summary."))
+        XCTAssertEqual(approvedSource["summary_method"], .string("llm_summary_v1"))
+    }
+
+    func testMemorySummaryDraftGenerateMalformedResponseLeavesPreviewAndMemoryUnchanged() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: "malformed-summary-session",
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Malformed source"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [
+                    .delta(#"{"summary":"valid","extra":"rejected"}"#),
+                    .done(inputTokens: nil, outputTokens: nil)
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "malformed-summary-list-before"
+        ), sink: sink)
+        let listBefore = try await sink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listBefore?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"],
+              case .string(let originalPreview)? = draft["summary_preview"] else {
+            XCTFail("Expected deterministic summary draft")
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "malformed-summary-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("llama3.1:8b"),
+                "expected_session_id": .string("malformed-summary-session"),
+                "expected_source_message_count": .number(6)
+            ]
+        ), sink: sink)
+        let failure = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(failure?.type, MessageType.error)
+        XCTAssertEqual(failure?.payload["code"], .string("memory_summary_draft_generation_failed"))
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+        XCTAssertTrue(try memoryStore.list().isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "malformed-summary-list-after"
+        ), sink: sink)
+        let listAfter = try await sink.waitForMessages(count: 3).last
+        guard case .array(let draftsAfter)? = listAfter?.payload["drafts"],
+              case .object(let draftAfter)? = draftsAfter.first else {
+            XCTFail("Expected deterministic fallback summary draft")
+            return
+        }
+        XCTAssertEqual(draftAfter["summary_preview"], .string(originalPreview))
+        XCTAssertEqual(draftAfter["summary_method"], .string("deterministic_preview"))
+    }
+
+    func testAuthenticatedMemorySummaryDraftGenerateReusesOwnerScopedCache() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: "authenticated-cache-session",
+            ownerDeviceID: "device-a",
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Authenticated cache"
+        )
+        let chatCallCount = LockedBox(0)
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [
+                    .delta(#"{"summary":"Owner-scoped cached summary."}"#),
+                    .done(inputTokens: nil, outputTokens: nil)
+                ],
+                onChatRequest: { _ in chatCallCount.value += 1 }
+            ),
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "authenticated-cache-list"
+        ), sink: sink)
+        let listResponse = try await sink.waitForMessages(count: 3).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            XCTFail("Expected authenticated summary draft")
+            return
+        }
+        let payload: [String: JSONValue] = [
+            "draft_id": .string(draftID),
+            "model": .string("llama3.1:8b"),
+            "expected_session_id": .string("authenticated-cache-session"),
+            "expected_source_message_count": .number(6)
+        ]
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "authenticated-cache-generate-first",
+            payload: payload
+        ), sink: sink)
+        let firstResponse = try await sink.waitForMessages(count: 4).last
+        guard case .object(let firstDraft)? = firstResponse?.payload["draft"] else {
+            XCTFail("Expected first generated draft")
+            return
+        }
+        XCTAssertEqual(
+            try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: "device-a").count,
+            1
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "authenticated-cache-generate-second",
+            payload: payload
+        ), sink: sink)
+        let secondResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(secondResponse?.type, MessageType.memorySummaryDraftGenerate)
+        guard case .object(let secondDraft)? = secondResponse?.payload["draft"] else {
+            XCTFail("Expected cached generated draft")
+            return
+        }
+        XCTAssertEqual(secondDraft["generated_at"], firstDraft["generated_at"])
+        XCTAssertEqual(chatCallCount.value, 1)
+    }
+
+    func testMemorySummaryDraftGenerateRevalidatesSourceAfterInferenceBeforeCaching() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: "stale-summary-session",
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Stale source"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [
+                    .delta(#"{"summary":"Must not be cached."}"#),
+                    .done(inputTokens: nil, outputTokens: nil)
+                ],
+                onChatRequest: { _ in
+                    try! chatStore.append(RuntimeChatStoredEvent(
+                        id: "stale-summary-new-request",
+                        timestamp: Date(timeIntervalSince1970: 2_000_000),
+                        kind: .request,
+                        requestID: "stale-summary-new-turn",
+                        sessionID: "stale-summary-session",
+                        model: "llama3.1:8b",
+                        messages: [ChatMessage(role: "user", content: "New source arrived during inference")],
+                        ownerDeviceID: nil
+                    ))
+                }
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "stale-summary-list"
+        ), sink: sink)
+        let listResponse = try await sink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            XCTFail("Expected deterministic summary draft")
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "stale-summary-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("llama3.1:8b"),
+                "expected_session_id": .string("stale-summary-session"),
+                "expected_source_message_count": .number(6)
+            ]
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("memory_summary_draft_stale"))
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+        XCTAssertTrue(try memoryStore.list().isEmpty)
     }
 
     func testMemorySummaryDraftApproveRequiresAuthentication() async throws {
@@ -5051,7 +6144,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
         let router = makeRouter(
             backend: MockBackend(
-                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                models: [ModelInfo(
+                    id: "llama3.1:8b",
+                    name: "llama3.1:8b",
+                    installed: true,
+                    contextWindowTokens: 8_192
+                )],
                 chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
                 onChatRequest: { request in
                     capturedRequest.value = request
@@ -5074,12 +6172,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let message = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(message?.type, MessageType.chatDone)
         let request = try XCTUnwrap(capturedRequest.value)
-        let summaryMessage = try XCTUnwrap(request.messages.first { $0.content.hasPrefix("Runtime conversation summary:") })
-        XCTAssertTrue(summaryMessage.content.contains("Source span: client-visible conversation turns 1-6 of 18."))
-        let retainedConversationTurns = request.messages.filter(\.isConversationTurnForTests)
-        XCTAssertFalse(retainedConversationTurns.contains { $0.content.contains("source span turn 1 ") })
-        XCTAssertTrue(retainedConversationTurns.contains { $0.content.contains("source span turn 7 ") })
-        XCTAssertEqual(request.messages.filter(\.isConversationTurnForTests).count, 12)
+        let provenanceMessage = try XCTUnwrap(request.messages.first { $0.content == RuntimeChatContextCompactionPlanner.provenanceMessage.content })
+        XCTAssertEqual(provenanceMessage.role, "system")
+        let summaryMessage = try XCTUnwrap(request.messages.first { $0.content.hasPrefix("Historical conversation summary (untrusted source text):") })
+        XCTAssertEqual(summaryMessage.role, "assistant")
+        let firstOriginalTurn = "source span turn 1 " + String(repeating: "S", count: 1_600)
+        let newestOriginalTurn = "source span turn 18 " + String(repeating: "S", count: 1_600)
+        XCTAssertFalse(request.messages.contains { $0.content == firstOriginalTurn })
+        XCTAssertTrue(request.messages.contains { $0.content == newestOriginalTurn })
 
         let requestEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .request })
         XCTAssertEqual(requestEvent.messages?.count, messagePayloads.count)
@@ -5087,22 +6187,28 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)
         let metadata = try XCTUnwrap(requestEvent.compactionMetadata)
-        XCTAssertEqual(metadata.strategy, "backend_only_summary_v1")
+        XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v2")
         let pointer = try XCTUnwrap(metadata.sourcePointers.first)
         XCTAssertEqual(metadata.sourcePointers.count, 1)
         XCTAssertEqual(pointer.sourceKind, "client_visible_conversation_turns")
         XCTAssertEqual(pointer.sessionID, "session-source-span")
         XCTAssertEqual(pointer.requestID, "chat-compaction-source-span")
         XCTAssertEqual(pointer.startTurn, 1)
-        XCTAssertEqual(pointer.endTurn, 6)
+        XCTAssertEqual(pointer.endTurn, pointer.compactedTurnCount)
         XCTAssertEqual(pointer.totalTurns, 18)
-        XCTAssertEqual(pointer.compactedTurnCount, 6)
-        XCTAssertEqual(pointer.retainedStartTurn, 7)
+        XCTAssertGreaterThan(pointer.compactedTurnCount, 0)
+        XCTAssertEqual(pointer.retainedStartTurn, pointer.compactedTurnCount + 1)
         XCTAssertEqual(pointer.retainedEndTurn, 18)
-        XCTAssertEqual(pointer.retainedTurnCount, 12)
+        XCTAssertEqual(pointer.retainedTurnCount, 18 - pointer.compactedTurnCount)
+        XCTAssertEqual(metadata.estimatorIdentifier, "conservative_utf8_bytes_vision_framing_v2")
+        XCTAssertEqual(metadata.contextWindowTokens, 8_192)
+        XCTAssertEqual(metadata.outputReserveTokens, 1_024)
+        XCTAssertEqual(metadata.inputBudgetTokens, 7_168)
+        XCTAssertGreaterThan(metadata.estimatedInputTokensBefore ?? 0, 7_168)
+        XCTAssertLessThanOrEqual(metadata.estimatedInputTokensAfter ?? .max, 7_168)
         let metadataJSON = String(data: try JSONEncoder().encode(metadata), encoding: .utf8)
-        XCTAssertFalse(metadataJSON?.contains("Runtime conversation summary:") == true)
-        XCTAssertFalse(metadataJSON?.contains("Backend-only summary") == true)
+        XCTAssertFalse(metadataJSON?.contains("Historical conversation summary") == true)
+        XCTAssertFalse(metadataJSON?.contains("source span turn") == true)
     }
 
     func testChatSendUsesModelContextWindowMetadataForCompactionBudget() async throws {
@@ -5122,7 +6228,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     id: "llama3.1:small",
                     name: "llama3.1:small",
                     installed: true,
-                    contextWindowTokens: 4_096
+                    contextWindowTokens: 8_192
                 )
             ],
             chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
@@ -5143,7 +6249,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let smallModelMessage = try await smallModelSink.waitForMessages(count: 1).first
         XCTAssertEqual(smallModelMessage?.type, MessageType.chatDone)
         let compactedRequest = try XCTUnwrap(smallModelRequest.value)
-        XCTAssertTrue(compactedRequest.messages.contains { $0.content.hasPrefix("Runtime conversation summary:") })
+        XCTAssertTrue(compactedRequest.messages.contains { $0.content == RuntimeChatContextCompactionPlanner.provenanceMessage.content })
+        XCTAssertTrue(compactedRequest.messages.contains {
+            $0.role == "assistant" && $0.content.hasPrefix("Historical conversation summary (untrusted source text):")
+        })
 
         let largeModelSink = RecordingSink()
         let largeModelRequest = LockedBox<ChatRequest?>(nil)
@@ -5174,8 +6283,56 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let largeModelMessage = try await largeModelSink.waitForMessages(count: 1).first
         XCTAssertEqual(largeModelMessage?.type, MessageType.chatDone)
         let uncompactRequest = try XCTUnwrap(largeModelRequest.value)
-        XCTAssertFalse(uncompactRequest.messages.contains { $0.content.hasPrefix("Runtime conversation summary:") })
+        XCTAssertFalse(uncompactRequest.messages.contains { $0.content == RuntimeChatContextCompactionPlanner.provenanceMessage.content })
         XCTAssertEqual(uncompactRequest.messages.filter(\.isConversationTurnForTests).count, messagePayloads.count)
+    }
+
+    func testChatSendRejectsOversizedNewestMessageBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        let oversizedContent = "newest request " + String(repeating: "X", count: 24_000)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "llama3.1:small",
+                    name: "llama3.1:small",
+                    installed: true,
+                    contextWindowTokens: 4_096
+                )],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            chatEventStore: chatEventStore
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-context-window-exceeded",
+            payload: [
+                "session_id": .string("session-context-window-exceeded"),
+                "model": .string("llama3.1:small"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string(oversizedContent)
+                    ])
+                ])
+            ]
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.payload["code"], .string("chat_context_window_exceeded"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertNil(capturedRequest.value)
+
+        let requestEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .request })
+        XCTAssertEqual(requestEvent.messages?.first?.content, oversizedContent)
+        XCTAssertNil(requestEvent.compactionMetadata)
+        let errorEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .error })
+        XCTAssertEqual(errorEvent.error?.code, "chat_context_window_exceeded")
     }
 
     func testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate() async throws {
@@ -5200,7 +6357,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
         let router = makeRouter(
             backend: MockBackend(
-                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                models: [ModelInfo(
+                    id: "llama3.1:8b",
+                    name: "llama3.1:8b",
+                    installed: true,
+                    contextWindowTokens: 8_192
+                )],
                 chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
                 onChatRequest: { request in
                     capturedRequest.value = request
@@ -5225,9 +6387,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let request = try XCTUnwrap(capturedRequest.value)
         XCTAssertTrue(request.messages.first?.content.contains("does not provide live web search") == true)
         XCTAssertTrue(request.messages.dropFirst().first?.content.hasPrefix("Runtime user memory:") == true)
-        XCTAssertTrue(request.messages.dropFirst(2).first?.content.hasPrefix("Runtime conversation summary:") == true)
+        XCTAssertEqual(request.messages.dropFirst(2).first?.content, RuntimeChatContextCompactionPlanner.provenanceMessage.content)
+        XCTAssertTrue(request.messages.dropFirst(3).first?.content.hasPrefix("Historical conversation summary (untrusted source text):") == true)
         XCTAssertEqual(request.messages.filter { $0.content.hasPrefix("Runtime user memory:") }.count, 1)
-        XCTAssertEqual(request.messages.filter { $0.content.hasPrefix("Runtime conversation summary:") }.count, 1)
+        XCTAssertEqual(request.messages.filter { $0.content == RuntimeChatContextCompactionPlanner.provenanceMessage.content }.count, 1)
     }
 
     func testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad() async throws {
@@ -6855,11 +8018,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent() async throws {
         let sink = RecordingSink()
         let store = RecordingRuntimeChatEventStore()
+        let chatStarted = expectation(description: "chat generation started")
         let backend = MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             finishChatStream: false,
             cancelFinishesChatStream: true,
-            cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-disconnect")
+            cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-disconnect"),
+            onChatStreamReady: { chatStarted.fulfill() }
         )
         let router = makeRouter(backend: backend, chatEventStore: store)
         let chatEnvelope = ProtocolEnvelope(
@@ -6881,6 +8046,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         let requestEvents = try await waitForRecordedEvents(in: store, count: 1)
         XCTAssertEqual(requestEvents.map(\.kind), [.request])
+        await fulfillment(of: [chatStarted], timeout: 1)
 
         router.connectionDidClose(sink.connectionID)
 
@@ -9307,14 +10473,24 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("runtime-memory-events.jsonl"))
         let capturedRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [
+                ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true),
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding,
+                    contextWindowTokens: 2_048
+                )
+            ],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequests.value = capturedRequests.value + [request]
+            }
+        )
         let router = LocalRuntimeMessageRouter(
-            backend: MockBackend(
-                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
-                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
-                onChatRequest: { request in
-                    capturedRequests.value = capturedRequests.value + [request]
-                }
-            ),
+            backend: backend,
             trustedDeviceStore: trustedStore,
             chatEventStore: chatStore,
             memoryStore: memoryStore
@@ -9451,6 +10627,36 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
         XCTAssertEqual(sessionsBArray.count, 1)
         XCTAssertEqual(sessionB["session_id"], .string("session-device-b"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-a-semantic",
+            payload: [
+                "query": .string("device A private topic"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sinkA)
+        let semanticA = try await sinkA.waitForMessages(count: 7).last
+        XCTAssertEqual(semanticA?.type, MessageType.chatSessionsList)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-b-semantic",
+            payload: [
+                "query": .string("device B private topic"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sinkB)
+        let semanticB = try await sinkB.waitForMessages(count: 13).last
+        XCTAssertEqual(semanticB?.type, MessageType.chatSessionsList)
+
+        let semanticRequests = backend.embeddingRequests.suffix(2)
+        let deviceAEmbeddingInput = try XCTUnwrap(semanticRequests.first?.texts.dropFirst().first)
+        let deviceBEmbeddingInput = try XCTUnwrap(semanticRequests.last?.texts.dropFirst().first)
+        XCTAssertTrue(deviceAEmbeddingInput.contains("Use device A memory."))
+        XCTAssertFalse(deviceAEmbeddingInput.contains("Use device B memory."))
+        XCTAssertTrue(deviceBEmbeddingInput.contains("Use device B memory."))
+        XCTAssertFalse(deviceBEmbeddingInput.contains("Use device A memory."))
 
         let requestA = try XCTUnwrap(capturedRequests.value.first { $0.generationID == "chat-device-a" })
         let requestB = try XCTUnwrap(capturedRequests.value.first { $0.generationID == "chat-device-b" })
@@ -13001,6 +14207,55 @@ private func makeRouter(
     )
 }
 
+private func semanticEmbeddingModel(revision: String?) -> ModelInfo {
+    let persistentRevision = revision.map { value in
+        "ollama-sha256:" + SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+    return ModelInfo(
+        id: "nomic-embed-text:latest",
+        name: "nomic-embed-text:latest",
+        provider: .ollama,
+        kind: .embedding,
+        capabilities: ["embedding"],
+        sizeBytes: 274_000_000,
+        modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        contextWindowTokens: 2_048,
+        persistentEmbeddingRevision: persistentRevision
+    )
+}
+
+private func runtimeMemorySource(
+    sessionID: String,
+    title: String,
+    model: String,
+    summaryPreview: String
+) -> RuntimeMemoryEntrySource {
+    RuntimeMemoryEntrySource(
+        kind: "long_inactivity_summary_draft",
+        draftID: "draft-\(sessionID)",
+        summaryMethod: "deterministic_preview",
+        session: RuntimeMemoryEntrySourceSession(
+            sessionID: sessionID,
+            title: title,
+            model: model,
+            lastActivityAt: Date(timeIntervalSince1970: 10),
+            messageCount: 2,
+            inactiveSeconds: 3_600
+        ),
+        sourceMessageCount: 2,
+        sourceRange: "visible messages 1-2 of 2",
+        sourcePointers: [RuntimeMemoryEntrySourcePointer(
+            sessionID: sessionID,
+            messageIndex: 0,
+            role: "user",
+            createdAt: Date(timeIntervalSince1970: 10),
+            excerpt: summaryPreview
+        )]
+    )
+}
+
 private func routerIndexedDocument(fileName: String, text: String) throws -> DocumentIngestionResult {
     try DocumentIngestor(chunker: DocumentChunker(policy: DocumentChunkingPolicy(
         maxCharacters: 120,
@@ -14081,7 +15336,7 @@ private func temporarySQLiteURL() -> URL {
 private func appendMemorySummaryDraftTranscript(
     to store: SQLiteRuntimeChatEventStore,
     sessionID: String,
-    ownerDeviceID: String,
+    ownerDeviceID: String?,
     firstTurnAt: Date,
     visiblePrefix: String
 ) throws {
@@ -14326,10 +15581,22 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     let provider: ModelProvider
     private let status: BackendStatus
     private let models: [ModelInfo]
+    private var modelListBatches: [[ModelInfo]]
     private let modelListError: Error?
     private let pullResult: ModelPullResult
     private let pullError: Error?
     private let unloadError: Error?
+    private let embeddingResult: EmbeddingResult?
+    private let embeddingError: Error?
+    private let embeddingRequestsLock = NSLock()
+    private var recordedEmbeddingRequests: [EmbeddingRequest] = []
+    private let holdEmbeddingUntilCancelled: Bool
+    private let holdEmbeddingUntilReleased: Bool
+    private let ignoreEmbeddingCancellationAfterRelease: Bool
+    private let embeddingCancellationCountLock = NSLock()
+    private var embeddingCancellations = 0
+    private let embeddingReleaseLock = NSLock()
+    private var embeddingReleaseContinuations: [CheckedContinuation<Void, Never>] = []
     private let healthCheckCallCountLock = NSLock()
     private var healthCheckCalls = 0
     private let listModelsCallCountLock = NSLock()
@@ -14347,35 +15614,50 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let cancelFinishesChatStream: Bool
     private let cancelResult: GenerationCancellationResult
     private let onChatRequest: ((ChatRequest) -> Void)?
+    private let onChatStreamReady: (() -> Void)?
 
     init(
         provider: ModelProvider = .ollama,
         status: BackendStatus = .available,
         models: [ModelInfo] = [],
+        modelListBatches: [[ModelInfo]] = [],
         modelListError: Error? = nil,
         pullResult: ModelPullResult = ModelPullResult(model: "mock", status: "success", installed: true),
         pullError: Error? = nil,
         unloadError: Error? = nil,
+        embeddingResult: EmbeddingResult? = nil,
+        embeddingError: Error? = nil,
+        holdEmbeddingUntilCancelled: Bool = false,
+        holdEmbeddingUntilReleased: Bool = false,
+        ignoreEmbeddingCancellationAfterRelease: Bool = false,
         chatEvents: [ChatStreamEvent] = [],
         chatEventBatches: [[ChatStreamEvent]] = [],
         finishChatStream: Bool = true,
         cancelFinishesChatStream: Bool = false,
         cancelResult: GenerationCancellationResult = .notFound(generationID: "missing"),
-        onChatRequest: ((ChatRequest) -> Void)? = nil
+        onChatRequest: ((ChatRequest) -> Void)? = nil,
+        onChatStreamReady: (() -> Void)? = nil
     ) {
         self.provider = provider
         self.status = status
         self.models = models
+        self.modelListBatches = modelListBatches
         self.modelListError = modelListError
         self.pullResult = pullResult
         self.pullError = pullError
         self.unloadError = unloadError
+        self.embeddingResult = embeddingResult
+        self.embeddingError = embeddingError
+        self.holdEmbeddingUntilCancelled = holdEmbeddingUntilCancelled
+        self.holdEmbeddingUntilReleased = holdEmbeddingUntilReleased
+        self.ignoreEmbeddingCancellationAfterRelease = ignoreEmbeddingCancellationAfterRelease
         self.chatEvents = chatEvents
         self.chatEventBatches = chatEventBatches
         self.finishChatStream = finishChatStream
         self.cancelFinishesChatStream = cancelFinishesChatStream
         self.cancelResult = cancelResult
         self.onChatRequest = onChatRequest
+        self.onChatStreamReady = onChatStreamReady
     }
 
     var cancelledGenerationIDs: [String] {
@@ -14394,6 +15676,23 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         listModelsCallCountLock.withLock { listModelsCalls }
     }
 
+    var embeddingRequests: [EmbeddingRequest] {
+        embeddingRequestsLock.withLock { recordedEmbeddingRequests }
+    }
+
+    var embeddingCancellationCount: Int {
+        embeddingCancellationCountLock.withLock { embeddingCancellations }
+    }
+
+    func releaseHeldEmbeddings() {
+        let continuations = embeddingReleaseLock.withLock {
+            let continuations = embeddingReleaseContinuations
+            embeddingReleaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
+    }
+
     func healthCheck() async -> BackendStatus {
         healthCheckCallCountLock.withLock {
             healthCheckCalls += 1
@@ -14402,13 +15701,14 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     }
 
     func listModels() async throws -> [ModelInfo] {
-        listModelsCallCountLock.withLock {
+        let nextModels = listModelsCallCountLock.withLock {
             listModelsCalls += 1
+            return modelListBatches.isEmpty ? models : modelListBatches.removeFirst()
         }
         if let modelListError {
             throw modelListError
         }
-        return models
+        return nextModels
     }
 
     func pullModel(name: String) async throws -> ModelPullResult {
@@ -14432,7 +15732,46 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
                     chatContinuations.append(continuation)
                 }
             }
+            onChatStreamReady?()
         }
+    }
+
+    func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        embeddingRequestsLock.withLock {
+            recordedEmbeddingRequests.append(request)
+        }
+        if let embeddingError {
+            throw embeddingError
+        }
+        if holdEmbeddingUntilReleased {
+            await withCheckedContinuation { continuation in
+                embeddingReleaseLock.withLock {
+                    embeddingReleaseContinuations.append(continuation)
+                }
+            }
+            if Task.isCancelled {
+                embeddingCancellationCountLock.withLock {
+                    embeddingCancellations += 1
+                }
+                if !ignoreEmbeddingCancellationAfterRelease {
+                    try Task.checkCancellation()
+                }
+            }
+        }
+        if holdEmbeddingUntilCancelled {
+            do {
+                try await Task.sleep(nanoseconds: UInt64.max)
+            } catch {
+                embeddingCancellationCountLock.withLock {
+                    embeddingCancellations += 1
+                }
+                throw error
+            }
+        }
+        return embeddingResult ?? EmbeddingResult(
+            model: request.model,
+            embeddings: request.texts.map(Self.deterministicEmbedding)
+        )
     }
 
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
@@ -14464,6 +15803,20 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
             guard !chatEventBatches.isEmpty else { return chatEvents }
             return chatEventBatches.removeFirst()
         }
+    }
+
+    private static func deterministicEmbedding(_ text: String) -> [Double] {
+        var vector = Array(repeating: 0.0, count: 32)
+        for token in text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            for byte in token.utf8 {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+            vector[Int(hash % UInt64(vector.count))] += 1
+        }
+        if !vector.contains(where: { $0 != 0 }) { vector[0] = 1 }
+        return vector
     }
 }
 
@@ -14689,9 +16042,21 @@ private final class SearchHintRecordingRuntimeChatEventStore: RuntimeChatEventSt
     private let sessions: [RuntimeChatStoredSession]
     private var recordedSearchRequests: [RuntimeChatSearchListRequest] = []
     private var recordedMessageRequests: [RuntimeChatMessagesListRequest] = []
+    private var semanticEmbeddingCache: [RuntimeChatSemanticEmbeddingKey: [Double]] = [:]
+    private var semanticEmbeddingWrites: [[RuntimeChatSemanticEmbeddingRecord]] = []
+    private var semanticEmbeddingCommitAttemptCount = 0
+    private var semanticCacheReadError: Error?
+    private var semanticCacheWriteError: Error?
+    var onBeforeSemanticEmbeddingCommit: (() -> Void)?
 
-    init(sessions: [RuntimeChatStoredSession]) {
+    init(
+        sessions: [RuntimeChatStoredSession],
+        semanticCacheReadError: Error? = nil,
+        semanticCacheWriteError: Error? = nil
+    ) {
         self.sessions = sessions
+        self.semanticCacheReadError = semanticCacheReadError
+        self.semanticCacheWriteError = semanticCacheWriteError
     }
 
     var searchRequests: [RuntimeChatSearchListRequest] {
@@ -14700,6 +16065,27 @@ private final class SearchHintRecordingRuntimeChatEventStore: RuntimeChatEventSt
 
     var messageRequests: [RuntimeChatMessagesListRequest] {
         lock.withLock { recordedMessageRequests }
+    }
+
+    var cachedSemanticEmbeddingCount: Int {
+        lock.withLock { semanticEmbeddingCache.count }
+    }
+
+    var semanticEmbeddingWriteBatches: [[RuntimeChatSemanticEmbeddingRecord]] {
+        lock.withLock { semanticEmbeddingWrites }
+    }
+
+    var semanticCommitAttempts: Int {
+        lock.withLock { semanticEmbeddingCommitAttemptCount }
+    }
+
+    func replaceCachedSemanticEmbedding(sessionID: String, embedding: [Double]) {
+        lock.withLock {
+            guard let key = semanticEmbeddingCache.keys.first(where: { $0.sessionID == sessionID }) else {
+                return
+            }
+            semanticEmbeddingCache[key] = embedding
+        }
     }
 
     func append(_ event: RuntimeChatStoredEvent) throws {}
@@ -14744,6 +16130,35 @@ private final class SearchHintRecordingRuntimeChatEventStore: RuntimeChatEventSt
 
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
         []
+    }
+
+    func cachedSemanticEmbeddings(
+        for keys: [RuntimeChatSemanticEmbeddingKey]
+    ) throws -> [RuntimeChatSemanticEmbeddingRecord] {
+        try lock.withLock {
+            if let semanticCacheReadError { throw semanticCacheReadError }
+            return keys.compactMap { key in
+                semanticEmbeddingCache[key].map {
+                    RuntimeChatSemanticEmbeddingRecord(key: key, embedding: $0)
+                }
+            }
+        }
+    }
+
+    func upsertSemanticEmbeddings(
+        _ records: [RuntimeChatSemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {
+        lock.withLock { semanticEmbeddingCommitAttemptCount += 1 }
+        onBeforeSemanticEmbeddingCommit?()
+        guard shouldCommit() else { return }
+        try lock.withLock {
+            if let semanticCacheWriteError { throw semanticCacheWriteError }
+            semanticEmbeddingWrites.append(records)
+            for record in records {
+                semanticEmbeddingCache[record.key] = record.embedding
+            }
+        }
     }
 
     func mutateSession(

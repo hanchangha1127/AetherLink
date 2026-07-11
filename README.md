@@ -251,7 +251,11 @@ the operator explicitly selects `--probe-policy legacy-unauthenticated` for a
 temporary physical diagnostic and accepts the route-enumeration risk.
 Unmatched relay rooms now have a monotonic first-registration deadline of 60
 seconds by default, capped by the remaining allocation lease. Same-role
-replacement inherits that deadline rather than extending it. Runtime keys and
+replacement inherits a live deadline rather than extending it. Registration and
+readiness probes atomically expire late rooms under the matcher lock before they
+can match, replace, or report readiness, independent of timer delivery. Waiting
+registration returns that deadline atomically, avoiding a room-state re-read after
+a counterpart can move the room active. Runtime keys and
 paired-client keys that complete cryptographic relay admission may each hold at
 most four unmatched waits per role-separated authenticated identity across
 source addresses. Bootstrap clients without paired-client proof and explicit

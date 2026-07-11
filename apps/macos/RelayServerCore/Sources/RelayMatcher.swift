@@ -150,6 +150,17 @@ public enum RelayRegistrationResult: Equatable, Sendable {
     case rejected(RelayRegistrationRejection)
 }
 
+struct RelayRegistrationAttempt: Equatable, Sendable {
+    let result: RelayRegistrationResult
+    let expiredWaitingPeers: [RelayPeerRegistration]
+    let waitingDeadlineUptime: TimeInterval?
+}
+
+struct RelayWaitingRuntimeStatus: Equatable, Sendable {
+    let hasWaitingRuntime: Bool
+    let expiredWaitingPeers: [RelayPeerRegistration]
+}
+
 public final class RelayMatcher: @unchecked Sendable {
     private struct WaitingPeer {
         let registration: RelayPeerRegistration
@@ -196,13 +207,11 @@ public final class RelayMatcher: @unchecked Sendable {
     }
 
     public func register(_ peer: RelayPeerRegistration) -> RelayRegistrationResult {
-        lock.withLock {
-            registerLocked(
-                peer,
-                sourceIdentity: .unknown,
-                requiresImmediateMatch: false
-            )
-        }
+        registrationAttempt(
+            peer,
+            sourceIdentity: .unknown,
+            requiresImmediateMatch: false
+        ).result
     }
 
     func register(
@@ -212,15 +221,29 @@ public final class RelayMatcher: @unchecked Sendable {
         requiresSameSourceCounterpart: Bool = false,
         maximumWaitingDeadlineUptime: TimeInterval? = nil
     ) -> RelayRegistrationResult {
-        lock.withLock {
-            registerLocked(
-                peer,
-                sourceIdentity: sourceIdentity,
-                requiresImmediateMatch: requiresImmediateMatch,
-                requiresSameSourceCounterpart: requiresSameSourceCounterpart,
-                maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
-            )
-        }
+        registrationAttempt(
+            peer,
+            sourceIdentity: sourceIdentity,
+            requiresImmediateMatch: requiresImmediateMatch,
+            requiresSameSourceCounterpart: requiresSameSourceCounterpart,
+            maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
+        ).result
+    }
+
+    func registerWithExpiredWaitingPeers(
+        _ peer: RelayPeerRegistration,
+        sourceIdentity: RelaySourceIdentity,
+        requiresImmediateMatch: Bool = false,
+        requiresSameSourceCounterpart: Bool = false,
+        maximumWaitingDeadlineUptime: TimeInterval? = nil
+    ) -> RelayRegistrationAttempt {
+        registrationAttempt(
+            peer,
+            sourceIdentity: sourceIdentity,
+            requiresImmediateMatch: requiresImmediateMatch,
+            requiresSameSourceCounterpart: requiresSameSourceCounterpart,
+            maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
+        )
     }
 
     public func release(matchToken: RelayMatchToken) -> RelayActiveRoom? {
@@ -265,27 +288,46 @@ public final class RelayMatcher: @unchecked Sendable {
         relayID: String,
         keeping roomBinding: RelayRoomBinding?
     ) -> [RelayPeerRegistration] {
-        lock.withLock {
+        let result = lock.withLock { () -> (peers: [RelayPeerRegistration], timedOut: Bool) in
+            let expired = expireWaitingRoomIfNeededLocked(
+                relayID: relayID,
+                now: monotonicNow()
+            )
+            if !expired.isEmpty {
+                return (expired, true)
+            }
             guard let room = waitingRooms[relayID], room.roomBinding != roomBinding else {
-                return []
+                return ([], false)
             }
-            waitingRooms.removeValue(forKey: relayID)
-            let peers = Self.orderedWaitingPeers(room.peers)
-            for peer in peers {
-                sourceQuotaLimiter?.releaseWaitingPeer(source: peer.sourceIdentity)
-                waitingPeerLimiter?.releaseWaitingPeer(identity: peer.authenticatedIdentity)
-            }
-            return peers.map(\.registration)
+            return (removeWaitingRoomLocked(relayID: relayID, room: room), false)
         }
+        recordWaitingRoomTimeouts(result.timedOut ? 1 : 0)
+        return result.peers
     }
 
     public func pendingCount(relayID: String? = nil) -> Int {
-        lock.withLock {
+        let result = lock.withLock { () -> (count: Int, timedOutRooms: Int) in
+            let now = monotonicNow()
             if let relayID {
-                return waitingRooms[relayID]?.peers.count ?? 0
+                let expired = expireWaitingRoomIfNeededLocked(relayID: relayID, now: now)
+                return (waitingRooms[relayID]?.peers.count ?? 0, expired.isEmpty ? 0 : 1)
             }
-            return waitingRooms.values.reduce(0) { $0 + $1.peers.count }
+            var timedOutRooms = 0
+            for candidateRelayID in waitingRooms.keys.sorted() {
+                if !expireWaitingRoomIfNeededLocked(
+                    relayID: candidateRelayID,
+                    now: now
+                ).isEmpty {
+                    timedOutRooms += 1
+                }
+            }
+            return (
+                waitingRooms.values.reduce(0) { $0 + $1.peers.count },
+                timedOutRooms
+            )
         }
+        recordWaitingRoomTimeouts(result.timedOutRooms)
+        return result.count
     }
 
     public func activeCount(relayID: String? = nil) -> Int {
@@ -298,16 +340,37 @@ public final class RelayMatcher: @unchecked Sendable {
     }
 
     public func hasWaitingRuntime(relayID: String) -> Bool {
-        lock.withLock {
-            waitingRooms[relayID]?.peers[.runtime] != nil
+        waitingRuntimeStatus(relayID: relayID).hasWaitingRuntime
+    }
+
+    func waitingRuntimeStatus(relayID: String) -> RelayWaitingRuntimeStatus {
+        let status = lock.withLock { () -> RelayWaitingRuntimeStatus in
+            let expired = expireWaitingRoomIfNeededLocked(
+                relayID: relayID,
+                now: monotonicNow()
+            )
+            return RelayWaitingRuntimeStatus(
+                hasWaitingRuntime: waitingRooms[relayID]?.peers[.runtime] != nil,
+                expiredWaitingPeers: expired
+            )
         }
+        recordWaitingRoomTimeouts(status.expiredWaitingPeers.isEmpty ? 0 : 1)
+        return status
     }
 
     public func waitingRegistrations(relayID: String) -> [RelayPeerRegistration] {
-        lock.withLock {
-            guard let room = waitingRooms[relayID] else { return [] }
-            return Self.orderedWaitingPeers(room.peers).map(\.registration)
+        let result = lock.withLock { () -> (peers: [RelayPeerRegistration], timedOut: Bool) in
+            let expired = expireWaitingRoomIfNeededLocked(
+                relayID: relayID,
+                now: monotonicNow()
+            )
+            guard let room = waitingRooms[relayID] else {
+                return ([], !expired.isEmpty)
+            }
+            return (Self.orderedWaitingPeers(room.peers).map(\.registration), false)
         }
+        recordWaitingRoomTimeouts(result.timedOut ? 1 : 0)
+        return result.peers
     }
 
     public func activeRoom(relayID: String) -> RelayActiveRoom? {
@@ -317,14 +380,52 @@ public final class RelayMatcher: @unchecked Sendable {
     }
 
     func waitingDeadlineUptime(relayID: String, peerID: UUID) -> TimeInterval? {
-        lock.withLock {
+        let result = lock.withLock { () -> (deadline: TimeInterval?, timedOut: Bool) in
+            let expired = expireWaitingRoomIfNeededLocked(
+                relayID: relayID,
+                now: monotonicNow()
+            )
             guard let room = waitingRooms[relayID],
                   room.peers.values.contains(where: { $0.registration.id == peerID })
             else {
-                return nil
+                return (nil, !expired.isEmpty)
             }
-            return room.deadlineUptime
+            return (room.deadlineUptime, false)
         }
+        recordWaitingRoomTimeouts(result.timedOut ? 1 : 0)
+        return result.deadline
+    }
+
+    private func registrationAttempt(
+        _ peer: RelayPeerRegistration,
+        sourceIdentity: RelaySourceIdentity,
+        requiresImmediateMatch: Bool,
+        requiresSameSourceCounterpart: Bool = false,
+        maximumWaitingDeadlineUptime: TimeInterval? = nil
+    ) -> RelayRegistrationAttempt {
+        let attempt = lock.withLock { () -> RelayRegistrationAttempt in
+            let expired = expireWaitingRoomIfNeededLocked(
+                relayID: peer.relayID,
+                now: monotonicNow()
+            )
+            let result = registerLocked(
+                peer,
+                sourceIdentity: sourceIdentity,
+                requiresImmediateMatch: requiresImmediateMatch,
+                requiresSameSourceCounterpart: requiresSameSourceCounterpart,
+                maximumWaitingDeadlineUptime: maximumWaitingDeadlineUptime
+            )
+            return RelayRegistrationAttempt(
+                result: result,
+                expiredWaitingPeers: expired,
+                waitingDeadlineUptime: {
+                    guard case .waiting = result else { return nil }
+                    return waitingRooms[peer.relayID]?.deadlineUptime
+                }()
+            )
+        }
+        recordWaitingRoomTimeouts(attempt.expiredWaitingPeers.isEmpty ? 0 : 1)
+        return attempt
     }
 
     private func registerLocked(
@@ -437,6 +538,36 @@ public final class RelayMatcher: @unchecked Sendable {
     }
 
     private static let orderedRoles: [RelayRole] = [.runtime, .client]
+
+    private func expireWaitingRoomIfNeededLocked(
+        relayID: String,
+        now: TimeInterval
+    ) -> [RelayPeerRegistration] {
+        guard let room = waitingRooms[relayID], now >= room.deadlineUptime else {
+            return []
+        }
+        return removeWaitingRoomLocked(relayID: relayID, room: room)
+    }
+
+    private func removeWaitingRoomLocked(
+        relayID: String,
+        room: WaitingRoom
+    ) -> [RelayPeerRegistration] {
+        waitingRooms.removeValue(forKey: relayID)
+        let peers = Self.orderedWaitingPeers(room.peers)
+        for peer in peers {
+            sourceQuotaLimiter?.releaseWaitingPeer(source: peer.sourceIdentity)
+            waitingPeerLimiter?.releaseWaitingPeer(identity: peer.authenticatedIdentity)
+        }
+        return peers.map(\.registration)
+    }
+
+    private func recordWaitingRoomTimeouts(_ count: Int) {
+        guard count > 0 else { return }
+        for _ in 0..<count {
+            waitingPeerLimiter?.recordWaitingPeerTimeout()
+        }
+    }
 
     private func admitWaitingPeer(
         sourceIdentity: RelaySourceIdentity,

@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
 EVIDENCE_COLLECTION_SHA256 = (
-    "ee7af3d5ecf1a90e95f731417b0901602584c094e15acb6d04f6b2db414667ee"
+    "4a6ab46a0ba36feacd1f8f23402223dd33194c3449ac0a41d118a1453cdca092"
 )
 EXPECTED_EVIDENCE_PATHS = {
     "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
@@ -103,6 +103,9 @@ PORTFOLIO_SECTION_SNIPPETS = {
         "source peer quotas",
         "bounded waiting",
         "authenticated identity",
+        "readiness probes",
+        "matcher lock",
+        "post-publication",
         "do not authenticate the allocation service",
         "exact strict preflight classification",
         "full-refill-before-idle validation",
@@ -126,6 +129,8 @@ PROPOSAL_SECTION_SNIPPETS = {
             "`E012`",
             "not directly peer-verifiable",
             "exact strict preflight classification",
+            "registration/readiness decisions",
+            "post-publication room lookup",
         ),
         "Current Design And Failure Mode": ("service has no authenticated voice",),
         "Desired Invariants": (
@@ -163,6 +168,8 @@ PROPOSAL_SECTION_SNIPPETS = {
             "`E012`",
             "allocation-mutation source bucket",
             "cannot reset before full refill",
+            "registration/readiness decisions",
+            "post-publication room lookup",
         ),
         "Current Design And Failure Mode": (
             "commits paired allocation state before returning the final",
@@ -402,6 +409,14 @@ def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
             "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift"
         ):
             fail(f"{opportunity_id} E012 evidence mapping is not canonical")
+        e012_claim = " ".join(str(e012[0].get("claim", "")).split()).lower()
+        for snippet in (
+            "atomically expire late rooms",
+            "post-publication room lookup",
+            "does not",
+        ):
+            if snippet not in e012_claim:
+                fail(f"{opportunity_id} E012 claim is missing {snippet!r}")
         proposal_path = opportunity.get("proposalPath")
         if not isinstance(proposal_path, str):
             fail(f"{opportunity_id} proposalPath is missing")
@@ -564,6 +579,8 @@ def validate_documents(referenced_paths: list[Path]) -> None:
                 "first-insertion",
                 "bootstrap clients",
                 "sybil path",
+                "delayed timer delivery",
+                "post-publication room lookup",
             ),
             "Tactical Baseline Update": (
                 "allocation- and renewal-prefixed attempts",

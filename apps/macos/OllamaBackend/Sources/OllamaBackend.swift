@@ -87,6 +87,31 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         return .unloaded(provider: provider, modelID: providerModelID)
     }
 
+    public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let endpoint = "POST /api/embed"
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/embed"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            urlRequest.httpBody = try encoder.encode(OllamaEmbedRequest(
+                model: request.model,
+                input: request.texts
+            ))
+        } catch {
+            throw OllamaBackendError.requestEncoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+
+        let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let response: OllamaEmbedResponse
+        do {
+            response = try decoder.decode(OllamaEmbedResponse.self, from: data)
+        } catch {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+        try Self.validateEmbeddings(response.embeddings, expectedCount: request.texts.count, endpoint: endpoint)
+        return EmbeddingResult(model: response.model ?? request.model, embeddings: response.embeddings)
+    }
+
     private static func mergeModels(
         installedModels: [OllamaModel],
         runningModels: [OllamaRunningModel],
@@ -122,7 +147,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 source: model.source,
                 remoteModel: model.remoteModel,
                 remoteHost: model.remoteHost,
-                contextWindowTokens: details.contextWindowTokens
+                contextWindowTokens: details.contextWindowTokens,
+                persistentEmbeddingRevision: model.persistentEmbeddingRevision
             ))
         }
 
@@ -351,6 +377,28 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
+    private static func validateEmbeddings(
+        _ embeddings: [[Double]],
+        expectedCount: Int,
+        endpoint: String
+    ) throws {
+        guard embeddings.count == expectedCount else {
+            throw OllamaBackendError.responseDecoding(
+                endpoint: endpoint,
+                reason: "Expected \(expectedCount) embedding vectors, received \(embeddings.count)."
+            )
+        }
+        guard let dimension = embeddings.first?.count, dimension > 0 else {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: "Embedding vectors must not be empty.")
+        }
+        guard embeddings.allSatisfy({ $0.count == dimension }) else {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: "Embedding vector dimensions are inconsistent.")
+        }
+        guard embeddings.allSatisfy({ $0.allSatisfy(\.isFinite) }) else {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: "Embedding vectors must contain only finite values.")
+        }
+    }
+
     private static func decodeStreamLine(_ line: String, endpoint: String) throws -> OllamaChatChunk? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -428,6 +476,7 @@ private struct OllamaTagsResponse: Decodable {
 
 private struct OllamaModel: Decodable {
     var name: String
+    var digest: String?
     var size: Int64?
     var modifiedAt: Date?
     var remoteModel: String?
@@ -435,10 +484,21 @@ private struct OllamaModel: Decodable {
     var source: ModelSource {
         Self.modelSource(name: name, remoteModel: remoteModel, remoteHost: remoteHost)
     }
+    var persistentEmbeddingRevision: String? {
+        guard let digest,
+              digest.count == 64,
+              digest.unicodeScalars.allSatisfy({
+                  CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains($0)
+              }) else {
+            return nil
+        }
+        return "ollama-sha256:\(digest.lowercased())"
+    }
 
     enum CodingKeys: String, CodingKey {
         case name
         case model
+        case digest
         case size
         case modifiedAt = "modified_at"
         case remoteModel = "remote_model"
@@ -449,6 +509,7 @@ private struct OllamaModel: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decodeIfPresent(String.self, forKey: .name)
             ?? container.decode(String.self, forKey: .model)
+        digest = try container.decodeIfPresent(String.self, forKey: .digest)
         size = try container.decodeIfPresent(Int64.self, forKey: .size)
         remoteModel = try container.decodeIfPresent(String.self, forKey: .remoteModel)
         remoteHost = try container.decodeIfPresent(String.self, forKey: .remoteHost)
@@ -518,6 +579,17 @@ private struct OllamaPullRequest: Encodable {
 
 private struct OllamaPullResponse: Decodable {
     var status: String?
+}
+
+private struct OllamaEmbedRequest: Encodable {
+    var model: String
+    var input: [String]
+    var truncate = false
+}
+
+private struct OllamaEmbedResponse: Decodable {
+    var model: String?
+    var embeddings: [[Double]]
 }
 
 private struct OllamaUnloadRequest: Encodable {

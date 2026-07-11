@@ -79,6 +79,32 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         return .unloaded(provider: provider, modelID: providerModelID)
     }
 
+    public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let endpoint = "POST /v1/embeddings"
+        var urlRequest = URLRequest(url: baseURL.appending(path: "v1/embeddings"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try Self.encode(
+            OpenAIEmbeddingsRequest(model: request.model, input: request.texts),
+            encoder: encoder,
+            endpoint: endpoint
+        )
+
+        let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let response: OpenAIEmbeddingsResponse
+        do {
+            response = try decoder.decode(OpenAIEmbeddingsResponse.self, from: data)
+        } catch {
+            throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: error.localizedDescription)
+        }
+        let embeddings = try Self.orderedEmbeddings(
+            response.data,
+            expectedCount: request.texts.count,
+            endpoint: endpoint
+        )
+        return EmbeddingResult(model: response.model ?? request.model, embeddings: embeddings)
+    }
+
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { [baseURL, session, encoder] in
@@ -348,6 +374,46 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
+    private static func orderedEmbeddings(
+        _ items: [OpenAIEmbeddingData],
+        expectedCount: Int,
+        endpoint: String
+    ) throws -> [[Double]] {
+        guard items.count == expectedCount else {
+            throw LMStudioBackendError.badResponse(
+                endpoint: endpoint,
+                reason: "Expected \(expectedCount) embedding vectors, received \(items.count)."
+            )
+        }
+
+        var ordered = Array<[Double]?>(repeating: nil, count: expectedCount)
+        var dimension: Int?
+        for item in items {
+            guard ordered.indices.contains(item.index) else {
+                throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding index \(item.index) is out of range.")
+            }
+            guard ordered[item.index] == nil else {
+                throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding index \(item.index) is duplicated.")
+            }
+            guard !item.embedding.isEmpty else {
+                throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding vectors must not be empty.")
+            }
+            guard item.embedding.allSatisfy(\.isFinite) else {
+                throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding vectors must contain only finite values.")
+            }
+            if let dimension, item.embedding.count != dimension {
+                throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding vector dimensions are inconsistent.")
+            }
+            dimension = item.embedding.count
+            ordered[item.index] = item.embedding
+        }
+
+        guard ordered.allSatisfy({ $0 != nil }) else {
+            throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: "Embedding response is missing one or more indexes.")
+        }
+        return ordered.compactMap { $0 }
+    }
+
     private static func encode<T: Encodable>(_ request: T, encoder: JSONEncoder, endpoint: String) throws -> Data {
         do {
             return try encoder.encode(request)
@@ -493,6 +559,21 @@ private struct LMStudioLoadedInstance: Decodable {
 
 private struct OpenAIModelsResponse: Decodable {
     var data: [OpenAIModel]
+}
+
+private struct OpenAIEmbeddingsRequest: Encodable {
+    var model: String
+    var input: [String]
+}
+
+private struct OpenAIEmbeddingsResponse: Decodable {
+    var model: String?
+    var data: [OpenAIEmbeddingData]
+}
+
+private struct OpenAIEmbeddingData: Decodable {
+    var index: Int
+    var embedding: [Double]
 }
 
 private struct OpenAIModel: Decodable {

@@ -563,6 +563,11 @@
     <string name="memory_summary_draft_preview_label">미리보기</string>
     <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
     <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_summary_draft_generate">요약 생성</string>
+    <string name="memory_summary_draft_generating">요약 생성 중…</string>
+    <string name="memory_summary_draft_generate_named">%1$s 요약 생성</string>
+    <string name="memory_summary_draft_generate_state_ready">요약을 생성할 준비가 되었습니다.</string>
+    <string name="memory_summary_draft_generated_review_required">AI 생성 요약. 추가 전 검토가 필요합니다.</string>
     <string name="memory_source_from_chat">오래된 채팅에서: %1$s</string>
     <string name="memory_source_show">출처 보기</string>
     <string name="memory_source_hide">출처 숨기기</string>
@@ -650,6 +655,7 @@
     <string name="error_memory_runtime_required">메모리를 변경하기 전에 신뢰된 런타임에 연결하세요.</string>
     <string name="error_memory_load_failed">AetherLink Runtime에서 메모리를 불러오지 못했습니다.</string>
     <string name="error_memory_summary_drafts_load_failed">AetherLink Runtime에서 메모리 제안을 불러오지 못했습니다.</string>
+    <string name="error_memory_summary_draft_generation_failed">AetherLink Runtime으로 메모리 요약을 생성하지 못했습니다.</string>
     <string name="error_memory_summary_draft_approval_failed">AetherLink Runtime에서 제안 메모리를 추가하지 못했습니다.</string>
     <string name="error_memory_summary_draft_dismiss_failed">AetherLink Runtime에서 제안 메모리를 숨기지 못했습니다.</string>
     <string name="error_document_search_runtime_required">문서를 검색하기 전에 신뢰된 런타임에 연결하세요.</string>
@@ -657,6 +663,7 @@
     <string name="error_document_search_failed">AetherLink Runtime에서 문서를 검색하지 못했습니다.</string>
     <string name="error_runtime_error">런타임 오류가 발생했습니다.</string>
     <string name="error_send_failed">AetherLink Runtime으로 메시지를 보낼 수 없습니다.</string>
+    <string name="error_chat_context_window_exceeded">현재 메시지와 필요한 컨텍스트가 선택한 모델에 맞지 않습니다. 메시지를 줄이거나 컨텍스트 창이 더 큰 모델을 선택하세요.</string>
     <string name="error_regenerate_unavailable">다시 생성할 완료된 어시스턴트 응답이 없습니다.</string>
     <string name="error_regenerate_attachment_context_unavailable">이 응답은 다시 생성에 필요한 첨부 파일 데이터를 더 이상 사용할 수 없습니다.</string>
     <string name="error_reuse_message_unavailable">이 메시지는 초안으로 다시 사용할 수 없습니다.</string>

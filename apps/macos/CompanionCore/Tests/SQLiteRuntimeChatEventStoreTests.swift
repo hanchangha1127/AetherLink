@@ -4,6 +4,248 @@ import SQLite3
 import XCTest
 
 final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
+    func testSQLiteSemanticEmbeddingCachePersistsAcrossReopenAndMatchesFullOwnerScopedKey() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let key = semanticEmbeddingKey(owner: "device-a", session: "session-a", document: "document-a")
+        let record = RuntimeChatSemanticEmbeddingRecord(key: key, embedding: [0.25, -0.5, 1.75])
+
+        try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).upsertSemanticEmbeddings([record])
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        XCTAssertEqual(try reopenedStore.cachedSemanticEmbeddings(for: [key]), [record])
+        XCTAssertTrue(try reopenedStore.cachedSemanticEmbeddings(for: [
+            semanticEmbeddingKey(owner: "device-b", session: "session-a", document: "document-a"),
+            semanticEmbeddingKey(owner: "device-a", session: "session-b", document: "document-a"),
+            semanticEmbeddingKey(owner: "device-a", session: "session-a", model: "ollama:nomic-embed-text-v2", document: "document-a"),
+            semanticEmbeddingKey(owner: "device-a", session: "session-a", modelFingerprint: "model-v2", document: "document-a"),
+            semanticEmbeddingKey(owner: "device-a", session: "session-a", document: "document-b"),
+        ]).isEmpty)
+    }
+
+    func testSQLiteSemanticEmbeddingBatchRejectsInvalidVectorsWithoutPartialWrite() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let valid = RuntimeChatSemanticEmbeddingRecord(
+            key: semanticEmbeddingKey(owner: "device-a", session: "valid", document: "valid"),
+            embedding: [1, 2]
+        )
+        for invalidEmbedding in [[0, 0], [Double.nan, 1], [Double.infinity, 1], []] {
+            let invalid = RuntimeChatSemanticEmbeddingRecord(
+                key: semanticEmbeddingKey(owner: "device-a", session: "invalid", document: UUID().uuidString),
+                embedding: invalidEmbedding
+            )
+            XCTAssertThrowsError(try store.upsertSemanticEmbeddings([valid, invalid]))
+        }
+
+        XCTAssertTrue(try store.cachedSemanticEmbeddings(for: [valid.key]).isEmpty)
+    }
+
+    func testSQLiteSemanticEmbeddingCacheInvalidatesOnlyAppendedOwnerSession() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let invalidated = semanticEmbeddingKey(owner: "device-a", session: "shared", document: "a")
+        let otherOwner = semanticEmbeddingKey(owner: "device-b", session: "shared", document: "b")
+        let otherSession = semanticEmbeddingKey(owner: "device-a", session: "other", document: "c")
+        try store.upsertSemanticEmbeddings([
+            RuntimeChatSemanticEmbeddingRecord(key: invalidated, embedding: [1]),
+            RuntimeChatSemanticEmbeddingRecord(key: otherOwner, embedding: [2]),
+            RuntimeChatSemanticEmbeddingRecord(key: otherSession, embedding: [3]),
+        ])
+
+        try store.append(RuntimeChatStoredEvent(
+            kind: .request,
+            requestID: "request",
+            sessionID: "shared",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "changed")],
+            ownerDeviceID: "device-a"
+        ))
+
+        XCTAssertEqual(
+            try store.cachedSemanticEmbeddings(for: [invalidated, otherOwner, otherSession]).map(\.key),
+            [otherOwner, otherSession]
+        )
+    }
+
+    func testSQLiteSemanticEmbeddingCacheRejectsStaleSourceRevisionAfterAppend() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        try store.append(RuntimeChatStoredEvent(
+            kind: .request,
+            requestID: "request-1",
+            sessionID: "revision-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "old document")],
+            ownerDeviceID: "device-a"
+        ))
+        let staleRevision = try XCTUnwrap(store.listSemanticSearchSources(
+            ownerDeviceID: "device-a",
+            sessionLimit: 10,
+            messageLimit: 10,
+            includeArchived: false
+        ).first?.sourceRevision)
+        let key = semanticEmbeddingKey(
+            owner: "device-a",
+            session: "revision-session",
+            document: "old-document"
+        )
+
+        try store.append(RuntimeChatStoredEvent(
+            kind: .assistantDelta,
+            requestID: "request-1",
+            sessionID: "revision-session",
+            model: "ollama:llama3.1:8b",
+            delta: "new document",
+            ownerDeviceID: "device-a"
+        ))
+        try store.upsertSemanticEmbeddings([
+            RuntimeChatSemanticEmbeddingRecord(
+                key: key,
+                embedding: [1, 2],
+                sourceRevision: staleRevision
+            )
+        ])
+
+        XCTAssertTrue(try store.cachedSemanticEmbeddings(for: [key]).isEmpty)
+    }
+
+    func testSQLiteSemanticEmbeddingCacheRollsBackWhenCommitGuardIsCancelled() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let key = semanticEmbeddingKey(owner: "device-a", session: "cancelled", document: "document")
+
+        try store.upsertSemanticEmbeddings(
+            [RuntimeChatSemanticEmbeddingRecord(key: key, embedding: [1, 2])],
+            if: { false }
+        )
+
+        XCTAssertTrue(try store.cachedSemanticEmbeddings(for: [key]).isEmpty)
+    }
+
+    func testSQLiteSemanticEmbeddingRetentionPruneDeletesOwnerScopedRows() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "request",
+            sessionID: "deleted-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "delete me")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "deleted-session",
+            requestID: "archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 110)
+        )
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "deleted-session",
+            requestID: "delete",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 120)
+        )
+        let ownerA = semanticEmbeddingKey(owner: "device-a", session: "deleted-session", document: "a")
+        let ownerB = semanticEmbeddingKey(owner: "device-b", session: "deleted-session", document: "b")
+        try store.upsertSemanticEmbeddings([
+            RuntimeChatSemanticEmbeddingRecord(key: ownerA, embedding: [1]),
+            RuntimeChatSemanticEmbeddingRecord(key: ownerB, embedding: [2]),
+        ])
+
+        _ = try store.pruneDeletedSessions(
+            ownerDeviceID: "device-a",
+            deletedBefore: Date(timeIntervalSince1970: 200)
+        )
+
+        XCTAssertEqual(try store.cachedSemanticEmbeddings(for: [ownerA, ownerB]).map(\.key), [ownerB])
+    }
+
+    func testSQLiteSemanticEmbeddingCacheTreatsCorruptRowsAsReadOnlyMisses() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let key = semanticEmbeddingKey(owner: "device-a", session: "corrupt", document: "document")
+        try store.upsertSemanticEmbeddings([
+            RuntimeChatSemanticEmbeddingRecord(key: key, embedding: [1, 2])
+        ])
+        try executeRawSQLite(
+            at: databaseURL,
+            sql: "UPDATE runtime_chat_semantic_embeddings SET dimension = 3 WHERE session_id = 'corrupt'"
+        )
+
+        XCTAssertTrue(try store.cachedSemanticEmbeddings(for: [key]).isEmpty)
+        XCTAssertEqual(
+            try rawSQLiteInteger(at: databaseURL, sql: "SELECT COUNT(*) FROM runtime_chat_semantic_embeddings"),
+            1
+        )
+    }
+
+    func testSQLiteSemanticEmbeddingCacheCapsRowsPerOwnerModelScope() throws {
+        let store = SQLiteRuntimeChatEventStore(
+            databaseURL: try temporaryDatabaseURL(),
+            semanticEmbeddingRowLimitPerOwnerModel: 2
+        )
+        let keys = (1...3).map {
+            semanticEmbeddingKey(owner: "device-a", session: "session-\($0)", document: "document-\($0)")
+        }
+        try store.upsertSemanticEmbeddings(keys.map {
+            RuntimeChatSemanticEmbeddingRecord(key: $0, embedding: [Double($0.sessionID.suffix(1)) ?? 1])
+        })
+        let otherOwner = semanticEmbeddingKey(owner: "device-b", session: "session-1", document: "document-1")
+        let otherModel = semanticEmbeddingKey(
+            owner: "device-a",
+            session: "session-1",
+            modelFingerprint: "model-v2",
+            document: "document-1"
+        )
+        try store.upsertSemanticEmbeddings([
+            RuntimeChatSemanticEmbeddingRecord(key: otherOwner, embedding: [4]),
+            RuntimeChatSemanticEmbeddingRecord(key: otherModel, embedding: [5]),
+        ])
+
+        XCTAssertEqual(try store.cachedSemanticEmbeddings(for: keys).map(\.key), [keys[2]])
+        XCTAssertEqual(try store.cachedSemanticEmbeddings(for: [otherOwner, otherModel]).map(\.key), [otherOwner, otherModel])
+    }
+
+    func testSQLiteSemanticSearchSourcesReadOwnerScopedSessionsAndMessagesInOneSnapshot() throws {
+        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        for (owner, session, content, timestamp) in [
+            ("device-a", "session-a", "Device A private semantic text", 100.0),
+            ("device-b", "session-b", "Device B private semantic text", 200.0),
+        ] {
+            try store.append(RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: timestamp),
+                kind: .request,
+                requestID: "request-\(session)",
+                sessionID: session,
+                model: "ollama:llama3.1:8b",
+                messages: [
+                    ChatMessage(
+                        role: "user",
+                        content: content,
+                        attachments: [
+                            ChatAttachment(
+                                type: "image",
+                                mimeType: "image/png",
+                                dataBase64: "inline-byte-canary-\(owner)"
+                            )
+                        ]
+                    )
+                ],
+                ownerDeviceID: owner
+            ))
+        }
+
+        let sources = try store.listSemanticSearchSources(
+            ownerDeviceID: "device-a",
+            sessionLimit: 10,
+            messageLimit: 10,
+            includeArchived: false
+        )
+
+        XCTAssertEqual(sources.map(\.session.sessionID), ["session-a"])
+        XCTAssertEqual(sources.first?.messages.map(\.content), ["Device A private semantic text"])
+        XCTAssertNil(sources.first?.messages.first?.attachments.first?.dataBase64)
+        XCTAssertFalse(String(describing: sources).contains("Device B private semantic text"))
+    }
+
     func testSQLiteStoreListsMessagesAndStripsInlineAttachmentData() throws {
         let databaseURL = try temporaryDatabaseURL()
         let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
@@ -98,19 +340,28 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         let databaseURL = try temporaryDatabaseURL()
         let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
         let metadataSentinel = "sourcepointerftssentinel9f31"
-        let metadata = RuntimeChatCompactionMetadata(sourcePointers: [
-            RuntimeChatCompactionSourcePointer(
-                sessionID: "sqlite-compaction-session",
-                requestID: metadataSentinel,
-                startTurn: 1,
-                endTurn: 6,
-                totalTurns: 18,
-                compactedTurnCount: 6,
-                retainedStartTurn: 7,
-                retainedEndTurn: 18,
-                retainedTurnCount: 12
-            )
-        ])
+        let metadata = RuntimeChatCompactionMetadata(
+            strategy: "adaptive_backend_only_summary_v2",
+            sourcePointers: [
+                RuntimeChatCompactionSourcePointer(
+                    sessionID: "sqlite-compaction-session",
+                    requestID: "sqlite-compaction-visible-request",
+                    startTurn: 1,
+                    endTurn: 6,
+                    totalTurns: 18,
+                    compactedTurnCount: 6,
+                    retainedStartTurn: 7,
+                    retainedEndTurn: 18,
+                    retainedTurnCount: 12
+                )
+            ],
+            estimatorIdentifier: metadataSentinel,
+            contextWindowTokens: 8_192,
+            outputReserveTokens: 1_024,
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensBefore: 8_500,
+            estimatedInputTokensAfter: 6_900
+        )
 
         try store.append(RuntimeChatStoredEvent(
             timestamp: Date(timeIntervalSince1970: 180),
@@ -168,6 +419,70 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         let storedRequest = try XCTUnwrap(rawEvents.first { $0.kind == .request })
         XCTAssertEqual(storedRequest.compactionMetadata, metadata)
         XCTAssertFalse(storedRequest.messages?.contains { $0.content.contains(metadataSentinel) } == true)
+        let storedMetadataJSON = try JSONEncoder().encode(try XCTUnwrap(storedRequest.compactionMetadata))
+        let storedMetadataObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: storedMetadataJSON) as? [String: Any]
+        )
+        XCTAssertNil(storedMetadataObject["summary"])
+        XCTAssertNil(storedMetadataObject["summary_text"])
+    }
+
+    func testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let legacyURL = try temporaryJSONLURL()
+        let pointer = RuntimeChatCompactionSourcePointer(
+            sessionID: "sqlite-legacy-compaction-session",
+            requestID: "sqlite-legacy-compaction-source",
+            startTurn: 1,
+            endTurn: 2,
+            totalTurns: 4,
+            compactedTurnCount: 2,
+            retainedStartTurn: 3,
+            retainedEndTurn: 4,
+            retainedTurnCount: 2
+        )
+        let legacyMetadata = RuntimeChatCompactionMetadata(sourcePointers: [pointer])
+        let legacyEvent = RuntimeChatStoredEvent(
+            id: "sqlite-legacy-compaction-event",
+            timestamp: Date(timeIntervalSince1970: 183),
+            kind: .request,
+            requestID: "sqlite-legacy-compaction-request",
+            sessionID: "sqlite-legacy-compaction-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Visible legacy compaction transcript.")],
+            compactionMetadata: legacyMetadata
+        )
+
+        let encodedLegacyEvent = try legacyJSONLEncoder.encode(legacyEvent)
+        let encodedLegacyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encodedLegacyEvent) as? [String: Any]
+        )
+        let encodedLegacyMetadata = try XCTUnwrap(
+            encodedLegacyObject["compaction_metadata"] as? [String: Any]
+        )
+        XCTAssertEqual(encodedLegacyMetadata["strategy"] as? String, "backend_only_summary_v1")
+        XCTAssertNil(encodedLegacyMetadata["estimator_identifier"])
+        XCTAssertNil(encodedLegacyMetadata["context_window_tokens"])
+        XCTAssertNil(encodedLegacyMetadata["estimated_input_tokens_before"])
+
+        try writeRawLegacyEvents([legacyEvent], to: legacyURL)
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL, legacyJSONLFileURL: legacyURL)
+        XCTAssertEqual(
+            try store.listMessages(sessionID: "sqlite-legacy-compaction-session", limit: 10).map(\.content),
+            ["Visible legacy compaction transcript."]
+        )
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL, legacyJSONLFileURL: legacyURL)
+        XCTAssertEqual(try reopenedStore.listSessions(limit: 10).map(\.sessionID), ["sqlite-legacy-compaction-session"])
+        let storedMetadata = try XCTUnwrap(rawSQLiteEvents(at: databaseURL).first?.compactionMetadata)
+        XCTAssertEqual(storedMetadata, legacyMetadata)
+        XCTAssertEqual(storedMetadata.strategy, "backend_only_summary_v1")
+        XCTAssertNil(storedMetadata.estimatorIdentifier)
+        XCTAssertNil(storedMetadata.contextWindowTokens)
+        XCTAssertNil(storedMetadata.outputReserveTokens)
+        XCTAssertNil(storedMetadata.inputBudgetTokens)
+        XCTAssertNil(storedMetadata.estimatedInputTokensBefore)
+        XCTAssertNil(storedMetadata.estimatedInputTokensAfter)
     }
 
     func testSQLiteStorePreservesWhitespaceOnlyStreamingDeltas() throws {
@@ -288,6 +603,27 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             retainedTurnCount: 3
         )
         let validMetadata = RuntimeChatCompactionMetadata(sourcePointers: [validPointer])
+        func accountingMetadata(
+            strategy: String = "adaptive_backend_only_summary_v2",
+            sourcePointers: [RuntimeChatCompactionSourcePointer]? = nil,
+            estimatorIdentifier: String? = "utf8_bytes_div_4_v1",
+            contextWindowTokens: Int? = 8_192,
+            outputReserveTokens: Int? = 1_024,
+            inputBudgetTokens: Int? = 7_168,
+            estimatedInputTokensBefore: Int? = 8_500,
+            estimatedInputTokensAfter: Int? = 6_900
+        ) -> RuntimeChatCompactionMetadata {
+            RuntimeChatCompactionMetadata(
+                strategy: strategy,
+                sourcePointers: sourcePointers ?? [validPointer],
+                estimatorIdentifier: estimatorIdentifier,
+                contextWindowTokens: contextWindowTokens,
+                outputReserveTokens: outputReserveTokens,
+                inputBudgetTokens: inputBudgetTokens,
+                estimatedInputTokensBefore: estimatedInputTokensBefore,
+                estimatedInputTokensAfter: estimatedInputTokensAfter
+            )
+        }
 
         let invalidEvents: [(event: RuntimeChatStoredEvent, reason: String)] = [
             (
@@ -317,6 +653,123 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
                     metadata: RuntimeChatCompactionMetadata(sourcePointers: [])
                 ),
                 "chat compaction source pointers are empty"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-partial-accounting",
+                    metadata: accountingMetadata(estimatedInputTokensAfter: nil)
+                ),
+                "chat compaction accounting fields must be all present or all absent"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-v2-missing-accounting",
+                    metadata: RuntimeChatCompactionMetadata(
+                        strategy: "adaptive_backend_only_summary_v2",
+                        sourcePointers: [validPointer]
+                    )
+                ),
+                "adaptive chat compaction accounting is missing"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-empty-estimator",
+                    metadata: accountingMetadata(estimatorIdentifier: "  ")
+                ),
+                "chat compaction estimator identifier is empty"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-negative-reserve",
+                    metadata: accountingMetadata(outputReserveTokens: -1)
+                ),
+                "chat compaction accounting token counts are invalid"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-zero-context",
+                    metadata: accountingMetadata(contextWindowTokens: 0)
+                ),
+                "chat compaction accounting token counts are invalid"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-zero-budget",
+                    metadata: accountingMetadata(inputBudgetTokens: 0)
+                ),
+                "chat compaction accounting token counts are invalid"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-negative-after",
+                    metadata: accountingMetadata(estimatedInputTokensAfter: -1)
+                ),
+                "chat compaction accounting token counts are invalid"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-context-reserve",
+                    metadata: accountingMetadata(
+                        contextWindowTokens: 1_024,
+                        outputReserveTokens: 1_024,
+                        inputBudgetTokens: 1
+                    )
+                ),
+                "chat compaction context window must exceed output reserve"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-budget",
+                    metadata: accountingMetadata(inputBudgetTokens: 7_000)
+                ),
+                "chat compaction input budget is inconsistent"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-before-budget",
+                    metadata: accountingMetadata(estimatedInputTokensBefore: 7_168)
+                ),
+                "chat compaction input estimate did not exceed budget"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-after-budget",
+                    metadata: accountingMetadata(estimatedInputTokensAfter: 7_169)
+                ),
+                "chat compaction output estimate exceeds input budget"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-mismatched-event",
+                    metadata: accountingMetadata()
+                ),
+                "adaptive chat compaction source pointer is inconsistent with request event"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction",
+                    metadata: accountingMetadata(sourcePointers: [validPointer, validPointer])
+                ),
+                "adaptive chat compaction source pointer is inconsistent with request event"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction",
+                    metadata: accountingMetadata(sourcePointers: [
+                        RuntimeChatCompactionSourcePointer(
+                            sessionID: "sqlite-invalid-compaction-session",
+                            requestID: "sqlite-invalid-compaction",
+                            startTurn: 1,
+                            endTurn: 2,
+                            totalTurns: 5,
+                            compactedTurnCount: 2,
+                            retainedStartTurn: 4,
+                            retainedEndTurn: 5,
+                            retainedTurnCount: 2
+                        )
+                    ])
+                ),
+                "adaptive chat compaction source pointer is inconsistent with request event"
             ),
             (
                 invalidCompactionRequest(
@@ -1348,6 +1801,53 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
 
         let emptySQLiteStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
         XCTAssertTrue(try emptySQLiteStore.listSessions(limit: 10).isEmpty)
+    }
+
+    private func semanticEmbeddingKey(
+        owner: String?,
+        session: String,
+        model: String = "ollama:nomic-embed-text",
+        modelFingerprint: String = "model-v1",
+        document: String
+    ) -> RuntimeChatSemanticEmbeddingKey {
+        RuntimeChatSemanticEmbeddingKey(
+            ownerDeviceID: owner,
+            sessionID: session,
+            canonicalQualifiedEmbeddingModelID: model,
+            modelFingerprint: modelFingerprint,
+            documentFingerprint: document
+        )
+    }
+
+    private func executeRawSQLite(at databaseURL: URL, sql: String) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 10)
+        }
+        defer { sqlite3_close(database) }
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 11)
+        }
+    }
+
+    private func rawSQLiteInteger(at databaseURL: URL, sql: String) throws -> Int {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 12)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 13)
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 14)
+        }
+        return Int(sqlite3_column_int64(statement, 0))
     }
 
     private func invalidCompactionRequest(

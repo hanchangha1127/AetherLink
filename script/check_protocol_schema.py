@@ -61,6 +61,7 @@ ALLOWED_MEMORY_TYPES = {
     "memory.upsert",
     "memory.delete",
     "memory.summary.drafts.list",
+    "memory.summary.draft.generate",
     "memory.summary.draft.approve",
     "memory.summary.draft.dismiss",
 }
@@ -401,6 +402,7 @@ def check_protocol_schema_rejects_future_memory_namespaces() -> list[str]:
         "memory.list",
         "memory.upsert",
         "memory.summary.drafts.list",
+        "memory.summary.draft.generate",
         "memory.search",
         "memory.reflect",
     ])
@@ -3929,7 +3931,7 @@ def check_memory_list_payload_schema_contract(schema: dict[str, object]) -> list
         None,
     )
     if not isinstance(request_option, dict):
-        return ["$defs.memoryListPayload must include a query-only request payload option"]
+        return ["$defs.memoryListPayload must include a query/embedding-hint request payload option"]
     if not isinstance(response_option, dict):
         failures.append("$defs.memoryListPayload must include an entries response payload option")
 
@@ -3937,12 +3939,16 @@ def check_memory_list_payload_schema_contract(schema: dict[str, object]) -> list
     if not isinstance(properties, dict):
         failures.append("$defs.memoryListPayload request properties must be an object")
     else:
-        allowed_keys = {"query"}
+        allowed_keys = {"query", "embedding_model_id"}
         actual_keys = set(properties.keys())
         if actual_keys != allowed_keys:
-            failures.append("$defs.memoryListPayload request properties must stay limited to query")
+            failures.append(
+                "$defs.memoryListPayload request properties must stay limited to query and embedding_model_id"
+            )
         if properties.get("query", {}).get("$ref") != "#/$defs/nonEmptyString":
             failures.append("$defs.memoryListPayload request query must use nonEmptyString")
+        if properties.get("embedding_model_id", {}).get("$ref") != "#/$defs/nonEmptyString":
+            failures.append("$defs.memoryListPayload request embedding_model_id must use nonEmptyString")
         forbidden_keys = {
             "entries",
             "backend_url",
@@ -4777,6 +4783,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
 
     expected_payload_refs = {
         "memory.summary.drafts.list": "#/$defs/memorySummaryDraftsListPayload",
+        "memory.summary.draft.generate": "#/$defs/memorySummaryDraftGeneratePayload",
         "memory.summary.draft.approve": "#/$defs/memorySummaryDraftApprovePayload",
         "memory.summary.draft.dismiss": "#/$defs/memorySummaryDraftDismissPayload",
     }
@@ -5143,11 +5150,13 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "chat_session_must_be_archived_before_delete",
         "chat_session_must_be_restored_before_send",
         "chat_store_unavailable",
+        "chat_context_window_exceeded",
         "document_index_unavailable",
         "source_anchor_not_found",
         "memory_store_unavailable",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",
+        "memory_summary_draft_generation_failed",
         "transport_error",
         "internal_error",
     ]

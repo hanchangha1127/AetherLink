@@ -4,6 +4,7 @@ import CryptoKit
 import Foundation
 import Pairing
 import Transport
+import TrustedDevices
 import XCTest
 
 final class PairedRuntimeRouteRefreshTests: XCTestCase {
@@ -60,12 +61,21 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
             runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
             ticketGeneration: 8
         ))
-        let relayClient = RecordingRelayTransport()
-        let pairedRelayClient = RecordingRelayTransport()
+        let lifecycle = RelayLifecycleRecorder()
+        let relayClient = RecordingRelayTransport(
+            onStop: { lifecycle.record("bootstrap-retire") }
+        )
+        let pairedRelayClient = RecordingRelayTransport(
+            onStart: { lifecycle.record("pair-start") }
+        )
+        let pairedPrivateOverlay = RecordingPrivateOverlayTransport(
+            onStart: { lifecycle.record("overlay-start") }
+        )
         let model = fixture.makeModel(
             allocator: allocator,
             relayClient: relayClient,
-            pairedRelayClient: pairedRelayClient
+            pairedRelayClient: pairedRelayClient,
+            pairedPrivateOverlayTransport: pairedPrivateOverlay
         )
 
         let refreshedResult = try await model.refreshRuntimeRoute(
@@ -121,6 +131,10 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         XCTAssertEqual(relayClient.stopCount, 1)
         XCTAssertEqual(pairedRelayClient.startedConfigurations.count, 1)
         XCTAssertEqual(pairedRelayClient.startedConfigurations.first?.relayID, pairedRelayID)
+        XCTAssertEqual(pairedPrivateOverlay.startedFingerprints, [
+            authorizationContext.trustedClientKeyFingerprint,
+        ])
+        XCTAssertEqual(lifecycle.events, ["overlay-start", "pair-start", "bootstrap-retire"])
         XCTAssertNotEqual(
             fixture.defaults.string(forKey: "aetherlink.discovery_route_token"),
             fixture.routeToken
@@ -188,6 +202,387 @@ final class PairedRuntimeRouteRefreshTests: XCTestCase {
         XCTAssertNil(fixture.savedTicketGeneration)
         XCTAssertEqual(fixture.savedNonce, fixture.currentNonce)
     }
+
+    @MainActor
+    func testRestoredPairScopedRouteStartsPrivateOverlayBeforeRelayAndStopsBoth() async throws {
+        let fixture = try makeFixture(ticketGeneration: 11)
+        let authorizationContext = try makeAuthorizationContext(requestID: "paired-refresh-restore")
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        let allocator = RecordingPairedRelayAllocator(renewalAllocation: RelayServiceRouteAllocation(
+            host: fixture.host,
+            port: fixture.port,
+            relayID: pairedRelayID,
+            relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+            relayNonce: "nonce-generation-12",
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            ticketGeneration: 12
+        ))
+        let initialModel = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport()
+        )
+
+        _ = try await initialModel.refreshRuntimeRoute(authorizationContext: authorizationContext)
+
+        let lifecycle = RelayLifecycleRecorder()
+        let pairedRelay = RecordingRelayTransport(onStart: { lifecycle.record("pair-start") })
+        let privateOverlay = RecordingPrivateOverlayTransport(
+            onStart: { lifecycle.record("overlay-start") }
+        )
+        let restoredModel = fixture.makeModel(
+            allocator: RecordingPairedRelayAllocator(),
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+
+        restoredModel.start(port: 43213)
+
+        XCTAssertEqual(privateOverlay.startedFingerprints, [
+            authorizationContext.trustedClientKeyFingerprint,
+        ])
+        XCTAssertEqual(pairedRelay.startedConfigurations.map(\.relayID), [pairedRelayID])
+        XCTAssertEqual(lifecycle.events, ["overlay-start", "pair-start"])
+
+        restoredModel.stop()
+
+        XCTAssertEqual(privateOverlay.stopCount, 1)
+        XCTAssertEqual(pairedRelay.stopCount, 1)
+    }
+
+    @MainActor
+    func testInFlightPairedRefreshCannotActivateAfterRuntimeStopAndPreservesAdvancedLease() async throws {
+        let fixture = try makeFixture(ticketGeneration: 13)
+        let authorizationContext = try makeAuthorizationContext(requestID: "paired-refresh-stop-race")
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        let allocator = SuspendedPairedRelayAllocator(allocation: RelayServiceRouteAllocation(
+            host: fixture.host,
+            port: fixture.port,
+            relayID: pairedRelayID,
+            relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+            relayNonce: "nonce-generation-14",
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            ticketGeneration: 14
+        ))
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+        model.start(port: 43214)
+
+        let refreshTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: authorizationContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+
+        model.stop()
+        allocator.completeRenewal()
+
+        do {
+            _ = try await refreshTask.value
+            XCTFail("Expected stopped runtime to cancel the in-flight paired refresh")
+        } catch is CancellationError {
+            // Expected lifecycle invalidation.
+        }
+
+        XCTAssertTrue(privateOverlay.startedFingerprints.isEmpty)
+        XCTAssertTrue(pairedRelay.startedConfigurations.isEmpty)
+        let storedRoutes = PairScopedRelayRouteStore(
+            userDefaults: fixture.defaults,
+            relaySecretStore: fixture.secretStore
+        ).loadAll()
+        XCTAssertEqual(storedRoutes.count, 1)
+        XCTAssertEqual(storedRoutes.first?.relayID, pairedRelayID)
+        XCTAssertEqual(storedRoutes.first?.ticketGeneration, 14)
+    }
+
+    @MainActor
+    func testInFlightPairedRefreshCannotRecreateRemovedPairRoute() async throws {
+        let fixture = try makeFixture(ticketGeneration: 17)
+        let authorizationContext = try makeAuthorizationContext(requestID: "paired-refresh-remove-race")
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        let allocator = SuspendedPairedRelayAllocator(allocation: RelayServiceRouteAllocation(
+            host: fixture.host,
+            port: fixture.port,
+            relayID: pairedRelayID,
+            relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+            relayNonce: "nonce-generation-18",
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            ticketGeneration: 18
+        ))
+        let trustedStoreURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-paired-route-trust", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("trusted-devices.json", isDirectory: false)
+        let trustedStore = TrustedDeviceStore(fileURL: trustedStoreURL)
+        let trustedDevice = TrustedDevice(
+            id: "client-remove-race",
+            name: "Client Remove Race",
+            publicKeyBase64: authorizationContext.trustedClientPublicKeyBase64
+        )
+        try await trustedStore.trust(trustedDevice)
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay,
+            trustedDeviceStore: trustedStore
+        )
+        model.start(port: 43215)
+
+        let refreshTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: authorizationContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+
+        await model.removeTrustedDevice(trustedDevice)
+        allocator.completeRenewal()
+
+        do {
+            _ = try await refreshTask.value
+            XCTFail("Expected removed pair to cancel the in-flight paired refresh")
+        } catch is CancellationError {
+            // Expected pair-generation invalidation.
+        }
+
+        XCTAssertTrue(privateOverlay.startedFingerprints.isEmpty)
+        XCTAssertTrue(pairedRelay.startedConfigurations.isEmpty)
+        let remainingTrustedDevices = try await trustedStore.load()
+        XCTAssertTrue(remainingTrustedDevices.isEmpty)
+        XCTAssertTrue(PairScopedRelayRouteStore(
+            userDefaults: fixture.defaults,
+            relaySecretStore: fixture.secretStore
+        ).loadAll().isEmpty)
+    }
+
+    @MainActor
+    func testOlderCommittedRefreshWaitsForNewerFailureThenActivatesExactlyOnce() async throws {
+        let fixture = try makeFixture(ticketGeneration: 30)
+        let firstContext = try makeAuthorizationContext(requestID: "same-pair-refresh-first")
+        let secondContext = try makeAuthorizationContext(
+            requestID: "same-pair-refresh-second",
+            matching: firstContext
+        )
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: firstContext.trustedClientKeyFingerprint
+        )
+        let allocator = SequencedSuspendedPairedRelayAllocator()
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+
+        let firstTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: firstContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+        let secondTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: secondContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+
+        allocator.completeRenewal(
+            at: 0,
+            allocation: RelayServiceRouteAllocation(
+                host: fixture.host,
+                port: fixture.port,
+                relayID: pairedRelayID,
+                relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+                relayNonce: "same-pair-generation-31",
+                runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+                ticketGeneration: 31
+            )
+        )
+        let firstRefresh = try await firstTask.value
+        let firstResult = try XCTUnwrap(firstRefresh)
+        await model.activateRuntimeRouteRefresh(firstResult)
+
+        XCTAssertTrue(privateOverlay.startedFingerprints.isEmpty)
+        XCTAssertTrue(pairedRelay.startedConfigurations.isEmpty)
+
+        allocator.failRenewal(at: 1, error: .clientAuthorizationRejected)
+        do {
+            _ = try await secondTask.value
+            XCTFail("Expected the newer same-pair refresh to fail")
+        } catch let error as RelayServiceRouteAllocationError {
+            XCTAssertEqual(error, .clientAuthorizationRejected)
+        }
+
+        XCTAssertEqual(privateOverlay.startedFingerprints, [
+            firstContext.trustedClientKeyFingerprint,
+        ])
+        XCTAssertEqual(pairedRelay.startedConfigurations.map(\.relayID), [pairedRelayID])
+        let storedRoute = try XCTUnwrap(PairScopedRelayRouteStore(
+            userDefaults: fixture.defaults,
+            relaySecretStore: fixture.secretStore
+        ).loadAll().first)
+        XCTAssertEqual(storedRoute.ticketGeneration, 31)
+        XCTAssertEqual(storedRoute.relayNonce, "same-pair-generation-31")
+    }
+
+    @MainActor
+    func testOlderConflictingResponseCannotOverwriteNewerCommittedRefresh() async throws {
+        let fixture = try makeFixture(ticketGeneration: 40)
+        let firstContext = try makeAuthorizationContext(requestID: "same-pair-conflict-first")
+        let secondContext = try makeAuthorizationContext(
+            requestID: "same-pair-conflict-second",
+            matching: firstContext
+        )
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: fixture.routeToken,
+            runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+            clientKeyFingerprint: firstContext.trustedClientKeyFingerprint
+        )
+        let allocator = SequencedSuspendedPairedRelayAllocator()
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: allocator,
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+
+        let firstTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: firstContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+        let secondTask = Task { @MainActor in
+            try await model.refreshRuntimeRoute(authorizationContext: secondContext)
+        }
+        await Task.yield()
+        XCTAssertEqual(allocator.waitForRenewal(), .success)
+
+        allocator.completeRenewal(
+            at: 1,
+            allocation: RelayServiceRouteAllocation(
+                host: fixture.host,
+                port: fixture.port,
+                relayID: pairedRelayID,
+                relayExpiresAtEpochMillis: fixture.currentExpiry + 120_000,
+                relayNonce: "newer-committed-generation-41",
+                runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+                ticketGeneration: 41
+            )
+        )
+        let secondRefresh = try await secondTask.value
+        let secondResult = try XCTUnwrap(secondRefresh)
+        await model.activateRuntimeRouteRefresh(secondResult)
+
+        allocator.completeRenewal(
+            at: 0,
+            allocation: RelayServiceRouteAllocation(
+                host: fixture.host,
+                port: fixture.port,
+                relayID: pairedRelayID,
+                relayExpiresAtEpochMillis: fixture.currentExpiry + 60_000,
+                relayNonce: "older-conflicting-generation-41",
+                runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+                ticketGeneration: 41
+            )
+        )
+        do {
+            _ = try await firstTask.value
+            XCTFail("Expected the stale conflicting response to be cancelled")
+        } catch is CancellationError {
+            // Expected compare-and-swap rejection.
+        }
+
+        XCTAssertEqual(privateOverlay.startedFingerprints, [
+            firstContext.trustedClientKeyFingerprint,
+        ])
+        XCTAssertEqual(pairedRelay.startedConfigurations.map(\.relayID), [pairedRelayID])
+        let storedRoute = try XCTUnwrap(PairScopedRelayRouteStore(
+            userDefaults: fixture.defaults,
+            relaySecretStore: fixture.secretStore
+        ).loadAll().first)
+        XCTAssertEqual(storedRoute.ticketGeneration, 41)
+        XCTAssertEqual(storedRoute.relayNonce, "newer-committed-generation-41")
+    }
+
+    @MainActor
+    func testPendingPairActivationsAreKeyedByFingerprint() async throws {
+        let fixture = try makeFixture(ticketGeneration: 15)
+        let firstContext = try makeAuthorizationContext(requestID: "paired-refresh-first")
+        let secondContext = try makeAuthorizationContext(requestID: "paired-refresh-second")
+        let store = PairScopedRelayRouteStore(
+            userDefaults: fixture.defaults,
+            relaySecretStore: fixture.secretStore
+        )
+        for (index, context) in [firstContext, secondContext].enumerated() {
+            let relayID = RelayAllocationIdentityChallenge.pairedRelayID(
+                routeToken: fixture.routeToken,
+                runtimeKeyFingerprint: fixture.runtimeIdentity.fingerprint,
+                clientKeyFingerprint: context.trustedClientKeyFingerprint
+            )
+            _ = try store.upsert(
+                PairScopedRelayRoute(
+                    clientKeyFingerprint: context.trustedClientKeyFingerprint,
+                    routeToken: fixture.routeToken,
+                    host: fixture.host,
+                    port: fixture.port,
+                    relayID: relayID,
+                    relayExpiresAtEpochMillis: fixture.currentExpiry,
+                    relayNonce: "stored-nonce-\(index)",
+                    ticketGeneration: Int64(20 + index)
+                ),
+                relaySecret: fixture.endpointSecret
+            )
+        }
+        let pairedRelay = RecordingRelayTransport()
+        let privateOverlay = RecordingPrivateOverlayTransport()
+        let model = fixture.makeModel(
+            allocator: PerPairAdvancingRelayAllocator(),
+            relayClient: RecordingRelayTransport(),
+            pairedRelayClient: pairedRelay,
+            pairedPrivateOverlayTransport: privateOverlay
+        )
+
+        let firstRefresh = try await model.refreshRuntimeRoute(authorizationContext: firstContext)
+        let firstResult = try XCTUnwrap(firstRefresh)
+        let secondRefresh = try await model.refreshRuntimeRoute(authorizationContext: secondContext)
+        let secondResult = try XCTUnwrap(secondRefresh)
+        await model.activateRuntimeRouteRefresh(firstResult)
+        await model.activateRuntimeRouteRefresh(secondResult)
+
+        XCTAssertEqual(Set(privateOverlay.startedFingerprints), Set([
+            firstContext.trustedClientKeyFingerprint,
+            secondContext.trustedClientKeyFingerprint,
+        ]))
+        XCTAssertEqual(Set(pairedRelay.startedConfigurations.map(\.relayID)), Set([
+            try XCTUnwrap(firstResult.relayID),
+            try XCTUnwrap(secondResult.relayID),
+        ]))
+    }
 }
 
 private struct PairedRouteFixture {
@@ -208,17 +603,32 @@ private struct PairedRouteFixture {
     func makeModel(
         allocator: any RelayServiceRouteAllocating,
         relayClient: any RelayPeerTransport,
-        pairedRelayClient: (any RelayPeerTransport)? = nil
+        pairedRelayClient: (any RelayPeerTransport)? = nil,
+        pairedPrivateOverlayTransport: (any MacRuntimePrivateOverlayTransport)? = nil,
+        trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("aetherlink-paired-route-trust", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                .appendingPathComponent("trusted-devices.json", isDirectory: false)
+        )
     ) -> CompanionAppModel {
-        CompanionAppModel(
+        let privateOverlayFactory: (@Sendable () -> any MacRuntimePrivateOverlayTransport)?
+        if let pairedPrivateOverlayTransport {
+            privateOverlayFactory = { @Sendable in pairedPrivateOverlayTransport }
+        } else {
+            privateOverlayFactory = nil
+        }
+        return CompanionAppModel(
             relayClient: relayClient,
             pairedRelayClientFactory: {
                 pairedRelayClient ?? RecordingRelayTransport()
             },
+            pairedPrivateOverlayTransportFactory: privateOverlayFactory,
             relayServiceRouteAllocator: allocator,
             environment: environment,
             userDefaults: defaults,
-            relaySecretStore: secretStore
+            relaySecretStore: secretStore,
+            trustedDeviceStore: trustedDeviceStore
         )
     }
 
@@ -339,6 +749,20 @@ private func makeAuthorizationContext(
     )
 }
 
+private func makeAuthorizationContext(
+    requestID: String,
+    matching context: RuntimePairedRelayAuthorizationContext
+) throws -> RuntimePairedRelayAuthorizationContext {
+    try RuntimePairedRelayAuthorizationContext(
+        requestID: requestID,
+        connectionID: UUID(),
+        trustedClientPublicKeyBase64: context.trustedClientPublicKeyBase64,
+        trustedClientKeyFingerprint: context.trustedClientKeyFingerprint,
+        transportBinding: context.transportBinding,
+        clientAuthorizationProvider: context.clientAuthorizationProvider
+    )
+}
+
 private func isolatedRouteRefreshDefaults() throws -> UserDefaults {
     let suiteName = "PairedRuntimeRouteRefreshTests.\(UUID().uuidString)"
     guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -351,6 +775,161 @@ private func isolatedRouteRefreshDefaults() throws -> UserDefaults {
 private enum PairedRouteTestError: Error {
     case defaultsUnavailable
     case unexpectedClientAuthorization
+}
+
+private final class SuspendedPairedRelayAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
+    private let lock = NSLock()
+    private let allocation: RelayServiceRouteAllocation
+    private let renewalStarted = DispatchSemaphore(value: 0)
+    private var continuation: CheckedContinuation<RelayServiceRouteAllocation, any Error>?
+
+    init(allocation: RelayServiceRouteAllocation) {
+        self.allocation = allocation
+    }
+
+    func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval
+    ) throws -> RelayServiceRouteAllocation {
+        throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
+    }
+
+    func renewPairedRelayRoute(
+        currentRouteToken: String,
+        currentConfiguration: RelayPeerConfiguration,
+        currentLease: CompanionRemoteRouteLease,
+        runtimeIdentity: RelayRuntimeIdentity,
+        authorizationSigner: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning,
+        authorizationContext: RuntimePairedRelayAuthorizationContext,
+        allocationToken: String?,
+        timeout: TimeInterval
+    ) async throws -> RelayServiceRouteAllocation {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                self.continuation = continuation
+            }
+            renewalStarted.signal()
+        }
+    }
+
+    func waitForRenewal(timeout: DispatchTime = .now() + 2) -> DispatchTimeoutResult {
+        renewalStarted.wait(timeout: timeout)
+    }
+
+    func completeRenewal() {
+        let continuation = lock.withLock {
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(returning: allocation)
+    }
+}
+
+private final class SequencedSuspendedPairedRelayAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
+    private let lock = NSLock()
+    private let renewalStarted = DispatchSemaphore(value: 0)
+    private var continuations: [CheckedContinuation<RelayServiceRouteAllocation, any Error>?] = []
+
+    func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval
+    ) throws -> RelayServiceRouteAllocation {
+        throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
+    }
+
+    func renewPairedRelayRoute(
+        currentRouteToken: String,
+        currentConfiguration: RelayPeerConfiguration,
+        currentLease: CompanionRemoteRouteLease,
+        runtimeIdentity: RelayRuntimeIdentity,
+        authorizationSigner: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning,
+        authorizationContext: RuntimePairedRelayAuthorizationContext,
+        allocationToken: String?,
+        timeout: TimeInterval
+    ) async throws -> RelayServiceRouteAllocation {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                continuations.append(continuation)
+            }
+            renewalStarted.signal()
+        }
+    }
+
+    func waitForRenewal(timeout: DispatchTime = .now() + 2) -> DispatchTimeoutResult {
+        renewalStarted.wait(timeout: timeout)
+    }
+
+    func completeRenewal(at index: Int, allocation: RelayServiceRouteAllocation) {
+        takeContinuation(at: index)?.resume(returning: allocation)
+    }
+
+    func failRenewal(at index: Int, error: RelayServiceRouteAllocationError) {
+        takeContinuation(at: index)?.resume(throwing: error)
+    }
+
+    private func takeContinuation(
+        at index: Int
+    ) -> CheckedContinuation<RelayServiceRouteAllocation, any Error>? {
+        lock.withLock {
+            guard continuations.indices.contains(index) else {
+                return nil
+            }
+            defer { continuations[index] = nil }
+            return continuations[index]
+        }
+    }
+}
+
+private final class PerPairAdvancingRelayAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
+    func allocateRelayRoute(
+        host: String,
+        port: UInt16,
+        routeToken: String,
+        allocationToken: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
+        timeout: TimeInterval
+    ) throws -> RelayServiceRouteAllocation {
+        throw RelayServiceRouteAllocationError.pairedRenewalUnavailable
+    }
+
+    func renewPairedRelayRoute(
+        currentRouteToken: String,
+        currentConfiguration: RelayPeerConfiguration,
+        currentLease: CompanionRemoteRouteLease,
+        runtimeIdentity: RelayRuntimeIdentity,
+        authorizationSigner: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning,
+        authorizationContext: RuntimePairedRelayAuthorizationContext,
+        allocationToken: String?,
+        timeout: TimeInterval
+    ) async throws -> RelayServiceRouteAllocation {
+        guard let ticketGeneration = currentLease.ticketGeneration else {
+            throw RelayServiceRouteAllocationError.invalidPairedRenewalRequest
+        }
+        return RelayServiceRouteAllocation(
+            host: currentConfiguration.host,
+            port: currentConfiguration.port,
+            relayID: RelayAllocationIdentityChallenge.pairedRelayID(
+                routeToken: currentRouteToken,
+                runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+                clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+            ),
+            relayExpiresAtEpochMillis: currentLease.expiresAtEpochMillis + 60_000,
+            relayNonce: "renewed-\(authorizationContext.trustedClientKeyFingerprint.prefix(16))",
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            ticketGeneration: ticketGeneration + 1
+        )
+    }
 }
 
 private final class RecordingPairedRelayAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
@@ -446,8 +1025,18 @@ private final class RecordingPairedRelayAllocator: RelayServiceRouteAllocating, 
 
 private final class RecordingRelayTransport: RelayPeerTransport, @unchecked Sendable {
     private let lock = NSLock()
+    private let onStart: @Sendable () -> Void
+    private let onStop: @Sendable () -> Void
     private var storedStopCount = 0
     private var storedStartedConfigurations: [RelayPeerConfiguration] = []
+
+    init(
+        onStart: @escaping @Sendable () -> Void = {},
+        onStop: @escaping @Sendable () -> Void = {}
+    ) {
+        self.onStart = onStart
+        self.onStop = onStop
+    }
 
     var stopCount: Int {
         lock.withLock { storedStopCount }
@@ -465,11 +1054,70 @@ private final class RecordingRelayTransport: RelayPeerTransport, @unchecked Send
         lock.withLock {
             storedStartedConfigurations.append(configuration)
         }
+        onStart()
     }
 
     func stop() {
         lock.withLock {
             storedStopCount += 1
+        }
+        onStop()
+    }
+}
+
+private final class RecordingPrivateOverlayTransport: MacRuntimePrivateOverlayTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private let onStart: @Sendable () -> Void
+    private var storedOnDisconnect: (@Sendable (UUID) -> Void)?
+    private var storedStartedFingerprints: [String] = []
+    private var storedStopCount = 0
+
+    init(onStart: @escaping @Sendable () -> Void = {}) {
+        self.onStart = onStart
+    }
+
+    var onDisconnect: (@Sendable (UUID) -> Void)? {
+        get { lock.withLock { storedOnDisconnect } }
+        set { lock.withLock { storedOnDisconnect = newValue } }
+    }
+
+    var startedFingerprints: [String] {
+        lock.withLock { storedStartedFingerprints }
+    }
+
+    var stopCount: Int {
+        lock.withLock { storedStopCount }
+    }
+
+    func start(
+        clientKeyFingerprint: String,
+        onStatusChange: (@Sendable (MacRuntimePrivateOverlayStatus) -> Void)?,
+        onMessage: @escaping LocalPeerMessageHandler
+    ) {
+        lock.withLock {
+            storedStartedFingerprints.append(clientKeyFingerprint)
+        }
+        onStart()
+    }
+
+    func stop() {
+        lock.withLock {
+            storedStopCount += 1
+        }
+    }
+}
+
+private final class RelayLifecycleRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedEvents: [String] = []
+
+    var events: [String] {
+        lock.withLock { storedEvents }
+    }
+
+    func record(_ event: String) {
+        lock.withLock {
+            storedEvents.append(event)
         }
     }
 }

@@ -79,6 +79,171 @@ final class RelayMatcherTests: XCTestCase {
         sourceQuotaLimiter.releaseConnection(source: sourceB)
     }
 
+    func testExpiredWaitingRoomCannotMatchLateCounterpart() throws {
+        let sourceA = try sourceIdentity("192.0.2.65")
+        let sourceB = try sourceIdentity("192.0.2.66")
+        let sourceQuotaLimiter = RelaySourceQuotaLimiter(
+            maximumConnections: 8,
+            configuration: RelaySourceQuotaConfiguration(
+                maximumConnectionsPerSource: 4,
+                maximumWaitingPeersPerSource: 2
+            )
+        )
+        let waitingPeerLimiter = RelayWaitingPeerLimiter(
+            configuration: RelayWaitingPeerPolicyConfiguration(
+                maximumDurationSeconds: 10,
+                maximumPeersPerAuthenticatedIdentity: 4
+            )
+        )
+        let clock = MatcherPolicyClock(now: 100)
+        let matcher = RelayMatcher(
+            sourceQuotaLimiter: sourceQuotaLimiter,
+            waitingPeerLimiter: waitingPeerLimiter,
+            maximumWaitingDurationSeconds: 10,
+            monotonicNow: { clock.value }
+        )
+        let binding = makeBinding(relayID: "expired-counterpart")
+        let runtime = registration(.runtime, binding: binding)
+        let client = registration(.client, binding: binding)
+
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: sourceA).allowed)
+        XCTAssertEqual(
+            matcher.register(runtime, sourceIdentity: sourceA),
+            .waiting(replaced: nil)
+        )
+        clock.value = 110
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: sourceB).allowed)
+        let attempt = matcher.registerWithExpiredWaitingPeers(
+            client,
+            sourceIdentity: sourceB
+        )
+
+        XCTAssertEqual(attempt.expiredWaitingPeers, [runtime])
+        XCTAssertEqual(attempt.result, .waiting(replaced: nil))
+        XCTAssertEqual(matcher.activeCount(relayID: binding.relayID), 0)
+        XCTAssertEqual(matcher.waitingRegistrations(relayID: binding.relayID), [client])
+        XCTAssertEqual(waitingPeerLimiter.metricsSnapshot().waitingPeerTimeoutsTotal, 1)
+        XCTAssertEqual(sourceQuotaLimiter.metricsSnapshot().waitingPeers, 1)
+
+        XCTAssertEqual(matcher.unregisterWaiting(peerID: client.id), client)
+        sourceQuotaLimiter.releaseConnection(source: sourceA)
+        sourceQuotaLimiter.releaseConnection(source: sourceB)
+    }
+
+    func testExpiredWaitingRoomCannotBeReplacedOrReportedByProbe() throws {
+        let sourceA = try sourceIdentity("192.0.2.67")
+        let sourceB = try sourceIdentity("192.0.2.68")
+        let sourceQuotaLimiter = RelaySourceQuotaLimiter(
+            maximumConnections: 8,
+            configuration: RelaySourceQuotaConfiguration(
+                maximumConnectionsPerSource: 4,
+                maximumWaitingPeersPerSource: 2
+            )
+        )
+        let waitingPeerLimiter = RelayWaitingPeerLimiter(
+            configuration: RelayWaitingPeerPolicyConfiguration(
+                maximumDurationSeconds: 10,
+                maximumPeersPerAuthenticatedIdentity: 1
+            )
+        )
+        let clock = MatcherPolicyClock(now: 200)
+        let matcher = RelayMatcher(
+            sourceQuotaLimiter: sourceQuotaLimiter,
+            waitingPeerLimiter: waitingPeerLimiter,
+            maximumWaitingDurationSeconds: 10,
+            monotonicNow: { clock.value }
+        )
+        let binding = makeBinding(relayID: "expired-replacement")
+        let identity = try XCTUnwrap(authenticatedIdentity(.runtime, digit: "d"))
+        let runtime = registration(.runtime, binding: binding, identity: identity)
+        let replacement = registration(.runtime, binding: binding, identity: identity)
+
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: sourceA).allowed)
+        XCTAssertEqual(
+            matcher.register(runtime, sourceIdentity: sourceA),
+            .waiting(replaced: nil)
+        )
+        clock.value = 210
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: sourceB).allowed)
+        let attempt = matcher.registerWithExpiredWaitingPeers(
+            replacement,
+            sourceIdentity: sourceB
+        )
+
+        XCTAssertEqual(attempt.expiredWaitingPeers, [runtime])
+        XCTAssertEqual(attempt.result, .waiting(replaced: nil))
+        XCTAssertEqual(
+            matcher.waitingDeadlineUptime(
+                relayID: binding.relayID,
+                peerID: replacement.id
+            ),
+            220
+        )
+        clock.value = 220
+        let status = matcher.waitingRuntimeStatus(relayID: binding.relayID)
+        XCTAssertFalse(status.hasWaitingRuntime)
+        XCTAssertEqual(status.expiredWaitingPeers, [replacement])
+        XCTAssertFalse(matcher.hasWaitingRuntime(relayID: binding.relayID))
+        XCTAssertEqual(matcher.pendingCount(relayID: binding.relayID), 0)
+        XCTAssertEqual(waitingPeerLimiter.metricsSnapshot().waitingPeerTimeoutsTotal, 2)
+        XCTAssertEqual(waitingPeerLimiter.metricsSnapshot().authenticatedIdentityWaitingPeers, 0)
+        XCTAssertEqual(sourceQuotaLimiter.metricsSnapshot().waitingPeers, 0)
+
+        sourceQuotaLimiter.releaseConnection(source: sourceA)
+        sourceQuotaLimiter.releaseConnection(source: sourceB)
+    }
+
+    func testWaitingRegistrationAttemptRetainsDeadlineAfterCounterpartMatches() throws {
+        let source = try sourceIdentity("192.0.2.69")
+        let sourceQuotaLimiter = RelaySourceQuotaLimiter(
+            maximumConnections: 8,
+            configuration: RelaySourceQuotaConfiguration(
+                maximumConnectionsPerSource: 4,
+                maximumWaitingPeersPerSource: 2
+            )
+        )
+        let clock = MatcherPolicyClock(now: 300)
+        let matcher = RelayMatcher(
+            sourceQuotaLimiter: sourceQuotaLimiter,
+            maximumWaitingDurationSeconds: 60,
+            monotonicNow: { clock.value }
+        )
+        let binding = makeBinding(relayID: "waiting-deadline-attempt")
+        let runtime = registration(.runtime, binding: binding)
+        let client = registration(.client, binding: binding)
+
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: source).allowed)
+        let waitingAttempt = matcher.registerWithExpiredWaitingPeers(
+            runtime,
+            sourceIdentity: source
+        )
+        XCTAssertEqual(waitingAttempt.result, .waiting(replaced: nil))
+        XCTAssertEqual(waitingAttempt.waitingDeadlineUptime, 360)
+
+        XCTAssertTrue(sourceQuotaLimiter.acquireConnection(source: source).allowed)
+        let matchedAttempt = matcher.registerWithExpiredWaitingPeers(
+            client,
+            sourceIdentity: source
+        )
+        let matchToken = try matchToken(
+            from: matchedAttempt.result,
+            runtime: runtime,
+            client: client
+        )
+        XCTAssertNil(matchedAttempt.waitingDeadlineUptime)
+        XCTAssertNil(
+            matcher.waitingDeadlineUptime(
+                relayID: binding.relayID,
+                peerID: runtime.id
+            )
+        )
+        XCTAssertEqual(waitingAttempt.waitingDeadlineUptime, 360)
+        XCTAssertNotNil(matcher.release(matchToken: matchToken))
+
+        sourceQuotaLimiter.releaseConnection(source: source)
+        sourceQuotaLimiter.releaseConnection(source: source)
+    }
+
     func testAuthenticatedIdentityQuotaIsCrossSourceAndReleasesEveryWaitingPath() throws {
         let sourceA = try sourceIdentity("192.0.2.61")
         let sourceB = try sourceIdentity("192.0.2.62")

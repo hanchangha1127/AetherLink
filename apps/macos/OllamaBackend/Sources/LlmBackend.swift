@@ -78,6 +78,7 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
     public var remoteModel: String?
     public var remoteHost: String?
     public var contextWindowTokens: Int?
+    public var persistentEmbeddingRevision: String?
 
     public init(
         id: String,
@@ -93,7 +94,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         source: ModelSource = .local,
         remoteModel: String? = nil,
         remoteHost: String? = nil,
-        contextWindowTokens: Int? = nil
+        contextWindowTokens: Int? = nil,
+        persistentEmbeddingRevision: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -109,6 +111,7 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         self.remoteModel = remoteModel
         self.remoteHost = remoteHost
         self.contextWindowTokens = contextWindowTokens
+        self.persistentEmbeddingRevision = persistentEmbeddingRevision
     }
 }
 
@@ -308,12 +311,33 @@ public enum GenerationCancellationResult: Equatable, Sendable {
     case notFound(generationID: String)
 }
 
+public struct EmbeddingRequest: Equatable, Sendable {
+    public var model: String
+    public var texts: [String]
+
+    public init(model: String, texts: [String]) {
+        self.model = model
+        self.texts = texts
+    }
+}
+
+public struct EmbeddingResult: Equatable, Sendable {
+    public var model: String
+    public var embeddings: [[Double]]
+
+    public init(model: String, embeddings: [[Double]]) {
+        self.model = model
+        self.embeddings = embeddings
+    }
+}
+
 public protocol LlmBackend: Sendable {
     var provider: ModelProvider { get }
     func healthCheck() async -> BackendStatus
     func listModels() async throws -> [ModelInfo]
     func pullModel(name: String) async throws -> ModelPullResult
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error>
+    func embed(request: EmbeddingRequest) async throws -> EmbeddingResult
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult
     @discardableResult func cancel(generationID: String) -> GenerationCancellationResult
 }
@@ -330,5 +354,14 @@ public extension LlmBackend {
 
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
         .unsupported(provider: provider, modelID: providerModelID)
+    }
+
+    func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        throw BackendError(
+            provider: provider,
+            code: "unsupported_operation",
+            message: "\(provider.displayName) does not support text embeddings.",
+            retryable: false
+        )
     }
 }

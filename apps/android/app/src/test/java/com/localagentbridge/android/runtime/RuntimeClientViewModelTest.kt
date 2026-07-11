@@ -30,6 +30,8 @@ import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePaylo
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApproveResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissResultPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftGenerateRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftGenerateResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSessionPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSourcePointerPayload
@@ -118,6 +120,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -10461,6 +10464,7 @@ class RuntimeClientViewModelTest {
                 models = listOf(textChatModel()),
                 redactRuntimeOwnedLocalDataOnSave = true,
             )
+            val memoryListRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
 
             fixture.channel.enqueue(
                 envelope(
@@ -10477,7 +10481,7 @@ class RuntimeClientViewModelTest {
                             ),
                         ),
                     ),
-                    requestId = "memory-list",
+                    requestId = memoryListRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -10627,11 +10631,13 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
-            val runtimeEntry = fixture.viewModel.state.value.memoryEntries.single()
+            val runtimeEntry = fixture.viewModel.state.value.memorySearchResults.single()
             assertEquals("Use the latest QR route recovery steps.", runtimeEntry.content)
             assertEquals(1, runtimeEntry.searchRank)
             assertEquals("Relay recovery source matched the memory entry.", runtimeEntry.searchSnippet)
             assertEquals(listOf("content", "source_excerpt"), runtimeEntry.searchMatchedFields)
+            assertEquals("relay recovery", fixture.viewModel.state.value.memorySearchQuery)
+            assertTrue(fixture.viewModel.state.value.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
         } finally {
             Dispatchers.resetMain()
@@ -13242,6 +13248,332 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun generateMemorySummaryDraftSendsStaleGuardsBlocksDuplicateDecisionsAndStaysTransient() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(model),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val listRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload("draft-generate")),
+                    ),
+                    requestId = listRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.generateMemorySummaryDraft("draft-generate")
+            fixture.viewModel.generateMemorySummaryDraft("draft-generate")
+            fixture.viewModel.approveMemorySummaryDraft("draft-generate")
+            fixture.viewModel.dismissMemorySummaryDraft("draft-generate")
+            advanceUntilIdle()
+
+            val generateRequests = fixture.channel.sentEnvelopes.filter {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            assertEquals(1, generateRequests.size)
+            assertTrue(
+                fixture.channel.sentEnvelopes.none {
+                    it.type == MessageType.MemorySummaryDraftApprove ||
+                        it.type == MessageType.MemorySummaryDraftDismiss
+                },
+            )
+            val request = generateRequests.single()
+            val payload = json.decodeFromJsonElement(
+                MemorySummaryDraftGenerateRequestPayload.serializer(),
+                request.payload,
+            )
+            assertEquals("draft-generate", payload.draftId)
+            assertEquals("runtime-session", payload.expectedSessionId)
+            assertEquals(6, payload.expectedSourceMessageCount)
+            assertEquals(model.id, payload.model)
+            assertEquals(setOf("draft-generate"), fixture.viewModel.state.value.generatingMemorySummaryDraftIds)
+
+            val generatedDraft = memorySummaryDraftPayload("draft-generate").copy(
+                summaryPreview = "Generated summary stays runtime-transient.",
+                summaryMethod = "llm_summary_v1",
+                generatedAt = "2026-06-25T00:02:00Z",
+                generatedModelId = model.id,
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftGenerate,
+                    serializer = MemorySummaryDraftGenerateResultPayload.serializer(),
+                    payload = MemorySummaryDraftGenerateResultPayload(generatedDraft),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.generatingMemorySummaryDraftIds.isEmpty())
+            assertEquals("Generated summary stays runtime-transient.", state.memorySummaryDrafts.single().summaryPreview)
+            assertEquals("llm_summary_v1", state.memorySummaryDrafts.single().summaryMethod)
+            assertEquals(model.id, state.memorySummaryDrafts.single().generatedModelId)
+            assertEquals(1_782_345_720_000L, state.memorySummaryDrafts.single().generatedAtMillis)
+            val persistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(persistedSnapshot.contains("Generated summary stays runtime-transient."))
+            assertFalse(persistedSnapshot.contains("llm_summary_v1"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun generateMemorySummaryDraftRejectsBusyOrIneligibleModelAndRetainsMalformedResult() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+            val listRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload("draft-guard")),
+                    ),
+                    requestId = listRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.replaceStateForTest { it.copy(isStreaming = true) }
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+            fixture.viewModel.replaceStateForTest {
+                it.copy(isStreaming = false, models = listOf(model.copy(installed = false)))
+            }
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            assertEquals("install_model_first", fixture.viewModel.state.value.error?.code)
+            fixture.viewModel.replaceStateForTest {
+                it.copy(models = listOf(model.copy(source = "cloud")))
+            }
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            assertEquals("select_chat_model", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.MemorySummaryDraftGenerate })
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    models = listOf(model),
+                    memorySummaryDrafts = it.memorySummaryDrafts.map { draft ->
+                        draft.copy(summaryMethod = "llm_summary_v1")
+                    },
+                )
+            }
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.MemorySummaryDraftGenerate })
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    memorySummaryDrafts = it.memorySummaryDrafts.map { draft ->
+                        draft.copy(summaryMethod = "deterministic_preview")
+                    },
+                )
+            }
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftGenerate,
+                    requestId = request.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "draft": {
+                                "id": "draft-guard",
+                                "session": {
+                                  "session_id": "runtime-session",
+                                  "title": "Long idle planning chat",
+                                  "model": "ollama:qwen3:8b",
+                                  "last_activity_at": "2026-06-01T00:00:00Z",
+                                  "message_count": 6,
+                                  "inactive_seconds": 1209600
+                                },
+                                "source_message_count": 6,
+                                "source_range": "visible messages 1-6 of 6",
+                                "source_pointers": [{
+                                  "session_id": "runtime-session",
+                                  "message_index": 1,
+                                  "role": "user",
+                                  "created_at": "2026-06-01T00:00:00Z",
+                                  "excerpt": "Use concise Korean summaries for release notes."
+                                }],
+                                "summary_preview": "Untrusted generated summary",
+                                "summary_method": "llm_summary_v1",
+                                "generated_at": "2026-06-25T00:02:00Z",
+                                "generated_model_id": "${model.id}",
+                                "workspace_id": "workspace-canary"
+                              }
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val rejected = fixture.viewModel.state.value
+            assertEquals("invalid_payload", rejected.error?.code)
+            assertEquals("Prefer concise Korean release-note summaries.", rejected.memorySummaryDrafts.single().summaryPreview)
+            assertEquals("deterministic_preview", rejected.memorySummaryDrafts.single().summaryMethod)
+            assertTrue(rejected.generatingMemorySummaryDraftIds.isEmpty())
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("workspace-canary"))
+
+            fixture.viewModel.generateMemorySummaryDraft("draft-guard")
+            advanceUntilIdle()
+            val retryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            assertNotEquals(request.requestId, retryRequest.requestId)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftGenerate,
+                    serializer = MemorySummaryDraftGenerateResultPayload.serializer(),
+                    payload = MemorySummaryDraftGenerateResultPayload(
+                        memorySummaryDraftPayload("draft-guard").copy(
+                            sourceRange = "visible messages 2-6 of 6",
+                            summaryPreview = "Cross-source generated summary",
+                            summaryMethod = "llm_summary_v1",
+                            generatedAt = "2026-06-25T00:02:00Z",
+                            generatedModelId = model.id,
+                        ),
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val sourceMismatch = fixture.viewModel.state.value
+            assertEquals("invalid_payload", sourceMismatch.error?.code)
+            assertEquals(
+                "Prefer concise Korean release-note summaries.",
+                sourceMismatch.memorySummaryDrafts.single().summaryPreview,
+            )
+            assertTrue(sourceMismatch.generatingMemorySummaryDraftIds.isEmpty())
+            assertTrue(
+                fixture.channel.sentEnvelopes.any {
+                    it.type == MessageType.MemorySummaryDraftsList && it.requestId != listRequest.requestId
+                },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun generateMemorySummaryDraftStaleErrorClearsPendingKeepsPreviewAndRefreshesDrafts() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val listRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload("draft-stale-generate")),
+                    ),
+                    requestId = listRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            val listCountBeforeError = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            fixture.viewModel.generateMemorySummaryDraft("draft-stale-generate")
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_summary_draft_stale",
+                        message = "Memory summary draft changed before generation.",
+                        retryable = false,
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.generatingMemorySummaryDraftIds.isEmpty())
+            assertEquals("memory_summary_draft_generation_failed", state.error?.code)
+            assertEquals("Prefer concise Korean release-note summaries.", state.memorySummaryDrafts.single().summaryPreview)
+            assertEquals(
+                listCountBeforeError + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun generateMemorySummaryDraftSendFailureClearsPendingAndKeepsDeterministicPreview() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val listRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(memorySummaryDraftPayload("draft-send-failure")),
+                    ),
+                    requestId = listRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            fixture.channel.sendFailure = IllegalStateException("synthetic generation send failure")
+
+            fixture.viewModel.generateMemorySummaryDraft("draft-send-failure")
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.generatingMemorySummaryDraftIds.isEmpty())
+            assertEquals("memory_summary_draft_generation_failed", state.error?.code)
+            assertEquals(
+                "Prefer concise Korean release-note summaries.",
+                state.memorySummaryDrafts.single().summaryPreview,
+            )
+            assertEquals("deterministic_preview", state.memorySummaryDrafts.single().summaryMethod)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -13855,7 +14187,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint() = runTest {
+    fun refreshRuntimeMemorySearchSendsSelectedEmbeddingModelHint() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -13885,8 +14217,263 @@ class RuntimeClientViewModelTest {
                 queryRequest.payload,
             )
             assertEquals("durable route notes", queryPayload.query)
-            assertNull(queryRequest.payload["embedding_model_id"])
-            assertFalse(json.encodeToString(queryRequest.payload).contains(selectedEmbeddingModel.id))
+            assertEquals(selectedEmbeddingModel.id, queryPayload.embeddingModelId)
+            assertTrue(json.encodeToString(queryRequest.payload).contains(selectedEmbeddingModel.id))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeMemorySearchResultsStayTransientAndIgnoreLateResponses() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), embeddingModel()),
+                selectedEmbeddingModelId = embeddingModel().id,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            val fullEntries = listOf(
+                MemoryEntryPayload(
+                    id = "memory-full-a",
+                    content = "Full approved memory A",
+                    enabled = true,
+                    createdAt = "2026-06-25T00:00:00Z",
+                    updatedAt = "2026-06-25T00:00:00Z",
+                ),
+                MemoryEntryPayload(
+                    id = "memory-full-b",
+                    content = "Full approved memory B",
+                    enabled = true,
+                    createdAt = "2026-06-25T00:01:00Z",
+                    updatedAt = "2026-06-25T00:01:00Z",
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = fullEntries),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeMemory(query = "  relay route  ")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(fullEntries[1].copy(
+                            search = ChatSessionSearchPayload(
+                                rank = 1,
+                                snippet = "Relay route result",
+                                matchedFields = listOf("content"),
+                            ),
+                        )),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val searchState = fixture.viewModel.state.value
+            assertEquals("relay route", searchState.memorySearchQuery)
+            assertEquals(listOf("memory-full-b"), searchState.memorySearchResults.map { it.id })
+            assertEquals(1, searchState.memorySearchResults.single().searchRank)
+            assertEquals(
+                setOf("memory-full-a", "memory-full-b"),
+                searchState.memoryEntries.map { it.id }.toSet(),
+            )
+            assertEquals(
+                setOf("memory-full-a", "memory-full-b"),
+                fixture.localStore.data.memoryEntries.map { it.id }.toSet(),
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.all { it.runtimeSearchRank == null })
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = listOf(
+                        MemoryEntryPayload(
+                            id = "late-unsolicited",
+                            content = "Must not replace the cache",
+                            enabled = true,
+                            createdAt = "2026-06-25T00:02:00Z",
+                            updatedAt = "2026-06-25T00:02:00Z",
+                        ),
+                    )),
+                    requestId = "late-unsolicited-response",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                setOf("memory-full-a", "memory-full-b"),
+                fixture.viewModel.state.value.memoryEntries.map { it.id }.toSet(),
+            )
+            assertEquals("relay route", fixture.viewModel.state.value.memorySearchQuery)
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val refreshRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = listOf(fullEntries[1])),
+                    requestId = refreshRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.memorySearchQuery)
+            assertTrue(fixture.viewModel.state.value.memorySearchResults.isEmpty())
+            assertEquals(listOf("memory-full-b"), fixture.viewModel.state.value.memoryEntries.map { it.id })
+            assertEquals(listOf("memory-full-b"), fixture.localStore.data.memoryEntries.map { it.id })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = firstRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"entries":[],"backend_url":"http://127.0.0.1:11434"}""",
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val secondRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            assertTrue(secondRequest.requestId != firstRequest.requestId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = listOf(
+                        MemoryEntryPayload(
+                            id = "late-memory",
+                            content = "Late response must be ignored",
+                            enabled = true,
+                            createdAt = "2026-06-25T00:00:00Z",
+                            updatedAt = "2026-06-25T00:00:00Z",
+                        ),
+                    )),
+                    requestId = firstRequest.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemoryList,
+                    requestId = secondRequest.requestId,
+                    payload = json.parseToJsonElement("""{"entries":"not-an-array"}""").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryEntries.isEmpty())
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val thirdRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            assertTrue(thirdRequest.requestId != secondRequest.requestId)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = listOf(
+                        MemoryEntryPayload(
+                            id = "canonical-memory",
+                            content = "Canonical memory",
+                            enabled = true,
+                            createdAt = "2026-06-25T00:01:00Z",
+                            updatedAt = "2026-06-25T00:01:00Z",
+                        ),
+                    )),
+                    requestId = thirdRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(listOf("canonical-memory"), fixture.viewModel.state.value.memoryEntries.map { it.id })
+            assertEquals(listOf("canonical-memory"), fixture.localStore.data.memoryEntries.map { it.id })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticSearchRetriesLexicallyWhenRuntimeRejectsEmbeddingHint() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = emptyList()),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeMemory(query = "relay recovery")
+            advanceUntilIdle()
+            val semanticRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "memory.list payload contains unsupported field(s): embedding_model_id",
+                        retryable = false,
+                    ),
+                    requestId = semanticRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val memoryRequests = fixture.channel.sentEnvelopes.filter { it.type == MessageType.MemoryList }
+            val lexicalRetry = memoryRequests.last()
+            assertTrue(lexicalRetry.requestId != semanticRequest.requestId)
+            val retryPayload = json.decodeFromJsonElement(
+                MemoryListRequestPayload.serializer(),
+                lexicalRetry.payload,
+            )
+            assertEquals("relay recovery", retryPayload.query)
+            assertNull(retryPayload.embeddingModelId)
+            assertNull(lexicalRetry.payload["embedding_model_id"])
         } finally {
             Dispatchers.resetMain()
         }
@@ -14840,6 +15427,139 @@ class RuntimeClientViewModelTest {
             assertEquals(100, queryPayload.limit)
             assertTrue(queryPayload.includeArchived)
             assertEquals("relay route", queryPayload.query)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeChatSearchResultsStayTransientAndDoNotReplaceFullHistoryCache() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), embeddingModel()),
+                selectedEmbeddingModelId = embeddingModel().id,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-full-a",
+                                title = "Full history A",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:00:00Z",
+                                messageCount = 2,
+                                status = "active",
+                            ),
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-full-b",
+                                title = "Full history B",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:01:00Z",
+                                messageCount = 3,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                setOf("runtime-full-a", "runtime-full-b"),
+                fixture.viewModel.state.value.chatSessions.map { it.id }.toSet(),
+            )
+            assertEquals(
+                setOf("runtime-full-a", "runtime-full-b"),
+                fixture.localStore.data.sessions.map { it.id }.toSet(),
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "  relay route  ")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-full-b",
+                                title = "Full history B",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:01:00Z",
+                                messageCount = 3,
+                                status = "active",
+                                search = ChatSessionSearchPayload(
+                                    rank = 1,
+                                    snippet = "Relay route recovery details",
+                                    matchedFields = listOf("semantic"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val searchState = fixture.viewModel.state.value
+            assertEquals("relay route", searchState.chatSessionSearchQuery)
+            assertEquals(listOf("runtime-full-b"), searchState.chatSessionSearchResults.map { it.id })
+            assertEquals(1, searchState.chatSessionSearchResults.single().searchRank)
+            assertEquals(
+                setOf("runtime-full-a", "runtime-full-b"),
+                searchState.chatSessions.map { it.id }.toSet(),
+            )
+            assertEquals(
+                setOf("runtime-full-a", "runtime-full-b"),
+                fixture.localStore.data.sessions.map { it.id }.toSet(),
+            )
+            assertTrue(fixture.localStore.data.sessions.all { it.runtimeSearchRank == null })
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val fullRefreshRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-full-b",
+                                title = "Full history B refreshed",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:02:00Z",
+                                messageCount = 4,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = fullRefreshRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val refreshedState = fixture.viewModel.state.value
+            assertNull(refreshedState.chatSessionSearchQuery)
+            assertTrue(refreshedState.chatSessionSearchResults.isEmpty())
+            assertEquals(listOf("runtime-full-b"), refreshedState.chatSessions.map { it.id })
+            assertEquals(listOf("runtime-full-b"), fixture.localStore.data.sessions.map { it.id })
         } finally {
             Dispatchers.resetMain()
         }
@@ -21288,6 +22008,7 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryUpsert))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryDelete))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftsList))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftGenerate))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftApprove))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftDismiss))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains("chat.attachments"))
@@ -21805,6 +22526,7 @@ class RuntimeClientViewModelTest {
         override val transportSecurityContext: TransportSecurityContext? = null,
     ) : RuntimeProtocolChannel {
         val sentEnvelopes = mutableListOf<ProtocolEnvelope>()
+        var sendFailure: Throwable? = null
         private val incoming = Channel<ProtocolEnvelope>(Channel.UNLIMITED)
         private var closed = false
 
@@ -21812,6 +22534,7 @@ class RuntimeClientViewModelTest {
             get() = !closed
 
         override suspend fun send(envelope: ProtocolEnvelope) {
+            sendFailure?.let { throw it }
             sentEnvelopes += envelope
         }
 

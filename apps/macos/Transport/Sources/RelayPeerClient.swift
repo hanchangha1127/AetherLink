@@ -114,7 +114,7 @@ public protocol RelayPeerTransport: AnyObject, Sendable {
     func stop()
 }
 
-public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
+public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporting, @unchecked Sendable {
     private let codec = ProtocolCodec()
     private let lock = NSLock()
     private var connection: NWConnection?

@@ -99,6 +99,65 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(models.first?.contextWindowTokens, 32768)
     }
 
+    func testEmbedPostsBatchAndRestoresIndexOrder() async throws {
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/v1/embeddings")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let posted = try JSONDecoder().decode(PostedEmbeddingRequest.self, from: self.requestBodyData(from: request))
+            XCTAssertEqual(posted.model, "text-embedding-nomic")
+            XCTAssertEqual(posted.input, ["first", "second"])
+            return self.response(
+                statusCode: 200,
+                body: #"{"model":"text-embedding-nomic","data":[{"index":1,"embedding":[0.3,0.4]},{"index":0,"embedding":[0.1,0.2]}]}"#
+            )
+        }
+
+        let result = try await backend.embed(request: EmbeddingRequest(
+            model: "text-embedding-nomic",
+            texts: ["first", "second"]
+        ))
+
+        XCTAssertEqual(result.model, "text-embedding-nomic")
+        XCTAssertEqual(result.embeddings, [[0.1, 0.2], [0.3, 0.4]])
+    }
+
+    func testEmbedRejectsDuplicateMissingOrOutOfRangeIndexes() async {
+        let bodies = [
+            #"{"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.2]}]}"#,
+            #"{"data":[{"index":0,"embedding":[0.1]}]}"#,
+            #"{"data":[{"index":0,"embedding":[0.1]},{"index":2,"embedding":[0.2]}]}"#,
+        ]
+        for body in bodies {
+            let backend = makeBackend { _ in self.response(statusCode: 200, body: body) }
+            do {
+                _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: ["a", "b"]))
+                XCTFail("Expected invalid embedding indexes")
+            } catch is LMStudioBackendError {
+                continue
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testEmbedRejectsEmptyOrInconsistentVectors() async {
+        let cases: [(body: String, texts: [String])] = [
+            (#"{"data":[{"index":0,"embedding":[]}]}"#, ["a"]),
+            (#"{"data":[{"index":0,"embedding":[0.1]},{"index":1,"embedding":[0.2,0.3]}]}"#, ["a", "b"]),
+        ]
+        for testCase in cases {
+            let backend = makeBackend { _ in self.response(statusCode: 200, body: testCase.body) }
+            do {
+                _ = try await backend.embed(request: EmbeddingRequest(model: "embed", texts: testCase.texts))
+                XCTFail("Expected invalid embedding vectors")
+            } catch is LMStudioBackendError {
+                continue
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testUnloadModelPostsLoadedInstanceID() async throws {
         var paths: [String] = []
         let backend = makeBackend { request in
@@ -645,6 +704,11 @@ private struct PostedUnloadRequest: Decodable {
     enum CodingKeys: String, CodingKey {
         case instanceID = "instance_id"
     }
+}
+
+private struct PostedEmbeddingRequest: Decodable {
+    var model: String
+    var input: [String]
 }
 
 private final class MockURLProtocol: URLProtocol {

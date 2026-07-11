@@ -317,6 +317,141 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testQualifiedInstalledEmbeddingRoutesToItsProviderModelID() async throws {
+        let ollama = ResidencyTestBackend(provider: .ollama)
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [
+                ModelInfo(
+                    id: "text-embedding-nomic",
+                    name: "Nomic Embed",
+                    provider: .lmStudio,
+                    kind: .embedding,
+                    providerModelID: "text-embedding-nomic"
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        let result = try await backend.embed(request: EmbeddingRequest(
+            model: "lm_studio:text-embedding-nomic",
+            texts: ["first", "second"]
+        ))
+
+        XCTAssertEqual(result, EmbeddingResult(
+            model: "text-embedding-nomic",
+            embeddings: [[1, 2], [1, 2]]
+        ))
+        XCTAssertTrue(ollama.embeddingRequests.isEmpty)
+        XCTAssertEqual(lmStudio.embeddingRequests, [EmbeddingRequest(
+            model: "text-embedding-nomic",
+            texts: ["first", "second"]
+        )])
+    }
+
+    func testEmbeddingRejectsChatModelAndDoesNotRoute() async {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(
+                model: "ollama:qwen-local",
+                texts: ["text"]
+            ))
+            XCTFail("Expected chat model to be rejected for embedding routing")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertTrue(ollama.embeddingRequests.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testEmbeddingRejectsProviderManagedModelAndDoesNotRoute() async {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(
+                    id: "cloud-embed",
+                    name: "cloud-embed",
+                    provider: .ollama,
+                    kind: .embedding,
+                    source: .cloud
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(
+                model: "ollama:cloud-embed",
+                texts: ["text"]
+            ))
+            XCTFail("Expected provider-managed embedding model to be rejected")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertTrue(ollama.embeddingRequests.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testEmbeddingDoesNotEnterGenerationCancellationRegistry() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        _ = try await backend.embed(request: EmbeddingRequest(
+            model: "ollama:nomic-embed-text",
+            texts: ["text"]
+        ))
+
+        XCTAssertEqual(backend.cancel(generationID: "embedding-request"), .notFound(generationID: "embedding-request"))
+        XCTAssertEqual(ollama.cancelCallCount, 1)
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "nomic-embed-text")
+    }
+
+    func testEmbeddingResidencyUnloadsPreviousChatModel() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama),
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        _ = try await backend.embed(request: EmbeddingRequest(
+            model: "ollama:nomic-embed-text",
+            texts: ["text"]
+        ))
+
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local"])
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "nomic-embed-text")
+        XCTAssertEqual(backend.modelResidencySnapshot().inFlightGenerations, 0)
+    }
+
     func testInstalledCloudChatModelIsNotRoutedAsChat() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -345,6 +480,21 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testExactModelIDWinsBeforeLatestCanonicalAlias() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(id: "qwen:latest", name: "qwen:latest", provider: .ollama),
+                ModelInfo(id: "qwen", name: "qwen", provider: .ollama)
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen")))
+
+        XCTAssertEqual(ollama.routedModels, ["qwen"])
     }
 
     func testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing() async throws {
@@ -410,6 +560,8 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let holdsChatsOpen: Bool
     private var unloaded: [String] = []
     private var routed: [String] = []
+    private var embedded: [EmbeddingRequest] = []
+    private var cancellationCalls = 0
 
     var unloadedModels: [String] {
         lock.withLock { unloaded }
@@ -417,6 +569,14 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
 
     var routedModels: [String] {
         lock.withLock { routed }
+    }
+
+    var embeddingRequests: [EmbeddingRequest] {
+        lock.withLock { embedded }
+    }
+
+    var cancelCallCount: Int {
+        lock.withLock { cancellationCalls }
     }
 
     init(
@@ -462,9 +622,22 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         return .unloaded(provider: provider, modelID: providerModelID)
     }
 
+    func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        lock.withLock {
+            embedded.append(request)
+        }
+        return EmbeddingResult(
+            model: request.model,
+            embeddings: request.texts.map { _ in [1, 2] }
+        )
+    }
+
     @discardableResult
     func cancel(generationID: String) -> GenerationCancellationResult {
-        .notFound(generationID: generationID)
+        lock.withLock {
+            cancellationCalls += 1
+        }
+        return .notFound(generationID: generationID)
     }
 }
 

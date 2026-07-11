@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        RuntimeID["Pinned runtime identity"]
+        ClientID["Paired client identity"]
+        Quic["Authenticated encrypted QUIC session spike"]
+        Runtime["Runtime router"]
+    end
+    subgraph UntrustedInfra["Untrusted path infrastructure"]
+        Ice["ICE-nominated and validated path"]
+        Relay["Relay fallback path"]
+    end
+    Ice --> Quic
+    RuntimeID --> Quic
+    ClientID --> Quic
+    Quic -->|"identity-bound handshake and migration validation"| Runtime
+    Ice -->|"direct path unavailable"| Relay
+    Relay -->|"new validated path or new session"| Quic
+    Revoke["Revocation state"] -->|"terminate session and migration"| Quic

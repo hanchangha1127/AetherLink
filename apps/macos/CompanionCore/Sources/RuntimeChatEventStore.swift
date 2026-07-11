@@ -127,18 +127,42 @@ public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
 public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
     public var strategy: String
     public var sourcePointers: [RuntimeChatCompactionSourcePointer]
+    public var estimatorIdentifier: String?
+    public var contextWindowTokens: Int?
+    public var outputReserveTokens: Int?
+    public var inputBudgetTokens: Int?
+    public var estimatedInputTokensBefore: Int?
+    public var estimatedInputTokensAfter: Int?
 
     public init(
         strategy: String = "backend_only_summary_v1",
-        sourcePointers: [RuntimeChatCompactionSourcePointer]
+        sourcePointers: [RuntimeChatCompactionSourcePointer],
+        estimatorIdentifier: String? = nil,
+        contextWindowTokens: Int? = nil,
+        outputReserveTokens: Int? = nil,
+        inputBudgetTokens: Int? = nil,
+        estimatedInputTokensBefore: Int? = nil,
+        estimatedInputTokensAfter: Int? = nil
     ) {
         self.strategy = strategy
         self.sourcePointers = sourcePointers
+        self.estimatorIdentifier = estimatorIdentifier
+        self.contextWindowTokens = contextWindowTokens
+        self.outputReserveTokens = outputReserveTokens
+        self.inputBudgetTokens = inputBudgetTokens
+        self.estimatedInputTokensBefore = estimatedInputTokensBefore
+        self.estimatedInputTokensAfter = estimatedInputTokensAfter
     }
 
     enum CodingKeys: String, CodingKey {
         case strategy
         case sourcePointers = "source_pointers"
+        case estimatorIdentifier = "estimator_identifier"
+        case contextWindowTokens = "context_window_tokens"
+        case outputReserveTokens = "output_reserve_tokens"
+        case inputBudgetTokens = "input_budget_tokens"
+        case estimatedInputTokensBefore = "estimated_input_tokens_before"
+        case estimatedInputTokensAfter = "estimated_input_tokens_after"
     }
 }
 
@@ -286,6 +310,60 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
     }
 }
 
+public struct RuntimeChatSemanticSearchSource: Equatable, Sendable {
+    public var session: RuntimeChatStoredSession
+    public var messages: [RuntimeChatStoredMessage]
+    public var sourceRevision: Int64?
+
+    public init(
+        session: RuntimeChatStoredSession,
+        messages: [RuntimeChatStoredMessage],
+        sourceRevision: Int64? = nil
+    ) {
+        self.session = session
+        self.messages = messages
+        self.sourceRevision = sourceRevision
+    }
+}
+
+public struct RuntimeChatSemanticEmbeddingKey: Hashable, Sendable {
+    public var ownerDeviceID: String?
+    public var sessionID: String
+    public var canonicalQualifiedEmbeddingModelID: String
+    public var modelFingerprint: String
+    public var documentFingerprint: String
+
+    public init(
+        ownerDeviceID: String?,
+        sessionID: String,
+        canonicalQualifiedEmbeddingModelID: String,
+        modelFingerprint: String,
+        documentFingerprint: String
+    ) {
+        self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        self.sessionID = sessionID
+        self.canonicalQualifiedEmbeddingModelID = canonicalQualifiedEmbeddingModelID
+        self.modelFingerprint = modelFingerprint
+        self.documentFingerprint = documentFingerprint
+    }
+}
+
+public struct RuntimeChatSemanticEmbeddingRecord: Equatable, Sendable {
+    public var key: RuntimeChatSemanticEmbeddingKey
+    public var embedding: [Double]
+    public var sourceRevision: Int64?
+
+    public init(
+        key: RuntimeChatSemanticEmbeddingKey,
+        embedding: [Double],
+        sourceRevision: Int64? = nil
+    ) {
+        self.key = key
+        self.embedding = embedding
+        self.sourceRevision = sourceRevision
+    }
+}
+
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
@@ -298,6 +376,19 @@ public protocol RuntimeChatEventStore: Sendable {
     ) throws -> [RuntimeChatStoredSession]
     func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
+    func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        sessionLimit: Int,
+        messageLimit: Int,
+        includeArchived: Bool
+    ) throws -> [RuntimeChatSemanticSearchSource]
+    func cachedSemanticEmbeddings(
+        for keys: [RuntimeChatSemanticEmbeddingKey]
+    ) throws -> [RuntimeChatSemanticEmbeddingRecord]
+    func upsertSemanticEmbeddings(
+        _ records: [RuntimeChatSemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func mutateSession(
         ownerDeviceID: String?,
@@ -378,6 +469,46 @@ public enum RuntimeChatEventStoreDefaults {
 }
 
 public extension RuntimeChatEventStore {
+    func cachedSemanticEmbeddings(
+        for keys: [RuntimeChatSemanticEmbeddingKey]
+    ) throws -> [RuntimeChatSemanticEmbeddingRecord] {
+        []
+    }
+
+    func upsertSemanticEmbeddings(
+        _ records: [RuntimeChatSemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {}
+
+    func upsertSemanticEmbeddings(
+        _ records: [RuntimeChatSemanticEmbeddingRecord]
+    ) throws {
+        try upsertSemanticEmbeddings(records, if: { true })
+    }
+
+    func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        sessionLimit: Int,
+        messageLimit: Int,
+        includeArchived: Bool
+    ) throws -> [RuntimeChatSemanticSearchSource] {
+        guard sessionLimit > 0, messageLimit > 0 else { return [] }
+        return try listSessions(
+            ownerDeviceID: ownerDeviceID,
+            limit: sessionLimit,
+            includeArchived: includeArchived
+        ).map { session in
+            RuntimeChatSemanticSearchSource(
+                session: session,
+                messages: try listMessages(
+                    ownerDeviceID: ownerDeviceID,
+                    sessionID: session.sessionID,
+                    limit: messageLimit
+                )
+            )
+        }
+    }
+
     func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         try listSessions(ownerDeviceID: nil, limit: limit, includeArchived: includeArchived)
     }
@@ -563,6 +694,32 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
+    public func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        sessionLimit: Int,
+        messageLimit: Int,
+        includeArchived: Bool
+    ) throws -> [RuntimeChatSemanticSearchSource] {
+        guard sessionLimit > 0, messageLimit > 0 else { return [] }
+        return try lock.withLock {
+            let events = try readEvents(ownerDeviceID: ownerDeviceID)
+            return try Self.sessions(
+                from: events,
+                limit: sessionLimit,
+                includeArchived: includeArchived
+            ).map { session in
+                RuntimeChatSemanticSearchSource(
+                    session: session,
+                    messages: Self.messages(
+                        from: events,
+                        sessionID: session.sessionID,
+                        limit: messageLimit
+                    )
+                )
+            }
+        }
+    }
+
     public func listAllMessages(
         sessionID: String,
         limit: Int = 200
@@ -687,7 +844,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                     reason: "chat compaction metadata is only valid on request events"
                 )
             }
-            try validateCompactionMetadata(compactionMetadata, line: line)
+            try validateCompactionMetadata(compactionMetadata, event: event, line: line)
         }
 
         switch event.kind {
@@ -723,9 +880,77 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
 
     private static func validateCompactionMetadata(
         _ metadata: RuntimeChatCompactionMetadata,
+        event: RuntimeChatStoredEvent,
         line: Int
     ) throws {
         try requireNonBlank(metadata.strategy, line: line, reason: "chat compaction strategy is empty")
+        let accountingPresence = [
+            metadata.estimatorIdentifier != nil,
+            metadata.contextWindowTokens != nil,
+            metadata.outputReserveTokens != nil,
+            metadata.inputBudgetTokens != nil,
+            metadata.estimatedInputTokensBefore != nil,
+            metadata.estimatedInputTokensAfter != nil,
+        ]
+        let hasAccounting = accountingPresence.allSatisfy { $0 }
+        guard hasAccounting || accountingPresence.allSatisfy({ !$0 }) else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat compaction accounting fields must be all present or all absent"
+            )
+        }
+        if metadata.strategy == "adaptive_backend_only_summary_v2" && !hasAccounting {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "adaptive chat compaction accounting is missing"
+            )
+        }
+        if hasAccounting {
+            try requireNonBlank(
+                metadata.estimatorIdentifier,
+                line: line,
+                reason: "chat compaction estimator identifier is empty"
+            )
+            guard let contextWindowTokens = metadata.contextWindowTokens,
+                  let outputReserveTokens = metadata.outputReserveTokens,
+                  let inputBudgetTokens = metadata.inputBudgetTokens,
+                  let estimatedInputTokensBefore = metadata.estimatedInputTokensBefore,
+                  let estimatedInputTokensAfter = metadata.estimatedInputTokensAfter,
+                  contextWindowTokens > 0,
+                  outputReserveTokens >= 0,
+                  inputBudgetTokens > 0,
+                  estimatedInputTokensBefore >= 0,
+                  estimatedInputTokensAfter >= 0 else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction accounting token counts are invalid"
+                )
+            }
+            guard contextWindowTokens > outputReserveTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction context window must exceed output reserve"
+                )
+            }
+            guard inputBudgetTokens == contextWindowTokens - outputReserveTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction input budget is inconsistent"
+                )
+            }
+            guard estimatedInputTokensBefore > inputBudgetTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction input estimate did not exceed budget"
+                )
+            }
+            guard estimatedInputTokensAfter <= inputBudgetTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction output estimate exceeds input budget"
+                )
+            }
+        }
         guard !metadata.sourcePointers.isEmpty else {
             throw RuntimeChatEventStoreError.corruptEventLog(
                 line: line,
@@ -761,6 +986,22 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                         reason: "chat compaction retained range exceeds total turns"
                     )
                 }
+            }
+        }
+        if metadata.strategy == "adaptive_backend_only_summary_v2" {
+            guard metadata.sourcePointers.count == 1,
+                  let pointer = metadata.sourcePointers.first,
+                  pointer.sourceKind == "client_visible_conversation_turns",
+                  pointer.sessionID == event.sessionID,
+                  pointer.requestID == event.requestID,
+                  pointer.startTurn == 1,
+                  pointer.retainedStartTurn == pointer.endTurn + 1,
+                  pointer.retainedEndTurn == pointer.totalTurns,
+                  pointer.retainedTurnCount == pointer.totalTurns - pointer.compactedTurnCount else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "adaptive chat compaction source pointer is inconsistent with request event"
+                )
             }
         }
     }

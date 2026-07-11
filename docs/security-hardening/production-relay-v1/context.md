@@ -12,7 +12,7 @@ production relay protocol has been implemented.
   relay, pairing, protocol, Android, script, and documentation changes.
 - Evidence manifest: `evidence.sha256`
 - Evidence collection SHA-256:
-  `ee7af3d5ecf1a90e95f731417b0901602584c094e15acb6d04f6b2db414667ee`
+  `4a6ab46a0ba36feacd1f8f23402223dd33194c3449ac0a41d118a1453cdca092`
 - Evidence artifacts: 17 source/schema files.
 - Runtime constraint: the Android phone is disconnected. No physical optical QR,
   public relay, or real different-network evidence was used.
@@ -69,6 +69,12 @@ or per-user isolation.
 `E012` bounds each unmatched room from its first-insertion with a monotonic
 60-second default deadline capped by the current allocation lease, and limits
 waiting peers to four per role-separated authenticated fingerprint by default.
+Registration and readiness probes remove expired rooms atomically under the
+matcher lock before matching, replacement, or visibility decisions, so delayed
+timer delivery cannot extend the deadline.
+The waiting registration result carries that deadline out of the same matcher
+transaction, avoiding a post-publication room lookup after a counterpart can
+move the room active.
 Only a runtime identity revalidated from the allocation binding after runtime
 proof, or a pinned paired-client identity after client proof, enters identity
 accounting. Bootstrap clients without paired proof and legacy peers remain
@@ -92,7 +98,7 @@ before full parsing. Only the exact strict preflight envelope uses the preflight
 bucket; malformed or mutation-like allocation and paired claim/renew attempts use
 the mutation bucket, with bounded overflow and source-free counters. Exact-source
 connection and unmatched-waiting quotas add matcher-atomic lifetime admission
-without evicting active bridges. First-insertion waiting deadlines and
+without evicting active bridges. Matcher-atomic first-insertion waiting deadlines and
 post-proof, role-separated authenticated identity quotas add bounded waiting and
 cross-source fairness without charging bootstrap or legacy peers. These controls
 reduce development-relay abuse

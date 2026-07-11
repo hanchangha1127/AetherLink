@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        RuntimeID["Pinned runtime identity"]
+        ClientID["Paired client identity"]
+        Transcript["Canonical identity and path transcript"]
+        Session["Transport-neutral authenticated encrypted session"]
+        Runtime["Runtime router"]
+    end
+    subgraph UntrustedInfra["Untrusted path infrastructure"]
+        Paths["Validated local, P2P, or relay fallback path"]
+    end
+    Paths --> Session
+    RuntimeID --> Transcript
+    ClientID --> Transcript
+    Transcript --> Session
+    Session -->|"same authenticated protocol channel"| Runtime
+    Revoke["Pair revocation or route expiry"] -->|"close every path and session"| Session
+    Session -->|"fresh transcript required for path change"| Paths

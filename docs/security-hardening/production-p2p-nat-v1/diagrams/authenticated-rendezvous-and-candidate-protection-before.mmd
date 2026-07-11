@@ -1,0 +1,17 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        Runtime["Runtime host"]
+        Client["Android client"]
+        Hook["Injected P2P connector seam"]
+    end
+    subgraph UntrustedInfra["Untrusted infrastructure"]
+        Record["Stored rendezvous record"]
+        Gap["No authenticated encrypted candidate exchange"]
+        Relay["Development blind relay fallback"]
+    end
+    Runtime -->|"opaque P2P record for QR or route.refresh"| Record
+    Record --> Client
+    Client -->|"prepared route"| Hook
+    Hook -.->|"no production signaling or traversal implementation"| Gap
+    Client -->|"P2P attempt fails"| Relay
+    Runtime --> Relay

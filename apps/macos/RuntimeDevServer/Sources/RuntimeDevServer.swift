@@ -16,8 +16,11 @@ import enum OllamaBackend.BackendStatus
 import struct OllamaBackend.ChatRequest
 import enum OllamaBackend.ChatStreamEvent
 import enum OllamaBackend.GenerationCancellationResult
+import struct OllamaBackend.EmbeddingRequest
+import struct OllamaBackend.EmbeddingResult
 import protocol OllamaBackend.LlmBackend
 import struct OllamaBackend.ModelInfo
+import enum OllamaBackend.ModelKind
 import enum OllamaBackend.ModelProvider
 import struct OllamaBackend.ModelPullResult
 import struct OllamaBackend.ModelUnloadResult
@@ -288,7 +291,20 @@ struct RuntimeDevServer {
         aggregateResidency: Bool
     ) -> any LlmBackend {
         guard aggregateResidency else {
-            return DevMockBackend(environment: environment)
+            return AggregatingLlmBackend(
+                [
+                    DevMockBackend(
+                        additionalModels: [
+                            (
+                                id: "nomic-embed-text",
+                                name: "Dev Mock Embedding Model",
+                                capabilities: ["embedding"]
+                            )
+                        ],
+                        environment: environment
+                    )
+                ]
+            )
         }
         let idleDelayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] ?? "") ?? 600_000
         return AggregatingLlmBackend(
@@ -302,6 +318,11 @@ struct RuntimeDevServer {
                             id: "dev-mock-unload-failure",
                             name: "Dev Mock Unload Failure Model",
                             capabilities: ["chat"]
+                        ),
+                        (
+                            id: "nomic-embed-text",
+                            name: "Dev Mock Embedding Model",
+                            capabilities: ["embedding"]
                         )
                     ],
                     environment: environment
@@ -1198,6 +1219,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     private let chunkDelayNanoseconds: UInt64
     private let unloadEventFile: String?
     private let chatRequestAuditFile: String?
+    private let embeddingRequestAuditFile: String?
     private let unloadFailureTargets: Set<String>
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
@@ -1220,6 +1242,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         chunkDelayNanoseconds = max(1, delayMilliseconds) * 1_000_000
         unloadEventFile = environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"]?.takeIfNotEmpty
         chatRequestAuditFile = environment["AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE"]?.takeIfNotEmpty
+        embeddingRequestAuditFile = environment["AETHERLINK_DEV_MOCK_EMBEDDING_REQUEST_AUDIT_FILE"]?.takeIfNotEmpty
         unloadFailureTargets = Set(
             (environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] ?? "")
                 .split(separator: ",")
@@ -1239,12 +1262,15 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     id: modelID,
                     name: modelName,
                     provider: provider,
+                    kind: ModelKind.from(capabilities: capabilities, fallbackName: modelName),
                     capabilities: capabilities,
                     sizeBytes: 0,
-                    modifiedAt: Date(),
+                    modifiedAt: Self.stableModelModifiedAt,
                     installed: true,
                     running: false,
-                    source: .local
+                    source: .local,
+                    contextWindowTokens: 8_192,
+                    persistentEmbeddingRevision: Self.persistentEmbeddingRevision(for: modelID)
                 )
             ]
             models.append(contentsOf: additionalModels.map {
@@ -1252,12 +1278,14 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     id: $0.id,
                     name: $0.name,
                     provider: provider,
+                    kind: ModelKind.from(capabilities: $0.capabilities, fallbackName: $0.name),
                     capabilities: $0.capabilities,
                     sizeBytes: 0,
-                    modifiedAt: Date(),
+                    modifiedAt: Self.stableModelModifiedAt,
                     installed: true,
                     running: false,
-                    source: .local
+                    source: .local,
+                    persistentEmbeddingRevision: Self.persistentEmbeddingRevision(for: $0.id)
                 )
             })
             models.append(contentsOf: pulledModels.map {
@@ -1267,14 +1295,21 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     provider: provider,
                     capabilities: capabilities,
                     sizeBytes: 0,
-                    modifiedAt: Date(),
+                    modifiedAt: Self.stableModelModifiedAt,
                     installed: true,
                     running: false,
-                    source: .local
+                    source: .local,
+                    persistentEmbeddingRevision: Self.persistentEmbeddingRevision(for: $0)
                 )
             })
             return models
         }
+    }
+
+    private static let stableModelModifiedAt = Date(timeIntervalSince1970: 0)
+
+    private static func persistentEmbeddingRevision(for _: String) -> String {
+        return "ollama-sha256:" + String(repeating: "d", count: 64)
     }
 
     func pullModel(name: String) async throws -> ModelPullResult {
@@ -1312,6 +1347,41 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         return .unloaded(provider: provider, modelID: providerModelID)
     }
 
+    func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
+        let resolved: String
+        if let qualified = ModelProvider.splitQualifiedModelID(request.model) {
+            guard qualified.provider == provider else {
+                throw mockEmbeddingModelNotInstalled(request.model)
+            }
+            resolved = qualified.modelID
+        } else {
+            resolved = request.model
+        }
+        let requestedCapabilities = resolved == modelID
+            ? capabilities
+            : additionalModels.first(where: { $0.id == resolved })?.capabilities
+        guard requestedCapabilities?.contains(where: {
+            let capability = $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return capability == "embedding" || capability == "embed"
+        }) == true else {
+            throw mockEmbeddingModelNotInstalled(request.model)
+        }
+        recordEmbeddingRequestAudit(request)
+        return EmbeddingResult(
+            model: resolved,
+            embeddings: request.texts.map(Self.deterministicEmbedding)
+        )
+    }
+
+    private func mockEmbeddingModelNotInstalled(_ requestedModel: String) -> BackendError {
+        BackendError(
+            provider: provider,
+            code: "model_not_installed",
+            message: "Model is not installed for \(provider.displayName): \(requestedModel)",
+            retryable: false
+        )
+    }
+
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         recordChatRequestAudit(request)
         return AsyncThrowingStream { continuation in
@@ -1320,9 +1390,21 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     !message.attachments.isEmpty
                         || message.content.contains("[Attached document:")
                 }
-                let chunks = hasAttachmentContext
-                    ? ["Mock ", "streaming ", "response.", " Attachment ", "received."]
-                    : ["Mock ", "streaming ", "response."]
+                let isMemorySummaryRequest = request.messages.contains { message in
+                    message.role == "system" &&
+                        message.content.contains("Summarize only the supplied visible conversation excerpts")
+                }
+                let chunks: [String]
+                if isMemorySummaryRequest, request.model.contains("dev-mock-alt") {
+                    chunks = [#"{"summary":"Rejected mock summary","extra":true}"#]
+                } else if isMemorySummaryRequest {
+                    continuation.yield(.reasoningDelta("Mock memory summary reasoning must stay private."))
+                    chunks = ["<think>inline mock reasoning</think>", #"{"summary":"Generated smoke memory summary."}"#]
+                } else if hasAttachmentContext {
+                    chunks = ["Mock ", "streaming ", "response.", " Attachment ", "received."]
+                } else {
+                    chunks = ["Mock ", "streaming ", "response."]
+                }
                 for chunk in chunks {
                     if Task.isCancelled {
                         continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
@@ -1353,6 +1435,26 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
             task.cancel()
             return .cancelled(generationID: generationID)
         }
+    }
+
+    private static func deterministicEmbedding(_ text: String) -> [Double] {
+        var vector = Array(repeating: 0.0, count: 64)
+        let tokens = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        for token in tokens {
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            for byte in token.utf8 {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+            vector[Int(hash % UInt64(vector.count))] += 1
+        }
+        if !vector.contains(where: { $0 != 0 }) {
+            vector[0] = 1
+        }
+        return vector
     }
 
     private func register(_ generationID: String, task: Task<Void, Never>) {
@@ -1391,6 +1493,32 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         lock.withLock {
             let url = URL(fileURLWithPath: chatRequestAuditFile)
             if FileManager.default.fileExists(atPath: chatRequestAuditFile),
+               let handle = try? FileHandle(forWritingTo: url) {
+                _ = try? handle.seekToEnd()
+                _ = try? handle.write(contentsOf: line)
+                _ = try? handle.close()
+            } else {
+                try? line.write(to: url, options: .atomic)
+            }
+        }
+    }
+
+    private func recordEmbeddingRequestAudit(_ request: EmbeddingRequest) {
+        guard let embeddingRequestAuditFile else { return }
+        let object: [String: Any] = [
+            "provider": provider.rawValue,
+            "model": request.model,
+            "input_count": request.texts.count,
+        ]
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return
+        }
+        var line = data
+        line.append(0x0A)
+        lock.withLock {
+            let url = URL(fileURLWithPath: embeddingRequestAuditFile)
+            if FileManager.default.fileExists(atPath: embeddingRequestAuditFile),
                let handle = try? FileHandle(forWritingTo: url) {
                 _ = try? handle.seekToEnd()
                 _ = try? handle.write(contentsOf: line)

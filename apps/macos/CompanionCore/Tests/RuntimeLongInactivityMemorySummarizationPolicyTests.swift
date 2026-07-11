@@ -218,6 +218,82 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
         XCTAssertFalse(draft.summaryPreview.contains("reasoning without visible answer"))
     }
 
+    func testGeneratedOverlayPreservesCandidateAndSourceMetadata() throws {
+        let generatedAt = Date(timeIntervalSince1970: 5_100_000)
+        let candidate = RuntimeLongInactivityMemorySummarizationCandidate(
+            sessionID: "generated-session",
+            title: "Generated session",
+            model: "ollama:llama3.1:8b",
+            lastActivityAt: Date(timeIntervalSince1970: 4_000_000),
+            messageCount: 8,
+            inactiveInterval: 1_100_000
+        )
+        let pointers = [RuntimeLongInactivityMemorySummarizationSourcePointer(
+            sessionID: candidate.sessionID,
+            messageIndex: 7,
+            role: "assistant",
+            createdAt: Date(timeIntervalSince1970: 4_000_100),
+            excerpt: "Original source excerpt"
+        )]
+        let draft = RuntimeLongInactivityMemorySummarizationDraft(
+            candidate: candidate,
+            id: "generated-draft",
+            sourceMessageCount: 1,
+            sourceRangeDescription: "visible message 7 of 7",
+            sourcePointers: pointers,
+            summaryPreview: "Assistant: Deterministic preview"
+        )
+        let generated = RuntimeGeneratedMemorySummaryDraft(
+            draftID: draft.id,
+            sessionID: candidate.sessionID,
+            sourceMessageCount: draft.sourceMessageCount,
+            content: "Generated summary content",
+            modelID: "GPT-5.6 Sol",
+            generatedAt: generatedAt
+        )
+
+        let composed = draft.applyingGeneratedResult(generated)
+
+        XCTAssertEqual(composed.candidate, candidate)
+        XCTAssertEqual(composed.id, draft.id)
+        XCTAssertEqual(composed.sourceMessageCount, draft.sourceMessageCount)
+        XCTAssertEqual(composed.sourceRangeDescription, draft.sourceRangeDescription)
+        XCTAssertEqual(composed.sourcePointers, pointers)
+        XCTAssertEqual(composed.summaryPreview, "Generated summary content")
+        XCTAssertEqual(composed.summaryMethod, "llm_summary_v1")
+        XCTAssertEqual(composed.generatedAt, generatedAt)
+        XCTAssertEqual(composed.generatedModelID, "GPT-5.6 Sol")
+    }
+
+    func testGeneratedOverlayIgnoresStaleSourceIdentity() {
+        let candidate = RuntimeLongInactivityMemorySummarizationCandidate(
+            sessionID: "current-session",
+            title: "Current session",
+            model: "ollama:llama3.1:8b",
+            lastActivityAt: Date(timeIntervalSince1970: 4_000_000),
+            messageCount: 8,
+            inactiveInterval: 1_100_000
+        )
+        let draft = RuntimeLongInactivityMemorySummarizationDraft(
+            candidate: candidate,
+            id: "current-draft",
+            sourceMessageCount: 2,
+            sourceRangeDescription: "visible messages 7-8 of 8",
+            sourcePointers: [],
+            summaryPreview: "Deterministic preview"
+        )
+        let staleGenerated = RuntimeGeneratedMemorySummaryDraft(
+            draftID: draft.id,
+            sessionID: candidate.sessionID,
+            sourceMessageCount: 1,
+            content: "Stale generated content",
+            modelID: "GPT-5.6 Sol",
+            generatedAt: Date(timeIntervalSince1970: 5_100_000)
+        )
+
+        XCTAssertEqual(draft.applyingGeneratedResult(staleGenerated), draft)
+    }
+
     func testSQLiteStoreListsLongInactivityDraftsWithoutCrossOwnerOrArchivedSources() throws {
         let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
         let now = Date(timeIntervalSince1970: 6_000_000)

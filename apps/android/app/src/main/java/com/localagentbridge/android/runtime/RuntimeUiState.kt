@@ -31,6 +31,8 @@ data class RuntimeUiState(
     val selectedEmbeddingModelId: String? = null,
     val chatSessions: List<RuntimeChatSession> = emptyList(),
     val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
+    val chatSessionSearchQuery: String? = null,
+    val chatSessionSearchResults: List<RuntimeChatSession> = emptyList(),
     val activeChatSessionId: String? = null,
     val loadingChatSessionId: String? = null,
     val messages: List<RuntimeChatMessage> = emptyList(),
@@ -39,7 +41,10 @@ data class RuntimeUiState(
     val isStreaming: Boolean = false,
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
+    val memorySearchQuery: String? = null,
+    val memorySearchResults: List<RuntimeMemoryEntry> = emptyList(),
     val memorySummaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
+    val generatingMemorySummaryDraftIds: Set<String> = emptySet(),
     val approvingMemorySummaryDraftIds: Set<String> = emptySet(),
     val dismissingMemorySummaryDraftIds: Set<String> = emptySet(),
     val documentCatalog: RuntimeDocumentCatalog = RuntimeDocumentCatalog(),
@@ -273,6 +278,9 @@ data class RuntimeMemorySummaryDraft(
     val sourceRange: String,
     val sourcePointers: List<RuntimeMemorySummaryDraftSourcePointer>,
     val summaryPreview: String,
+    val summaryMethod: String = "deterministic_preview",
+    val generatedAtMillis: Long? = null,
+    val generatedModelId: String? = null,
 )
 
 data class RuntimeMemorySummaryDraftSession(

@@ -384,11 +384,13 @@ class ProtocolCodecTest {
             "chat_session_must_be_archived_before_delete",
             "chat_session_must_be_restored_before_send",
             "chat_store_unavailable",
+            "chat_context_window_exceeded",
             "document_index_unavailable",
             "source_anchor_not_found",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",
+            "memory_summary_draft_generation_failed",
             "transport_error",
             "internal_error",
         )
@@ -400,6 +402,16 @@ class ProtocolCodecTest {
 
             assertEquals(code, decoded.code)
         }
+    }
+
+    @Test
+    fun errorPayloadDecodesNonRetryableChatContextWindowExceeded() {
+        val decoded = Json.decodeFromString<ErrorPayload>(
+            """{"code":"chat_context_window_exceeded","message":"Chat context window exceeded","retryable":false}""",
+        )
+
+        assertEquals("chat_context_window_exceeded", decoded.code)
+        assertFalse(decoded.retryable)
     }
 
     @Test
@@ -2284,7 +2296,10 @@ class ProtocolCodecTest {
                 matchedFields = listOf("content"),
             ),
         )
-        val listRequest = MemoryListRequestPayload(query = "concise answers")
+        val listRequest = MemoryListRequestPayload(
+            query = "concise answers",
+            embeddingModelId = "ollama:nomic-embed-text",
+        )
         val listResult = MemoryListResultPayload(entries = listOf(entry))
         val upsert = MemoryUpsertPayload(
             id = "memory-1",
@@ -2306,6 +2321,7 @@ class ProtocolCodecTest {
         assertEquals(MessageType.MemoryList, "memory.list")
         assertEquals(MessageType.MemoryUpsert, "memory.upsert")
         assertEquals(MessageType.MemoryDelete, "memory.delete")
+        assertEquals("ollama:nomic-embed-text", listRequestJson["embedding_model_id"]?.jsonPrimitive?.content)
         assertEquals("concise answers", listRequestJson["query"]?.jsonPrimitive?.content)
         assertEquals("memory-1", listedEntry?.get("id")?.jsonPrimitive?.content)
         assertEquals("Prefers concise answers.", listedEntry?.get("content")?.jsonPrimitive?.content)
@@ -2349,6 +2365,12 @@ class ProtocolCodecTest {
             "expected query in ${error.message}",
             error.message.orEmpty().contains("query"),
         )
+        val embeddingError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<MemoryListRequestPayload>(
+                """{"query":"memory","embedding_model_id":"   "}""",
+            )
+        }
+        assertTrue(embeddingError.message.orEmpty().contains("embedding_model_id"))
     }
 
     @Test
@@ -2414,6 +2436,9 @@ class ProtocolCodecTest {
                         ),
                     ),
                     summaryPreview = "User: Summarize my preference.",
+                    summaryMethod = "llm_summary_v1",
+                    generatedAt = "2026-06-25T05:25:00Z",
+                    generatedModelId = "openai:gpt-5.6-sol",
                 ),
             ),
         )
@@ -2444,6 +2469,9 @@ class ProtocolCodecTest {
         assertEquals("2026-06-01T09:00:00Z", sourcePointer?.get("created_at")?.jsonPrimitive?.content)
         assertEquals("Summarize my preference.", sourcePointer?.get("excerpt")?.jsonPrimitive?.content)
         assertEquals("User: Summarize my preference.", draft?.get("summary_preview")?.jsonPrimitive?.content)
+        assertEquals("llm_summary_v1", draft?.get("summary_method")?.jsonPrimitive?.content)
+        assertEquals("2026-06-25T05:25:00Z", draft?.get("generated_at")?.jsonPrimitive?.content)
+        assertEquals("openai:gpt-5.6-sol", draft?.get("generated_model_id")?.jsonPrimitive?.content)
         assertEquals("session-1", decoded.drafts.first().session.sessionId)
         assertEquals(1_209_600L, decoded.drafts.first().session.inactiveSeconds)
         assertEquals(1, decoded.drafts.first().sourcePointers.first().messageIndex)
@@ -2466,6 +2494,145 @@ class ProtocolCodecTest {
                 error.message.orEmpty().contains("limit"),
             )
         }
+    }
+
+    @Test
+    fun memorySummaryDraftGeneratePayloadRoundTripsExactWireShape() {
+        assertEquals(MessageType.MemorySummaryDraftGenerate, "memory.summary.draft.generate")
+        val request = MemorySummaryDraftGenerateRequestPayload(
+            draftId = "long-inactivity:session-1:1000:6",
+            model = "openai:gpt-5.6-sol",
+            expectedSessionId = "session-1",
+            expectedSourceMessageCount = 6,
+        )
+        val response = MemorySummaryDraftGenerateResultPayload(
+            draft = MemorySummaryDraftPayload(
+                id = "long-inactivity:session-1:1000:6",
+                session = MemorySummaryDraftSessionPayload(
+                    sessionId = "session-1",
+                    title = "Runtime notes",
+                    model = "ollama:llama3.1:8b",
+                    lastActivityAt = "2026-06-01T09:02:05Z",
+                    messageCount = 7,
+                    inactiveSeconds = 1_209_600,
+                ),
+                sourceMessageCount = 6,
+                sourceRange = "visible messages 1-6 of 6",
+                sourcePointers = listOf(
+                    MemorySummaryDraftSourcePointerPayload(
+                        sessionId = "session-1",
+                        messageIndex = 1,
+                        role = "user",
+                        createdAt = "2026-06-01T09:00:00Z",
+                        excerpt = "Summarize my preference.",
+                    ),
+                ),
+                summaryPreview = "Prefers concise Korean release-note summaries.",
+                summaryMethod = "llm_summary_v1",
+                generatedAt = "2026-06-25T05:25:00Z",
+                generatedModelId = "openai:gpt-5.6-sol",
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val responseJson = Json.parseToJsonElement(Json.encodeToString(response)).jsonObject
+        val decoded = Json.decodeFromString<MemorySummaryDraftGenerateResultPayload>(
+            Json.encodeToString(response),
+        )
+
+        assertEquals("memory.summary.draft.generate", MessageType.MemorySummaryDraftGenerate)
+        assertEquals(
+            setOf("draft_id", "model", "expected_session_id", "expected_source_message_count"),
+            requestJson.keys,
+        )
+        assertEquals("openai:gpt-5.6-sol", requestJson["model"]?.jsonPrimitive?.content)
+        assertEquals(setOf("draft"), responseJson.keys)
+        assertEquals("llm_summary_v1", decoded.draft.summaryMethod)
+        assertEquals("2026-06-25T05:25:00Z", decoded.draft.generatedAt)
+        assertEquals("openai:gpt-5.6-sol", decoded.draft.generatedModelId)
+
+        val runtimeFailure = Json.decodeFromString<ErrorPayload>(
+            """{"code":"memory_summary_draft_generation_failed","message":"Summary generation failed.","retryable":true}""",
+        )
+        assertEquals("memory_summary_draft_generation_failed", runtimeFailure.code)
+    }
+
+    @Test
+    fun memorySummaryDraftGeneratePayloadRejectsBoundsMalformedValuesAndUnknownMetadata() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val invalidRequests = listOf(
+            "blank draft_id" to """{"draft_id":" ","model":"openai:gpt-5.6-sol","expected_session_id":"session-1","expected_source_message_count":6}""",
+            "blank model" to """{"draft_id":"draft-1","model":"\t","expected_session_id":"session-1","expected_source_message_count":6}""",
+            "blank expected_session_id" to """{"draft_id":"draft-1","model":"openai:gpt-5.6-sol","expected_session_id":"","expected_source_message_count":6}""",
+            "zero expected_source_message_count" to """{"draft_id":"draft-1","model":"openai:gpt-5.6-sol","expected_session_id":"session-1","expected_source_message_count":0}""",
+            "negative expected_source_message_count" to """{"draft_id":"draft-1","model":"openai:gpt-5.6-sol","expected_session_id":"session-1","expected_source_message_count":-1}""",
+            "missing model" to """{"draft_id":"draft-1","expected_session_id":"session-1","expected_source_message_count":6}""",
+            "unknown request metadata" to """{"draft_id":"draft-1","model":"openai:gpt-5.6-sol","expected_session_id":"session-1","expected_source_message_count":6,"backend_url":"http://localhost"}""",
+        )
+
+        invalidRequests.forEach { (label, json) ->
+            assertThrows(label, Exception::class.java) {
+                permissiveJson.decodeFromString<MemorySummaryDraftGenerateRequestPayload>(json)
+            }
+        }
+
+        val validResponse = Json.parseToJsonElement(
+            """
+            {
+              "draft": {
+                "id": "draft-1",
+                "session": {
+                  "session_id": "session-1",
+                  "title": "Runtime notes",
+                  "model": "ollama:llama3.1:8b",
+                  "last_activity_at": "2026-06-01T09:02:05Z",
+                  "message_count": 7,
+                  "inactive_seconds": 1209600
+                },
+                "source_message_count": 6,
+                "source_range": "visible messages 1-6 of 6",
+                "source_pointers": [{
+                  "session_id": "session-1",
+                  "message_index": 1,
+                  "role": "user",
+                  "excerpt": "Summarize my preference."
+                }],
+                "summary_preview": "Prefers concise summaries.",
+                "summary_method": "llm_summary_v1",
+                "generated_at": "2026-06-25T05:25:00Z",
+                "generated_model_id": "openai:gpt-5.6-sol"
+              }
+            }
+            """.trimIndent(),
+        ).jsonObject
+        val draft = validResponse.getValue("draft").jsonObject
+        fun responseWithDraft(value: JsonObject) = JsonObject(validResponse + ("draft" to value))
+        val invalidResponses = listOf(
+            "unknown response metadata" to validResponse.replacing("route_token", JsonPrimitive("secret")),
+            "unknown draft metadata" to responseWithDraft(
+                draft.replacing("provider_url", JsonPrimitive("http://localhost")),
+            ),
+            "invalid summary_method" to responseWithDraft(
+                draft.replacing("summary_method", JsonPrimitive("manual")),
+            ),
+            "invalid generated_at" to responseWithDraft(
+                draft.replacing("generated_at", JsonPrimitive("2026-06-25")),
+            ),
+            "blank generated_model_id" to responseWithDraft(
+                draft.replacing("generated_model_id", JsonPrimitive("   ")),
+            ),
+        )
+
+        invalidResponses.forEach { (label, json) ->
+            assertThrows(label, Exception::class.java) {
+                permissiveJson.decodeFromString<MemorySummaryDraftGenerateResultPayload>(json.toString())
+            }
+        }
+
+        val legacyDraft = permissiveJson.decodeFromString<MemorySummaryDraftGenerateResultPayload>(
+            responseWithDraft(draft.removing("summary_method")).toString(),
+        )
+        assertEquals("deterministic_preview", legacyDraft.draft.summaryMethod)
     }
 
     @Test
@@ -2509,6 +2676,7 @@ class ProtocolCodecTest {
             sourceRange: String = """"visible messages 1-6 of 6"""",
             sourcePointers: String = sourcePointersJson(),
             summaryPreview: String = """"User: Summarize my preference."""",
+            summaryMethod: String = """"deterministic_preview"""",
         ) = """
             {
               "drafts": [
@@ -2518,7 +2686,8 @@ class ProtocolCodecTest {
                   "source_message_count": $sourceMessageCount,
                   "source_range": $sourceRange,
                   "source_pointers": $sourcePointers,
-                  "summary_preview": $summaryPreview
+                  "summary_preview": $summaryPreview,
+                  "summary_method": $summaryMethod
                 }
               ]
             }
@@ -2575,6 +2744,7 @@ class ProtocolCodecTest {
             draftListResultJson(sourcePointers = sourcePointersJson(role = "\"system\"")) to "role",
             draftListResultJson(sourcePointers = sourcePointersJson(excerpt = "\"\"")) to "excerpt",
             draftListResultJson(summaryPreview = "\"\"") to "summary_preview",
+            draftListResultJson(summaryMethod = "\"manual\"") to "summary_method",
         )
         val invalidMemoryResults = listOf(
             memoryListResultJson(id = "\"\"") to "id",
@@ -2912,7 +3082,8 @@ class ProtocolCodecTest {
                               "excerpt": "Summarize my preference."
                             }
                           ],
-                          "summary_preview": "User: Summarize my preference."
+                          "summary_preview": "User: Summarize my preference.",
+                          "summary_method": "deterministic_preview"
                         }
                       ]
                     }
@@ -2946,7 +3117,8 @@ class ProtocolCodecTest {
                               "excerpt": "Summarize my preference."
                             }
                           ],
-                          "summary_preview": "User: Summarize my preference."
+                          "summary_preview": "User: Summarize my preference.",
+                          "summary_method": "deterministic_preview"
                         }
                       ]
                     }

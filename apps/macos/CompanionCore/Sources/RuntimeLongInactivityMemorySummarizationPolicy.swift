@@ -206,6 +206,9 @@ public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable
     public var sourceRangeDescription: String
     public var sourcePointers: [RuntimeLongInactivityMemorySummarizationSourcePointer]
     public var summaryPreview: String
+    public var summaryMethod: String
+    public var generatedAt: Date?
+    public var generatedModelID: String?
 
     public init(
         candidate: RuntimeLongInactivityMemorySummarizationCandidate,
@@ -213,7 +216,10 @@ public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable
         sourceMessageCount: Int,
         sourceRangeDescription: String,
         sourcePointers: [RuntimeLongInactivityMemorySummarizationSourcePointer],
-        summaryPreview: String
+        summaryPreview: String,
+        summaryMethod: String = "deterministic_preview",
+        generatedAt: Date? = nil,
+        generatedModelID: String? = nil
     ) {
         self.candidate = candidate
         self.id = id
@@ -221,6 +227,43 @@ public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable
         self.sourceRangeDescription = sourceRangeDescription
         self.sourcePointers = sourcePointers
         self.summaryPreview = summaryPreview
+        self.summaryMethod = summaryMethod
+        self.generatedAt = generatedAt
+        self.generatedModelID = generatedModelID
+    }
+
+    public func applyingGeneratedResult(
+        _ generatedDraft: RuntimeGeneratedMemorySummaryDraft
+    ) -> RuntimeLongInactivityMemorySummarizationDraft {
+        guard generatedDraft.draftID == id,
+              generatedDraft.sessionID == candidate.sessionID,
+              generatedDraft.sourceMessageCount == sourceMessageCount else {
+            return self
+        }
+        var composedDraft = self
+        composedDraft.summaryPreview = generatedDraft.content
+        composedDraft.summaryMethod = generatedDraft.summaryMethod
+        composedDraft.generatedAt = generatedDraft.generatedAt
+        composedDraft.generatedModelID = generatedDraft.modelID
+        return composedDraft
+    }
+}
+
+public extension RuntimeLongInactivityMemorySummarizationPolicy {
+    func applyingGeneratedResults(
+        to drafts: [RuntimeLongInactivityMemorySummarizationDraft],
+        generatedDrafts: [RuntimeGeneratedMemorySummaryDraft]
+    ) -> [RuntimeLongInactivityMemorySummarizationDraft] {
+        let generatedByID = Dictionary(
+            generatedDrafts.map { ($0.draftID, $0) },
+            uniquingKeysWith: { current, replacement in
+                replacement.generatedAt > current.generatedAt ? replacement : current
+            }
+        )
+        return drafts.map { draft in
+            guard let generatedDraft = generatedByID[draft.id] else { return draft }
+            return draft.applyingGeneratedResult(generatedDraft)
+        }
     }
 }
 
@@ -282,6 +325,21 @@ public extension RuntimeChatEventStore {
             }
         }
         return drafts
+    }
+
+    func listLongInactivityMemorySummarizationDrafts(
+        ownerDeviceID: String?,
+        memoryStore: any RuntimeMemoryStore,
+        now: Date = Date(),
+        policy: RuntimeLongInactivityMemorySummarizationPolicy = RuntimeLongInactivityMemorySummarizationPolicy()
+    ) throws -> [RuntimeLongInactivityMemorySummarizationDraft] {
+        let drafts = try listLongInactivityMemorySummarizationDrafts(
+            ownerDeviceID: ownerDeviceID,
+            now: now,
+            policy: policy
+        )
+        let generatedDrafts = try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: ownerDeviceID)
+        return policy.applyingGeneratedResults(to: drafts, generatedDrafts: generatedDrafts)
     }
 }
 

@@ -1,0 +1,19 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        Runtime["Runtime host"]
+        Client["Android client"]
+        Session["Existing authenticated encrypted session"]
+        Promote["Endpoint-authorized atomic direct promotion"]
+    end
+    subgraph UntrustedInfra["Untrusted path infrastructure"]
+        Relay["Blind relay fallback path"]
+        Direct["Candidate direct path"]
+    end
+    Runtime -->|"start identity-bound session"| Relay
+    Client -->|"start identity-bound session"| Relay
+    Runtime <-->|"background authenticated path checks"| Direct
+    Client <-->|"background authenticated path checks"| Direct
+    Relay -->|"promotion token bound to live session"| Promote
+    Direct --> Promote
+    Promote -->|"confirmed direct traffic"| Session
+    Promote -->|"failure keeps relay active"| Relay

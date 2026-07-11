@@ -40,6 +40,51 @@ public struct RuntimeMemoryEntrySearch: Equatable, Sendable {
     }
 }
 
+public struct RuntimeMemorySemanticSearchSource: Equatable, Sendable {
+    public var entry: RuntimeMemoryEntry
+    public var sourceRevision: String
+
+    public init(entry: RuntimeMemoryEntry, sourceRevision: String) {
+        self.entry = entry
+        self.sourceRevision = sourceRevision
+    }
+}
+
+public struct RuntimeMemorySemanticEmbeddingKey: Equatable, Hashable, Sendable {
+    public var ownerDeviceID: String?
+    public var entryID: String
+    public var canonicalQualifiedEmbeddingModelID: String
+    public var modelFingerprint: String
+    public var documentFingerprint: String
+    public var sourceRevision: String
+
+    public init(
+        ownerDeviceID: String?,
+        entryID: String,
+        canonicalQualifiedEmbeddingModelID: String,
+        modelFingerprint: String,
+        documentFingerprint: String,
+        sourceRevision: String
+    ) {
+        self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        self.entryID = entryID
+        self.canonicalQualifiedEmbeddingModelID = canonicalQualifiedEmbeddingModelID
+        self.modelFingerprint = modelFingerprint
+        self.documentFingerprint = documentFingerprint
+        self.sourceRevision = sourceRevision
+    }
+}
+
+public struct RuntimeMemorySemanticEmbeddingRecord: Equatable, Sendable {
+    public var key: RuntimeMemorySemanticEmbeddingKey
+    public var embedding: [Double]
+
+    public init(key: RuntimeMemorySemanticEmbeddingKey, embedding: [Double]) {
+        self.key = key
+        self.embedding = embedding
+    }
+}
+
 public struct RuntimeMemoryEntrySource: Codable, Equatable, Sendable {
     public var kind: String
     public var draftID: String
@@ -162,6 +207,41 @@ public struct RuntimeMemorySummaryDraftDismissResult: Equatable, Sendable {
     }
 }
 
+public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
+    public static let summaryMethod = "llm_summary_v1"
+    public static let maxContentCharacters = 600
+
+    public var draftID: String
+    public var sessionID: String
+    public var sourceMessageCount: Int
+    public var content: String
+    public var modelID: String
+    public var generatedAt: Date
+
+    public init(
+        draftID: String,
+        sessionID: String,
+        sourceMessageCount: Int,
+        content: String,
+        modelID: String,
+        generatedAt: Date
+    ) {
+        self.draftID = draftID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.sessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.sourceMessageCount = sourceMessageCount
+        self.content = String(
+            content.trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(Self.maxContentCharacters)
+        )
+        self.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.generatedAt = generatedAt
+    }
+
+    public var summaryMethod: String {
+        Self.summaryMethod
+    }
+}
+
 public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
     case emptyContent
     case missingID
@@ -197,6 +277,23 @@ public protocol RuntimeMemoryStore: Sendable {
         draftID: String,
         timestamp: Date
     ) throws -> RuntimeMemorySummaryDraftDismissResult
+    func generatedMemorySummaryDrafts(ownerDeviceID: String?) throws -> [RuntimeGeneratedMemorySummaryDraft]
+    func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource]
+    func cachedMemorySemanticEmbeddings(
+        for keys: [RuntimeMemorySemanticEmbeddingKey]
+    ) throws -> [RuntimeMemorySemanticEmbeddingRecord]
+    func upsertMemorySemanticEmbeddings(
+        _ records: [RuntimeMemorySemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws
+    @discardableResult
+    func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft
+    ) throws -> RuntimeGeneratedMemorySummaryDraft
 }
 
 public extension RuntimeMemoryStore {
@@ -257,6 +354,53 @@ public extension RuntimeMemoryStore {
     func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
         try delete(ownerDeviceID: nil, id: id, timestamp: timestamp)
     }
+
+    func generatedMemorySummaryDrafts(ownerDeviceID: String?) throws -> [RuntimeGeneratedMemorySummaryDraft] {
+        []
+    }
+
+    func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource] {
+        guard limit > 0 else { return [] }
+        return try list(ownerDeviceID: ownerDeviceID)
+            .prefix(limit)
+            .map { entry in
+                RuntimeMemorySemanticSearchSource(
+                    entry: entry,
+                    sourceRevision: RuntimeSemanticMemorySearch.sourceRevision(for: entry)
+                )
+            }
+    }
+
+    func cachedMemorySemanticEmbeddings(
+        for keys: [RuntimeMemorySemanticEmbeddingKey]
+    ) throws -> [RuntimeMemorySemanticEmbeddingRecord] {
+        []
+    }
+
+    func upsertMemorySemanticEmbeddings(
+        _ records: [RuntimeMemorySemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {}
+
+    func generatedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String
+    ) throws -> RuntimeGeneratedMemorySummaryDraft? {
+        let cleanDraftID = draftID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try generatedMemorySummaryDrafts(ownerDeviceID: ownerDeviceID)
+            .first { $0.draftID == cleanDraftID }
+    }
+
+    @discardableResult
+    func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft
+    ) throws -> RuntimeGeneratedMemorySummaryDraft {
+        draft
+    }
 }
 
 public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
@@ -311,10 +455,19 @@ public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
 public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Sendable {
     private let fileURL: URL
     private let encoder: JSONEncoder
+    private let semanticEmbeddingCache: SQLiteRuntimeMemorySemanticEmbeddingCache
     private let lock = NSLock()
 
-    public init(fileURL: URL = JSONLRuntimeMemoryStore.defaultFileURL()) {
+    public init(
+        fileURL: URL = JSONLRuntimeMemoryStore.defaultFileURL(),
+        semanticCacheDatabaseURL: URL? = nil,
+        semanticEmbeddingRowLimitPerOwnerModel: Int = 2_000
+    ) {
         self.fileURL = fileURL
+        self.semanticEmbeddingCache = SQLiteRuntimeMemorySemanticEmbeddingCache(
+            databaseURL: semanticCacheDatabaseURL ?? Self.defaultSemanticCacheDatabaseURL(for: fileURL),
+            rowLimitPerOwnerModel: semanticEmbeddingRowLimitPerOwnerModel
+        )
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -329,6 +482,53 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
     public func listAll() throws -> [RuntimeMemoryEntry] {
         try lock.withLock {
             Self.entries(from: try readEvents())
+        }
+    }
+
+    public func listSemanticSearchSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource] {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
+            Self.entries(from: try readEvents(ownerDeviceID: ownerDeviceID))
+                .prefix(limit)
+                .map { entry in
+                    RuntimeMemorySemanticSearchSource(
+                        entry: entry,
+                        sourceRevision: RuntimeSemanticMemorySearch.sourceRevision(for: entry)
+                    )
+                }
+        }
+    }
+
+    public func cachedMemorySemanticEmbeddings(
+        for keys: [RuntimeMemorySemanticEmbeddingKey]
+    ) throws -> [RuntimeMemorySemanticEmbeddingRecord] {
+        try semanticEmbeddingCache.cachedEmbeddings(for: keys)
+    }
+
+    public func upsertMemorySemanticEmbeddings(
+        _ records: [RuntimeMemorySemanticEmbeddingRecord],
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {
+        guard !records.isEmpty else { return }
+        try lock.withLock {
+            guard shouldCommit() else { return }
+            let recordsByOwner = Dictionary(grouping: records, by: { $0.key.ownerDeviceID })
+            var currentRecords: [RuntimeMemorySemanticEmbeddingRecord] = []
+            for (ownerDeviceID, ownerRecords) in recordsByOwner {
+                let currentRevisions = Dictionary(uniqueKeysWithValues:
+                    Self.entries(from: try readEvents(ownerDeviceID: ownerDeviceID)).map { entry in
+                        (entry.id, RuntimeSemanticMemorySearch.sourceRevision(for: entry))
+                    }
+                )
+                currentRecords.append(contentsOf: ownerRecords.filter { record in
+                    currentRevisions[record.key.entryID] == record.key.sourceRevision
+                })
+            }
+            guard !currentRecords.isEmpty, shouldCommit() else { return }
+            try semanticEmbeddingCache.upsertEmbeddings(currentRecords, if: shouldCommit)
         }
     }
 
@@ -359,6 +559,10 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 updatedAt: timestamp,
                 source: source ?? existing?.source
             )
+            try semanticEmbeddingCache.deleteEmbeddings(
+                ownerDeviceID: scopedOwnerDeviceID,
+                entryID: entry.id
+            )
             try appendUnlocked(RuntimeMemoryStoredEvent(
                 kind: .upsert,
                 id: entry.id,
@@ -380,6 +584,10 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 throw RuntimeMemoryStoreError.missingID
             }
             let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            try semanticEmbeddingCache.deleteEmbeddings(
+                ownerDeviceID: scopedOwnerDeviceID,
+                entryID: cleanID
+            )
             try appendUnlocked(RuntimeMemoryStoredEvent(
                 kind: .delete,
                 id: cleanID,
@@ -417,12 +625,47 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         }
     }
 
+    public func generatedMemorySummaryDrafts(
+        ownerDeviceID: String?
+    ) throws -> [RuntimeGeneratedMemorySummaryDraft] {
+        try lock.withLock {
+            Self.generatedMemorySummaryDrafts(from: try readEvents(ownerDeviceID: ownerDeviceID))
+        }
+    }
+
+    @discardableResult
+    public func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft
+    ) throws -> RuntimeGeneratedMemorySummaryDraft {
+        try lock.withLock {
+            try Self.validateGeneratedMemorySummaryDraft(draft)
+            try appendUnlocked(RuntimeMemoryStoredEvent(
+                kind: .generatedMemorySummaryDraft,
+                id: draft.draftID,
+                timestamp: draft.generatedAt,
+                content: draft.content,
+                ownerDeviceID: ownerDeviceID.normalizedOwnerDeviceID,
+                sessionID: draft.sessionID,
+                sourceMessageCount: draft.sourceMessageCount,
+                summaryMethod: draft.summaryMethod,
+                modelID: draft.modelID,
+                generatedAt: draft.generatedAt
+            ))
+            return draft
+        }
+    }
+
     public static func defaultFileURL() -> URL {
         let baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         return baseDirectory
             .appendingPathComponent("AetherLink", isDirectory: true)
             .appendingPathComponent("runtime-memory-events.jsonl", isDirectory: false)
+    }
+
+    public static func defaultSemanticCacheDatabaseURL(for fileURL: URL = defaultFileURL()) -> URL {
+        fileURL.deletingPathExtension().appendingPathExtension("semantic-cache.sqlite")
     }
 
     private func readEvents(ownerDeviceID: String?) throws -> [RuntimeMemoryStoredEvent] {
@@ -500,6 +743,50 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         case .delete,
              .dismissMemorySummaryDraft:
             break
+        case .generatedMemorySummaryDraft:
+            guard let content = event.content?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !content.isEmpty,
+                  content.count <= RuntimeGeneratedMemorySummaryDraft.maxContentCharacters,
+                  event.summaryMethod == RuntimeGeneratedMemorySummaryDraft.summaryMethod else {
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: line,
+                    reason: "generated memory summary draft is invalid"
+                )
+            }
+            guard let generatedDraft = event.generatedMemorySummaryDraft else {
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: line,
+                    reason: "generated memory summary draft is invalid"
+                )
+            }
+            do {
+                try validateGeneratedMemorySummaryDraft(generatedDraft)
+            } catch {
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: line,
+                    reason: "generated memory summary draft is invalid"
+                )
+            }
+        }
+    }
+
+    private static func validateGeneratedMemorySummaryDraft(
+        _ draft: RuntimeGeneratedMemorySummaryDraft
+    ) throws {
+        guard !draft.draftID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeMemoryStoreError.missingID
+        }
+        guard !draft.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              draft.sourceMessageCount > 0,
+              !draft.modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeMemoryStoreError.missingID
+        }
+        let cleanContent = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanContent.isEmpty else {
+            throw RuntimeMemoryStoreError.emptyContent
+        }
+        guard cleanContent.count <= RuntimeGeneratedMemorySummaryDraft.maxContentCharacters else {
+            throw RuntimeMemoryStoreError.emptyContent
         }
     }
 
@@ -568,6 +855,8 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 entriesByID.removeValue(forKey: event.id)
             case .dismissMemorySummaryDraft:
                 break
+            case .generatedMemorySummaryDraft:
+                break
             }
         }
         return entriesByID.values.sorted {
@@ -583,12 +872,29 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
             event.kind == .dismissMemorySummaryDraft ? event.id : nil
         })
     }
+
+    private static func generatedMemorySummaryDrafts(
+        from events: [RuntimeMemoryStoredEvent]
+    ) -> [RuntimeGeneratedMemorySummaryDraft] {
+        var draftsByID: [String: RuntimeGeneratedMemorySummaryDraft] = [:]
+        for event in events where event.kind == .generatedMemorySummaryDraft {
+            guard let draft = event.generatedMemorySummaryDraft else { continue }
+            draftsByID[draft.draftID] = draft
+        }
+        return draftsByID.values.sorted {
+            if $0.generatedAt == $1.generatedAt {
+                return $0.draftID < $1.draftID
+            }
+            return $0.generatedAt > $1.generatedAt
+        }
+    }
 }
 
 private enum RuntimeMemoryStoredEventKind: String, Codable {
     case upsert
     case delete
     case dismissMemorySummaryDraft = "dismiss_memory_summary_draft"
+    case generatedMemorySummaryDraft = "generated_memory_summary_draft"
 }
 
 private struct RuntimeMemoryStoredEvent: Codable {
@@ -600,6 +906,31 @@ private struct RuntimeMemoryStoredEvent: Codable {
     var createdAt: Date?
     var ownerDeviceID: String?
     var source: RuntimeMemoryEntrySource?
+    var sessionID: String?
+    var sourceMessageCount: Int?
+    var summaryMethod: String?
+    var modelID: String?
+    var generatedAt: Date?
+
+    var generatedMemorySummaryDraft: RuntimeGeneratedMemorySummaryDraft? {
+        guard kind == .generatedMemorySummaryDraft,
+              let content,
+              let sessionID,
+              let sourceMessageCount,
+              summaryMethod == RuntimeGeneratedMemorySummaryDraft.summaryMethod,
+              let modelID,
+              let generatedAt else {
+            return nil
+        }
+        return RuntimeGeneratedMemorySummaryDraft(
+            draftID: id,
+            sessionID: sessionID,
+            sourceMessageCount: sourceMessageCount,
+            content: content,
+            modelID: modelID,
+            generatedAt: generatedAt
+        )
+    }
 
     enum CodingKeys: String, CodingKey {
         case kind
@@ -610,6 +941,11 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case createdAt = "created_at"
         case ownerDeviceID = "owner_device_id"
         case source
+        case sessionID = "session_id"
+        case sourceMessageCount = "source_message_count"
+        case summaryMethod = "summary_method"
+        case modelID = "model_id"
+        case generatedAt = "generated_at"
     }
 }
 

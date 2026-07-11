@@ -42,6 +42,8 @@ import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePaylo
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApproveResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissResultPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftGenerateRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftGenerateResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListRequestPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListResultPayload
@@ -192,6 +194,11 @@ private data class PendingChatSessionRenameMutation(
     val previousTitle: String,
     val previousTitleManuallyEdited: Boolean,
     val previousTitleGenerated: Boolean,
+)
+
+private data class PendingMemorySummaryDraftGeneration(
+    val draft: RuntimeMemorySummaryDraft,
+    val modelId: String,
 )
 
 private data class PendingInitialPairingRequest(
@@ -961,6 +968,8 @@ private val MEMORY_SUMMARY_DRAFT_DISMISS_RESULT_PAYLOAD_KEYS = setOf(
     "dismissed_at",
 )
 
+private val MEMORY_SUMMARY_DRAFT_GENERATE_RESULT_PAYLOAD_KEYS = setOf("draft")
+
 private val MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS = setOf(
     "id",
     "session",
@@ -968,29 +977,43 @@ private val MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS = setOf(
     "source_range",
     "source_pointers",
     "summary_preview",
+    "summary_method",
+    "generated_at",
+    "generated_model_id",
 )
+
+private fun JsonObject.memorySummaryDraftUnknownMetadataKey(pathPrefix: String): String? {
+    keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.$it"
+    }
+    val session = this["session"] as? JsonObject
+    session?.keys?.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS }?.let {
+        return "$pathPrefix.session.$it"
+    }
+    val sourcePointers = this["source_pointers"] as? JsonArray ?: return null
+    sourcePointers.forEachIndexed { pointerIndex, pointerElement ->
+        val pointer = pointerElement as? JsonObject ?: return@forEachIndexed
+        pointer.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS }?.let {
+            return "$pathPrefix.source_pointers[$pointerIndex].$it"
+        }
+    }
+    return null
+}
 
 private fun JsonObject.memorySummaryDraftsListResultUnknownMetadataKey(): String? {
     keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFTS_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
     val drafts = this["drafts"] as? JsonArray ?: return null
     drafts.forEachIndexed { draftIndex, element ->
         val draft = element as? JsonObject ?: return@forEachIndexed
-        draft.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_PAYLOAD_KEYS }?.let {
-            return "drafts[$draftIndex].$it"
-        }
-        val session = draft["session"] as? JsonObject
-        session?.keys?.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SESSION_PAYLOAD_KEYS }?.let {
-            return "drafts[$draftIndex].session.$it"
-        }
-        val sourcePointers = draft["source_pointers"] as? JsonArray ?: return@forEachIndexed
-        sourcePointers.forEachIndexed { pointerIndex, pointerElement ->
-            val pointer = pointerElement as? JsonObject ?: return@forEachIndexed
-            pointer.keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_SOURCE_POINTER_PAYLOAD_KEYS }?.let {
-                return "drafts[$draftIndex].source_pointers[$pointerIndex].$it"
-            }
-        }
+        draft.memorySummaryDraftUnknownMetadataKey("drafts[$draftIndex]")?.let { return it }
     }
     return null
+}
+
+private fun JsonObject.memorySummaryDraftGenerateResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_SUMMARY_DRAFT_GENERATE_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val draft = this["draft"] as? JsonObject ?: return null
+    return draft.memorySummaryDraftUnknownMetadataKey("draft")
 }
 
 private fun JsonObject.memoryEntryUnknownMetadataKey(pathPrefix: String): String? {
@@ -1068,6 +1091,7 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.MemoryUpsert,
     MessageType.MemoryDelete,
     MessageType.MemorySummaryDraftsList,
+    MessageType.MemorySummaryDraftGenerate,
     MessageType.MemorySummaryDraftApprove,
     MessageType.MemorySummaryDraftDismiss,
     "chat.attachments",
@@ -1175,14 +1199,19 @@ class RuntimeClientViewModel internal constructor(
     private var pendingPairingRetryAttempts = 0
     private var pendingModelPullRequestId: String? = null
     private var pendingChatSessionsRequestId: String? = null
+    private var pendingChatSessionsQuery: String? = null
     private var pendingChatMessagesRequestId: String? = null
     private var pendingChatMessagesSessionId: String? = null
     private var pendingTitleRequestId: String? = null
     private var pendingTitleSessionId: String? = null
     private var pendingMemoryListRequestId: String? = null
+    private var pendingMemoryListQuery: String? = null
+    private var pendingMemoryListEmbeddingModelId: String? = null
     private var pendingMemorySummaryDraftsRequestId: String? = null
     private var pendingDocumentCatalogRequestId: String? = null
     private var pendingDocumentSearchRequestId: String? = null
+    private val pendingMemorySummaryDraftGenerationsByRequestId =
+        mutableMapOf<String, PendingMemorySummaryDraftGeneration>()
     private val pendingMemorySummaryDraftApprovalDraftIdsByRequestId = mutableMapOf<String, String>()
     private val pendingMemorySummaryDraftDismissalDraftIdsByRequestId = mutableMapOf<String, String>()
     private var pendingRouteRefreshRequestId: String? = null
@@ -1805,6 +1834,61 @@ class RuntimeClientViewModel internal constructor(
         requestRuntimeDocumentSearch(normalizedQuery)
     }
 
+    fun generateMemorySummaryDraft(draftId: String) {
+        val cleanDraftId = draftId.trim()
+        if (cleanDraftId.isBlank()) return
+        val current = state.value
+        val draft = current.memorySummaryDrafts.firstOrNull { it.id == cleanDraftId } ?: return
+        if (draft.summaryMethod != "deterministic_preview") return
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        if (pendingMemorySummaryDraftGenerationsByRequestId.values.any { it.draft.id == cleanDraftId }) return
+        if (cleanDraftId in pendingMemorySummaryDraftApprovalDraftIdsByRequestId.values) return
+        if (cleanDraftId in pendingMemorySummaryDraftDismissalDraftIdsByRequestId.values) return
+        when (current.selectedModelSendState()) {
+            SelectedModelSendState.Missing -> {
+                showError("select_chat_model")
+                return
+            }
+            SelectedModelSendState.NotInstalled -> {
+                showError("install_model_first")
+                return
+            }
+            SelectedModelSendState.Ready -> Unit
+        }
+        val modelId = current.selectedModelId ?: return
+        val requestId = UUID.randomUUID().toString()
+        pendingMemorySummaryDraftGenerationsByRequestId[requestId] = PendingMemorySummaryDraftGeneration(
+            draft = draft,
+            modelId = modelId,
+        )
+        mutableState.update {
+            it.copy(
+                generatingMemorySummaryDraftIds = it.generatingMemorySummaryDraftIds + cleanDraftId,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySummaryDraftGenerate,
+                requestId = requestId,
+                serializer = MemorySummaryDraftGenerateRequestPayload.serializer(),
+                payload = MemorySummaryDraftGenerateRequestPayload(
+                    draftId = cleanDraftId,
+                    model = modelId,
+                    expectedSessionId = draft.session.sessionId,
+                    expectedSourceMessageCount = draft.sourceMessageCount,
+                ),
+            )
+        )
+    }
+
     fun approveMemorySummaryDraft(draftId: String) {
         val cleanDraftId = draftId.trim()
         if (cleanDraftId.isBlank()) return
@@ -1819,6 +1903,7 @@ class RuntimeClientViewModel internal constructor(
         }
         if (cleanDraftId in pendingMemorySummaryDraftApprovalDraftIdsByRequestId.values) return
         if (cleanDraftId in pendingMemorySummaryDraftDismissalDraftIdsByRequestId.values) return
+        if (pendingMemorySummaryDraftGenerationsByRequestId.values.any { it.draft.id == cleanDraftId }) return
         val requestId = UUID.randomUUID().toString()
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId[requestId] = cleanDraftId
         mutableState.update {
@@ -1856,6 +1941,7 @@ class RuntimeClientViewModel internal constructor(
         }
         if (cleanDraftId in pendingMemorySummaryDraftDismissalDraftIdsByRequestId.values) return
         if (cleanDraftId in pendingMemorySummaryDraftApprovalDraftIdsByRequestId.values) return
+        if (pendingMemorySummaryDraftGenerationsByRequestId.values.any { it.draft.id == cleanDraftId }) return
         val requestId = UUID.randomUUID().toString()
         pendingMemorySummaryDraftDismissalDraftIdsByRequestId[requestId] = cleanDraftId
         mutableState.update {
@@ -2504,8 +2590,11 @@ class RuntimeClientViewModel internal constructor(
         cancelPendingPairingDiscoveryTimeout()
         pendingModelPullRequestId = null
         pendingMemoryListRequestId = null
+        pendingMemoryListQuery = null
+        pendingMemoryListEmbeddingModelId = null
         pendingMemorySummaryDraftsRequestId = null
         clearPendingRuntimeDocumentRequests()
+        pendingMemorySummaryDraftGenerationsByRequestId.clear()
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.clear()
         pendingMemorySummaryDraftDismissalDraftIdsByRequestId.clear()
         clearPendingRouteRefreshRequest()
@@ -2526,6 +2615,7 @@ class RuntimeClientViewModel internal constructor(
                 installingModelId = null,
                 activeRequestId = null,
                 memorySummaryDrafts = emptyList(),
+                generatingMemorySummaryDraftIds = emptySet(),
                 approvingMemorySummaryDraftIds = emptySet(),
                 dismissingMemorySummaryDraftIds = emptySet(),
                 documentCatalog = RuntimeDocumentCatalog(),
@@ -2533,6 +2623,10 @@ class RuntimeClientViewModel internal constructor(
                 documentSearchQuery = "",
                 documentSearchResults = emptyList(),
                 isSearchingDocuments = false,
+                chatSessionSearchQuery = null,
+                chatSessionSearchResults = emptyList(),
+                memorySearchQuery = null,
+                memorySearchResults = emptyList(),
                 runtimeStatus = "disconnected",
                 activeRouteKind = null,
                 routeRefreshNoticeRuntimeName = null,
@@ -2576,8 +2670,9 @@ class RuntimeClientViewModel internal constructor(
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (pendingChatSessionsRequestId != null) return
         val requestId = UUID.randomUUID().toString()
-        pendingChatSessionsRequestId = requestId
         val normalizedQuery = query?.trim()?.ifBlank { null }
+        pendingChatSessionsRequestId = requestId
+        pendingChatSessionsQuery = normalizedQuery
         val embeddingModelId = normalizedQuery?.let { state.value.selectedEmbeddingModelId }
         sendEnvelope(
             envelope(
@@ -2625,12 +2720,17 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
-    private fun requestRuntimeMemory(query: String? = null) {
+    private fun requestRuntimeMemory(query: String? = null, allowEmbeddingModel: Boolean = true) {
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (pendingMemoryListRequestId != null) return
         val requestId = UUID.randomUUID().toString()
         pendingMemoryListRequestId = requestId
         val normalizedQuery = query?.trim()?.ifBlank { null }
+        pendingMemoryListQuery = normalizedQuery
+        val embeddingModelId = normalizedQuery
+            ?.takeIf { allowEmbeddingModel }
+            ?.let { state.value.selectedEmbeddingModelId }
+        pendingMemoryListEmbeddingModelId = embeddingModelId
         if (normalizedQuery == null) {
             sendEnvelope(ProtocolEnvelope(type = MessageType.MemoryList, requestId = requestId))
         } else {
@@ -2639,7 +2739,10 @@ class RuntimeClientViewModel internal constructor(
                     type = MessageType.MemoryList,
                     requestId = requestId,
                     serializer = MemoryListRequestPayload.serializer(),
-                    payload = MemoryListRequestPayload(query = normalizedQuery),
+                    payload = MemoryListRequestPayload(
+                        query = normalizedQuery,
+                        embeddingModelId = embeddingModelId,
+                    ),
                 )
             )
         }
@@ -3302,7 +3405,10 @@ class RuntimeClientViewModel internal constructor(
                             isSessionAuthenticated = false
                             clearPendingRuntimeHistoryRequests()
                             pendingMemoryListRequestId = null
+                            pendingMemoryListQuery = null
+                            pendingMemoryListEmbeddingModelId = null
                             pendingMemorySummaryDraftsRequestId = null
+                            pendingMemorySummaryDraftGenerationsByRequestId.clear()
                             clearPendingRuntimeDocumentRequests()
                             clearPendingRouteRefreshRequest()
                             clearPendingPairingRequest()
@@ -3318,6 +3424,9 @@ class RuntimeClientViewModel internal constructor(
                             val updatedState = current.withRuntimeReceiveFailure(
                                 uiError,
                             ).copy(
+                                generatingMemorySummaryDraftIds = emptySet(),
+                                memorySearchQuery = null,
+                                memorySearchResults = emptyList(),
                                 isLoadingDocumentCatalog = false,
                                 isSearchingDocuments = false,
                             ).let { failedState ->
@@ -3395,6 +3504,7 @@ class RuntimeClientViewModel internal constructor(
             MessageType.RetrievalQuery -> handleRetrievalQuery(envelope)
             MessageType.MemoryList -> handleMemoryList(envelope)
             MessageType.MemorySummaryDraftsList -> handleMemorySummaryDraftsList(envelope)
+            MessageType.MemorySummaryDraftGenerate -> handleMemorySummaryDraftGenerate(envelope)
             MessageType.MemorySummaryDraftApprove -> handleMemorySummaryDraftApprove(envelope)
             MessageType.MemorySummaryDraftDismiss -> handleMemorySummaryDraftDismiss(envelope)
             MessageType.MemoryUpsert -> handleMemoryUpsert(envelope)
@@ -4091,12 +4201,33 @@ class RuntimeClientViewModel internal constructor(
 
     private fun handleChatSessionsList(envelope: ProtocolEnvelope) {
         if (pendingChatSessionsRequestId != null && pendingChatSessionsRequestId != envelope.requestId) return
+        val requestedQuery = pendingChatSessionsQuery
         pendingChatSessionsRequestId = null
+        pendingChatSessionsQuery = null
         envelope.payload.chatSessionsListUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "chat.sessions.list response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(ChatSessionsListResultPayload.serializer(), envelope.payload) ?: return
+        if (requestedQuery != null) {
+            val searchData = persistedRuntimeData.withRuntimeChatSessionSummaries(
+                sessions = payload.sessions,
+                nowMillis = nowMillis(),
+            )
+            val resultsById = (
+                runtimeChatSessions(searchData) + archivedRuntimeChatSessions(searchData)
+                ).associateBy(RuntimeChatSession::id)
+            val orderedResults = payload.sessions
+                .mapNotNull { resultsById[it.sessionId] }
+                .distinctBy(RuntimeChatSession::id)
+            mutableState.update {
+                it.copy(
+                    chatSessionSearchQuery = requestedQuery,
+                    chatSessionSearchResults = orderedResults,
+                )
+            }
+            return
+        }
         val syncedData = persistedRuntimeData.withRuntimeChatSessionSummaries(
             sessions = payload.sessions,
             nowMillis = nowMillis(),
@@ -4106,6 +4237,12 @@ class RuntimeClientViewModel internal constructor(
             save = true,
             clearError = false,
         )
+        mutableState.update {
+            it.copy(
+                chatSessionSearchQuery = null,
+                chatSessionSearchResults = emptyList(),
+            )
+        }
         activeRuntimeSessionId(syncedData)?.let(::requestRuntimeChatMessages)
     }
 
@@ -4311,18 +4448,40 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemoryList(envelope: ProtocolEnvelope) {
-        if (pendingMemoryListRequestId == envelope.requestId) {
-            pendingMemoryListRequestId = null
-        }
+        if (pendingMemoryListRequestId != envelope.requestId) return
+        val requestedQuery = pendingMemoryListQuery
+        pendingMemoryListRequestId = null
+        pendingMemoryListQuery = null
+        pendingMemoryListEmbeddingModelId = null
         envelope.payload.memoryListResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.list response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(MemoryListResultPayload.serializer(), envelope.payload) ?: return
+        if (requestedQuery != null) {
+            val searchData = persistedRuntimeData.withRuntimeMemoryEntries(payload.entries, nowMillis())
+            val resultsById = runtimeMemoryEntries(searchData).associateBy(RuntimeMemoryEntry::id)
+            val orderedResults = payload.entries
+                .mapNotNull { resultsById[it.id] }
+                .distinctBy(RuntimeMemoryEntry::id)
+            mutableState.update {
+                it.copy(
+                    memorySearchQuery = requestedQuery,
+                    memorySearchResults = orderedResults,
+                )
+            }
+            return
+        }
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntries(payload.entries, nowMillis()),
             save = true,
         )
+        mutableState.update {
+            it.copy(
+                memorySearchQuery = null,
+                memorySearchResults = emptyList(),
+            )
+        }
     }
 
     private fun handleMemorySummaryDraftsList(envelope: ProtocolEnvelope) {
@@ -4337,6 +4496,53 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update {
             it.copy(
                 memorySummaryDrafts = runtimeMemorySummaryDrafts(payload.drafts),
+                error = null,
+            )
+        }
+    }
+
+    private fun handleMemorySummaryDraftGenerate(envelope: ProtocolEnvelope) {
+        val pending = pendingMemorySummaryDraftGenerationsByRequestId.remove(envelope.requestId)
+            ?: return
+        val pendingDraftId = pending.draft.id
+        mutableState.update { current ->
+            current.copy(
+                generatingMemorySummaryDraftIds = current.generatingMemorySummaryDraftIds - pendingDraftId,
+            )
+        }
+        envelope.payload.memorySummaryDraftGenerateResultUnknownMetadataKey()?.let { unknownKey ->
+            showError(
+                "invalid_payload",
+                "memory.summary.draft.generate response contains unsupported metadata: $unknownKey",
+            )
+            return
+        }
+        val payload = decodePayload(
+            MemorySummaryDraftGenerateResultPayload.serializer(),
+            envelope.payload,
+        ) ?: return
+        val generatedDraft = runtimeMemorySummaryDrafts(listOf(payload.draft)).singleOrNull()
+        val currentDraft = state.value.memorySummaryDrafts.firstOrNull { it.id == pendingDraftId }
+        val matchesPendingSource = generatedDraft != null &&
+            generatedDraft.hasSameMemorySummarySourceAs(pending.draft) &&
+            currentDraft?.hasSameMemorySummarySourceAs(pending.draft) == true
+        val hasValidGenerationMetadata = generatedDraft?.summaryMethod == "llm_summary_v1" &&
+            generatedDraft.generatedAtMillis != null &&
+            generatedDraft.generatedModelId == pending.modelId
+        if (!matchesPendingSource || !hasValidGenerationMetadata) {
+            showError(
+                "invalid_payload",
+                "memory.summary.draft.generate response does not match the pending draft source and model",
+            )
+            requestRuntimeMemorySummaryDrafts()
+            return
+        }
+        val acceptedGeneratedDraft = generatedDraft
+        mutableState.update { current ->
+            current.copy(
+                memorySummaryDrafts = current.memorySummaryDrafts.map { draft ->
+                    if (draft.id == pendingDraftId) acceptedGeneratedDraft else draft
+                },
                 error = null,
             )
         }
@@ -4461,6 +4667,7 @@ class RuntimeClientViewModel internal constructor(
         if (pendingChatSessionsRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             pendingChatSessionsRequestId = null
+            pendingChatSessionsQuery = null
             showError("chat_history_load_failed", payload?.message)
             return
         }
@@ -4475,7 +4682,17 @@ class RuntimeClientViewModel internal constructor(
         }
         if (pendingMemoryListRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            val retryQuery = pendingMemoryListQuery
+            val unsupportedEmbeddingHint = payload?.code == "invalid_payload" &&
+                pendingMemoryListEmbeddingModelId != null &&
+                payload.message.orEmpty().contains("embedding_model_id")
             pendingMemoryListRequestId = null
+            pendingMemoryListQuery = null
+            pendingMemoryListEmbeddingModelId = null
+            if (unsupportedEmbeddingHint && retryQuery != null) {
+                requestRuntimeMemory(retryQuery, allowEmbeddingModel = false)
+                return
+            }
             showError("memory_load_failed", payload?.message)
             return
         }
@@ -4497,6 +4714,20 @@ class RuntimeClientViewModel internal constructor(
             pendingDocumentSearchRequestId = null
             mutableState.update { it.copy(isSearchingDocuments = false) }
             showError("document_search_failed", payload?.message)
+            return
+        }
+        pendingMemorySummaryDraftGenerationsByRequestId.remove(envelope.requestId)?.let { pending ->
+            val draftId = pending.draft.id
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            mutableState.update {
+                it.copy(
+                    generatingMemorySummaryDraftIds = it.generatingMemorySummaryDraftIds - draftId,
+                )
+            }
+            showError("memory_summary_draft_generation_failed", payload?.message)
+            if (payload?.code == "memory_summary_draft_stale") {
+                requestRuntimeMemorySummaryDrafts()
+            }
             return
         }
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)?.let { draftId ->
@@ -4617,6 +4848,12 @@ class RuntimeClientViewModel internal constructor(
                     pendingDocumentCatalogRequestId == envelope.requestId
                 val isDocumentSearchRequest = envelope.type == MessageType.RetrievalQuery &&
                     pendingDocumentSearchRequestId == envelope.requestId
+                val memorySummaryDraftGenerationId =
+                    if (envelope.type == MessageType.MemorySummaryDraftGenerate) {
+                        pendingMemorySummaryDraftGenerationsByRequestId.remove(envelope.requestId)?.draft?.id
+                    } else {
+                        null
+                    }
                 val memorySummaryDraftApprovalId =
                     if (envelope.type == MessageType.MemorySummaryDraftApprove) {
                         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
@@ -4652,6 +4889,8 @@ class RuntimeClientViewModel internal constructor(
                 }
                 if (isMemoryListRequest) {
                     pendingMemoryListRequestId = null
+                    pendingMemoryListQuery = null
+                    pendingMemoryListEmbeddingModelId = null
                     showError("memory_load_failed", error.message)
                     return@onFailure
                 }
@@ -4670,6 +4909,16 @@ class RuntimeClientViewModel internal constructor(
                     pendingDocumentSearchRequestId = null
                     mutableState.update { it.copy(isSearchingDocuments = false) }
                     showError("document_search_failed", error.message)
+                    return@onFailure
+                }
+                if (memorySummaryDraftGenerationId != null) {
+                    mutableState.update {
+                        it.copy(
+                            generatingMemorySummaryDraftIds =
+                                it.generatingMemorySummaryDraftIds - memorySummaryDraftGenerationId,
+                        )
+                    }
+                    showError("memory_summary_draft_generation_failed", error.message)
                     return@onFailure
                 }
                 if (memorySummaryDraftApprovalId != null) {
@@ -4822,6 +5071,7 @@ class RuntimeClientViewModel internal constructor(
     private fun clearPendingRuntimeHistoryRequests() {
         val loadingSessionId = pendingChatMessagesSessionId
         pendingChatSessionsRequestId = null
+        pendingChatSessionsQuery = null
         pendingChatMessagesRequestId = null
         pendingChatMessagesSessionId = null
         clearChatMessagesLoading(loadingSessionId)
@@ -5183,8 +5433,21 @@ private fun runtimeMemorySummaryDrafts(
                 )
             }.filter { it.excerpt.isNotBlank() },
             summaryPreview = preview,
+            summaryMethod = draft.summaryMethod,
+            generatedAtMillis = draft.generatedAt?.let(::parseProtocolTimestampMillisOrNull),
+            generatedModelId = draft.generatedModelId?.trim()?.takeIf { it.isNotBlank() },
         )
     }
+}
+
+private fun RuntimeMemorySummaryDraft.hasSameMemorySummarySourceAs(
+    expected: RuntimeMemorySummaryDraft,
+): Boolean {
+    return id == expected.id &&
+        session == expected.session &&
+        sourceMessageCount == expected.sourceMessageCount &&
+        sourceRange == expected.sourceRange &&
+        sourcePointers == expected.sourcePointers
 }
 
 private fun parseProtocolTimestampMillisOrNull(timestamp: String): Long? {

@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph EndpointTrust["Endpoint trust boundary"]
+        Planner["Android route planner"]
+        Hook["Injected P2P connector"]
+        Auth["Existing application authentication"]
+        Runtime["Runtime host"]
+    end
+    subgraph UntrustedInfra["Untrusted path infrastructure"]
+        Relay["Relay fallback connector"]
+        Gap["No path-bound authenticated encrypted session"]
+    end
+    Planner -->|"P2P first"| Hook
+    Hook -->|"returns generic protocol channel"| Auth
+    Planner -->|"on failed attempt"| Relay
+    Relay --> Auth
+    Runtime -->|"independent private-overlay and relay transports"| Auth
+    Remove["Trusted pair removal"] -->|"manager stop boundary"| Runtime
+    Gap -.-> Hook

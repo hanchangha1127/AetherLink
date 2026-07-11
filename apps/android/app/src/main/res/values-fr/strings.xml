@@ -563,6 +563,11 @@
     <string name="memory_summary_draft_preview_label">Aperçu</string>
     <string name="memory_summary_draft_source_excerpt">%1$s : %2$s</string>
     <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_summary_draft_generate">Générer le résumé</string>
+    <string name="memory_summary_draft_generating">Génération du résumé…</string>
+    <string name="memory_summary_draft_generate_named">Générer le résumé de %1$s</string>
+    <string name="memory_summary_draft_generate_state_ready">Prêt à générer le résumé.</string>
+    <string name="memory_summary_draft_generated_review_required">Résumé généré par l’IA. Vérification requise.</string>
     <string name="memory_source_from_chat">Depuis un ancien chat : %1$s</string>
     <string name="memory_source_show">Afficher la source</string>
     <string name="memory_source_hide">Masquer la source</string>
@@ -650,6 +655,7 @@
     <string name="error_memory_runtime_required">Connectez-vous au runtime de confiance avant de modifier la mémoire.</string>
     <string name="error_memory_load_failed">Impossible de charger la mémoire depuis AetherLink Runtime.</string>
     <string name="error_memory_summary_drafts_load_failed">Impossible de charger les suggestions de mémoire depuis AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_generation_failed">Impossible de générer le résumé de mémoire avec AetherLink Runtime.</string>
     <string name="error_memory_summary_draft_approval_failed">Impossible d’ajouter la mémoire suggérée depuis AetherLink Runtime.</string>
     <string name="error_memory_summary_draft_dismiss_failed">Impossible de masquer la mémoire suggérée depuis AetherLink Runtime.</string>
     <string name="error_document_search_runtime_required">Connectez-vous au runtime de confiance avant de rechercher des documents.</string>
@@ -657,6 +663,7 @@
     <string name="error_document_search_failed">Impossible de rechercher des documents depuis AetherLink Runtime.</string>
     <string name="error_runtime_error">Erreur du runtime.</string>
     <string name="error_send_failed">Impossible d’envoyer le message à AetherLink Runtime.</string>
+    <string name="error_chat_context_window_exceeded">Le message actuel et le contexte requis dépassent la fenêtre de contexte du modèle sélectionné. Raccourcissez le message ou choisissez un modèle avec une fenêtre de contexte plus grande.</string>
     <string name="error_regenerate_unavailable">Aucune réponse de l’assistant terminée ne peut être régénérée.</string>
     <string name="error_regenerate_attachment_context_unavailable">Cette réponse utilisait une pièce jointe qui n’est plus disponible pour la régénération.</string>
     <string name="error_reuse_message_unavailable">Ce message ne peut pas être réutilisé comme brouillon.</string>

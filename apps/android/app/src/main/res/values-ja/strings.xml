@@ -563,6 +563,11 @@
     <string name="memory_summary_draft_preview_label">プレビュー</string>
     <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
     <string name="memory_summary_draft_row_summary">%1$s。%2$s。%3$s。%4$s</string>
+    <string name="memory_summary_draft_generate">要約を生成</string>
+    <string name="memory_summary_draft_generating">要約を生成中…</string>
+    <string name="memory_summary_draft_generate_named">%1$s の要約を生成</string>
+    <string name="memory_summary_draft_generate_state_ready">要約を生成できます。</string>
+    <string name="memory_summary_draft_generated_review_required">AI 生成要約。追加前に確認が必要です。</string>
     <string name="memory_source_from_chat">古いチャット: %1$s</string>
     <string name="memory_source_show">ソースを表示</string>
     <string name="memory_source_hide">ソースを非表示</string>
@@ -650,6 +655,7 @@
     <string name="error_memory_runtime_required">メモリを変更する前に、信頼済みランタイムに接続してください。</string>
     <string name="error_memory_load_failed">AetherLink Runtime からメモリを読み込めませんでした。</string>
     <string name="error_memory_summary_drafts_load_failed">AetherLink Runtime からメモリ提案を読み込めませんでした。</string>
+    <string name="error_memory_summary_draft_generation_failed">AetherLink Runtime でメモリ要約を生成できませんでした。</string>
     <string name="error_memory_summary_draft_approval_failed">AetherLink Runtime から提案メモリを追加できませんでした。</string>
     <string name="error_memory_summary_draft_dismiss_failed">AetherLink Runtime から提案メモリを非表示にできませんでした。</string>
     <string name="error_document_search_runtime_required">ドキュメントを検索する前に、信頼済みランタイムに接続してください。</string>
@@ -657,6 +663,7 @@
     <string name="error_document_search_failed">AetherLink Runtime からドキュメントを検索できませんでした。</string>
     <string name="error_runtime_error">ランタイムエラーです。</string>
     <string name="error_send_failed">AetherLink Runtime にメッセージを送信できませんでした。</string>
+    <string name="error_chat_context_window_exceeded">現在のメッセージと必要なコンテキストは、選択したモデルに収まりません。メッセージを短くするか、コンテキストウィンドウがより大きいモデルを選択してください。</string>
     <string name="error_regenerate_unavailable">再生成できる完了済みのアシスタント応答がありません。</string>
     <string name="error_regenerate_attachment_context_unavailable">この応答に使われた添付ファイル データは再生成に利用できません。</string>
     <string name="error_reuse_message_unavailable">このメッセージは下書きとして再利用できません。</string>

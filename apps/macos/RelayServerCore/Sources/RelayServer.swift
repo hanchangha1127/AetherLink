@@ -434,11 +434,11 @@ public final class RelayServer: @unchecked Sendable {
                 return ProcessInfo.processInfo.systemUptime + remainingLeaseSeconds
             }
             socketRegistry.store(peer)
-            let registrationResult: RelayRegistrationResult
+            let registrationAttempt: RelayRegistrationAttempt
             do {
                 if let allocationBinding {
-                    registrationResult = try allocationRegistry.withRevalidatedBinding(allocationBinding) {
-                        matcher.register(
+                    registrationAttempt = try allocationRegistry.withRevalidatedBinding(allocationBinding) {
+                        matcher.registerWithExpiredWaitingPeers(
                             peer.registration,
                             sourceIdentity: connection.sourceIdentity,
                             requiresImmediateMatch: connection.requiresImmediateCounterpart,
@@ -448,7 +448,7 @@ public final class RelayServer: @unchecked Sendable {
                         )
                     }
                 } else {
-                    registrationResult = matcher.register(
+                    registrationAttempt = matcher.registerWithExpiredWaitingPeers(
                         peer.registration,
                         sourceIdentity: connection.sourceIdentity,
                         requiresImmediateMatch: connection.requiresImmediateCounterpart,
@@ -460,7 +460,10 @@ public final class RelayServer: @unchecked Sendable {
                 socketRegistry.close(peerID: peer.registration.id)
                 throw error
             }
-            switch registrationResult {
+            for expiredPeer in registrationAttempt.expiredWaitingPeers {
+                socketRegistry.close(peerID: expiredPeer.id)
+            }
+            switch registrationAttempt.result {
             case .waiting(let replaced):
                 if let replaced {
                     connection.confirmCounterpartCandidateIfNeeded()
@@ -477,10 +480,7 @@ public final class RelayServer: @unchecked Sendable {
                     return
                 }
                 let peerID = peer.registration.id
-                guard let waitingDeadlineUptime = matcher.waitingDeadlineUptime(
-                    relayID: peer.registration.relayID,
-                    peerID: peerID
-                ) else {
+                guard let waitingDeadlineUptime = registrationAttempt.waitingDeadlineUptime else {
                     socketRegistry.close(peerID: peerID)
                     return
                 }
@@ -490,12 +490,9 @@ public final class RelayServer: @unchecked Sendable {
                         waitingDeadlineUptime - ProcessInfo.processInfo.systemUptime
                     )
                 ) { [weak self] timedOut in
-                    guard let self,
-                          self.matcher.unregisterWaiting(peerID: peerID) != nil
-                    else {
-                        return
-                    }
-                    if timedOut {
+                    guard let self else { return }
+                    let removedWaitingPeer = self.matcher.unregisterWaiting(peerID: peerID) != nil
+                    if timedOut && removedWaitingPeer {
                         self.waitingPeerLimiter.recordWaitingPeerTimeout()
                     }
                     self.socketRegistry.close(peerID: peerID)
@@ -545,7 +542,11 @@ public final class RelayServer: @unchecked Sendable {
             return
         }
         let known = isRelayIDAllowed(request.relayID)
-        let runtimeWaiting = known && matcher.hasWaitingRuntime(relayID: request.relayID)
+        let waitingStatus = matcher.waitingRuntimeStatus(relayID: request.relayID)
+        for expiredPeer in waitingStatus.expiredWaitingPeers {
+            socketRegistry.close(peerID: expiredPeer.id)
+        }
+        let runtimeWaiting = known && waitingStatus.hasWaitingRuntime
         let response = RelayProbeResponse(known: known, runtimeWaiting: runtimeWaiting)
         guard writeAll(socket: socket, data: response.responseLine()) else {
             throw RelayServerError.probeWriteFailed

@@ -79,16 +79,19 @@ private val ERROR_CODES = setOf(
     "chat_session_must_be_archived_before_delete",
     "chat_session_must_be_restored_before_send",
     "chat_store_unavailable",
+    "chat_context_window_exceeded",
     "document_index_unavailable",
     "source_anchor_not_found",
     "memory_store_unavailable",
     "memory_summary_draft_unavailable",
     "memory_summary_draft_stale",
+    "memory_summary_draft_generation_failed",
     "transport_error",
     "internal_error",
 )
 private const val MEMORY_ENTRY_SOURCE_KIND = "long_inactivity_summary_draft"
 private const val MEMORY_ENTRY_SOURCE_SUMMARY_METHOD = "deterministic_preview"
+private val MEMORY_SUMMARY_DRAFT_METHODS = setOf("deterministic_preview", "llm_summary_v1")
 private val MEMORY_SUMMARY_SOURCE_POINTER_ROLES = setOf("user", "assistant")
 
 private fun requireProtocolDateTime(value: String?, fieldName: String) {
@@ -617,14 +620,17 @@ private val RELAY_ALLOCATION_AUTHORIZATION_FIELDS = setOf(
     "client_signature",
 )
 
-private fun Decoder.decodeExactJsonObject(expectedFields: Set<String>): Pair<JsonDecoder, JsonObject> {
+private fun Decoder.decodeExactJsonObject(
+    expectedFields: Set<String>,
+    payloadName: String = "relay allocation payload",
+): Pair<JsonDecoder, JsonObject> {
     val jsonDecoder = this as? JsonDecoder
-        ?: throw IllegalArgumentException("relay allocation payloads require JSON decoding")
+        ?: throw IllegalArgumentException("$payloadName requires JSON decoding")
     val payload = jsonDecoder.decodeJsonElement() as? JsonObject
-        ?: throw IllegalArgumentException("relay allocation payload must be a JSON object")
+        ?: throw IllegalArgumentException("$payloadName must be a JSON object")
     val unknownFields = payload.keys.filterNot { it in expectedFields }.sorted()
     require(unknownFields.isEmpty()) {
-        "relay allocation payload contains unknown field: ${unknownFields.first()}"
+        "$payloadName contains unknown field: ${unknownFields.first()}"
     }
     return jsonDecoder to payload
 }
@@ -740,6 +746,7 @@ object MessageType {
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"
     const val MemorySummaryDraftsList = "memory.summary.drafts.list"
+    const val MemorySummaryDraftGenerate = "memory.summary.draft.generate"
     const val MemorySummaryDraftApprove = "memory.summary.draft.approve"
     const val MemorySummaryDraftDismiss = "memory.summary.draft.dismiss"
     const val Error = "error"
@@ -1476,10 +1483,14 @@ data class ChatSessionLifecyclePayload(
 @Serializable
 data class MemoryListRequestPayload(
     val query: String? = null,
+    @SerialName("embedding_model_id") val embeddingModelId: String? = null,
 ) {
     init {
         require(query == null || query.isNotEmpty()) {
             "memory.list request query must be nonempty"
+        }
+        require(embeddingModelId == null || embeddingModelId.isNotBlank()) {
+            "memory.list request embedding_model_id must be nonblank"
         }
     }
 }
@@ -1605,6 +1616,111 @@ data class MemorySummaryDraftsListResultPayload(
 )
 
 @Serializable
+private data class MemorySummaryDraftGenerateRequestPayloadSurrogate(
+    @SerialName("draft_id") val draftId: String,
+    val model: String,
+    @SerialName("expected_session_id") val expectedSessionId: String,
+    @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int,
+)
+
+object MemorySummaryDraftGenerateRequestPayloadSerializer : KSerializer<MemorySummaryDraftGenerateRequestPayload> {
+    override val descriptor: SerialDescriptor = MemorySummaryDraftGenerateRequestPayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): MemorySummaryDraftGenerateRequestPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            MEMORY_SUMMARY_DRAFT_GENERATE_REQUEST_FIELDS,
+            "memory.summary.draft.generate request payload",
+        )
+        val surrogate = jsonDecoder.json.decodeFromJsonElement(
+            MemorySummaryDraftGenerateRequestPayloadSurrogate.serializer(),
+            payload,
+        )
+        return MemorySummaryDraftGenerateRequestPayload(
+            draftId = surrogate.draftId,
+            model = surrogate.model,
+            expectedSessionId = surrogate.expectedSessionId,
+            expectedSourceMessageCount = surrogate.expectedSourceMessageCount,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: MemorySummaryDraftGenerateRequestPayload) {
+        encoder.encodeSerializableValue(
+            MemorySummaryDraftGenerateRequestPayloadSurrogate.serializer(),
+            MemorySummaryDraftGenerateRequestPayloadSurrogate(
+                draftId = value.draftId,
+                model = value.model,
+                expectedSessionId = value.expectedSessionId,
+                expectedSourceMessageCount = value.expectedSourceMessageCount,
+            ),
+        )
+    }
+}
+
+@Serializable(with = MemorySummaryDraftGenerateRequestPayloadSerializer::class)
+data class MemorySummaryDraftGenerateRequestPayload(
+    @SerialName("draft_id") val draftId: String,
+    val model: String,
+    @SerialName("expected_session_id") val expectedSessionId: String,
+    @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int,
+) {
+    init {
+        require(draftId.isNotBlank()) {
+            "memory.summary.draft.generate request draft_id must be nonblank"
+        }
+        require(model.isNotBlank()) {
+            "memory.summary.draft.generate request model must be nonblank"
+        }
+        require(expectedSessionId.isNotBlank()) {
+            "memory.summary.draft.generate request expected_session_id must be nonblank"
+        }
+        require(expectedSourceMessageCount > 0) {
+            "memory.summary.draft.generate request expected_source_message_count must be positive"
+        }
+    }
+}
+
+@Serializable
+private data class MemorySummaryDraftGenerateResultPayloadSurrogate(
+    val draft: MemorySummaryDraftPayload,
+)
+
+object MemorySummaryDraftGenerateResultPayloadSerializer : KSerializer<MemorySummaryDraftGenerateResultPayload> {
+    override val descriptor: SerialDescriptor = MemorySummaryDraftGenerateResultPayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): MemorySummaryDraftGenerateResultPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            MEMORY_SUMMARY_DRAFT_GENERATE_RESULT_FIELDS,
+            "memory.summary.draft.generate response payload",
+        )
+        val surrogate = jsonDecoder.json.decodeFromJsonElement(
+            MemorySummaryDraftGenerateResultPayloadSurrogate.serializer(),
+            payload,
+        )
+        return MemorySummaryDraftGenerateResultPayload(draft = surrogate.draft)
+    }
+
+    override fun serialize(encoder: Encoder, value: MemorySummaryDraftGenerateResultPayload) {
+        encoder.encodeSerializableValue(
+            MemorySummaryDraftGenerateResultPayloadSurrogate.serializer(),
+            MemorySummaryDraftGenerateResultPayloadSurrogate(draft = value.draft),
+        )
+    }
+}
+
+@Serializable(with = MemorySummaryDraftGenerateResultPayloadSerializer::class)
+data class MemorySummaryDraftGenerateResultPayload(
+    val draft: MemorySummaryDraftPayload,
+)
+
+private val MEMORY_SUMMARY_DRAFT_GENERATE_REQUEST_FIELDS = setOf(
+    "draft_id",
+    "model",
+    "expected_session_id",
+    "expected_source_message_count",
+)
+private val MEMORY_SUMMARY_DRAFT_GENERATE_RESULT_FIELDS = setOf("draft")
+
+@Serializable
 data class MemorySummaryDraftApprovePayload(
     @SerialName("draft_id") val draftId: String,
     val content: String? = null,
@@ -1666,6 +1782,59 @@ data class MemorySummaryDraftDismissResultPayload(
 }
 
 @Serializable
+private data class MemorySummaryDraftPayloadSurrogate(
+    val id: String,
+    val session: MemorySummaryDraftSessionPayload,
+    @SerialName("source_message_count") val sourceMessageCount: Int,
+    @SerialName("source_range") val sourceRange: String,
+    @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
+    @SerialName("summary_preview") val summaryPreview: String,
+    @SerialName("summary_method") val summaryMethod: String? = null,
+    @SerialName("generated_at") val generatedAt: String? = null,
+    @SerialName("generated_model_id") val generatedModelId: String? = null,
+)
+
+object MemorySummaryDraftPayloadSerializer : KSerializer<MemorySummaryDraftPayload> {
+    override val descriptor: SerialDescriptor = MemorySummaryDraftPayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): MemorySummaryDraftPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            MEMORY_SUMMARY_DRAFT_FIELDS,
+            "memory summary draft payload",
+        )
+        val surrogate = jsonDecoder.json.decodeFromJsonElement(MemorySummaryDraftPayloadSurrogate.serializer(), payload)
+        return MemorySummaryDraftPayload(
+            id = surrogate.id,
+            session = surrogate.session,
+            sourceMessageCount = surrogate.sourceMessageCount,
+            sourceRange = surrogate.sourceRange,
+            sourcePointers = surrogate.sourcePointers,
+            summaryPreview = surrogate.summaryPreview,
+            summaryMethod = surrogate.summaryMethod ?: "deterministic_preview",
+            generatedAt = surrogate.generatedAt,
+            generatedModelId = surrogate.generatedModelId,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: MemorySummaryDraftPayload) {
+        encoder.encodeSerializableValue(
+            MemorySummaryDraftPayloadSurrogate.serializer(),
+            MemorySummaryDraftPayloadSurrogate(
+                id = value.id,
+                session = value.session,
+                sourceMessageCount = value.sourceMessageCount,
+                sourceRange = value.sourceRange,
+                sourcePointers = value.sourcePointers,
+                summaryPreview = value.summaryPreview,
+                summaryMethod = value.summaryMethod,
+                generatedAt = value.generatedAt,
+                generatedModelId = value.generatedModelId,
+            ),
+        )
+    }
+}
+
+@Serializable(with = MemorySummaryDraftPayloadSerializer::class)
 data class MemorySummaryDraftPayload(
     val id: String,
     val session: MemorySummaryDraftSessionPayload,
@@ -1673,6 +1842,9 @@ data class MemorySummaryDraftPayload(
     @SerialName("source_range") val sourceRange: String,
     @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
     @SerialName("summary_preview") val summaryPreview: String,
+    @SerialName("summary_method") val summaryMethod: String = "deterministic_preview",
+    @SerialName("generated_at") val generatedAt: String? = null,
+    @SerialName("generated_model_id") val generatedModelId: String? = null,
 ) {
     init {
         require(id.isNotEmpty()) {
@@ -1690,8 +1862,27 @@ data class MemorySummaryDraftPayload(
         require(summaryPreview.isNotEmpty()) {
             "memory summary draft summary_preview must be nonempty"
         }
+        require(summaryMethod in MEMORY_SUMMARY_DRAFT_METHODS) {
+            "memory summary draft summary_method must be deterministic_preview or llm_summary_v1"
+        }
+        requireProtocolDateTime(generatedAt, "memory summary draft generated_at")
+        require(generatedModelId == null || generatedModelId.isNotBlank()) {
+            "memory summary draft generated_model_id must be nonblank"
+        }
     }
 }
+
+private val MEMORY_SUMMARY_DRAFT_FIELDS = setOf(
+    "id",
+    "session",
+    "source_message_count",
+    "source_range",
+    "source_pointers",
+    "summary_preview",
+    "summary_method",
+    "generated_at",
+    "generated_model_id",
+)
 
 @Serializable
 data class MemorySummaryDraftSessionPayload(

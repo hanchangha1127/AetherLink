@@ -1,0 +1,252 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "production_p2p_nat_v1_20260711",
+  "sourceEvidence": {
+    "kind": "source_tree_collection",
+    "label": "AetherLink P2P route-preparation and transport source snapshot for production NAT traversal security design",
+    "collectionSha256": "3e778069ab57755e350b287355993d9bd27fe836f450d477354c8d34201a117c",
+    "artifactCount": 13,
+    "sourceDrift": "present"
+  },
+  "implementationBoundary": {
+    "selectionGatedProductionDesign": "not_implemented",
+    "activeProtocolNamespace": ["route.refresh"],
+    "notImplemented": [
+      "authenticated encrypted ICE candidate exchange",
+      "authenticated TURN allocation and relay fallback",
+      "transport-neutral identity session establishment",
+      "production NAT traversal orchestration"
+    ]
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "The source carries identity-bound opaque P2P route-preparation records and orders prepared P2P before relay fallback, but production ICE, TURN, authenticated candidate exchange, and a transport-neutral identity session remain selection-gated design work."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": ["incremental", "medium_term", "foundational"],
+    "nonNegotiables": [
+      "QR and authenticated route.refresh remain authorities for route bootstrap material.",
+      "Untrusted rendezvous, STUN, and TURN services never become endpoint identity authorities.",
+      "Every selected path installs encryption only after peer identity and transcript authentication.",
+      "Relay fallback preserves the same identity and session security invariants as a direct path."
+    ],
+    "assumptions": [
+      "No physical-device NAT matrix or public TURN service evidence is included.",
+      "Current P2P candidate material is opaque route preparation, not proof of ICE connectivity.",
+      "The production relay design is a separate prerequisite for managed TURN fallback."
+    ]
+  },
+  "evidenceCatalog": [
+    {"evidenceId": "E001", "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt"},
+    {"evidenceId": "E002", "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt"},
+    {"evidenceId": "E003", "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt"},
+    {"evidenceId": "E004", "path": "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt"},
+    {"evidenceId": "E005", "path": "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparation.kt"},
+    {"evidenceId": "E006", "path": "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"},
+    {"evidenceId": "E007", "path": "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"},
+    {"evidenceId": "E008", "path": "apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift"},
+    {"evidenceId": "E009", "path": "apps/macos/Pairing/Sources/PairingCoordinator.swift"},
+    {"evidenceId": "E010", "path": "apps/macos/Transport/Sources/RuntimeTransport.swift"},
+    {"evidenceId": "E011", "path": "packages/protocol-schema/pairing-qr.schema.json"},
+    {"evidenceId": "E012", "path": "packages/protocol-schema/protocol.schema.json"},
+    {"evidenceId": "E013", "path": "shared/protocol/fixtures/macos-compact-p2p-rendezvous-pairing-uri.txt"}
+  ],
+  "opportunities": [
+    {
+      "opportunityId": "authenticated-rendezvous-and-candidate-protection",
+      "title": "Authenticate rendezvous and protect candidate exchange",
+      "summary": "Turn opaque P2P route preparation into authenticated, encrypted ICE and TURN traversal without trusting discovery infrastructure as endpoint identity.",
+      "diagnosis": "The current route record validates shape, expiry, nonce, protocol version, and pinned identity association, but no active ICE, STUN, TURN, candidate-integrity, or connectivity-check protocol is implemented.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E004", "path": "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt", "claim": "Prepared P2P routes are attempted before prepared relay fallback, but connection behavior is delegated to an optional connector."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E005", "path": "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparation.kt", "claim": "P2P preparation accepts bounded opaque encrypted candidate material with expiry and anti-replay nonce but implements no candidate exchange or connectivity checks."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E003", "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt", "claim": "QR parsing recognizes a complete p2p_rendezvous record as opaque route material."},
+        {"claimType": "inferred", "sourceKind": "source", "evidenceId": "E007", "path": "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift", "claim": "Authenticated route refresh can distribute route material, but the active router exposes no P2P rendezvous or candidate signaling message family."},
+        {"claimType": "observed", "sourceKind": "schema", "evidenceId": "E012", "path": "packages/protocol-schema/protocol.schema.json", "claim": "The active route coordination namespace is limited to route.refresh and defines no ICE, STUN, TURN, rendezvous, or candidate messages."},
+        {"claimType": "observed", "sourceKind": "schema", "evidenceId": "E011", "path": "packages/protocol-schema/pairing-qr.schema.json", "claim": "The QR schema explicitly describes the P2P rendezvous record as opaque route-preparation material rather than host reachability or proof that NAT traversal is implemented."},
+        {"claimType": "observed", "sourceKind": "fixture", "evidenceId": "E013", "path": "shared/protocol/fixtures/macos-compact-p2p-rendezvous-pairing-uri.txt", "claim": "The compact fixture carries an opaque P2P record, expiry, nonce, and version rather than executable ICE credentials or candidates."}
+      ],
+      "desiredInvariants": [
+        "Rendezvous records and candidate batches are confidential and authenticated end to end between the paired endpoint identities.",
+        "Every ICE username fragment, password, candidate generation, tie-breaker, and restart is bound to the authenticated session transcript.",
+        "Untrusted rendezvous, STUN, and TURN services cannot forge candidates, select a peer identity, or cause silent downgrade.",
+        "Connectivity checks prove possession of short-lived credentials before nomination and application traffic.",
+        "TURN allocation credentials are scoped, short-lived, non-reusable, and do not reveal endpoint traffic keys.",
+        "Consent freshness loss stops application traffic on the affected candidate pair before fallback or migration.",
+        "Direct and TURN paths provide authenticated encryption and replay protection before carrying runtime protocol frames.",
+        "Candidate privacy policy minimizes host-address disclosure and applies explicit mDNS or relay-only modes where required."
+      ],
+      "proposalPath": "proposals/authenticated-rendezvous-and-candidate-protection.md",
+      "options": [
+        {
+          "optionId": "relay-only-sealed-signaling",
+          "title": "Relay-only sealed signaling baseline",
+          "kind": "baseline",
+          "summary": "Start production remote connectivity over a blind relay and sealed pair-scoped signaling without exposing direct host or server-reflexive candidates.",
+          "diagramPaths": {"before": "diagrams/authenticated-rendezvous-and-candidate-protection-before.mmd", "after": "diagrams/authenticated-rendezvous-and-candidate-protection-relay-only-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E005", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "The opaque body becomes a sealed relay bootstrap descriptor while direct candidate semantics remain intentionally absent."},
+            {"evidenceId": "E007", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Authenticated route refresh can carry sealed relay bootstrap state without making rendezvous an endpoint identity authority."},
+            {"evidenceId": "E012", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "A versioned relay-only descriptor preserves the reserved traversal namespace and still requires strict replay and expiry rules."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Relay-only startup minimizes candidate disclosure and direct-target abuse while retaining relay timing and source metadata.", "validationPlan": "Mutate, replay, reorder, truncate, and cross-pair sealed descriptors and capture relay-visible metadata."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "medium", "basis": "hypothetical", "assessment": "Every remote session pays relay latency and bandwidth instead of promoting a direct path.", "validationPlan": "Measure authenticated time-to-first-command and sustained relay bandwidth by region."},
+            {"dimension": "memory", "direction": "neutral", "confidence": "medium", "basis": "hypothetical", "assessment": "Endpoints retain bounded descriptor and replay state without ICE checklists.", "validationPlan": "Measure peak endpoint state under reconnect and descriptor churn."},
+            {"dimension": "reliability", "direction": "neutral", "confidence": "medium", "basis": "hypothetical", "assessment": "The path is predictable but depends on signaling and relay availability for every connection.", "validationPlan": "Exercise signaling loss, relay outage, region failover, expiry, and reconnect."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Relay capacity, credentials, quotas, regional routing, and privacy-safe telemetry become mandatory production services.", "validationPlan": "Complete capacity, credential rotation, abuse, failover, and incident drills."},
+            {"dimension": "migration", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "A relay-only profile can launch behind the existing opaque descriptor before direct traversal is enabled.", "validationPlan": "Prove old peers fail closed and the production profile never falls back to development plaintext."}
+          ],
+          "residualRisks": ["Relay operators observe timing, volume, and source metadata.", "Relay outage or exhaustion denies every remote session.", "Relay cost scales with all remote traffic."],
+          "implementationReadiness": {"affectedComponents": ["apps/android/core/transport", "apps/macos/CompanionCore", "production signaling", "production blind relay"], "workPackages": ["Specify sealed pair-scoped relay bootstrap descriptors.", "Implement bounded replay, expiry, credential, and relay quota state."], "acceptanceCriteria": ["Cross-pair, replayed, expired, and mutated descriptors fail closed.", "Relay capture contains no application plaintext or endpoint traffic secret."], "migrationNotes": ["Use an explicit production profile with no automatic development downgrade."], "rollback": "Stop issuing the profile while preserving the enrolled protocol floor and existing pair trust."}
+        },
+        {
+          "optionId": "authenticated-encrypted-ice-turn",
+          "title": "Authenticated encrypted ICE with managed TURN",
+          "kind": "structural",
+          "summary": "Use a reviewed ICE implementation, end-to-end encrypted signaling, authenticated connectivity checks, and short-lived managed TURN credentials.",
+          "diagramPaths": {"before": "diagrams/authenticated-rendezvous-and-candidate-protection-before.mmd", "after": "diagrams/authenticated-rendezvous-and-candidate-protection-authenticated-ice-turn-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E004", "effect": "addresses", "tacticalFixRequired": true, "rationale": "A concrete connector implements direct traversal and explicit TURN fallback behind the existing route ordering."},
+            {"evidenceId": "E005", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The opaque preparation becomes a versioned authenticated ICE session descriptor."},
+            {"evidenceId": "E012", "effect": "addresses", "tacticalFixRequired": true, "rationale": "route.refresh carries only encrypted traversal descriptors while the endpoint ICE engine owns checks and nomination."},
+            {"evidenceId": "E011", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "QR bootstrap remains bounded and opaque; dynamic candidates move to authenticated refresh."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "analogous", "assessment": "Standard ICE checks plus encrypted identity-bound signaling prevent candidate forgery and protect application traffic from rendezvous and TURN services.", "validationPlan": "Run signaling MITM, credential theft, nomination injection, downgrade, and TURN plaintext-capture tests."},
+            {"dimension": "performance", "direction": "improves", "confidence": "medium", "basis": "analogous", "assessment": "Parallel candidate gathering and checks can reduce successful direct-path setup time, with TURN adding relay RTT when needed.", "validationPlan": "Measure gathering, nomination, and first-frame latency by NAT class and region."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "medium", "basis": "analogous", "assessment": "ICE checklists, sockets, candidate pairs, consent state, and crypto contexts add bounded session memory.", "validationPlan": "Measure peak memory across concurrent sessions and candidate limits."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "analogous", "assessment": "A mature ICE engine handles NAT variance and TURN supplies deterministic fallback, while service outages remain failover dependencies.", "validationPlan": "Run full-cone, restricted, symmetric NAT, IPv4/IPv6, rebinding, loss, and TURN outage tests."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "TURN capacity, abuse controls, credential minting, regional routing, and privacy-safe telemetry need production ownership.", "validationPlan": "Complete capacity, credential rotation, abuse, failover, and incident drills."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Both platforms, schemas, rendezvous service, and relay operations change behind a new traversal version.", "validationPlan": "Stage versioned cohorts and prove unsupported peers select an explicit non-P2P route without protocol downgrade."}
+          ],
+          "residualRisks": ["Rendezvous and TURN services observe connection metadata, timing, and source addresses.", "Endpoint compromise can expose candidates and traffic before or after encryption.", "TURN denial and regional exhaustion can prevent fallback."],
+          "implementationReadiness": {"affectedComponents": ["apps/android/core/transport", "apps/macos/CompanionCore", "apps/macos/Transport", "packages/protocol-schema"], "workPackages": ["Select and wrap a reviewed ICE implementation on both platforms.", "Define encrypted identity-bound signaling and connectivity-check credentials.", "Deploy managed TURN with short-lived scoped credentials and quotas."], "acceptanceCriteria": ["Both endpoints authenticate the same transcript before traffic keys are installed.", "Direct success and TURN fallback pass the supported NAT matrix.", "Rendezvous and TURN captures contain no application plaintext or reusable endpoint secret."], "migrationNotes": ["Introduce a new traversal protocol version with explicit capability negotiation."], "rollback": "Stop issuing the new descriptor and route sessions to an independently authenticated relay without lowering stored security floors."}
+        },
+        {
+          "optionId": "decentralized-rendezvous",
+          "title": "Decentralized sealed rendezvous",
+          "kind": "isolation",
+          "summary": "Replicate sealed rendezvous records across multiple nodes with rotating lookup identifiers after the authenticated candidate envelope is stable.",
+          "diagramPaths": {"before": "diagrams/authenticated-rendezvous-and-candidate-protection-before.mmd", "after": "diagrams/authenticated-rendezvous-and-candidate-protection-decentralized-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E005", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Opaque records become end-to-end protected objects with blinded lookup identifiers."},
+            {"evidenceId": "E007", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Authenticated endpoints receive portable capabilities without granting the message router traversal authority."},
+            {"evidenceId": "E012", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The route descriptor binds separate rendezvous and TURN authority identities."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "low", "basis": "hypothetical", "assessment": "Sealed records reduce any node's content authority, while Sybil, poisoning, replay, and global correlation remain system risks.", "validationPlan": "Compromise and collude rendezvous nodes, inject stale records, and measure obtainable identity and candidate metadata."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Multi-node publish and lookup add network work before the same ICE and TURN traversal.", "validationPlan": "Benchmark cold and cached publish/lookup across partitions and regions."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Replicated indexes, tombstones, replay state, and rotating handles add bounded client and service state.", "validationPlan": "Model and load-test state by pair, generation, node, and region."},
+            {"dimension": "reliability", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "Replication reduces one-node dependency but adds consistency, partition, and stale-record behavior.", "validationPlan": "Run node loss, partition, equivocation, replay, and convergence drills."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "hypothetical", "assessment": "Multi-operator abuse, tombstone, key, SLO, and privacy-preserving incident coordination require new ownership.", "validationPlan": "Define SLOs, node admission, dashboards, key rotation, deletion, and incident boundaries."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "hypothetical", "assessment": "Decentralization is safest only after authenticated envelopes, ICE, TURN, and replay formats stabilize.", "validationPlan": "Introduce replicas behind the same endpoint envelope and retain centralized sealed rendezvous rollback."}
+          ],
+          "residualRisks": ["Traffic timing and global observation can still correlate endpoints.", "Sybil or poisoning attacks can degrade lookup availability.", "Partitions and inconsistent tombstones can replay stale reachability state."],
+          "implementationReadiness": {"affectedComponents": ["rendezvous nodes", "endpoint transport clients", "node admission and abuse policy"], "workPackages": ["Define rotating lookup handles, sealed records, replay-safe tombstones, and bounded replication."], "acceptanceCriteria": ["No rendezvous node can decrypt candidate content or make stale records current.", "Node loss and partition retain bounded deterministic behavior."], "migrationNotes": ["Adopt only after the recommended centralized profile establishes stable endpoint formats."], "rollback": "Return lookup to centralized sealed rendezvous without weakening endpoint verification or exposing candidate plaintext."}
+        }
+      ],
+      "recommendedOptionId": "authenticated-encrypted-ice-turn",
+      "recommendation": "Recommend authenticated-encrypted-ice-turn for a future explicit selection, using a reviewed ICE engine, end-to-end protected signaling, and short-lived managed TURN credentials; retain the split-authority option as a later privacy and isolation improvement."
+    },
+    {
+      "opportunityId": "identity-bound-traversal-and-relay-fallback",
+      "title": "Bind identity and session security across traversal paths",
+      "summary": "Make direct, TURN, and relay paths interchangeable beneath one authenticated endpoint session without changing peer identity or downgrade policy.",
+      "diagnosis": "Route candidates are identity-associated and ordered, and authenticated runtime messages can bind to secure transports, but the source does not yet define one transport-neutral handshake and continuity contract across direct P2P and relay fallback.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E004", "path": "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt", "claim": "The Android manager orders prepared P2P, relay, fresh local, and stale routes while preserving a paired identity object."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E001", "path": "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt", "claim": "Prepared P2P and relay routes are sourced from the same identity-matched pairing or trusted state."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E008", "path": "apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift", "claim": "The macOS connection manager has route and connection lifecycle state but no demonstrated production NAT traversal session continuity."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E007", "path": "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift", "claim": "Authentication sessions can bind identity to a secure transport binding for protected operations."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E010", "path": "apps/macos/Transport/Sources/RuntimeTransport.swift", "claim": "The route-independent transport boundary exposes lifecycle and disconnect interfaces but no security context or channel binding."},
+        {"claimType": "inferred", "sourceKind": "schema", "evidenceId": "E012", "path": "packages/protocol-schema/protocol.schema.json", "claim": "The schema has transport_binding fields but no transport-neutral P2P session establishment, path migration, or authenticated fallback protocol."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E002", "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt", "claim": "Pinned runtime identity and route material persist separately, requiring an explicit rule that routes never replace identity authority."}
+      ],
+      "desiredInvariants": [
+        "The paired long-term endpoint identities, not route records or transport addresses, authenticate every session.",
+        "One canonical transcript binds both endpoint identities, ephemeral key shares, nonces, protocol suite, route descriptor digest, and selected path class.",
+        "Direct, TURN, and relay fallback derive the same transport-neutral session identity while using fresh path-specific traffic keys.",
+        "A path switch or reconnect cannot resume application traffic until peer identity, transcript continuity, freshness, and authorization are revalidated.",
+        "Failure of direct traversal may trigger explicit authenticated fallback but never a plaintext or anonymous transport downgrade.",
+        "Route tokens, rendezvous record IDs, relay IDs, candidates, and network addresses never act as endpoint authentication secrets.",
+        "Duplicate, delayed, or racing route attempts cannot create two accepted sessions for one single-use session nonce."
+      ],
+      "proposalPath": "proposals/identity-bound-traversal-and-relay-fallback.md",
+      "options": [
+        {
+          "optionId": "transport-neutral-identity-session",
+          "title": "Transport-neutral identity session",
+          "kind": "baseline",
+          "summary": "Establish one endpoint-authenticated session transcript above direct, TURN, and relay transports, with path-specific keys and explicit continuity proofs.",
+          "diagramPaths": {"before": "diagrams/identity-bound-traversal-and-relay-fallback-before.mmd", "after": "diagrams/identity-bound-traversal-and-relay-fallback-transport-neutral-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E004", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Route ordering becomes policy input to one identity session rather than separate trust decisions."},
+            {"evidenceId": "E001", "effect": "addresses", "tacticalFixRequired": true, "rationale": "P2P and relay preparations remain identity-matched hints beneath the common handshake."},
+            {"evidenceId": "E007", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Authenticated session identity and channel binding extend across selected transport classes."},
+            {"evidenceId": "E010", "effect": "addresses", "tacticalFixRequired": true, "rationale": "A new route-independent adapter must add exporter bindings and a canonical endpoint transcript above the lifecycle-only seam."},
+            {"evidenceId": "E012", "effect": "addresses", "tacticalFixRequired": true, "rationale": "A versioned identity-session transcript and path-binding contract become schema-controlled."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Peer identity and downgrade policy are consistent across paths, and every path is bound to the same canonical session intent.", "validationPlan": "Run identity substitution, transcript mutation, cross-path replay, exporter mismatch, and downgrade tests."},
+            {"dimension": "performance", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "Parallel path attempts can share session intent while fresh path keys avoid repeating unrelated application setup.", "validationPlan": "Measure first connection, fallback, and validated path-switch latency."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "medium", "basis": "hypothetical", "assessment": "Session transcripts, path bindings, replay windows, and parallel attempt state add bounded memory.", "validationPlan": "Measure peak state under concurrent races, reconnects, and path churn."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "One state machine gives deterministic fallback and error handling, though bugs affect every transport.", "validationPlan": "Model the state machine and inject loss, duplicate completion, cancellation, timeout, and fallback races."},
+            {"dimension": "operability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "A common session and path-transition vocabulary simplifies privacy-safe telemetry and incidents.", "validationPlan": "Verify one correlation-safe session trace spans route selection without logging candidates or secrets."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Both endpoints and all connectors must adopt the transcript, path binding, and strict protocol floor.", "validationPlan": "Use a versioned dual-stack rollout with fixed Kotlin/Swift vectors and no in-session downgrade."}
+          ],
+          "residualRisks": ["A common state-machine flaw affects every route class.", "Traffic metadata remains path-visible to network and relay operators.", "Application-level continuity may still need idempotent request semantics."],
+          "implementationReadiness": {"affectedComponents": ["apps/android/core/transport", "apps/macos/CompanionCore", "apps/macos/Transport", "packages/protocol-schema"], "workPackages": ["Specify the canonical endpoint identity-session transcript.", "Define path exporter binding, key derivation, replay, and fallback state transitions.", "Create shared Kotlin and Swift conformance vectors."], "acceptanceCriteria": ["Direct and fallback connections authenticate the same paired identities and session intent.", "Every accepted path has a fresh exporter-bound traffic key.", "Racing paths produce at most one accepted session nonce."], "migrationNotes": ["Gate by an explicit identity-session version and preserve the highest accepted version."], "rollback": "Disable new session creation while retaining the version floor; fall back only to a separately authenticated legacy route class."}
+        },
+        {
+          "optionId": "ice-quic-identity-session",
+          "title": "ICE bootstrap with a QUIC identity session spike",
+          "kind": "contingent",
+          "summary": "Preserve the endpoint identity contract while evaluating QUIC path validation, migration, stream handling, and UDP-restricted fallback under bounded spike criteria.",
+          "diagramPaths": {"before": "diagrams/identity-bound-traversal-and-relay-fallback-before.mmd", "after": "diagrams/identity-bound-traversal-and-relay-fallback-quic-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E004", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Existing route ordering can require authentication on every attempt but does not provide session continuity."},
+            {"evidenceId": "E007", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Current authenticated transport binding can be repeated for each transport."},
+            {"evidenceId": "E010", "effect": "addresses", "tacticalFixRequired": true, "rationale": "A new QUIC adapter must add security context and channel binding above the existing lifecycle-only seam."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "standards-derived", "assessment": "QUIC supplies TLS-bound transport security and path challenges, while application paired identity still requires an explicit authenticated transcript.", "validationPlan": "Run identity substitution, exporter mismatch, 0-RTT mutation, migration spoofing, and cross-path replay tests."},
+            {"dimension": "performance", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "QUIC can reduce migration interruption and multiplex streams, but ICE bootstrap and UDP blocking may dominate setup.", "validationPlan": "Measure cold and resumed setup, loss recovery, migration, and UDP-blocked fallback against a simpler carrier."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "medium", "basis": "analogous", "assessment": "QUIC flow control, congestion, stream, connection-id, migration, and crypto state add bounded endpoint memory.", "validationPlan": "Measure peak state under stream load, migration, candidate races, and reconnect."},
+            {"dimension": "reliability", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "Standard migration may help mobile changes, while UDP-restricted networks and cross-platform integration add failure modes.", "validationPlan": "Run IPv4/IPv6, NAT64, VPN, captive, Wi-Fi/cellular, suspend, rebinding, and TURN matrices."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "analogous", "assessment": "QUIC versions, key logs, packet diagnosis, congestion, path metrics, and library updates require specialist ownership.", "validationPlan": "Define privacy-safe metrics, packet review, incident tooling, dependency updates, and kill switches."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "The spike must remain removable and cannot define the identity contract or block TURN fallback.", "validationPlan": "Gate the profile independently and prove rollback to the transport-neutral session carrier without lowering security floors."}
+          ],
+          "residualRisks": ["QUIC path validation does not perform NAT traversal or establish application identity.", "UDP-restricted networks still require an authenticated fallback.", "Cross-platform library behavior and battery cost remain unmeasured."],
+          "implementationReadiness": {"affectedComponents": ["apps/android/core/transport", "apps/macos/Transport", "connector spike harness"], "workPackages": ["Freeze the transport-neutral transcript first.", "Run a time-boxed QUIC-over-nominated-path spike with declared budgets."], "acceptanceCriteria": ["No QUIC channel becomes ready before paired identity confirmation.", "The spike meets declared traversal, migration, memory, battery, and rollback criteria."], "migrationNotes": ["Keep the QUIC profile non-production and independently disableable until selected."], "rollback": "Remove the QUIC carrier while retaining the transport-neutral identity contract and authenticated relay fallback."}
+        },
+        {
+          "optionId": "relay-first-direct-promotion",
+          "title": "Relay-first session with direct promotion",
+          "kind": "alternative",
+          "summary": "Establish the identity-bound session over a blind relay first, then promote to a validated direct path without changing session identity or weakening fallback.",
+          "diagramPaths": {"before": "diagrams/identity-bound-traversal-and-relay-fallback-before.mmd", "after": "diagrams/identity-bound-traversal-and-relay-fallback-relay-promotion-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E004", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Sequential route candidates evolve into policy-controlled validated path sets."},
+            {"evidenceId": "E007", "effect": "addresses", "tacticalFixRequired": true, "rationale": "The authenticated session authorizes bounded path additions rather than reassigning identity."},
+            {"evidenceId": "E012", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Signed path capabilities and migration receipts become explicit protocol objects."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "medium", "basis": "hypothetical", "assessment": "The authenticated session exists before candidate disclosure or promotion, while overlap expands replay and state-transition surface.", "validationPlan": "Forge, replay, duplicate, reorder, and race promotion requests and path confirmations."},
+            {"dimension": "performance", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "Relay-first startup gives predictable readiness but pays relay latency and temporary overlap before any direct gain.", "validationPlan": "Measure time-to-first-command, promotion latency, overlap duration, battery, and relay bandwidth."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "high", "basis": "hypothetical", "assessment": "Relay session, direct checks, path keys, replay windows, and promotion state coexist under hard bounds.", "validationPlan": "Enforce and test limits for concurrent paths, checks, retained epochs, and overlap time."},
+            {"dimension": "reliability", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "Relay gives predictable bootstrap, but simultaneous promotion, loss, rollback, and duplicate delivery create difficult races.", "validationPlan": "Inject relay/direct loss, simultaneous promotion, stale confirmation, cancellation, and rollback."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "hypothetical", "assessment": "Relay capacity, promotion reasons, overlap, retirement, cost controls, and deterministic incident traces require ownership.", "validationPlan": "Define overlap budgets, relay cost alarms, promotion metrics, and redacted traces."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "Promotion depends on a stable transport-neutral session and should follow single-path conformance.", "validationPlan": "Enable promotion only after relay-only and direct single-path tests are stable and keep a relay-only kill switch."}
+          ],
+          "residualRisks": ["Overlapping paths increase denial-of-service and duplicate-delivery surface.", "Every connection initially consumes relay capacity.", "Promotion bugs can interrupt or duplicate application traffic."],
+          "implementationReadiness": {"affectedComponents": ["endpoint session state machines", "route policy", "blind relay operations", "protocol schema"], "workPackages": ["Define bounded relay-to-direct promotion and rollback state."], "acceptanceCriteria": ["Only identity-session-authorized paths carry traffic.", "Promotion yields at most one active application path and relay rollback preserves session identity."], "migrationNotes": ["Build only after the recommended single-path session design is proven."], "rollback": "Disable promotion and remain on one authenticated relay path without changing endpoint identity or session version."}
+        }
+      ],
+      "recommendedOptionId": "transport-neutral-identity-session",
+      "recommendation": "Recommend transport-neutral-identity-session for a future explicit selection so direct, TURN, and relay routes are path choices beneath one endpoint-authenticated transcript; defer multipath capabilities until single-path fallback is proven."
+    }
+  ]
+}

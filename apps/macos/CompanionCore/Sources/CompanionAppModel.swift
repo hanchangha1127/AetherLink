@@ -661,6 +661,10 @@ private struct PendingPairScopedRelayActivation: Equatable {
     let clientKeyFingerprint: String
     let result: RuntimeRouteRefreshResult
     let rotatesBootstrapRoute: Bool
+    let runtimeLifecycleGeneration: UUID
+    let pairLifecycleGeneration: UUID
+    let refreshSequence: UInt64
+    var activationRequested: Bool
 }
 
 @MainActor
@@ -693,11 +697,7 @@ public final class CompanionAppModel: ObservableObject {
     private let pairingCoordinator = PairingCoordinator()
     private let trustedDeviceStore: TrustedDeviceStore
     private let userDefaults: UserDefaults
-    private let peerServer: any RuntimeTransport
-    private let advertiser: any RuntimeAdvertiser
-    private let relayClient: any RelayPeerTransport
-    private let pairedRelayClientFactory: @Sendable () -> any RelayPeerTransport
-    private var pairedRelayClients: [String: any RelayPeerTransport] = [:]
+    private var runtimeConnectionManager: MacRuntimeConnectionManager!
     private let pairScopedRelayRouteStore: PairScopedRelayRouteStore
     private var pairScopedRelayRoutes: [String: ResolvedPairScopedRelayRoute]
     private let relaySecretStore: any CompanionRelaySecretStoring
@@ -707,7 +707,11 @@ public final class CompanionAppModel: ObservableObject {
     private let runtimeRouteHostProvider: () -> String?
     private var relayConfiguration: RelayPeerConfiguration?
     private var allocatedRemoteRouteLease: CompanionRemoteRouteLease?
-    private var pendingPairedRelayActivation: PendingPairScopedRelayActivation?
+    private var pendingPairedRelayActivations: [String: PendingPairScopedRelayActivation] = [:]
+    private var runtimeLifecycleGeneration = UUID()
+    private var pairLifecycleGenerations: [String: UUID] = [:]
+    private var pairRefreshSequences: [String: UInt64] = [:]
+    private var inFlightPairRefreshSequences: [String: Set<UInt64>] = [:]
     private let macDeviceID: String
     private let runtimeIdentityKey: RuntimeIdentityKey
     private let runtimeIdentityAuthorizationSigner: (
@@ -777,6 +781,9 @@ public final class CompanionAppModel: ObservableObject {
         pairedRelayClientFactory: @escaping @Sendable () -> any RelayPeerTransport = {
             RelayPeerClient()
         },
+        pairedPrivateOverlayTransportFactory: (
+            @Sendable () -> any MacRuntimePrivateOverlayTransport
+        )? = nil,
         remoteRelayRouteAllocator: (any CompanionRemoteRelayRouteAllocating)? = nil,
         relayServiceRouteAllocator: any RelayServiceRouteAllocating = TCPRelayServiceRouteAllocator(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -794,14 +801,10 @@ public final class CompanionAppModel: ObservableObject {
         )
         self.backend = backend
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
-        self.peerServer = peerServer
-        self.advertiser = advertiser
         self.relayServiceRouteAllocator = relayServiceRouteAllocator
         self.environment = environment
         self.userDefaults = userDefaults
         self.bootstrapRelaySettings = loadedBootstrapRelaySettings
-        self.relayClient = relayClient
-        self.pairedRelayClientFactory = pairedRelayClientFactory
         self.relaySecretStore = relaySecretStore
         let pairScopedRelayRouteStore = PairScopedRelayRouteStore(
             userDefaults: userDefaults,
@@ -867,16 +870,16 @@ public final class CompanionAppModel: ObservableObject {
             }
         )
         let runtimeRouter = self.runtimeRouter!
-        if let localPeerServer = peerServer as? LocalPeerServer {
-            localPeerServer.onDisconnect = { connectionID in
+        self.runtimeConnectionManager = MacRuntimeConnectionManager(
+            localTransport: peerServer,
+            advertiser: advertiser,
+            bootstrapTransport: relayClient,
+            pairTransportFactory: pairedRelayClientFactory,
+            pairPrivateOverlayTransportFactory: pairedPrivateOverlayTransportFactory,
+            onDisconnect: { connectionID in
                 runtimeRouter.connectionDidClose(connectionID)
             }
-        }
-        if let relayPeerClient = relayClient as? RelayPeerClient {
-            relayPeerClient.onDisconnect = { connectionID in
-                runtimeRouter.connectionDidClose(connectionID)
-            }
-        }
+        )
         configureResidencyEventsIfAvailable()
         if let runtimeIdentityWarning {
             log(runtimeIdentityWarning)
@@ -888,7 +891,10 @@ public final class CompanionAppModel: ObservableObject {
         runtimePort = port
         isRuntimeStarted = true
         let router = runtimeRouter!
-        peerServer.start(port: port) { [router, weak self] envelope, sink in
+        let localStatus = runtimeConnectionManager.startLocal(
+            port: port,
+            metadata: runtimeAdvertisementMetadata
+        ) { [router, weak self] envelope, sink in
             Task { @MainActor in
                 self?.log("Received \(envelope.type)")
             }
@@ -896,23 +902,20 @@ public final class CompanionAppModel: ObservableObject {
         }
         renewSavedBootstrapRelayRouteIfNeeded()
         startRelayClientIfConfigured()
-        startRestoredPairScopedRelayClients()
-        transportState = Self.transportStatus(from: peerServer.status)
+        startRestoredPairScopedTransports()
+        transportState = Self.transportStatus(from: localStatus)
         refreshTransportStatusText()
         switch transportState.state {
         case .advertising:
-            advertiser.start(port: Int32(port), metadata: runtimeAdvertisementMetadata)
             log("AetherLink runtime started")
             if let relayConfiguration {
                 log("Remote route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
             }
         case .failed:
-            advertiser.stop()
             let message = transportState.failureMessage ?? "Runtime listener failed"
             transportStatus = "Runtime listener failed: \(message)"
             log(transportStatus)
         case .stopped:
-            advertiser.stop()
             transportStatus = "Stopped"
             log("AetherLink runtime stopped")
         }
@@ -924,11 +927,9 @@ public final class CompanionAppModel: ObservableObject {
 
     public func stop() {
         isRuntimeStarted = false
-        peerServer.stop()
-        advertiser.stop()
-        relayClient.stop()
-        pairedRelayClients.values.forEach { $0.stop() }
-        pairedRelayClients.removeAll()
+        runtimeLifecycleGeneration = UUID()
+        pendingPairedRelayActivations.removeAll()
+        runtimeConnectionManager.stopAll()
         transportState = .stopped
         transportStatus = "Stopped"
         developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
@@ -1318,7 +1319,7 @@ public final class CompanionAppModel: ObservableObject {
         developmentRelaySettings = .disabled
         relayConfiguration = nil
         allocatedRemoteRouteLease = nil
-        relayClient.stop()
+        runtimeConnectionManager.stopBootstrap()
         developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(status: .stopped)
         remoteRoutePreparationIssue = nil
         shouldGenerateRemotePairingQRCodeWhenRelayReady = false
@@ -1720,12 +1721,16 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func removeTrustedDevice(_ device: TrustedDevice) async {
+        let clientKeyFingerprint = try? PairedRelayAllocationAuthorization.publicKeyFingerprint(
+            publicKeyBase64: device.publicKeyBase64
+        )
+        if let clientKeyFingerprint {
+            invalidatePairLifecycle(fingerprint: clientKeyFingerprint)
+            runtimeConnectionManager.stopPair(fingerprint: clientKeyFingerprint)
+        }
         do {
             try await trustedDeviceStore.remove(deviceID: device.id)
-            if let clientKeyFingerprint = try? PairedRelayAllocationAuthorization.publicKeyFingerprint(
-                publicKeyBase64: device.publicKeyBase64
-            ) {
-                pairedRelayClients.removeValue(forKey: clientKeyFingerprint)?.stop()
+            if let clientKeyFingerprint {
                 pairScopedRelayRoutes.removeValue(forKey: clientKeyFingerprint)
                 do {
                     try pairScopedRelayRouteStore.remove(
@@ -1778,12 +1783,10 @@ public final class CompanionAppModel: ObservableObject {
         }
         let router = runtimeRouter!
         let endpoint = "\(authorizedConfiguration.host):\(authorizedConfiguration.port)"
-        relayClient.start(
+        runtimeConnectionManager.startBootstrap(
             configuration: authorizedConfiguration,
             onStatusChange: { [weak self] status in
-                Task { @MainActor in
-                    self?.handleRelayStatus(status, endpoint: endpoint)
-                }
+                self?.handleRelayStatus(status, endpoint: endpoint)
             }
         ) { [router, weak self] envelope, sink in
             Task { @MainActor in
@@ -1793,10 +1796,30 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func startPairScopedRelayClient(
+    private func startPairScopedTransports(
         clientKeyFingerprint: String,
         configuration: RelayPeerConfiguration
     ) {
+        let router = runtimeRouter!
+        runtimeConnectionManager.startPairPrivateOverlay(
+            fingerprint: clientKeyFingerprint,
+            onStatusChange: { [weak self] status in
+                switch status {
+                case .ready:
+                    self?.log("Pair-scoped private overlay ready")
+                case .failed:
+                    self?.log("Pair-scoped private overlay failed")
+                case .stopped, .connecting:
+                    break
+                }
+            }
+        ) { [router, weak self] envelope, sink in
+            Task { @MainActor in
+                self?.log("Pair-scoped private overlay received \(envelope.type)")
+            }
+            router.handle(envelope, sink: sink)
+        }
+
         let authorizedConfiguration: RelayPeerConfiguration
         do {
             let authorization = try relayAllocationAuthorization()
@@ -1816,28 +1839,17 @@ public final class CompanionAppModel: ObservableObject {
             return
         }
 
-        pairedRelayClients.removeValue(forKey: clientKeyFingerprint)?.stop()
-        let client = pairedRelayClientFactory()
-        if let relayPeerClient = client as? RelayPeerClient {
-            let router = runtimeRouter!
-            relayPeerClient.onDisconnect = { connectionID in
-                router.connectionDidClose(connectionID)
-            }
-        }
-        pairedRelayClients[clientKeyFingerprint] = client
-        let router = runtimeRouter!
-        client.start(
+        runtimeConnectionManager.startPair(
+            fingerprint: clientKeyFingerprint,
             configuration: authorizedConfiguration,
             onStatusChange: { [weak self] status in
-                Task { @MainActor in
-                    switch status {
-                    case .ready, .waitingForPeer:
-                        self?.log("Pair-scoped remote route ready")
-                    case .failed:
-                        self?.log("Pair-scoped remote route failed")
-                    case .stopped, .connecting, .reconnecting:
-                        break
-                    }
+                switch status {
+                case .ready, .waitingForPeer:
+                    self?.log("Pair-scoped remote route ready")
+                case .failed:
+                    self?.log("Pair-scoped remote route failed")
+                case .stopped, .connecting, .reconnecting:
+                    break
                 }
             }
         ) { [router, weak self] envelope, sink in
@@ -1848,12 +1860,75 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func startRestoredPairScopedRelayClients(now: Date = Date()) {
+    private func beginPairLifecycleRefresh(
+        fingerprint: String
+    ) -> (runtime: UUID, pair: UUID, sequence: UInt64) {
+        let pairGeneration = pairLifecycleGenerations[fingerprint] ?? UUID()
+        pairLifecycleGenerations[fingerprint] = pairGeneration
+        let sequence = (pairRefreshSequences[fingerprint] ?? 0) + 1
+        pairRefreshSequences[fingerprint] = sequence
+        inFlightPairRefreshSequences[fingerprint, default: []].insert(sequence)
+        return (runtimeLifecycleGeneration, pairGeneration, sequence)
+    }
+
+    private func finishPairLifecycleRefresh(fingerprint: String, sequence: UInt64) {
+        inFlightPairRefreshSequences[fingerprint]?.remove(sequence)
+        if inFlightPairRefreshSequences[fingerprint]?.isEmpty == true {
+            inFlightPairRefreshSequences.removeValue(forKey: fingerprint)
+        }
+        reconcilePendingPairActivation(fingerprint: fingerprint)
+    }
+
+    private func invalidatePairLifecycle(fingerprint: String) {
+        pairLifecycleGenerations[fingerprint] = UUID()
+        inFlightPairRefreshSequences.removeValue(forKey: fingerprint)
+        pendingPairedRelayActivations.removeValue(forKey: fingerprint)
+    }
+
+    private func reconcilePendingPairActivation(fingerprint: String) {
+        guard let pendingActivation = pendingPairedRelayActivations[fingerprint],
+              pendingActivation.activationRequested,
+              !(inFlightPairRefreshSequences[fingerprint] ?? []).contains(where: {
+                  $0 > pendingActivation.refreshSequence
+              }),
+              pendingActivation.result.runtimeDeviceID == macDeviceID,
+              pendingActivation.result.runtimeKeyFingerprint == macFingerprint,
+              runtimeLifecycleGeneration == pendingActivation.runtimeLifecycleGeneration,
+              pairLifecycleGenerations[fingerprint] == pendingActivation.pairLifecycleGeneration,
+              let storedRoute = pairScopedRelayRoutes[fingerprint],
+              let relayHost = pendingActivation.result.relayHost,
+              relayHost == storedRoute.host,
+              let relayPort = pendingActivation.result.relayPort,
+              relayPort == Int(storedRoute.port),
+              let relayID = pendingActivation.result.relayID,
+              relayID == storedRoute.relayID,
+              let relaySecret = pendingActivation.result.relaySecret,
+              relaySecret == storedRoute.relaySecret,
+              let expiresAtEpochMillis = pendingActivation.result.relayExpiresAtEpochMillis,
+              expiresAtEpochMillis == storedRoute.relayExpiresAtEpochMillis,
+              let relayNonce = pendingActivation.result.relayNonce,
+              relayNonce == storedRoute.relayNonce,
+              let ticketGeneration = pendingActivation.result.relayTicketGeneration,
+              ticketGeneration == storedRoute.ticketGeneration
+        else {
+            return
+        }
+        pendingPairedRelayActivations.removeValue(forKey: fingerprint)
+        startPairScopedTransports(
+            clientKeyFingerprint: fingerprint,
+            configuration: pairScopedRelayConfiguration(storedRoute)
+        )
+        if pendingActivation.rotatesBootstrapRoute {
+            rotateBootstrapRouteAfterPairClaim()
+        }
+    }
+
+    private func startRestoredPairScopedTransports(now: Date = Date()) {
         let nowEpochMillis = Int64((now.timeIntervalSince1970 * 1_000).rounded())
         for route in pairScopedRelayRoutes.values.sorted(by: {
             $0.clientKeyFingerprint < $1.clientKeyFingerprint
         }) where route.relayExpiresAtEpochMillis > nowEpochMillis {
-            startPairScopedRelayClient(
+            startPairScopedTransports(
                 clientKeyFingerprint: route.clientKeyFingerprint,
                 configuration: pairScopedRelayConfiguration(route)
             )
@@ -1896,11 +1971,14 @@ public final class CompanionAppModel: ObservableObject {
             Self.clearSavedRemoteRouteLease(defaults: userDefaults)
             allocatedRemoteRouteLease = nil
         }
-        relayClient.stop()
+        runtimeConnectionManager.retireBootstrapAfterCurrentConnection()
         allocateRemoteRelayRouteIfAvailable()
         if transportState.state == .advertising {
-            advertiser.stop()
-            advertiser.start(port: Int32(runtimePort), metadata: runtimeAdvertisementMetadata)
+            let localStatus = runtimeConnectionManager.refreshLocalAdvertisement(
+                metadata: runtimeAdvertisementMetadata
+            )
+            transportState = Self.transportStatus(from: localStatus)
+            refreshTransportStatusText()
         }
     }
 
@@ -1912,7 +1990,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private func restartRelayClientIfRunning() {
-        relayClient.stop()
+        runtimeConnectionManager.stopBootstrap()
         guard isRuntimeStarted else { return }
         startRelayClientIfConfigured()
     }
@@ -2662,9 +2740,10 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
         guard let authorizationContext else {
             throw RuntimeRouteRefreshAuthorizationError.pairedAuthorizationRequired
         }
+        let clientKeyFingerprint = authorizationContext.trustedClientKeyFingerprint
         let authorization = try relayAllocationAuthorization()
         let storedPairRoute = pairScopedRelayRoutes[
-            authorizationContext.trustedClientKeyFingerprint
+            clientKeyFingerprint
         ]
         let currentRouteToken = storedPairRoute?.routeToken ?? discoveryRouteToken
         let bootstrapRelayID = RelayAllocationIdentityChallenge.relayID(
@@ -2674,7 +2753,7 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
         let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
             routeToken: currentRouteToken,
             runtimeKeyFingerprint: authorization.identity.fingerprint,
-            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+            clientKeyFingerprint: clientKeyFingerprint
         )
         let storedConfiguration = storedPairRoute.map(pairScopedRelayConfiguration)
         let storedLease = storedPairRoute.map {
@@ -2698,6 +2777,15 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
         else {
             throw RelayServiceRouteAllocationError.invalidPairedRenewalRequest
         }
+        let lifecycleGeneration = beginPairLifecycleRefresh(
+            fingerprint: clientKeyFingerprint
+        )
+        defer {
+            finishPairLifecycleRefresh(
+                fingerprint: clientKeyFingerprint,
+                sequence: lifecycleGeneration.sequence
+            )
+        }
 
         let serviceAllocation = try await relayServiceRouteAllocator.renewPairedRelayRoute(
             currentRouteToken: currentRouteToken,
@@ -2710,6 +2798,9 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
                 ?? environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty(),
             timeout: 5
         )
+        guard pairLifecycleGenerations[clientKeyFingerprint] == lifecycleGeneration.pair else {
+            throw CancellationError()
+        }
         guard serviceAllocation.host == currentConfiguration.host,
               serviceAllocation.port == currentConfiguration.port,
               serviceAllocation.relayID == pairedRelayID,
@@ -2738,7 +2829,7 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
         }
 
         let storedRoute = try PairScopedRelayRoute(
-            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint,
+            clientKeyFingerprint: clientKeyFingerprint,
             routeToken: currentRouteToken,
             host: currentConfiguration.host,
             port: currentConfiguration.port,
@@ -2747,11 +2838,28 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
             relayNonce: renewedLease.nonce,
             ticketGeneration: renewedLease.ticketGeneration ?? serviceAllocation.ticketGeneration
         )
-        let resolvedRoute = try pairScopedRelayRouteStore.upsert(
-            storedRoute,
-            relaySecret: endpointRelaySecret
-        )
+        guard pairLifecycleGenerations[clientKeyFingerprint] == lifecycleGeneration.pair else {
+            throw CancellationError()
+        }
+        let resolvedRoute: ResolvedPairScopedRelayRoute
+        if pairScopedRelayRoutes[clientKeyFingerprint] == storedPairRoute {
+            resolvedRoute = try pairScopedRelayRouteStore.upsert(
+                storedRoute,
+                relaySecret: endpointRelaySecret
+            )
+        } else if let currentRoute = pairScopedRelayRoutes[clientKeyFingerprint],
+                  currentRoute.route == storedRoute,
+                  currentRoute.relaySecret == endpointRelaySecret {
+            resolvedRoute = currentRoute
+        } else {
+            throw CancellationError()
+        }
         pairScopedRelayRoutes[resolvedRoute.clientKeyFingerprint] = resolvedRoute
+        guard runtimeLifecycleGeneration == lifecycleGeneration.runtime,
+              pairLifecycleGenerations[clientKeyFingerprint] == lifecycleGeneration.pair
+        else {
+            throw CancellationError()
+        }
 
         let result = RuntimeRouteRefreshResult(
             runtimeDeviceID: macDeviceID,
@@ -2768,49 +2876,34 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
                 allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
             )
         )
-        pendingPairedRelayActivation = PendingPairScopedRelayActivation(
-            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint,
-            result: result,
-            rotatesBootstrapRoute: storedPairRoute == nil &&
-                currentConfiguration.relayID == bootstrapRelayID
-        )
+        if pendingPairedRelayActivations[clientKeyFingerprint]?.refreshSequence ?? 0
+            <= lifecycleGeneration.sequence {
+            pendingPairedRelayActivations[clientKeyFingerprint] = PendingPairScopedRelayActivation(
+                clientKeyFingerprint: clientKeyFingerprint,
+                result: result,
+                rotatesBootstrapRoute: storedPairRoute == nil &&
+                    currentConfiguration.relayID == bootstrapRelayID,
+                runtimeLifecycleGeneration: lifecycleGeneration.runtime,
+                pairLifecycleGeneration: lifecycleGeneration.pair,
+                refreshSequence: lifecycleGeneration.sequence,
+                activationRequested: false
+            )
+        }
         return result
     }
 
     public func activateRuntimeRouteRefresh(_ result: RuntimeRouteRefreshResult) async {
-        guard let pendingActivation = pendingPairedRelayActivation,
-              pendingActivation.result == result
+        let matchingActivations = pendingPairedRelayActivations.values.filter {
+            $0.result == result
+        }
+        guard matchingActivations.count == 1,
+              let pendingActivation = matchingActivations.first
         else {
             return
         }
-        pendingPairedRelayActivation = nil
-        guard result.runtimeDeviceID == macDeviceID,
-              result.runtimeKeyFingerprint == macFingerprint,
-              let storedRoute = pairScopedRelayRoutes[pendingActivation.clientKeyFingerprint],
-              let relayHost = result.relayHost,
-              relayHost == storedRoute.host,
-              let relayPort = result.relayPort,
-              relayPort == Int(storedRoute.port),
-              let relayID = result.relayID,
-              relayID == storedRoute.relayID,
-              let relaySecret = result.relaySecret,
-              relaySecret == storedRoute.relaySecret,
-              let expiresAtEpochMillis = result.relayExpiresAtEpochMillis,
-              expiresAtEpochMillis == storedRoute.relayExpiresAtEpochMillis,
-              let relayNonce = result.relayNonce,
-              relayNonce == storedRoute.relayNonce,
-              let ticketGeneration = result.relayTicketGeneration,
-              ticketGeneration == storedRoute.ticketGeneration
-        else {
-            return
-        }
-        startPairScopedRelayClient(
-            clientKeyFingerprint: pendingActivation.clientKeyFingerprint,
-            configuration: pairScopedRelayConfiguration(storedRoute)
-        )
-        if pendingActivation.rotatesBootstrapRoute {
-            rotateBootstrapRouteAfterPairClaim()
-        }
+        pendingPairedRelayActivations[pendingActivation.clientKeyFingerprint]?
+            .activationRequested = true
+        reconcilePendingPairActivation(fingerprint: pendingActivation.clientKeyFingerprint)
     }
 }
 
