@@ -222,16 +222,21 @@ testing, run a temporary relay on a public, tunnel, or VPN-managed address that
 is reachable from both peers and explicitly eligible for remote QR generation:
 
 ```bash
-swift run AetherLinkRelay --host 0.0.0.0 --port 43171
+AETHERLINK_RELAY_ALLOCATION_TOKEN='<operator-secret>' \
+  script/run_allocation_relay.sh \
+  --host 0.0.0.0 \
+  --port 43171 \
+  --allocation-store "$HOME/.aetherlink-relay/allocations.json"
 ```
 
 `AetherLinkRelay` is the SwiftPM-native development relay executable. It
-requires allocation by default, rejects unknown or expired relay ids, and then
-accepts the same handshake lines as the compatibility Python script:
-`AETHERLINK_RELAY runtime <relay_id>` and
-`AETHERLINK_RELAY client <relay_id>`. After matching one runtime and one client
-with the same `relay_id`, it sends `AETHERLINK_RELAY ready\n` to both sides and
-blindly forwards bytes in both directions. It does not decode AetherLink
+requires allocation by default and rejects unknown or expired relay ids. Strict
+runtime/client registration uses crypto-v2 session nonces, ephemeral P-256 keys,
+and allocation-bound identity admission before the relay sends crypto-v2 ready
+metadata and blindly forwards bytes in both directions. Plain three-token
+`AETHERLINK_RELAY runtime|client <relay_id>` registration and plain
+`AETHERLINK_RELAY ready` are available only through explicit loopback
+`--allow-legacy` diagnostics. The relay does not decode AetherLink
 protocol frames and never calls Ollama, LM Studio, or any other model backend.
 It issues short-lived allocation tickets and persists them to
 `~/.aetherlink-relay/allocations.json` by default so issued QR relay ids survive
@@ -239,6 +244,54 @@ relay process restarts during their lease; pass `--ephemeral-allocations` only
 for one-shot diagnostics. The relay does not persist relay frame secrets. Use
 `--allow-legacy` only for old local diagnostics that intentionally accept
 arbitrary relay ids.
+Accepted sockets are globally bounded, including waiting and active peers, and
+every control record has an absolute read deadline. Unauthenticated relay-state
+probe is loopback-only by default. Exposed probe closes without a response unless
+the operator explicitly selects `--probe-policy legacy-unauthenticated` for a
+temporary physical diagnostic and accepts the route-enumeration risk.
+Unmatched relay rooms now have a monotonic first-registration deadline of 60
+seconds by default, capped by the remaining allocation lease. Same-role
+replacement inherits that deadline rather than extending it. Runtime keys and
+paired-client keys that complete cryptographic relay admission may each hold at
+most four unmatched waits per role-separated authenticated identity across
+source addresses. Bootstrap clients without paired-client proof and explicit
+legacy peers remain source-quota-only. Timeout and identity-quota rejection
+close silently with source-free aggregate metrics; matched active bridges cancel
+their waiting timer and remain unthrottled. Both controls are configurable with
+no disable value and are development fairness guardrails, not production
+identity service, per-user isolation, public-network capacity, or physical
+Android proof.
+Canonical accepted-socket source quotas default to 64 concurrent connections and
+32 unmatched waiting peers per source. Waiting peers consume both quotas, and
+active bridge sockets continue to consume source connection capacity while their
+established encrypted frame forwarding is not throttled or evicted. There is no
+disable value, and configuration requires twice the waiting quota to fit within
+the connection quota so a shared NAT/VPN cohort retains counterpart headroom.
+Each waiter removes one slot from normal admission. A socket admitted from that
+reserve is counterpart-only until it immediately matches the existing opposite
+role or performs an authenticated same-source waiting replacement. Probe,
+allocation, cross-source replacement, and new-room attempts close it.
+Before the first waiter exists, normal admission already leaves one global and
+one per-source slot available; every waiting insertion then rechecks both
+connection-plus-reservation bounds atomically so pre-admitted sockets cannot
+strand a waiter. A candidate using per-source reserve can discharge only a
+waiter owned by that same source; global-only reserve remains source-agnostic.
+Quota rejections close silently and expose only source-free aggregate reasons and
+metrics. These configurable values are development-relay fairness guardrails, not
+per-user isolation, production capacity validation, or physical Android proof.
+Allocation preflight is source-limited to 120/minute with burst 30 by default;
+new allocation and paired-renewal mutations share a separate 30/minute with burst 10
+bucket. At most 4096 canonical accepted IPv4/IPv6 sources are retained by default,
+with one shared overflow bucket and periodic idle cleanup; capacity churn cannot
+reset an exhausted source bucket. Native IPv6 scope is part of the source identity,
+and malformed allocation/renewal control attempts spend source capacity before
+full parsing. Shared NAT/VPN users share a source bucket. These token buckets do not throttle peer admission,
+waiting rooms, active bridges, probes, or encrypted forwarding; the separate
+source peer quotas above govern connection and waiting admission. They are
+development-relay safeguards, not production capacity validation, and they provide
+no physical Android proof. Operator-selected bursts
+must fully refill within the fixed 900-second idle retention so cleanup cannot
+recreate more capacity than monotonic refill would have earned.
 `script/aetherlink_relay.py` is legacy-only and intentionally refuses to start
 unless `--allow-legacy-no-allocation` is passed. It does not implement relay
 allocation leases and must not be used for current QR pairing or

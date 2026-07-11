@@ -1,6 +1,8 @@
 import Foundation
 
 public let protocolVersion = 1
+public let relayAllocationProofScheme = "runtime-client-p256-v2"
+public let relayAllocationProtocolVersion = 2
 
 public enum MessageType {
     public static let runtimeHealth = "runtime.health"
@@ -13,6 +15,8 @@ public enum MessageType {
     public static let modelsPull = "models.pull"
     public static let modelsResult = "models.result"
     public static let routeRefresh = "route.refresh"
+    public static let relayAllocationChallenge = "relay.allocation.challenge"
+    public static let relayAllocationAuthorization = "relay.allocation.authorization"
     public static let chatSend = "chat.send"
     public static let chatDelta = "chat.delta"
     public static let chatDone = "chat.done"
@@ -50,6 +54,287 @@ private struct DynamicCodingKey: CodingKey {
         stringValue = String(intValue)
         self.intValue = intValue
     }
+}
+
+public enum RelayAllocationPayloadValidationError: Error, Equatable, Sendable {
+    case invalidField(String)
+}
+
+public struct RelayAllocationChallengePayload: Codable, Equatable, Sendable {
+    public let proofScheme: String
+    public let protocolVersion: Int
+    public let operation: String
+    public let authorizationID: String
+    public let currentRelayID: String
+    public let nextRelayID: String
+    public let routeTokenHash: String
+    public let runtimeKeyFingerprint: String
+    public let clientKeyFingerprint: String
+    public let currentTicketGeneration: Int64
+    public let nextTicketGeneration: Int64
+    public let currentRelayExpiresAtEpochMillis: Int64
+    public let currentRelayNonce: String
+    public let nextRelayExpiresAtEpochMillis: Int64
+    public let nextRelayNonce: String
+    public let challenge: String
+    public let challengeExpiresAtEpochMillis: Int64
+    public let transportBinding: String
+
+    public init(
+        proofScheme: String,
+        protocolVersion: Int,
+        operation: String,
+        authorizationID: String,
+        currentRelayID: String,
+        nextRelayID: String,
+        routeTokenHash: String,
+        runtimeKeyFingerprint: String,
+        clientKeyFingerprint: String,
+        currentTicketGeneration: Int64,
+        nextTicketGeneration: Int64,
+        currentRelayExpiresAtEpochMillis: Int64,
+        currentRelayNonce: String,
+        nextRelayExpiresAtEpochMillis: Int64,
+        nextRelayNonce: String,
+        challenge: String,
+        challengeExpiresAtEpochMillis: Int64,
+        transportBinding: String
+    ) throws {
+        guard proofScheme == relayAllocationProofScheme else {
+            throw RelayAllocationPayloadValidationError.invalidField("proof_scheme")
+        }
+        guard protocolVersion == relayAllocationProtocolVersion else {
+            throw RelayAllocationPayloadValidationError.invalidField("protocol_version")
+        }
+        guard operation == "claim" || operation == "renew" else {
+            throw RelayAllocationPayloadValidationError.invalidField("operation")
+        }
+        guard isBoundedNonBlank(authorizationID) else {
+            throw RelayAllocationPayloadValidationError.invalidField("authorization_id")
+        }
+        guard isRuntimeKeyBoundRelayID(currentRelayID) else {
+            throw RelayAllocationPayloadValidationError.invalidField("current_relay_id")
+        }
+        guard isRuntimeKeyBoundRelayID(nextRelayID) else {
+            throw RelayAllocationPayloadValidationError.invalidField("next_relay_id")
+        }
+        guard operation != "claim" || currentRelayID != nextRelayID else {
+            throw RelayAllocationPayloadValidationError.invalidField("next_relay_id")
+        }
+        guard isLowercaseHex64(routeTokenHash) else {
+            throw RelayAllocationPayloadValidationError.invalidField("route_token_hash")
+        }
+        guard isLowercaseHex64(runtimeKeyFingerprint) else {
+            throw RelayAllocationPayloadValidationError.invalidField("runtime_key_fingerprint")
+        }
+        guard isLowercaseHex64(clientKeyFingerprint) else {
+            throw RelayAllocationPayloadValidationError.invalidField("client_key_fingerprint")
+        }
+        guard currentTicketGeneration > 0 else {
+            throw RelayAllocationPayloadValidationError.invalidField("current_ticket_generation")
+        }
+        guard nextTicketGeneration > 0 else {
+            throw RelayAllocationPayloadValidationError.invalidField("next_ticket_generation")
+        }
+        guard currentRelayExpiresAtEpochMillis > 0 else {
+            throw RelayAllocationPayloadValidationError.invalidField("current_relay_expires_at")
+        }
+        guard isBoundedWhitespaceFree(currentRelayNonce) else {
+            throw RelayAllocationPayloadValidationError.invalidField("current_relay_nonce")
+        }
+        guard nextRelayExpiresAtEpochMillis > 0 else {
+            throw RelayAllocationPayloadValidationError.invalidField("next_relay_expires_at")
+        }
+        guard isBoundedWhitespaceFree(nextRelayNonce) else {
+            throw RelayAllocationPayloadValidationError.invalidField("next_relay_nonce")
+        }
+        guard isLowercaseHex64(challenge) else {
+            throw RelayAllocationPayloadValidationError.invalidField("challenge")
+        }
+        guard challengeExpiresAtEpochMillis > 0 else {
+            throw RelayAllocationPayloadValidationError.invalidField("challenge_expires_at")
+        }
+        guard isLowercaseHex64(transportBinding) else {
+            throw RelayAllocationPayloadValidationError.invalidField("transport_binding")
+        }
+
+        self.proofScheme = proofScheme
+        self.protocolVersion = protocolVersion
+        self.operation = operation
+        self.authorizationID = authorizationID
+        self.currentRelayID = currentRelayID
+        self.nextRelayID = nextRelayID
+        self.routeTokenHash = routeTokenHash
+        self.runtimeKeyFingerprint = runtimeKeyFingerprint
+        self.clientKeyFingerprint = clientKeyFingerprint
+        self.currentTicketGeneration = currentTicketGeneration
+        self.nextTicketGeneration = nextTicketGeneration
+        self.currentRelayExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis
+        self.currentRelayNonce = currentRelayNonce
+        self.nextRelayExpiresAtEpochMillis = nextRelayExpiresAtEpochMillis
+        self.nextRelayNonce = nextRelayNonce
+        self.challenge = challenge
+        self.challengeExpiresAtEpochMillis = challengeExpiresAtEpochMillis
+        self.transportBinding = transportBinding
+    }
+
+    public init(from decoder: Decoder) throws {
+        try rejectUnknownFields(decoder, allowedFields: Set(CodingKeys.allCases.map(\.stringValue)))
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            proofScheme: container.decode(String.self, forKey: .proofScheme),
+            protocolVersion: container.decode(Int.self, forKey: .protocolVersion),
+            operation: container.decode(String.self, forKey: .operation),
+            authorizationID: container.decode(String.self, forKey: .authorizationID),
+            currentRelayID: container.decode(String.self, forKey: .currentRelayID),
+            nextRelayID: container.decode(String.self, forKey: .nextRelayID),
+            routeTokenHash: container.decode(String.self, forKey: .routeTokenHash),
+            runtimeKeyFingerprint: container.decode(String.self, forKey: .runtimeKeyFingerprint),
+            clientKeyFingerprint: container.decode(String.self, forKey: .clientKeyFingerprint),
+            currentTicketGeneration: container.decode(Int64.self, forKey: .currentTicketGeneration),
+            nextTicketGeneration: container.decode(Int64.self, forKey: .nextTicketGeneration),
+            currentRelayExpiresAtEpochMillis: container.decode(Int64.self, forKey: .currentRelayExpiresAtEpochMillis),
+            currentRelayNonce: container.decode(String.self, forKey: .currentRelayNonce),
+            nextRelayExpiresAtEpochMillis: container.decode(Int64.self, forKey: .nextRelayExpiresAtEpochMillis),
+            nextRelayNonce: container.decode(String.self, forKey: .nextRelayNonce),
+            challenge: container.decode(String.self, forKey: .challenge),
+            challengeExpiresAtEpochMillis: container.decode(Int64.self, forKey: .challengeExpiresAtEpochMillis),
+            transportBinding: container.decode(String.self, forKey: .transportBinding)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case proofScheme = "proof_scheme"
+        case protocolVersion = "protocol_version"
+        case operation
+        case authorizationID = "authorization_id"
+        case currentRelayID = "current_relay_id"
+        case nextRelayID = "next_relay_id"
+        case routeTokenHash = "route_token_hash"
+        case runtimeKeyFingerprint = "runtime_key_fingerprint"
+        case clientKeyFingerprint = "client_key_fingerprint"
+        case currentTicketGeneration = "current_ticket_generation"
+        case nextTicketGeneration = "next_ticket_generation"
+        case currentRelayExpiresAtEpochMillis = "current_relay_expires_at"
+        case currentRelayNonce = "current_relay_nonce"
+        case nextRelayExpiresAtEpochMillis = "next_relay_expires_at"
+        case nextRelayNonce = "next_relay_nonce"
+        case challenge
+        case challengeExpiresAtEpochMillis = "challenge_expires_at"
+        case transportBinding = "transport_binding"
+    }
+}
+
+public struct RelayAllocationAuthorizationPayload: Codable, Equatable, Sendable {
+    public let proofScheme: String
+    public let authorizationID: String
+    public let challenge: String
+    public let clientKeyFingerprint: String
+    public let transportBinding: String
+    public let clientSignature: String
+
+    public init(
+        proofScheme: String,
+        authorizationID: String,
+        challenge: String,
+        clientKeyFingerprint: String,
+        transportBinding: String,
+        clientSignature: String
+    ) throws {
+        guard proofScheme == relayAllocationProofScheme else {
+            throw RelayAllocationPayloadValidationError.invalidField("proof_scheme")
+        }
+        guard isBoundedNonBlank(authorizationID) else {
+            throw RelayAllocationPayloadValidationError.invalidField("authorization_id")
+        }
+        guard isLowercaseHex64(challenge) else {
+            throw RelayAllocationPayloadValidationError.invalidField("challenge")
+        }
+        guard isLowercaseHex64(clientKeyFingerprint) else {
+            throw RelayAllocationPayloadValidationError.invalidField("client_key_fingerprint")
+        }
+        guard isLowercaseHex64(transportBinding) else {
+            throw RelayAllocationPayloadValidationError.invalidField("transport_binding")
+        }
+        guard isCanonicalBoundedBase64(clientSignature) else {
+            throw RelayAllocationPayloadValidationError.invalidField("client_signature")
+        }
+
+        self.proofScheme = proofScheme
+        self.authorizationID = authorizationID
+        self.challenge = challenge
+        self.clientKeyFingerprint = clientKeyFingerprint
+        self.transportBinding = transportBinding
+        self.clientSignature = clientSignature
+    }
+
+    public init(from decoder: Decoder) throws {
+        try rejectUnknownFields(decoder, allowedFields: Set(CodingKeys.allCases.map(\.stringValue)))
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            proofScheme: container.decode(String.self, forKey: .proofScheme),
+            authorizationID: container.decode(String.self, forKey: .authorizationID),
+            challenge: container.decode(String.self, forKey: .challenge),
+            clientKeyFingerprint: container.decode(String.self, forKey: .clientKeyFingerprint),
+            transportBinding: container.decode(String.self, forKey: .transportBinding),
+            clientSignature: container.decode(String.self, forKey: .clientSignature)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case proofScheme = "proof_scheme"
+        case authorizationID = "authorization_id"
+        case challenge
+        case clientKeyFingerprint = "client_key_fingerprint"
+        case transportBinding = "transport_binding"
+        case clientSignature = "client_signature"
+    }
+}
+
+private func rejectUnknownFields(_ decoder: Decoder, allowedFields: Set<String>) throws {
+    let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+    if let unknownField = container.allKeys
+        .map(\.stringValue)
+        .filter({ !allowedFields.contains($0) })
+        .sorted()
+        .first,
+        let codingKey = DynamicCodingKey(stringValue: unknownField)
+    {
+        throw DecodingError.dataCorruptedError(
+            forKey: codingKey,
+            in: container,
+            debugDescription: "Unknown payload field '\(unknownField)'"
+        )
+    }
+}
+
+private func isLowercaseHex64(_ value: String) -> Bool {
+    value.utf8.count == 64 && value.utf8.allSatisfy { byte in
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) ||
+            (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+    }
+}
+
+private func isRuntimeKeyBoundRelayID(_ value: String) -> Bool {
+    value.hasPrefix("rt2-") && isLowercaseHex64(String(value.dropFirst(4)))
+}
+
+private func isBoundedNonBlank(_ value: String) -> Bool {
+    value.count <= 512 && value.contains { !$0.isWhitespace }
+}
+
+private func isBoundedWhitespaceFree(_ value: String) -> Bool {
+    !value.isEmpty && value.count <= 512 && value.allSatisfy { !$0.isWhitespace }
+}
+
+private func isCanonicalBoundedBase64(_ value: String) -> Bool {
+    guard !value.isEmpty,
+          value.count <= 512,
+          let decoded = Data(base64Encoded: value)
+    else {
+        return false
+    }
+    return decoded.base64EncodedString() == value
 }
 
 public struct ProtocolEnvelope: Codable, Equatable, Sendable {

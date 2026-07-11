@@ -1,5 +1,6 @@
 import Darwin
 import BridgeProtocol
+import CryptoKit
 import Foundation
 import XCTest
 @testable import Transport
@@ -13,6 +14,27 @@ final class RelayPeerClientTests: XCTestCase {
         )
 
         XCTAssertEqual(configuration.controlLineTimeout, 45)
+    }
+
+    func testRelayPeerConfigurationPreservesRuntimeIdentityAuthorizationAcrossNonceRefresh() throws {
+        let signer = try TestRelayIdentityAuthorizationSigner()
+        let configuration = RelayPeerConfiguration(
+            host: "127.0.0.1",
+            port: 43171,
+            relayID: "relay-identity-configuration",
+            relaySecret: "relay-secret",
+            relayNonce: "relay-nonce-1",
+            runtimeIdentity: signer.identity,
+            identityAuthorizationSigner: signer
+        )
+
+        let refreshed = configuration.withRelayNonce("relay-nonce-2")
+
+        XCTAssertEqual(refreshed.runtimeIdentity, signer.identity)
+        XCTAssertNotNil(refreshed.identityAuthorizationSigner)
+        XCTAssertEqual(refreshed.relayNonce, "relay-nonce-2")
+        XCTAssertEqual(refreshed, configuration.withRelayNonce("relay-nonce-2"))
+        XCTAssertNotEqual(refreshed, configuration)
     }
 
     func testRelayPeerClientWaitsForAcceptedRuntimeRegistrationBeforeWaitingForPeer() throws {
@@ -191,6 +213,7 @@ final class RelayPeerClientTests: XCTestCase {
             onMessage: { envelope, sink in
                 XCTAssertEqual(envelope.type, MessageType.modelsList)
                 XCTAssertEqual(envelope.requestID, "retired-current-request")
+                XCTAssertNil(sink.transportSecurityContext)
                 sink.send(responseEnvelope)
                 requestHandled.signal()
             }
@@ -227,21 +250,23 @@ final class RelayPeerClientTests: XCTestCase {
         })
     }
 
-    func testRelayPeerClientEncryptsRuntimeFramesWithRouteNonceBoundCipher() throws {
+    func testStrictRelayPeerClientCompletesCrypto2HandshakeAndEncryptsFrames() throws {
         let server = try ControlledRelayServer()
         defer { server.stop() }
 
         let codec = ProtocolCodec()
-        let relaySecret = "nonce-bound-relay-secret"
-        let relayNonce = "nonce-bound-route"
+        let relayID = "relay-strict-v2"
+        let relaySecret = "strict-relay-secret"
+        let relayNonce = "strict-route-nonce"
         let requestHandled = DispatchSemaphore(value: 0)
         let readyStatus = DispatchSemaphore(value: 0)
+        let securityContextRecorder = TransportSecurityContextRecorder()
         let client = RelayPeerClient()
         defer { client.stop() }
 
         let responseEnvelope = ProtocolEnvelope(
             type: MessageType.runtimeHealth,
-            requestID: "nonce-bound-response",
+            requestID: "strict-response",
             payload: ["status": .string("runtime-ciphertext")]
         )
         let plaintextResponseBody = try codec.encodeEnvelopeBody(responseEnvelope)
@@ -250,7 +275,7 @@ final class RelayPeerClientTests: XCTestCase {
             configuration: RelayPeerConfiguration(
                 host: "127.0.0.1",
                 port: server.port,
-                relayID: "relay-nonce-bound",
+                relayID: relayID,
                 relaySecret: relaySecret,
                 relayNonce: relayNonce,
                 reconnectDelay: 60
@@ -262,22 +287,28 @@ final class RelayPeerClientTests: XCTestCase {
             },
             onMessage: { envelope, sink in
                 XCTAssertEqual(envelope.type, MessageType.modelsList)
-                XCTAssertEqual(envelope.requestID, "nonce-bound-request")
+                XCTAssertEqual(envelope.requestID, "strict-request")
+                securityContextRecorder.append(sink.transportSecurityContext)
                 sink.send(responseEnvelope)
                 requestHandled.signal()
             }
         )
 
-        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-nonce-bound\n")
-        server.write("AETHERLINK_RELAY ready\n")
+        let sessionKeys = try completeStrictHandshake(
+            server: server,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayNonce: relayNonce,
+            readyStatus: readyStatus
+        )
         XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
 
         let requestEnvelope = ProtocolEnvelope(
             type: MessageType.modelsList,
-            requestID: "nonce-bound-request",
+            requestID: "strict-request",
             payload: ["probe": .string("client-ciphertext")]
         )
-        var clientCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
+        var clientCipher = RelayFrameCipher(sessionKeys: sessionKeys)
         let encryptedRequestBody = try clientCipher.encryptClientBody(try codec.encodeEnvelopeBody(requestEnvelope))
         server.writeFrameBody(encryptedRequestBody)
 
@@ -288,17 +319,629 @@ final class RelayPeerClientTests: XCTestCase {
         XCTAssertNil(encryptedResponseBody.range(of: Data(MessageType.runtimeHealth.utf8)))
         XCTAssertNil(encryptedResponseBody.range(of: Data("runtime-ciphertext".utf8)))
 
-        var runtimeCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
+        XCTAssertEqual(
+            securityContextRecorder.value,
+            TransportSecurityContext(bindingID: sessionKeys.bindingID)
+        )
+
+        var runtimeCipher = RelayFrameCipher(sessionKeys: sessionKeys)
         let decryptedResponseBody = try runtimeCipher.decryptRuntimeBody(encryptedResponseBody)
         let decodedResponse = try codec.decodeEnvelope(decryptedResponseBody)
         XCTAssertEqual(decodedResponse.version, responseEnvelope.version)
         XCTAssertEqual(decodedResponse.type, responseEnvelope.type)
         XCTAssertEqual(decodedResponse.requestID, responseEnvelope.requestID)
         XCTAssertEqual(decodedResponse.payload, responseEnvelope.payload)
-
-        var wrongNonceCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: "wrong-route")
-        XCTAssertThrowsError(try wrongNonceCipher.decryptRuntimeBody(encryptedResponseBody))
     }
+
+    func testIdentityBoundStrictRelayAuthorizesBeforeRegistrationAndReady() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let signer = try TestRelayIdentityAuthorizationSigner()
+        let relayID = "relay-identity-success"
+        let relaySecret = "identity-success-secret"
+        let relayNonce = "identity-success-nonce"
+        let waitingStatus = DispatchSemaphore(value: 0)
+        let readyStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: relayID,
+                relaySecret: relaySecret,
+                relayNonce: relayNonce,
+                reconnectDelay: 60,
+                runtimeIdentity: signer.identity,
+                identityAuthorizationSigner: signer
+            ),
+            onStatusChange: { status in
+                if status == .waitingForPeer { waitingStatus.signal() }
+                if status == .ready { readyStatus.signal() }
+            },
+            onMessage: { _, _ in }
+        )
+
+        let runtime = try parseIdentityBoundStrictRuntimeHandshake(
+            try XCTUnwrap(server.waitForHandshake()),
+            relayID: relayID,
+            runtimeIdentity: signer.identity
+        )
+        let challenge = try makeRegistrationChallenge(
+            relayID: relayID,
+            relayNonce: relayNonce,
+            runtimeIdentity: signer.identity,
+            runtime: runtime
+        )
+        server.write(try registrationChallengeLine(challenge))
+
+        let proof = try parseRegistrationProof(try XCTUnwrap(server.waitForControlLine()))
+        XCTAssertEqual(proof.challenge, challenge.challenge)
+        XCTAssertTrue(RelayIdentityAuthorization.verify(
+            signatureBase64: proof.signatureBase64,
+            messageData: challenge.signedMessageData(),
+            runtimeIdentity: signer.identity
+        ))
+        XCTAssertEqual(signer.registrationSignatureCount, 1)
+
+        let clientSessionNonce = "00112233445566778899aabbccddeeff"
+        let clientEphemeralKey = RelaySessionEphemeralKey()
+        let keys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: clientEphemeralKey,
+            relayID: relayID,
+            routeNonce: relayNonce,
+            relaySecret: relaySecret,
+            clientSessionNonce: clientSessionNonce,
+            runtimeSessionNonce: runtime.sessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex,
+            runtimeEphemeralKey: runtime.ephemeralKey
+        )
+        server.write("AETHERLINK_RELAY registered crypto=2\n")
+        XCTAssertEqual(waitingStatus.wait(timeout: .now() + 2), .success)
+        server.write(
+            "AETHERLINK_RELAY ready crypto=2 peer_session_nonce=\(clientSessionNonce) " +
+                "peer_ephemeral_key=\(clientEphemeralKey.publicKeyHex)\n"
+        )
+        server.write(RelayKeyConfirmation.controlLine(role: .client, sessionKeys: keys))
+
+        XCTAssertEqual(
+            server.waitForControlLine(),
+            RelayKeyConfirmation.controlLine(role: .runtime, sessionKeys: keys)
+        )
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
+    }
+
+    func testIdentityBoundStrictRelayRejectsMissingAndNonExactChallengesBeforeMatcher() throws {
+        let responses: [(String, (RelayRuntimeRegistrationIdentityChallenge) throws -> String)] = [
+            ("missing challenge", { _ in "AETHERLINK_RELAY registered crypto=2\n" }),
+            ("missing JSON fields", { _ in
+                RelayRuntimeRegistrationIdentityChallenge.responsePrefix + "{}\n"
+            }),
+            ("unknown JSON field", { challenge in
+                let encoded = try JSONEncoder().encode(challenge)
+                var object = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+                )
+                object["unexpected"] = true
+                let data = try JSONSerialization.data(withJSONObject: object)
+                return RelayRuntimeRegistrationIdentityChallenge.responsePrefix +
+                    String(decoding: data, as: UTF8.self) + "\n"
+            })
+        ]
+
+        for (label, response) in responses {
+            try assertIdentityAuthorizationRejected(label: label) { challenge in
+                try response(challenge)
+            }
+        }
+    }
+
+    func testIdentityBoundStrictRelayRejectsChallengeBindingMutationsBeforeSigning() throws {
+        let mutations: [(String, RegistrationChallengeMutation)] = [
+            ("relay id", .relayID),
+            ("relay nonce", .relayNonce),
+            ("runtime fingerprint", .runtimeFingerprint),
+            ("session nonce", .sessionNonce),
+            ("ephemeral key", .ephemeralKey)
+        ]
+
+        for (label, mutation) in mutations {
+            try assertIdentityAuthorizationRejected(label: label) { challenge in
+                try self.registrationChallengeLine(
+                    self.mutatingRegistrationChallenge(challenge, mutation: mutation)
+                )
+            }
+        }
+    }
+
+    func testIdentityBoundStrictRelayRejectsExpiredChallengeOrRelayLeaseBeforeSigning() throws {
+        for expiresRelay in [false, true] {
+            try assertIdentityAuthorizationRejected(
+                label: expiresRelay ? "expired relay lease" : "expired challenge"
+            ) { challenge in
+                let now = Int64(Date().timeIntervalSince1970 * 1_000)
+                let expired = try RelayRuntimeRegistrationIdentityChallenge(
+                    relayID: challenge.relayID,
+                    relayExpiresAtEpochMillis: expiresRelay ? now - 1 : challenge.relayExpiresAtEpochMillis,
+                    relayNonce: challenge.relayNonce,
+                    runtimeKeyFingerprint: challenge.runtimeKeyFingerprint,
+                    ticketGeneration: challenge.ticketGeneration,
+                    sessionNonce: challenge.sessionNonce,
+                    ephemeralKey: challenge.ephemeralKey,
+                    challenge: challenge.challenge,
+                    challengeExpiresAtEpochMillis: expiresRelay ? challenge.challengeExpiresAtEpochMillis : now - 1
+                )
+                return try self.registrationChallengeLine(expired)
+            }
+        }
+    }
+
+    func testIdentityBoundStrictRelayClosesWhenRestrictedSignerFails() throws {
+        let signer = try TestRelayIdentityAuthorizationSigner(failsRegistrationSigning: true)
+        try assertIdentityAuthorizationRejected(label: "signer failure", signer: signer) { challenge in
+            try self.registrationChallengeLine(challenge)
+        }
+        XCTAssertEqual(signer.registrationSignatureCount, 1)
+    }
+
+    func testStrictRelayPeerClientRejectsPlainRegisteredWithoutV1Fallback() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let failedStatus = DispatchSemaphore(value: 0)
+        let statusRecorder = RelayStatusRecorder()
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-no-v1-fallback",
+                relaySecret: "strict-secret",
+                reconnectDelay: 60
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if case .failed = status {
+                    failedStatus.signal()
+                }
+            },
+            onMessage: { _, _ in
+                XCTFail("Encrypted relay without peer session nonce must not receive frames")
+            }
+        )
+
+        _ = try parseStrictRuntimeHandshake(try XCTUnwrap(server.waitForHandshake()), relayID: "relay-no-v1-fallback")
+        server.write("AETHERLINK_RELAY registered\n")
+
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertTrue(statusRecorder.contains(.failed("Relay key confirmation failed.")))
+        XCTAssertFalse(statusRecorder.contains(.ready))
+        XCTAssertTrue(server.waitForPeerClose())
+    }
+
+    func testStrictRelayPeerClientRejectsOffCurvePeerKey() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let failedStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-off-curve",
+                relaySecret: "strict-secret",
+                reconnectDelay: 60
+            ),
+            onStatusChange: { status in
+                if case .failed = status { failedStatus.signal() }
+            },
+            onMessage: { _, _ in XCTFail("Invalid strict peer key must close before frames") }
+        )
+
+        _ = try parseStrictRuntimeHandshake(try XCTUnwrap(server.waitForHandshake()), relayID: "relay-off-curve")
+        server.write("AETHERLINK_RELAY registered crypto=2\n")
+        server.write(
+            "AETHERLINK_RELAY ready crypto=2 " +
+                "peer_session_nonce=00112233445566778899aabbccddeeff " +
+                "peer_ephemeral_key=04\(String(repeating: "0", count: 128))\n"
+        )
+
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertTrue(server.waitForPeerClose())
+    }
+
+    func testStrictRelayPeerClientFailsClosedOnWrongClientConfirmation() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let relaySecret = "confirmation-required-secret"
+        let relayNonce = "confirmation-required-route"
+        let clientSessionNonce = "00112233445566778899aabbccddeeff"
+        let clientEphemeralKey = RelaySessionEphemeralKey()
+        let failedStatus = DispatchSemaphore(value: 0)
+        let readyStatus = DispatchSemaphore(value: 0)
+        let statusRecorder = RelayStatusRecorder()
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-confirmation-required",
+                relaySecret: relaySecret,
+                relayNonce: relayNonce,
+                reconnectDelay: 60
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if status == .ready {
+                    readyStatus.signal()
+                }
+                if status == .failed("Relay key confirmation failed.") {
+                    failedStatus.signal()
+                }
+            },
+            onMessage: { _, _ in
+                XCTFail("Encrypted relay must not process frames before key confirmation")
+            }
+        )
+
+        let runtime = try parseStrictRuntimeHandshake(
+            try XCTUnwrap(server.waitForHandshake()),
+            relayID: "relay-confirmation-required"
+        )
+        let sessionKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: clientEphemeralKey,
+            relayID: "relay-confirmation-required",
+            routeNonce: relayNonce,
+            relaySecret: relaySecret,
+            clientSessionNonce: clientSessionNonce,
+            runtimeSessionNonce: runtime.sessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex,
+            runtimeEphemeralKey: runtime.ephemeralKey
+        )
+
+        server.write("AETHERLINK_RELAY registered crypto=2\n")
+        server.write(
+            "AETHERLINK_RELAY ready crypto=2 peer_session_nonce=\(clientSessionNonce) " +
+                "peer_ephemeral_key=\(clientEphemeralKey.publicKeyHex)\n"
+        )
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 0.2), .timedOut)
+        server.write(
+            "AETHERLINK_RELAY confirm client binding=\(sessionKeys.bindingID) " +
+                "proof=\(String(repeating: "0", count: 64))\n"
+        )
+
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertFalse(statusRecorder.contains(.ready))
+        XCTAssertTrue(server.waitForPeerClose())
+    }
+
+    func testStrictRelayPeerClientClosesImmediatelyOnFrameAuthenticationFailure() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let readyStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+        let relayID = "relay-frame-auth-failure"
+        let relaySecret = "frame-auth-secret"
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: relayID,
+                relaySecret: relaySecret,
+                reconnectDelay: 60
+            ),
+            onStatusChange: { status in
+                if status == .ready { readyStatus.signal() }
+            },
+            onMessage: { _, _ in XCTFail("Tampered frame must not reach the router") }
+        )
+
+        let keys = try completeStrictHandshake(
+            server: server,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayNonce: nil,
+            readyStatus: readyStatus
+        )
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
+        var cipher = RelayFrameCipher(sessionKeys: keys)
+        var tampered = try cipher.encryptClientBody(Data("authenticated-frame".utf8))
+        tampered[tampered.startIndex] ^= 0x01
+        server.writeFrameBody(tampered)
+
+        XCTAssertTrue(server.waitForPeerClose())
+    }
+
+    private func completeStrictHandshake(
+        server: ControlledRelayServer,
+        relayID: String,
+        relaySecret: String,
+        relayNonce: String?,
+        readyStatus: DispatchSemaphore
+    ) throws -> RelaySessionKeys {
+        let runtime = try parseStrictRuntimeHandshake(
+            try XCTUnwrap(server.waitForHandshake()),
+            relayID: relayID
+        )
+        let clientSessionNonce = "00112233445566778899aabbccddeeff"
+        let clientEphemeralKey = RelaySessionEphemeralKey()
+        let keys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: clientEphemeralKey,
+            relayID: relayID,
+            routeNonce: relayNonce,
+            relaySecret: relaySecret,
+            clientSessionNonce: clientSessionNonce,
+            runtimeSessionNonce: runtime.sessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex,
+            runtimeEphemeralKey: runtime.ephemeralKey
+        )
+        server.write("AETHERLINK_RELAY registered crypto=2\n")
+        server.write(
+            "AETHERLINK_RELAY ready crypto=2 peer_session_nonce=\(clientSessionNonce) " +
+                "peer_ephemeral_key=\(clientEphemeralKey.publicKeyHex)\n"
+        )
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 0.2), .timedOut)
+        server.write(RelayKeyConfirmation.controlLine(role: .client, sessionKeys: keys))
+        XCTAssertEqual(
+            server.waitForControlLine(),
+            RelayKeyConfirmation.controlLine(role: .runtime, sessionKeys: keys)
+        )
+        return keys
+    }
+
+    private func assertIdentityAuthorizationRejected(
+        label: String,
+        signer: TestRelayIdentityAuthorizationSigner? = nil,
+        response: (RelayRuntimeRegistrationIdentityChallenge) throws -> String
+    ) throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+        let signer = try signer ?? TestRelayIdentityAuthorizationSigner()
+        let relayID = "relay-rejected-\(UUID().uuidString)"
+        let relayNonce = "rejected-nonce"
+        let failedStatus = DispatchSemaphore(value: 0)
+        let statusRecorder = RelayStatusRecorder()
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: relayID,
+                relaySecret: "rejected-secret",
+                relayNonce: relayNonce,
+                reconnectDelay: 60,
+                runtimeIdentity: signer.identity,
+                identityAuthorizationSigner: signer
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if status == .failed("Relay runtime registration authorization failed.") {
+                    failedStatus.signal()
+                }
+            },
+            onMessage: { _, _ in XCTFail("\(label) must close before matcher frames") }
+        )
+
+        let runtime = try parseIdentityBoundStrictRuntimeHandshake(
+            try XCTUnwrap(server.waitForHandshake(), label),
+            relayID: relayID,
+            runtimeIdentity: signer.identity
+        )
+        let challenge = try makeRegistrationChallenge(
+            relayID: relayID,
+            relayNonce: relayNonce,
+            runtimeIdentity: signer.identity,
+            runtime: runtime
+        )
+        server.write(try response(challenge))
+
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success, label)
+        XCTAssertFalse(statusRecorder.contains(.waitingForPeer), label)
+        XCTAssertFalse(statusRecorder.contains(.ready), label)
+        XCTAssertTrue(server.waitForPeerClose(), label)
+        if !signer.failsRegistrationSigning {
+            XCTAssertEqual(signer.registrationSignatureCount, 0, label)
+        }
+    }
+
+    private func makeRegistrationChallenge(
+        relayID: String,
+        relayNonce: String,
+        runtimeIdentity: RelayRuntimeIdentity,
+        runtime: (sessionNonce: String, ephemeralKey: String)
+    ) throws -> RelayRuntimeRegistrationIdentityChallenge {
+        let now = Int64(Date().timeIntervalSince1970 * 1_000)
+        return try RelayRuntimeRegistrationIdentityChallenge(
+            relayID: relayID,
+            relayExpiresAtEpochMillis: now + 60_000,
+            relayNonce: relayNonce,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            ticketGeneration: 1,
+            sessionNonce: runtime.sessionNonce,
+            ephemeralKey: runtime.ephemeralKey,
+            challenge: String(repeating: "a", count: 64),
+            challengeExpiresAtEpochMillis: now + 30_000
+        )
+    }
+
+    private func registrationChallengeLine(
+        _ challenge: RelayRuntimeRegistrationIdentityChallenge
+    ) throws -> String {
+        let data = try JSONEncoder().encode(challenge)
+        return RelayRuntimeRegistrationIdentityChallenge.responsePrefix +
+            String(decoding: data, as: UTF8.self) + "\n"
+    }
+
+    private func mutatingRegistrationChallenge(
+        _ challenge: RelayRuntimeRegistrationIdentityChallenge,
+        mutation: RegistrationChallengeMutation
+    ) throws -> RelayRuntimeRegistrationIdentityChallenge {
+        let alternateIdentity = try TestRelayIdentityAuthorizationSigner().identity
+        let alternateEphemeralKey = RelaySessionEphemeralKey().publicKeyHex
+        return try RelayRuntimeRegistrationIdentityChallenge(
+            relayID: mutation == .relayID ? "wrong-relay-id" : challenge.relayID,
+            relayExpiresAtEpochMillis: challenge.relayExpiresAtEpochMillis,
+            relayNonce: mutation == .relayNonce ? "wrong-relay-nonce" : challenge.relayNonce,
+            runtimeKeyFingerprint: mutation == .runtimeFingerprint
+                ? alternateIdentity.fingerprint
+                : challenge.runtimeKeyFingerprint,
+            ticketGeneration: challenge.ticketGeneration,
+            sessionNonce: mutation == .sessionNonce
+                ? String(repeating: "f", count: 32)
+                : challenge.sessionNonce,
+            ephemeralKey: mutation == .ephemeralKey ? alternateEphemeralKey : challenge.ephemeralKey,
+            challenge: challenge.challenge,
+            challengeExpiresAtEpochMillis: challenge.challengeExpiresAtEpochMillis
+        )
+    }
+
+    private func parseRegistrationProof(_ line: String) throws -> (challenge: String, signatureBase64: String) {
+        XCTAssertTrue(line.hasSuffix("\n"))
+        let parts = line.dropLast().split(separator: " ", omittingEmptySubsequences: false)
+        XCTAssertEqual(parts.count, 5)
+        guard parts.count == 5,
+              parts[0] == "AETHERLINK_RELAY",
+              parts[1] == "registration_proof",
+              parts[2] == "crypto=2",
+              parts[3].hasPrefix("challenge="),
+              parts[4].hasPrefix("signature=")
+        else { throw TestRelayServerError.invalidHandshake }
+        let challenge = String(parts[3].dropFirst("challenge=".count))
+        let signature = String(parts[4].dropFirst("signature=".count))
+        XCTAssertEqual(challenge.count, 64)
+        XCTAssertNotNil(Data(base64Encoded: signature))
+        return (challenge, signature)
+    }
+
+    private func parseIdentityBoundStrictRuntimeHandshake(
+        _ line: String,
+        relayID: String,
+        runtimeIdentity: RelayRuntimeIdentity
+    ) throws -> (sessionNonce: String, ephemeralKey: String) {
+        XCTAssertTrue(line.hasSuffix("\n"))
+        let parts = line.dropLast().split(separator: " ", omittingEmptySubsequences: false)
+        XCTAssertEqual(parts.count, 7)
+        guard parts.count == 7,
+              parts[0] == "AETHERLINK_RELAY",
+              parts[1] == "runtime",
+              parts[2] == Substring(relayID),
+              parts[3] == "crypto=2",
+              parts[4].hasPrefix("session_nonce="),
+              parts[5].hasPrefix("ephemeral_key="),
+              parts[6] == "runtime_key_fingerprint=\(runtimeIdentity.fingerprint)"
+        else { throw TestRelayServerError.invalidHandshake }
+        let sessionNonce = String(parts[4].dropFirst("session_nonce=".count))
+        let ephemeralKey = String(parts[5].dropFirst("ephemeral_key=".count))
+        XCTAssertTrue(RelaySessionNonce.isCanonical(sessionNonce))
+        XCTAssertTrue(RelaySessionCrypto.isCanonicalEphemeralKey(ephemeralKey))
+        return (sessionNonce, ephemeralKey)
+    }
+
+    private func parseStrictRuntimeHandshake(
+        _ line: String,
+        relayID: String
+    ) throws -> (sessionNonce: String, ephemeralKey: String) {
+        XCTAssertTrue(line.hasSuffix("\n"))
+        let parts = line.dropLast().split(separator: " ", omittingEmptySubsequences: false)
+        XCTAssertEqual(parts.count, 6)
+        guard parts.count == 6 else { throw TestRelayServerError.invalidHandshake }
+        XCTAssertEqual(parts[0], "AETHERLINK_RELAY")
+        XCTAssertEqual(parts[1], "runtime")
+        XCTAssertEqual(parts[2], Substring(relayID))
+        XCTAssertEqual(parts[3], "crypto=2")
+        let noncePrefix = "session_nonce="
+        let keyPrefix = "ephemeral_key="
+        guard parts[4].hasPrefix(noncePrefix), parts[5].hasPrefix(keyPrefix) else {
+            throw TestRelayServerError.invalidHandshake
+        }
+        let sessionNonce = String(parts[4].dropFirst(noncePrefix.count))
+        let ephemeralKey = String(parts[5].dropFirst(keyPrefix.count))
+        XCTAssertTrue(RelaySessionNonce.isCanonical(sessionNonce))
+        XCTAssertTrue(RelaySessionCrypto.isCanonicalEphemeralKey(ephemeralKey))
+        return (sessionNonce, ephemeralKey)
+    }
+}
+
+private enum RegistrationChallengeMutation {
+    case relayID
+    case relayNonce
+    case runtimeFingerprint
+    case sessionNonce
+    case ephemeralKey
+}
+
+private final class TestRelayIdentityAuthorizationSigner: RelayIdentityAuthorizationSigning, @unchecked Sendable {
+    let identity: RelayRuntimeIdentity
+    let failsRegistrationSigning: Bool
+
+    private let privateKey: P256.Signing.PrivateKey
+    private let lock = NSLock()
+    private var signatureCount = 0
+
+    var registrationSignatureCount: Int {
+        lock.withLock { signatureCount }
+    }
+
+    init(failsRegistrationSigning: Bool = false) throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let publicKeyData = privateKey.publicKey.derRepresentation
+        let fingerprint = SHA256.hash(data: publicKeyData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        self.privateKey = privateKey
+        self.identity = try RelayRuntimeIdentity(
+            publicKeyBase64: publicKeyData.base64EncodedString(),
+            fingerprint: fingerprint
+        )
+        self.failsRegistrationSigning = failsRegistrationSigning
+    }
+
+    func relayRuntimeIdentity() throws -> RelayRuntimeIdentity {
+        identity
+    }
+
+    func signRelayAllocationChallenge(
+        _ challenge: RelayAllocationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        throw TestRelayIdentityAuthorizationSignerError.unsupportedAllocation
+    }
+
+    func signRelayRuntimeRegistrationChallenge(
+        _ challenge: RelayRuntimeRegistrationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        lock.withLock {
+            signatureCount += 1
+        }
+        if failsRegistrationSigning {
+            throw TestRelayIdentityAuthorizationSignerError.registrationFailure
+        }
+        let signature = try privateKey.signature(for: SHA256.hash(data: challenge.signedMessageData()))
+        return try RelayIdentityAuthorizationProof(
+            runtimeIdentity: identity,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+}
+
+private enum TestRelayIdentityAuthorizationSignerError: Error {
+    case unsupportedAllocation
+    case registrationFailure
 }
 
 private final class ControlledRelayServer {
@@ -387,6 +1030,21 @@ private final class ControlledRelayServer {
         return readExactly(byteCount: Int(bodyLength), socket: fd)
     }
 
+    func waitForControlLine() -> String? {
+        let fd = lock.withLock { acceptedSocket }
+        guard fd >= 0 else { return nil }
+        var bytes = [UInt8]()
+        while bytes.count < 256 {
+            var byte: UInt8 = 0
+            guard Darwin.recv(fd, &byte, 1, 0) == 1 else { return nil }
+            bytes.append(byte)
+            if byte == UInt8(ascii: "\n") {
+                return String(bytes: bytes, encoding: .utf8)
+            }
+        }
+        return nil
+    }
+
     func write(_ line: String) {
         let fd = lock.withLock { acceptedSocket }
         guard fd >= 0 else { return }
@@ -429,6 +1087,13 @@ private final class ControlledRelayServer {
         if accepted >= 0 {
             Darwin.close(accepted)
         }
+    }
+
+    func waitForPeerClose() -> Bool {
+        let fd = lock.withLock { acceptedSocket }
+        guard fd >= 0 else { return true }
+        var byte: UInt8 = 0
+        return Darwin.recv(fd, &byte, 1, 0) <= 0
     }
 
     private func acceptConnections(socket: Int32) {
@@ -535,8 +1200,24 @@ private final class RelayDisconnectRecorder: @unchecked Sendable {
     }
 }
 
+private final class TransportSecurityContextRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var context: TransportSecurityContext?
+
+    var value: TransportSecurityContext? {
+        lock.withLock { context }
+    }
+
+    func append(_ context: TransportSecurityContext?) {
+        lock.withLock {
+            self.context = context
+        }
+    }
+}
+
 private enum TestRelayServerError: Error {
     case socket(String)
+    case invalidHandshake
 }
 
 private extension NSLock {

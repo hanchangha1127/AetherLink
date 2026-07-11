@@ -809,7 +809,13 @@ if [[ "$START_LOCAL_RELAY" == "1" ]]; then
   echo "Starting allocation-required relay on $LOCAL_RELAY_BIND_HOST:$RELAY_PORT"
   swift build --product AetherLinkRelay >/dev/null
   RELAY_BIN="$(swift build --show-bin-path)/AetherLinkRelay"
-  RELAY_ARGS=("$RELAY_BIN" --host "$LOCAL_RELAY_BIND_HOST" --port "$RELAY_PORT" --require-allocation)
+  RELAY_ARGS=(
+    "$RELAY_BIN"
+    --host "$LOCAL_RELAY_BIND_HOST"
+    --port "$RELAY_PORT"
+    --require-allocation
+    --allocation-store "$WORK_DIR/relay-allocations.json"
+  )
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
     export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi

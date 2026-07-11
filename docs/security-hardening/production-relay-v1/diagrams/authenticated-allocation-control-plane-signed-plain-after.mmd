@@ -1,0 +1,9 @@
+flowchart LR
+    Root["Pinned service signing root"] --> Signer["Online lease signer"]
+    Runtime["Runtime host"] -->|"plain TCP allocation"| Relay["Relay and allocation service"]
+    Signer -->|"sign challenge and lease"| Relay
+    Relay -->|"signed lease capability"| Runtime
+    Runtime -->|"QR: endpoint secret and signed lease"| Client["Android client"]
+    Runtime <-->|"identity-bound PSK-mixed ECDH"| Client
+    Relay -.->|"forwards ciphertext"| Runtime
+    Relay -.->|"forwards ciphertext"| Client

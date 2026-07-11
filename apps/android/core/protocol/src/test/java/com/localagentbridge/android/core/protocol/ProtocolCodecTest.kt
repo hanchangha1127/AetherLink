@@ -4,6 +4,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -17,6 +18,285 @@ import org.junit.Test
 import java.io.ByteArrayInputStream
 
 class ProtocolCodecTest {
+    @Test
+    fun pairingProofPayloadsUseStableWireFieldNamesAndDecodeRejectedResults() {
+        val transportBinding = "0123456789abcdef".repeat(4)
+        val requestDigest = "fedcba9876543210".repeat(4)
+        val request = PairingRequestPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            deviceId = "client-1",
+            deviceName = "AetherLink Client",
+            publicKey = "public-key-1",
+            pairingProofScheme = PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1,
+            pairingSignature = "client-signature-1",
+            transportBinding = transportBinding,
+        )
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+
+        assertEquals(PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1, requestJson["pairing_proof_scheme"]?.jsonPrimitive?.content)
+        assertEquals("client-signature-1", requestJson["pairing_signature"]?.jsonPrimitive?.content)
+        assertEquals(transportBinding, requestJson["transport_binding"]?.jsonPrimitive?.content)
+
+        val accepted = PairingResultPayload(
+            accepted = true,
+            runtimeDeviceIdV2 = "runtime-1",
+            runtimePublicKey = "runtime-public-key-1",
+            runtimeKeyFingerprint = "runtime-fingerprint-1",
+            trustedDeviceId = "client-1",
+            message = "paired",
+            pairingProofScheme = PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1,
+            pairingRequestDigest = requestDigest,
+            runtimePairingSignature = "runtime-signature-1",
+            transportBinding = transportBinding,
+        )
+        val acceptedJson = Json.parseToJsonElement(Json.encodeToString(accepted)).jsonObject
+        assertEquals(PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1, acceptedJson["pairing_proof_scheme"]?.jsonPrimitive?.content)
+        assertEquals(requestDigest, acceptedJson["pairing_request_digest"]?.jsonPrimitive?.content)
+        assertEquals("runtime-signature-1", acceptedJson["runtime_pairing_signature"]?.jsonPrimitive?.content)
+        assertEquals(transportBinding, acceptedJson["transport_binding"]?.jsonPrimitive?.content)
+
+        val rejected = Json.decodeFromString<PairingResultPayload>(
+            """{"accepted":false,"message":"invalid pairing proof"}"""
+        )
+        assertEquals(false, rejected.accepted)
+        assertEquals(null, rejected.pairingProofScheme)
+        assertEquals(null, rejected.pairingRequestDigest)
+        assertEquals(null, rejected.runtimePairingSignature)
+        assertEquals(null, rejected.transportBinding)
+    }
+
+    @Test
+    fun relayAllocationChallengePayloadRoundTripsExactWireShape() {
+        val payload = relayAllocationChallengePayload()
+        val encoded = Json.encodeToString(payload)
+        val objectValue = Json.parseToJsonElement(encoded).jsonObject
+        val decoded = Json.decodeFromString<RelayAllocationChallengePayload>(encoded)
+
+        assertEquals(payload, decoded)
+        assertEquals(
+            setOf(
+                "proof_scheme",
+                "protocol_version",
+                "operation",
+                "authorization_id",
+                "current_relay_id",
+                "next_relay_id",
+                "route_token_hash",
+                "runtime_key_fingerprint",
+                "client_key_fingerprint",
+                "current_ticket_generation",
+                "next_ticket_generation",
+                "current_relay_expires_at",
+                "current_relay_nonce",
+                "next_relay_expires_at",
+                "next_relay_nonce",
+                "challenge",
+                "challenge_expires_at",
+                "transport_binding",
+            ),
+            objectValue.keys,
+        )
+        assertFalse("request_id" in objectValue)
+        assertEquals("relay.allocation.challenge", MessageType.RelayAllocationChallenge)
+        assertEquals("relay.allocation.authorization", MessageType.RelayAllocationAuthorization)
+    }
+
+    @Test
+    fun relayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val base = Json.parseToJsonElement(Json.encodeToString(relayAllocationChallengePayload())).jsonObject
+        val invalidSamples = mutableListOf(
+            "missing field" to base.removing("authorization_id"),
+            "unknown field" to base.replacing("unknown", JsonPrimitive("metadata")),
+            "route token secret" to base.replacing("route_token", JsonPrimitive("secret")),
+            "relay secret" to base.replacing("relay_secret", JsonPrimitive("secret")),
+            "wrong scheme" to base.replacing("proof_scheme", JsonPrimitive("runtime-p256-v1")),
+            "wrong version" to base.replacing("protocol_version", JsonPrimitive(1)),
+            "wrong operation" to base.replacing("operation", JsonPrimitive("create")),
+            "blank authorization id" to base.replacing("authorization_id", JsonPrimitive("   ")),
+            "oversized authorization id" to base.replacing("authorization_id", JsonPrimitive("a".repeat(513))),
+            "legacy relay id" to base.replacing("relay_id", JsonPrimitive("rt2-$allocationHexA")),
+            "malformed current relay id" to base.replacing("current_relay_id", JsonPrimitive(allocationHexA)),
+            "malformed next relay id" to base.replacing("next_relay_id", JsonPrimitive(allocationHexB)),
+            "equal claim relay ids" to base.replacing("next_relay_id", JsonPrimitive("rt2-$allocationHexA")),
+            "malformed route token hash" to base.replacing("route_token_hash", JsonPrimitive(allocationHexA.uppercase())),
+            "malformed runtime fingerprint" to base.replacing("runtime_key_fingerprint", JsonPrimitive(allocationHexA.dropLast(1))),
+            "malformed client fingerprint" to base.replacing("client_key_fingerprint", JsonPrimitive(allocationHexB.uppercase())),
+            "malformed challenge" to base.replacing("challenge", JsonPrimitive(allocationHexA.dropLast(1))),
+            "malformed binding" to base.replacing("transport_binding", JsonPrimitive(allocationHexB.uppercase())),
+            "whitespace current nonce" to base.replacing("current_relay_nonce", JsonPrimitive("current nonce")),
+            "oversized next nonce" to base.replacing("next_relay_nonce", JsonPrimitive("n".repeat(513))),
+            "noninteger generation" to base.replacing("current_ticket_generation", JsonPrimitive(1.5)),
+        )
+        listOf(
+            "current_ticket_generation",
+            "next_ticket_generation",
+            "current_relay_expires_at",
+            "next_relay_expires_at",
+            "challenge_expires_at",
+        ).forEach { field ->
+            invalidSamples += "nonpositive $field" to base.replacing(field, JsonPrimitive(0))
+        }
+
+        invalidSamples.forEach { (label, sample) ->
+            val error = assertThrows(label, Exception::class.java) {
+                permissiveJson.decodeFromString<RelayAllocationChallengePayload>(sample.toString())
+            }
+            assertTrue(label, error.message.orEmpty().isNotEmpty())
+        }
+    }
+
+    @Test
+    fun relayAllocationChallengePayloadRenewAllowsEqualOrDifferentRelayIds() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val base = Json.parseToJsonElement(Json.encodeToString(relayAllocationChallengePayload())).jsonObject
+        val renew = base.replacing("operation", JsonPrimitive("renew"))
+
+        permissiveJson.decodeFromString<RelayAllocationChallengePayload>(renew.toString())
+        permissiveJson.decodeFromString<RelayAllocationChallengePayload>(
+            renew.replacing("next_relay_id", JsonPrimitive("rt2-$allocationHexA")).toString(),
+        )
+    }
+
+    @Test
+    fun relayAllocationAuthorizationPayloadRoundTripsExactWireShape() {
+        val payload = RelayAllocationAuthorizationPayload(
+            proofScheme = RELAY_ALLOCATION_PROOF_SCHEME,
+            authorizationId = "authorization-1",
+            challenge = allocationHexA,
+            clientKeyFingerprint = allocationHexB,
+            transportBinding = allocationHexA,
+            clientSignature = "MEUCIQ==",
+        )
+        val encoded = Json.encodeToString(payload)
+        val objectValue = Json.parseToJsonElement(encoded).jsonObject
+
+        assertEquals(payload, Json.decodeFromString<RelayAllocationAuthorizationPayload>(encoded))
+        assertEquals(
+            setOf(
+                "proof_scheme",
+                "authorization_id",
+                "challenge",
+                "client_key_fingerprint",
+                "transport_binding",
+                "client_signature",
+            ),
+            objectValue.keys,
+        )
+        assertFalse("request_id" in objectValue)
+    }
+
+    @Test
+    fun relayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val valid = RelayAllocationAuthorizationPayload(
+            proofScheme = RELAY_ALLOCATION_PROOF_SCHEME,
+            authorizationId = "authorization-1",
+            challenge = allocationHexA,
+            clientKeyFingerprint = allocationHexB,
+            transportBinding = allocationHexA,
+            clientSignature = "MEUCIQ==",
+        )
+        val base = Json.parseToJsonElement(Json.encodeToString(valid)).jsonObject
+        val invalidSamples = listOf(
+            "missing field" to base.removing("client_signature"),
+            "unknown field" to base.replacing("unknown", JsonPrimitive("metadata")),
+            "route token secret" to base.replacing("route_token", JsonPrimitive("secret")),
+            "relay secret" to base.replacing("relay_secret", JsonPrimitive("secret")),
+            "wrong scheme" to base.replacing("proof_scheme", JsonPrimitive("runtime-p256-v1")),
+            "blank authorization id" to base.replacing("authorization_id", JsonPrimitive("\t")),
+            "oversized authorization id" to base.replacing("authorization_id", JsonPrimitive("a".repeat(513))),
+            "malformed challenge" to base.replacing("challenge", JsonPrimitive(allocationHexA.dropLast(1))),
+            "malformed client fingerprint" to base.replacing("client_key_fingerprint", JsonPrimitive(allocationHexB.uppercase())),
+            "malformed binding" to base.replacing("transport_binding", JsonPrimitive(allocationHexA.uppercase())),
+            "blank signature" to base.replacing("client_signature", JsonPrimitive("")),
+            "noncanonical signature" to base.replacing("client_signature", JsonPrimitive("TQ=")),
+            "oversized signature" to base.replacing("client_signature", JsonPrimitive("A".repeat(516))),
+        )
+
+        invalidSamples.forEach { (label, sample) ->
+            val error = assertThrows(label, Exception::class.java) {
+                permissiveJson.decodeFromString<RelayAllocationAuthorizationPayload>(sample.toString())
+            }
+            assertTrue(label, error.message.orEmpty().isNotEmpty())
+        }
+    }
+
+    @Test
+    fun routeRefreshRelayResultSupportsOptionalPositiveTicketGeneration() {
+        val relayJson = """
+            {
+              "runtime_device_id": "runtime-1",
+              "runtime_key_fingerprint": "runtime-fingerprint",
+              "relay_host": "relay.example.test",
+              "relay_port": 443,
+              "relay_id": "relay-1",
+              "relay_secret": "secret-1",
+              "relay_expires_at": 4102444800000,
+              "relay_nonce": "nonce-1",
+              "relay_scope": "remote"
+            }
+        """.trimIndent()
+        val withoutGeneration = Json.decodeFromString<RouteRefreshPayload>(relayJson)
+        val withGeneration = Json.decodeFromString<RouteRefreshPayload>(
+            relayJson.dropLast(1) + ",\"ticket_generation\":1}",
+        )
+
+        assertNull(withoutGeneration.ticketGeneration)
+        assertEquals(1L, withGeneration.ticketGeneration)
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<RouteRefreshPayload>(relayJson.dropLast(1) + ",\"ticket_generation\":0}")
+        }
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<RouteRefreshPayload>(
+                """
+                {
+                  "runtime_device_id": "runtime-1",
+                  "runtime_key_fingerprint": "runtime-fingerprint",
+                  "ticket_generation": 1,
+                  "p2p_class": "p2p_rendezvous",
+                  "p2p_record_id": "p2p-record-1",
+                  "p2p_encrypted_body": "opaque-candidate-1",
+                  "p2p_expires_at": 4102444800000,
+                  "p2p_anti_replay_nonce": "p2p-nonce-1",
+                  "p2p_protocol_version": 1
+                }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private val allocationHexA = "0123456789abcdef".repeat(4)
+    private val allocationHexB = "fedcba9876543210".repeat(4)
+
+    private fun relayAllocationChallengePayload() = RelayAllocationChallengePayload(
+        proofScheme = RELAY_ALLOCATION_PROOF_SCHEME,
+        protocolVersion = RELAY_ALLOCATION_PROTOCOL_VERSION,
+        operation = "claim",
+        authorizationId = "authorization-1",
+        currentRelayId = "rt2-$allocationHexA",
+        nextRelayId = "rt2-$allocationHexB",
+        routeTokenHash = allocationHexB,
+        runtimeKeyFingerprint = allocationHexA,
+        clientKeyFingerprint = allocationHexB,
+        currentTicketGeneration = 1,
+        nextTicketGeneration = 2,
+        currentRelayExpiresAtEpochMillis = 1,
+        currentRelayNonce = "current-nonce",
+        nextRelayExpiresAtEpochMillis = Long.MAX_VALUE,
+        nextRelayNonce = "next-nonce",
+        challenge = allocationHexA,
+        challengeExpiresAtEpochMillis = 1,
+        transportBinding = allocationHexB,
+    )
+
+    private fun JsonObject.replacing(field: String, value: JsonPrimitive): JsonObject =
+        JsonObject(toMutableMap().apply { put(field, value) })
+
+    private fun JsonObject.removing(field: String): JsonObject =
+        JsonObject(toMutableMap().apply { remove(field) })
+
     private val nonCanonicalSourceAnchorIds = listOf(
         " source_anchor_0123456789abcdef",
         "source_anchor_0123456789ABCDEF",
@@ -266,6 +546,54 @@ class ProtocolCodecTest {
             json["client_capabilities"]?.jsonArray?.map { it.jsonPrimitive.content },
         )
         assertEquals(null, json["capabilities"])
+        assertEquals(null, json["transport_binding"])
+    }
+
+    @Test
+    fun authenticationPayloadsUseOptionalTransportBindingFieldWithoutChangingV1Json() {
+        val transportBinding = "0123456789abcdef".repeat(4)
+        val v1Hello = Json.parseToJsonElement(
+            Json.encodeToString(
+                HelloPayload(
+                    deviceId = "client-1",
+                    deviceName = "AetherLink Client",
+                    capabilities = listOf("chat"),
+                )
+            )
+        ).jsonObject
+        assertEquals(setOf("device_id", "device_name", "client_capabilities"), v1Hello.keys)
+
+        val challenge = AuthChallengePayload(
+            deviceId = "client-1",
+            nonce = "nonce-1",
+            runtimeKeyFingerprint = "fingerprint-1",
+            runtimeSignature = "signature-1",
+            transportBinding = transportBinding,
+        )
+        val response = AuthResponsePayload(
+            deviceId = "client-1",
+            nonce = "nonce-1",
+            signature = "signature-2",
+            transportBinding = transportBinding,
+        )
+        val boundHelloJson = Json.parseToJsonElement(
+            Json.encodeToString(
+                HelloPayload(
+                    deviceId = "client-1",
+                    deviceName = "AetherLink Client",
+                    capabilities = listOf("chat"),
+                    transportBinding = transportBinding,
+                )
+            )
+        ).jsonObject
+        val challengeJson = Json.parseToJsonElement(Json.encodeToString(challenge)).jsonObject
+        val responseJson = Json.parseToJsonElement(Json.encodeToString(response)).jsonObject
+
+        assertEquals(transportBinding, boundHelloJson["transport_binding"]?.jsonPrimitive?.content)
+        assertEquals(transportBinding, challengeJson["transport_binding"]?.jsonPrimitive?.content)
+        assertEquals(transportBinding, responseJson["transport_binding"]?.jsonPrimitive?.content)
+        assertEquals(challenge, Json.decodeFromString<AuthChallengePayload>(challengeJson.toString()))
+        assertEquals(response, Json.decodeFromString<AuthResponsePayload>(responseJson.toString()))
     }
 
     @Test

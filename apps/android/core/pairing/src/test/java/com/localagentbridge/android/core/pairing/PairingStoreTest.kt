@@ -89,6 +89,12 @@ class PairingStoreTest {
     }
 
     @Test
+    fun trustedRuntimeRejectsNonpositiveRelayTicketGeneration() {
+        assertEquals(false, completeRelayRuntime().copy(relayTicketGeneration = 0L).hasValidRelayRoute())
+        assertEquals(false, completeRelayRuntime().copy(relayTicketGeneration = -1L).hasValidRelayRoute())
+    }
+
+    @Test
     fun trustedRuntimeRejectsExpiredRelayLease() {
         val runtime = trustedRuntime(host = null, port = null).copy(
             relayHost = "relay.example.test",
@@ -304,6 +310,62 @@ class PairingStoreTest {
         val relaySecretRef = prefs[stringPreferencesKey("runtime_relay_secret_ref")]
         assertNotNull(relaySecretRef)
         assertEquals("secret-1", secretStore.secrets[relaySecretRef])
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStorePersistsRelayTicketGenerationAcrossRestart() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+
+        store.trustRuntime(completeRelayRuntime().copy(relayTicketGeneration = 7L))
+
+        val restartedStore = pairingStore(secretStore)
+        val trusted = restartedStore.trustedRuntime.first()
+        assertEquals(7L, trusted?.relayTicketGeneration)
+        assertEquals("relay-1", trusted?.relayId)
+        assertEquals("secret-1", trusted?.relaySecret)
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertEquals(7L, prefs[longPreferencesKey("runtime_relay_ticket_generation")])
+
+        restartedStore.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreClearsRelayTicketGenerationWithRelayRoute() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+        val trusted = completeRelayRuntime().copy(relayTicketGeneration = 7L)
+        store.trustRuntime(trusted)
+
+        store.trustRuntime(
+            trusted.copy(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+                relayExpiresAtEpochMillis = null,
+                relayNonce = null,
+                relayScope = null,
+                relayTicketGeneration = null,
+            )
+        )
+
+        val cleared = store.trustedRuntime.first()
+        assertEquals("runtime-1", cleared?.deviceId)
+        assertNull(cleared?.relayTicketGeneration)
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredRelayRoute(prefs)
+        assertTrue(secretStore.secrets.isEmpty())
 
         store.forgetRuntime()
     }
@@ -1147,6 +1209,7 @@ class PairingStoreTest {
         assertNull(prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")])
         assertNull(prefs[stringPreferencesKey("runtime_relay_nonce")])
         assertNull(prefs[stringPreferencesKey("runtime_relay_scope")])
+        assertNull(prefs[longPreferencesKey("runtime_relay_ticket_generation")])
     }
 
     private fun assertNoStoredP2pRoute(prefs: androidx.datastore.preferences.core.Preferences) {

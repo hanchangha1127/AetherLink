@@ -134,6 +134,7 @@ data class RuntimeTrustedRuntime(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val relayTicketGeneration: Long? = null,
     val p2pRouteClass: String? = null,
     val p2pRecordId: String? = null,
     val p2pEncryptedBody: String? = null,

@@ -8,14 +8,22 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import java.time.Instant
 import java.util.UUID
 
 const val PROTOCOL_VERSION = 1
+const val PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1 = "p256-sha256-der-v1"
+const val RELAY_ALLOCATION_PROOF_SCHEME = "runtime-client-p256-v2"
+const val RELAY_ALLOCATION_PROTOCOL_VERSION = 2
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
 private val DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")
+private val LOWERCASE_HEX_64_PATTERN = Regex("^[0-9a-f]{64}$")
+private val RUNTIME_KEY_BOUND_RELAY_ID_PATTERN = Regex("^rt2-[0-9a-f]{64}$")
+private val CANONICAL_BASE64_PATTERN = Regex("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
 private val DOCUMENT_MIME_TYPE_PATTERN = Regex("^[a-z0-9!#\$%&'*+.^_`|~-]+/[a-z0-9!#\$%&'*+.^_`|~-]+$")
 private const val MAX_CHAT_SESSION_LIST_LIMIT = 200
 private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500
@@ -28,6 +36,7 @@ private const val MAX_RETRIEVAL_QUERY_LENGTH = 1024
 private const val MAX_RETRIEVAL_MATCHED_TERMS = 16
 private const val MAX_RETRIEVAL_MATCHED_TERM_LENGTH = 64
 private const val MAX_RETRIEVAL_SNIPPET_LENGTH = 500
+private const val MAX_RELAY_ALLOCATION_OPAQUE_LENGTH = 512
 private val DOCUMENT_QUALITIES = setOf("no_usable_text", "single_chunk", "chunked")
 private val CHAT_MESSAGE_ROLES = setOf("system", "user", "assistant")
 private val CHAT_ATTACHMENT_TYPES = setOf("image", "document", "file")
@@ -37,6 +46,7 @@ private val MODEL_INFO_PROVIDERS = setOf("ollama", "lm_studio")
 private val MODEL_INFO_KINDS = setOf("chat", "embedding")
 private val MODEL_INFO_SOURCES = setOf("local", "cloud")
 private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")
+private val RELAY_ALLOCATION_OPERATIONS = setOf("claim", "renew")
 private val CHAT_SESSION_STATUSES = setOf("active", "archived")
 private val CHAT_SESSION_LAST_EVENTS = setOf(
     "request",
@@ -192,6 +202,26 @@ private object RouteRefreshExpirySerializer : KSerializer<Long> {
     }
 }
 
+private object PositiveTicketGenerationSerializer : KSerializer<Long> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("PositiveTicketGeneration", PrimitiveKind.LONG)
+
+    override fun deserialize(decoder: Decoder): Long {
+        val value = decoder.decodeLong()
+        require(value > 0) {
+            "ticket_generation must be positive"
+        }
+        return value
+    }
+
+    override fun serialize(encoder: Encoder, value: Long) {
+        require(value > 0) {
+            "ticket_generation must be positive"
+        }
+        encoder.encodeLong(value)
+    }
+}
+
 private object RouteRefreshRelayScopeSerializer : KSerializer<String> {
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("RouteRefreshRelayScope", PrimitiveKind.STRING)
@@ -262,6 +292,8 @@ private data class RouteRefreshPayloadSurrogate(
     @SerialName("relay_nonce") val relayNonce: String? = null,
     @Serializable(with = RouteRefreshRelayScopeSerializer::class)
     @SerialName("relay_scope") val relayScope: String? = null,
+    @Serializable(with = PositiveTicketGenerationSerializer::class)
+    @SerialName("ticket_generation") val ticketGeneration: Long? = null,
     @Serializable(with = RouteRefreshP2pClassSerializer::class)
     @SerialName("p2p_class") val p2pRouteClass: String? = null,
     @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
@@ -308,7 +340,7 @@ private fun validateRouteRefreshPayloadSurrogate(payload: RouteRefreshPayloadSur
         payload.p2pAntiReplayNonce,
         payload.p2pProtocolVersion,
     )
-    val hasRelayField = relayValues.any { it != null } || payload.relayScope != null
+    val hasRelayField = relayValues.any { it != null } || payload.relayScope != null || payload.ticketGeneration != null
     val hasP2pField = p2pValues.any { it != null }
     val hasAnyField = hasRelayField || hasP2pField || payload.runtimeDeviceId != null || payload.runtimeKeyFingerprint != null
     if (!hasAnyField) return
@@ -341,6 +373,7 @@ private fun RouteRefreshPayloadSurrogate.toRouteRefreshPayload(): RouteRefreshPa
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        ticketGeneration = ticketGeneration,
         p2pRouteClass = p2pRouteClass,
         p2pRecordId = p2pRecordId,
         p2pEncryptedBody = p2pEncryptedBody,
@@ -360,12 +393,310 @@ private fun RouteRefreshPayload.toRouteRefreshPayloadSurrogate(): RouteRefreshPa
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        ticketGeneration = ticketGeneration,
         p2pRouteClass = p2pRouteClass,
         p2pRecordId = p2pRecordId,
         p2pEncryptedBody = p2pEncryptedBody,
         p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
         p2pAntiReplayNonce = p2pAntiReplayNonce,
         p2pProtocolVersion = p2pProtocolVersion,
+    )
+
+@Serializable
+private data class RelayAllocationChallengePayloadSurrogate(
+    @SerialName("proof_scheme") val proofScheme: String,
+    @SerialName("protocol_version") val protocolVersion: Int,
+    val operation: String,
+    @SerialName("authorization_id") val authorizationId: String,
+    @SerialName("current_relay_id") val currentRelayId: String,
+    @SerialName("next_relay_id") val nextRelayId: String,
+    @SerialName("route_token_hash") val routeTokenHash: String,
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String,
+    @SerialName("client_key_fingerprint") val clientKeyFingerprint: String,
+    @SerialName("current_ticket_generation") val currentTicketGeneration: Long,
+    @SerialName("next_ticket_generation") val nextTicketGeneration: Long,
+    @SerialName("current_relay_expires_at") val currentRelayExpiresAtEpochMillis: Long,
+    @SerialName("current_relay_nonce") val currentRelayNonce: String,
+    @SerialName("next_relay_expires_at") val nextRelayExpiresAtEpochMillis: Long,
+    @SerialName("next_relay_nonce") val nextRelayNonce: String,
+    val challenge: String,
+    @SerialName("challenge_expires_at") val challengeExpiresAtEpochMillis: Long,
+    @SerialName("transport_binding") val transportBinding: String,
+)
+
+object RelayAllocationChallengePayloadSerializer : KSerializer<RelayAllocationChallengePayload> {
+    override val descriptor: SerialDescriptor = RelayAllocationChallengePayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): RelayAllocationChallengePayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(RELAY_ALLOCATION_CHALLENGE_FIELDS)
+        return jsonDecoder.json
+            .decodeFromJsonElement(RelayAllocationChallengePayloadSurrogate.serializer(), payload)
+            .toRelayAllocationChallengePayload()
+    }
+
+    override fun serialize(encoder: Encoder, value: RelayAllocationChallengePayload) {
+        encoder.encodeSerializableValue(
+            RelayAllocationChallengePayloadSurrogate.serializer(),
+            value.toRelayAllocationChallengePayloadSurrogate(),
+        )
+    }
+}
+
+@Serializable(with = RelayAllocationChallengePayloadSerializer::class)
+data class RelayAllocationChallengePayload(
+    @SerialName("proof_scheme") val proofScheme: String,
+    @SerialName("protocol_version") val protocolVersion: Int,
+    val operation: String,
+    @SerialName("authorization_id") val authorizationId: String,
+    @SerialName("current_relay_id") val currentRelayId: String,
+    @SerialName("next_relay_id") val nextRelayId: String,
+    @SerialName("route_token_hash") val routeTokenHash: String,
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String,
+    @SerialName("client_key_fingerprint") val clientKeyFingerprint: String,
+    @SerialName("current_ticket_generation") val currentTicketGeneration: Long,
+    @SerialName("next_ticket_generation") val nextTicketGeneration: Long,
+    @SerialName("current_relay_expires_at") val currentRelayExpiresAtEpochMillis: Long,
+    @SerialName("current_relay_nonce") val currentRelayNonce: String,
+    @SerialName("next_relay_expires_at") val nextRelayExpiresAtEpochMillis: Long,
+    @SerialName("next_relay_nonce") val nextRelayNonce: String,
+    val challenge: String,
+    @SerialName("challenge_expires_at") val challengeExpiresAtEpochMillis: Long,
+    @SerialName("transport_binding") val transportBinding: String,
+) {
+    init {
+        require(proofScheme == RELAY_ALLOCATION_PROOF_SCHEME) {
+            "relay allocation proof_scheme must be $RELAY_ALLOCATION_PROOF_SCHEME"
+        }
+        require(protocolVersion == RELAY_ALLOCATION_PROTOCOL_VERSION) {
+            "relay allocation protocol_version must be $RELAY_ALLOCATION_PROTOCOL_VERSION"
+        }
+        require(operation in RELAY_ALLOCATION_OPERATIONS) {
+            "relay allocation operation must be claim or renew"
+        }
+        require(authorizationId.isBoundedNonBlankRelayAllocationValue()) {
+            "relay allocation authorization_id must be nonblank and at most $MAX_RELAY_ALLOCATION_OPAQUE_LENGTH characters"
+        }
+        require(RUNTIME_KEY_BOUND_RELAY_ID_PATTERN.matches(currentRelayId)) {
+            "relay allocation current_relay_id must match rt2-[64 lowercase hex]"
+        }
+        require(RUNTIME_KEY_BOUND_RELAY_ID_PATTERN.matches(nextRelayId)) {
+            "relay allocation next_relay_id must match rt2-[64 lowercase hex]"
+        }
+        require(operation != "claim" || currentRelayId != nextRelayId) {
+            "relay allocation claim next_relay_id must differ from current_relay_id"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(routeTokenHash)) {
+            "relay allocation route_token_hash must be 64 lowercase hex characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(runtimeKeyFingerprint)) {
+            "relay allocation runtime_key_fingerprint must be 64 lowercase hex characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(clientKeyFingerprint)) {
+            "relay allocation client_key_fingerprint must be 64 lowercase hex characters"
+        }
+        require(currentTicketGeneration > 0) {
+            "relay allocation current_ticket_generation must be positive"
+        }
+        require(nextTicketGeneration > 0) {
+            "relay allocation next_ticket_generation must be positive"
+        }
+        require(currentRelayExpiresAtEpochMillis > 0) {
+            "relay allocation current_relay_expires_at must be positive"
+        }
+        require(currentRelayNonce.isBoundedWhitespaceFreeRelayAllocationValue()) {
+            "relay allocation current_relay_nonce must be nonempty, whitespace-free, and at most $MAX_RELAY_ALLOCATION_OPAQUE_LENGTH characters"
+        }
+        require(nextRelayExpiresAtEpochMillis > 0) {
+            "relay allocation next_relay_expires_at must be positive"
+        }
+        require(nextRelayNonce.isBoundedWhitespaceFreeRelayAllocationValue()) {
+            "relay allocation next_relay_nonce must be nonempty, whitespace-free, and at most $MAX_RELAY_ALLOCATION_OPAQUE_LENGTH characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(challenge)) {
+            "relay allocation challenge must be 64 lowercase hex characters"
+        }
+        require(challengeExpiresAtEpochMillis > 0) {
+            "relay allocation challenge_expires_at must be positive"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(transportBinding)) {
+            "relay allocation transport_binding must be 64 lowercase hex characters"
+        }
+    }
+}
+
+@Serializable
+private data class RelayAllocationAuthorizationPayloadSurrogate(
+    @SerialName("proof_scheme") val proofScheme: String,
+    @SerialName("authorization_id") val authorizationId: String,
+    val challenge: String,
+    @SerialName("client_key_fingerprint") val clientKeyFingerprint: String,
+    @SerialName("transport_binding") val transportBinding: String,
+    @SerialName("client_signature") val clientSignature: String,
+)
+
+object RelayAllocationAuthorizationPayloadSerializer : KSerializer<RelayAllocationAuthorizationPayload> {
+    override val descriptor: SerialDescriptor = RelayAllocationAuthorizationPayloadSurrogate.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): RelayAllocationAuthorizationPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(RELAY_ALLOCATION_AUTHORIZATION_FIELDS)
+        return jsonDecoder.json
+            .decodeFromJsonElement(RelayAllocationAuthorizationPayloadSurrogate.serializer(), payload)
+            .toRelayAllocationAuthorizationPayload()
+    }
+
+    override fun serialize(encoder: Encoder, value: RelayAllocationAuthorizationPayload) {
+        encoder.encodeSerializableValue(
+            RelayAllocationAuthorizationPayloadSurrogate.serializer(),
+            value.toRelayAllocationAuthorizationPayloadSurrogate(),
+        )
+    }
+}
+
+@Serializable(with = RelayAllocationAuthorizationPayloadSerializer::class)
+data class RelayAllocationAuthorizationPayload(
+    @SerialName("proof_scheme") val proofScheme: String,
+    @SerialName("authorization_id") val authorizationId: String,
+    val challenge: String,
+    @SerialName("client_key_fingerprint") val clientKeyFingerprint: String,
+    @SerialName("transport_binding") val transportBinding: String,
+    @SerialName("client_signature") val clientSignature: String,
+) {
+    init {
+        require(proofScheme == RELAY_ALLOCATION_PROOF_SCHEME) {
+            "relay allocation proof_scheme must be $RELAY_ALLOCATION_PROOF_SCHEME"
+        }
+        require(authorizationId.isBoundedNonBlankRelayAllocationValue()) {
+            "relay allocation authorization_id must be nonblank and at most $MAX_RELAY_ALLOCATION_OPAQUE_LENGTH characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(challenge)) {
+            "relay allocation challenge must be 64 lowercase hex characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(clientKeyFingerprint)) {
+            "relay allocation client_key_fingerprint must be 64 lowercase hex characters"
+        }
+        require(LOWERCASE_HEX_64_PATTERN.matches(transportBinding)) {
+            "relay allocation transport_binding must be 64 lowercase hex characters"
+        }
+        require(
+            clientSignature.isNotEmpty() &&
+                clientSignature.length <= MAX_RELAY_ALLOCATION_OPAQUE_LENGTH &&
+                CANONICAL_BASE64_PATTERN.matches(clientSignature)
+        ) {
+            "relay allocation client_signature must be canonical Base64 and at most $MAX_RELAY_ALLOCATION_OPAQUE_LENGTH characters"
+        }
+    }
+}
+
+private val RELAY_ALLOCATION_CHALLENGE_FIELDS = setOf(
+    "proof_scheme",
+    "protocol_version",
+    "operation",
+    "authorization_id",
+    "current_relay_id",
+    "next_relay_id",
+    "route_token_hash",
+    "runtime_key_fingerprint",
+    "client_key_fingerprint",
+    "current_ticket_generation",
+    "next_ticket_generation",
+    "current_relay_expires_at",
+    "current_relay_nonce",
+    "next_relay_expires_at",
+    "next_relay_nonce",
+    "challenge",
+    "challenge_expires_at",
+    "transport_binding",
+)
+
+private val RELAY_ALLOCATION_AUTHORIZATION_FIELDS = setOf(
+    "proof_scheme",
+    "authorization_id",
+    "challenge",
+    "client_key_fingerprint",
+    "transport_binding",
+    "client_signature",
+)
+
+private fun Decoder.decodeExactJsonObject(expectedFields: Set<String>): Pair<JsonDecoder, JsonObject> {
+    val jsonDecoder = this as? JsonDecoder
+        ?: throw IllegalArgumentException("relay allocation payloads require JSON decoding")
+    val payload = jsonDecoder.decodeJsonElement() as? JsonObject
+        ?: throw IllegalArgumentException("relay allocation payload must be a JSON object")
+    val unknownFields = payload.keys.filterNot { it in expectedFields }.sorted()
+    require(unknownFields.isEmpty()) {
+        "relay allocation payload contains unknown field: ${unknownFields.first()}"
+    }
+    return jsonDecoder to payload
+}
+
+private fun String.isBoundedNonBlankRelayAllocationValue(): Boolean =
+    length <= MAX_RELAY_ALLOCATION_OPAQUE_LENGTH && any { !it.isWhitespace() }
+
+private fun String.isBoundedWhitespaceFreeRelayAllocationValue(): Boolean =
+    isNotEmpty() && length <= MAX_RELAY_ALLOCATION_OPAQUE_LENGTH && none { it.isWhitespace() }
+
+private fun RelayAllocationChallengePayloadSurrogate.toRelayAllocationChallengePayload() =
+    RelayAllocationChallengePayload(
+        proofScheme = proofScheme,
+        protocolVersion = protocolVersion,
+        operation = operation,
+        authorizationId = authorizationId,
+        currentRelayId = currentRelayId,
+        nextRelayId = nextRelayId,
+        routeTokenHash = routeTokenHash,
+        runtimeKeyFingerprint = runtimeKeyFingerprint,
+        clientKeyFingerprint = clientKeyFingerprint,
+        currentTicketGeneration = currentTicketGeneration,
+        nextTicketGeneration = nextTicketGeneration,
+        currentRelayExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis,
+        currentRelayNonce = currentRelayNonce,
+        nextRelayExpiresAtEpochMillis = nextRelayExpiresAtEpochMillis,
+        nextRelayNonce = nextRelayNonce,
+        challenge = challenge,
+        challengeExpiresAtEpochMillis = challengeExpiresAtEpochMillis,
+        transportBinding = transportBinding,
+    )
+
+private fun RelayAllocationChallengePayload.toRelayAllocationChallengePayloadSurrogate() =
+    RelayAllocationChallengePayloadSurrogate(
+        proofScheme = proofScheme,
+        protocolVersion = protocolVersion,
+        operation = operation,
+        authorizationId = authorizationId,
+        currentRelayId = currentRelayId,
+        nextRelayId = nextRelayId,
+        routeTokenHash = routeTokenHash,
+        runtimeKeyFingerprint = runtimeKeyFingerprint,
+        clientKeyFingerprint = clientKeyFingerprint,
+        currentTicketGeneration = currentTicketGeneration,
+        nextTicketGeneration = nextTicketGeneration,
+        currentRelayExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis,
+        currentRelayNonce = currentRelayNonce,
+        nextRelayExpiresAtEpochMillis = nextRelayExpiresAtEpochMillis,
+        nextRelayNonce = nextRelayNonce,
+        challenge = challenge,
+        challengeExpiresAtEpochMillis = challengeExpiresAtEpochMillis,
+        transportBinding = transportBinding,
+    )
+
+private fun RelayAllocationAuthorizationPayloadSurrogate.toRelayAllocationAuthorizationPayload() =
+    RelayAllocationAuthorizationPayload(
+        proofScheme = proofScheme,
+        authorizationId = authorizationId,
+        challenge = challenge,
+        clientKeyFingerprint = clientKeyFingerprint,
+        transportBinding = transportBinding,
+        clientSignature = clientSignature,
+    )
+
+private fun RelayAllocationAuthorizationPayload.toRelayAllocationAuthorizationPayloadSurrogate() =
+    RelayAllocationAuthorizationPayloadSurrogate(
+        proofScheme = proofScheme,
+        authorizationId = authorizationId,
+        challenge = challenge,
+        clientKeyFingerprint = clientKeyFingerprint,
+        transportBinding = transportBinding,
+        clientSignature = clientSignature,
     )
 
 @Serializable
@@ -388,6 +719,8 @@ object MessageType {
     const val ModelsResult = "models.result"
     const val ModelsPull = "models.pull"
     const val RouteRefresh = "route.refresh"
+    const val RelayAllocationChallenge = "relay.allocation.challenge"
+    const val RelayAllocationAuthorization = "relay.allocation.authorization"
     const val ChatSend = "chat.send"
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
@@ -418,6 +751,7 @@ data class HelloPayload(
     @SerialName("device_name") val deviceName: String,
     @SerialName("client_capabilities")
     val capabilities: List<String>,
+    @SerialName("transport_binding") val transportBinding: String? = null,
 )
 
 @Serializable
@@ -426,6 +760,7 @@ data class AuthChallengePayload(
     val nonce: String,
     @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("runtime_signature") val runtimeSignature: String? = null,
+    @SerialName("transport_binding") val transportBinding: String? = null,
 )
 
 @Serializable
@@ -435,6 +770,7 @@ data class AuthResponsePayload(
     val signature: String? = null,
     val accepted: Boolean? = null,
     val message: String? = null,
+    @SerialName("transport_binding") val transportBinding: String? = null,
 )
 
 @Serializable
@@ -444,6 +780,9 @@ data class PairingRequestPayload(
     @SerialName("device_id") val deviceId: String,
     @SerialName("device_name") val deviceName: String,
     @SerialName("public_key") val publicKey: String,
+    @SerialName("pairing_proof_scheme") val pairingProofScheme: String,
+    @SerialName("pairing_signature") val pairingSignature: String,
+    @SerialName("transport_binding") val transportBinding: String? = null,
 )
 
 @Serializable
@@ -455,6 +794,10 @@ data class PairingResultPayload(
     @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("trusted_device_id") val trustedDeviceId: String? = null,
     val message: String,
+    @SerialName("pairing_proof_scheme") val pairingProofScheme: String? = null,
+    @SerialName("pairing_request_digest") val pairingRequestDigest: String? = null,
+    @SerialName("runtime_pairing_signature") val runtimePairingSignature: String? = null,
+    @SerialName("transport_binding") val transportBinding: String? = null,
 )
 
 @Serializable
@@ -557,6 +900,8 @@ data class RouteRefreshPayload(
     @SerialName("relay_nonce") val relayNonce: String? = null,
     @Serializable(with = RouteRefreshRelayScopeSerializer::class)
     @SerialName("relay_scope") val relayScope: String? = null,
+    @Serializable(with = PositiveTicketGenerationSerializer::class)
+    @SerialName("ticket_generation") val ticketGeneration: Long? = null,
     @Serializable(with = RouteRefreshP2pClassSerializer::class)
     @SerialName("p2p_class") val p2pRouteClass: String? = null,
     @Serializable(with = RouteRefreshOpaqueValueSerializer::class)
@@ -569,7 +914,13 @@ data class RouteRefreshPayload(
     @SerialName("p2p_anti_replay_nonce") val p2pAntiReplayNonce: String? = null,
     @Serializable(with = RouteRefreshP2pProtocolVersionSerializer::class)
     @SerialName("p2p_protocol_version") val p2pProtocolVersion: Int? = null,
-)
+) {
+    init {
+        require(ticketGeneration == null || ticketGeneration > 0) {
+            "route.refresh ticket_generation must be positive"
+        }
+    }
+}
 
 @Serializable
 data class ChatMessagePayload(

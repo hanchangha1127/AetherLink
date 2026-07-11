@@ -12,6 +12,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:protocol"))
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 

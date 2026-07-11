@@ -19,11 +19,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let documentIndexStore: any RuntimeDocumentIndexReading
     private let memorySummaryPolicy: @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy
     private let routeRefresher: (any RuntimeRouteRefreshing)?
-    private let runtimeChallengeSigner: (any RuntimeChallengeSigning)?
+    private let runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)?
     private let onPairingAccepted: (@Sendable (TrustedDevice) -> Void)?
+    private let pairedRelayAuthorizationTimeout: TimeInterval
     private let dateFormatter = ISO8601DateFormatter()
     private let authLock = NSLock()
     private var authSessions: [UUID: AuthSessionState] = [:]
+    private let relayAuthorizationLock = NSLock()
+    private var activeRouteRefreshRequests = Set<RelayAuthorizationRequestKey>()
+    private var pendingRelayAuthorizations: [RelayAuthorizationRequestKey: PendingRelayAuthorization] = [:]
     private let chatStorageLock = NSLock()
     private var activeChatStorageContexts: [String: RuntimeChatStorageContext] = [:]
     private var activeChatRequestIDsByConnection: [UUID: Set<String>] = [:]
@@ -41,7 +45,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: $0)
         },
         routeRefresher: (any RuntimeRouteRefreshing)? = nil,
-        runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil,
+        runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
+        pairedRelayAuthorizationTimeout: TimeInterval = 5,
         onPairingAccepted: (@Sendable (TrustedDevice) -> Void)? = nil
     ) {
         self.backend = backend
@@ -54,6 +59,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.memorySummaryPolicy = memorySummaryPolicy
         self.routeRefresher = routeRefresher
         self.runtimeChallengeSigner = runtimeChallengeSigner
+        self.pairedRelayAuthorizationTimeout = max(0.01, min(pairedRelayAuthorizationTimeout, 60))
         self.onPairingAccepted = onPairingAccepted
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
@@ -68,6 +74,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         authLock.withLock {
             authSessions[connectionID] = nil
         }
+        cancelRelayAuthorizations(
+            connectionID: connectionID,
+            error: RelayAuthorizationFlowError.connectionClosed
+        )
         cancelActiveChats(for: connectionID)
     }
 
@@ -95,6 +105,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             await handleHello(envelope, sink: sink)
         case MessageType.authResponse:
             await handleAuthResponse(envelope, sink: sink)
+        case MessageType.relayAllocationAuthorization:
+            await handleRelayAllocationAuthorization(envelope, sink: sink)
         case MessageType.runtimeHealth:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleRuntimeHealth(envelope, sink: sink)
@@ -162,6 +174,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemorySummaryDraftDismiss(envelope, sink: sink)
         case MessageType.authChallenge,
+             MessageType.relayAllocationChallenge,
              MessageType.pairingResult,
              MessageType.modelsResult,
              MessageType.chatDelta,
@@ -190,7 +203,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func allowRuntimeCommand(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async -> Bool {
         guard requiresAuthentication else { return true }
-        guard let authenticatedDeviceID = authenticatedDeviceID(connectionID: sink.connectionID) else {
+        guard let authenticatedSession = authenticatedSession(connectionID: sink.connectionID) else {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "authentication_required",
+                message: "Pair and authenticate this device before sending runtime commands.",
+                retryable: false
+            ))
+            return false
+        }
+        guard transportBindingMatches(authenticatedSession.transportBinding, sink: sink) else {
+            clearAuthentication(connectionID: sink.connectionID)
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
                 code: "authentication_required",
@@ -200,12 +223,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             return false
         }
         do {
-            guard try await trustedDevice(deviceID: authenticatedDeviceID) != nil else {
+            guard let trustedDevice = try await trustedDevice(deviceID: authenticatedSession.deviceID),
+                  trustedDevice.publicKeyBase64 == authenticatedSession.publicKeyBase64 else {
                 clearAuthentication(connectionID: sink.connectionID)
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "pairing_required",
                     message: "This device is no longer trusted by AetherLink Runtime.",
+                    retryable: false
+                ))
+                return false
+            }
+            guard transportBindingMatches(authenticatedSession.transportBinding, sink: sink) else {
+                clearAuthentication(connectionID: sink.connectionID)
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "authentication_required",
+                    message: "Pair and authenticate this device before sending runtime commands.",
                     retryable: false
                 ))
                 return false
@@ -221,37 +255,93 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handlePairingRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             try validateAllowedRequestPayload(envelope, allowedKeys: allowedPairingRequestPayloadKeys)
+            let transportBinding = try validatedRequestTransportBinding(envelope, sink: sink)
             let request = PairingRequest(
+                requestID: envelope.requestID,
                 pairingNonce: try requiredNonBlankString("pairing_nonce", in: envelope.payload),
                 pairingCode: try requiredNonBlankString("pairing_code", in: envelope.payload),
                 deviceID: try requiredNonBlankString("device_id", in: envelope.payload),
                 deviceName: try requiredNonBlankString("device_name", in: envelope.payload),
-                publicKeyBase64: try requiredNonBlankString("public_key", in: envelope.payload)
+                publicKeyBase64: try requiredNonBlankString("public_key", in: envelope.payload),
+                proofScheme: try requiredNonBlankString("pairing_proof_scheme", in: envelope.payload),
+                signatureBase64: try requiredNonBlankString("pairing_signature", in: envelope.payload),
+                transportBinding: transportBinding
             )
             switch pairingCoordinator.validate(request) {
             case .accepted(let validation):
-                try await trustedDeviceStore.trust(validation.trustedDevice)
-                markAuthenticated(connectionID: sink.connectionID, deviceID: validation.trustedDevice.id)
-                onPairingAccepted?(validation.trustedDevice)
+                do {
+                    guard let runtimeChallengeSigner,
+                          let runtimePublicKeyBase64 = validation.runtimePublicKeyBase64,
+                          !runtimePublicKeyBase64.isEmpty else {
+                        throw LocalRuntimeRouterError.invalidPayload(
+                            "Runtime identity signing is unavailable for initial pairing"
+                        )
+                    }
+                    let message = "\(validation.trustedDevice.name) is now trusted by \(validation.macName)."
+                    let result = try InitialPairingRuntimeResult(
+                        requestID: envelope.requestID,
+                        pairingRequestDigest: validation.pairingRequestDigest,
+                        accepted: true,
+                        runtimeDeviceID: validation.macDeviceID,
+                        runtimePublicKey: runtimePublicKeyBase64,
+                        runtimeKeyFingerprint: validation.runtimeKeyFingerprint,
+                        trustedDeviceID: validation.trustedDevice.id,
+                        message: message,
+                        transportBinding: transportBinding ?? "none"
+                    )
+                    let proof = try runtimeChallengeSigner.signInitialPairingResult(result)
+                    guard proof.verify() else {
+                        throw LocalRuntimeRouterError.invalidPayload(
+                            "Runtime pairing result signature is invalid"
+                        )
+                    }
+                    guard transportBindingMatches(transportBinding, sink: sink) else {
+                        throw LocalRuntimeRouterError.invalidPayload(
+                            "Transport security context changed during pairing"
+                        )
+                    }
+                    try await trustedDeviceStore.trust(validation.trustedDevice)
+                    guard pairingCoordinator.commitPairing(
+                        requestDigest: validation.pairingRequestDigest
+                    ) else {
+                        throw LocalRuntimeRouterError.invalidPayload(
+                            "Pairing reservation changed before commit"
+                        )
+                    }
+                    markAuthenticated(
+                        connectionID: sink.connectionID,
+                        deviceID: validation.trustedDevice.id,
+                        publicKeyBase64: validation.trustedDevice.publicKeyBase64,
+                        transportBinding: transportBinding
+                    )
+                    onPairingAccepted?(validation.trustedDevice)
 
-                var payload: [String: JSONValue] = [
-                    "accepted": .bool(true),
-                    "mac_device_id": .string(validation.macDeviceID),
-                    "runtime_device_id": .string(validation.macDeviceID),
-                    "runtime_key_fingerprint": .string(validation.runtimeKeyFingerprint),
-                    "trusted_device_id": .string(validation.trustedDevice.id),
-                    "message": .string("\(validation.trustedDevice.name) is now trusted by \(validation.macName).")
-                ]
-                if let runtimePublicKeyBase64 = validation.runtimePublicKeyBase64,
-                   !runtimePublicKeyBase64.isEmpty {
-                    payload["runtime_public_key"] = .string(runtimePublicKeyBase64)
+                    var payload: [String: JSONValue] = [
+                        "accepted": .bool(true),
+                        "mac_device_id": .string(validation.macDeviceID),
+                        "runtime_device_id": .string(validation.macDeviceID),
+                        "runtime_public_key": .string(runtimePublicKeyBase64),
+                        "runtime_key_fingerprint": .string(validation.runtimeKeyFingerprint),
+                        "trusted_device_id": .string(validation.trustedDevice.id),
+                        "message": .string(message),
+                        "pairing_proof_scheme": .string(InitialPairingProof.scheme),
+                        "pairing_request_digest": .string(validation.pairingRequestDigest),
+                        "runtime_pairing_signature": .string(proof.signatureBase64)
+                    ]
+                    if let transportBinding {
+                        payload["transport_binding"] = .string(transportBinding)
+                    }
+                    sink.send(ProtocolEnvelope(
+                        type: MessageType.pairingResult,
+                        requestID: envelope.requestID,
+                        payload: payload
+                    ))
+                } catch {
+                    pairingCoordinator.releasePairing(
+                        requestDigest: validation.pairingRequestDigest
+                    )
+                    throw error
                 }
-
-                sink.send(ProtocolEnvelope(
-                    type: MessageType.pairingResult,
-                    requestID: envelope.requestID,
-                    payload: payload
-                ))
             case .rejected(let rejection):
                 sink.send(ProtocolEnvelope(
                     type: MessageType.pairingResult,
@@ -319,6 +409,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleHello(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             try validateAllowedRequestPayload(envelope, allowedKeys: allowedHelloPayloadKeys)
+            let transportBinding = try validatedRequestTransportBinding(envelope, sink: sink)
             let deviceID = try requiredNonBlankString("device_id", in: envelope.payload)
             _ = try optionalNonBlankString("device_name", in: envelope.payload)
             _ = try optionalNonBlankStringArray("client_capabilities", in: envelope.payload)
@@ -331,15 +422,32 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ))
                 return
             }
+            guard transportBindingMatches(transportBinding, sink: sink) else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Transport security context changed during authentication"
+                )
+            }
 
             let nonce = Self.makeNonce()
-            setChallenge(connectionID: sink.connectionID, deviceID: deviceID, nonce: nonce)
+            setChallenge(
+                connectionID: sink.connectionID,
+                deviceID: deviceID,
+                nonce: nonce,
+                transportBinding: transportBinding
+            )
             var payload: [String: JSONValue] = [
                 "device_id": .string(deviceID),
                 "nonce": .string(nonce)
             ]
+            if let transportBinding {
+                payload["transport_binding"] = .string(transportBinding)
+            }
             if let runtimeChallengeSigner {
-                let proof = try runtimeChallengeSigner.signAuthChallenge(deviceID: deviceID, nonce: nonce)
+                let proof = try runtimeChallengeSigner.signAuthChallenge(
+                    deviceID: deviceID,
+                    nonce: nonce,
+                    transportBinding: transportBinding
+                )
                 payload["runtime_key_fingerprint"] = .string(proof.runtimeKeyFingerprint)
                 payload["runtime_signature"] = .string(proof.signatureBase64)
             }
@@ -356,17 +464,25 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleAuthResponse(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             try validateAllowedRequestPayload(envelope, allowedKeys: allowedAuthResponsePayloadKeys)
+            let transportBinding = try validatedRequestTransportBinding(envelope, sink: sink)
             let deviceID = try requiredNonBlankString("device_id", in: envelope.payload)
             let nonce = try requiredNonBlankString("nonce", in: envelope.payload)
             let signature = try requiredNonBlankString("signature", in: envelope.payload)
 
-            guard challengeMatches(connectionID: sink.connectionID, deviceID: deviceID, nonce: nonce),
+            guard challengeMatches(
+                    connectionID: sink.connectionID,
+                    deviceID: deviceID,
+                    nonce: nonce,
+                    transportBinding: transportBinding
+                  ),
                   let device = try await trustedDevice(deviceID: deviceID),
+                  transportBindingMatches(transportBinding, sink: sink),
                   Self.verifySignature(
                     publicKeyBase64: device.publicKeyBase64,
                     deviceID: deviceID,
                     nonce: nonce,
-                    signatureBase64: signature
+                    signatureBase64: signature,
+                    transportBinding: transportBinding
                   )
             else {
                 sink.send(errorEnvelope(
@@ -378,14 +494,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 return
             }
 
-            markAuthenticated(connectionID: sink.connectionID, deviceID: deviceID)
+            markAuthenticated(
+                connectionID: sink.connectionID,
+                deviceID: deviceID,
+                publicKeyBase64: device.publicKeyBase64,
+                transportBinding: transportBinding
+            )
+            var payload: [String: JSONValue] = [
+                "accepted": .bool(true),
+                "device_id": .string(deviceID)
+            ]
+            if let transportBinding {
+                payload["transport_binding"] = .string(transportBinding)
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.authResponse,
                 requestID: envelope.requestID,
-                payload: [
-                    "accepted": .bool(true),
-                    "device_id": .string(deviceID)
-                ]
+                payload: payload
             ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -535,6 +660,35 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             return
         }
 
+        guard allowAuthenticatedRouteRefresh(envelope, sink: sink) else { return }
+
+        let authorizationSnapshot: RelayAuthorizationSnapshot?
+        do {
+            authorizationSnapshot = requiresAuthentication
+                ? try await relayAuthorizationSnapshot(envelope: envelope, sink: sink)
+                : nil
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "authentication_required",
+                message: "Authenticate over a bound secure transport before refreshing routes.",
+                retryable: false
+            ))
+            return
+        }
+
+        let requestKey = RelayAuthorizationRequestKey(
+            connectionID: sink.connectionID,
+            requestID: envelope.requestID
+        )
+        guard reserveRouteRefreshRequest(requestKey) else {
+            sink.send(routeRefreshUnavailableEnvelope(requestID: envelope.requestID))
+            return
+        }
+        defer {
+            finishRouteRefreshRequest(requestKey)
+        }
+
         do {
             guard let routeRefresher else {
                 sink.send(errorEnvelope(
@@ -545,7 +699,32 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ))
                 return
             }
-            guard let route = try await routeRefresher.refreshRuntimeRoute() else {
+            let route: RuntimeRouteRefreshResult?
+            if let authorizationSnapshot {
+                let authorizationContext = try RuntimePairedRelayAuthorizationContext(
+                    requestID: authorizationSnapshot.requestID,
+                    connectionID: authorizationSnapshot.connectionID,
+                    trustedClientPublicKeyBase64: authorizationSnapshot.trustedClientPublicKeyBase64,
+                    trustedClientKeyFingerprint: authorizationSnapshot.trustedClientKeyFingerprint,
+                    transportBinding: authorizationSnapshot.transportBinding,
+                    clientAuthorizationProvider: { [weak self] challenge in
+                        guard let self else {
+                            throw RelayAuthorizationFlowError.cancelled
+                        }
+                        return try await self.awaitRelayAllocationAuthorization(
+                            challenge: challenge,
+                            snapshot: authorizationSnapshot,
+                            sink: sink
+                        )
+                    }
+                )
+                route = try await routeRefresher.refreshRuntimeRoute(
+                    authorizationContext: authorizationContext
+                )
+            } else {
+                route = try await routeRefresher.refreshRuntimeRoute()
+            }
+            guard let route else {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "route_refresh_unavailable",
@@ -553,6 +732,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     retryable: true
                 ))
                 return
+            }
+            if let authorizationSnapshot {
+                try await validateRelayAuthorizationSnapshot(
+                    authorizationSnapshot,
+                    sink: sink
+                )
             }
             guard let payload = route.routeRefreshPayload() else {
                 sink.send(errorEnvelope(
@@ -563,18 +748,90 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ))
                 return
             }
-            sink.send(ProtocolEnvelope(
+            guard allowAuthenticatedRouteRefresh(envelope, sink: sink) else { return }
+            if let authorizationSnapshot {
+                try await validateRelayAuthorizationSnapshot(
+                    authorizationSnapshot,
+                    sink: sink
+                )
+            }
+            let response = ProtocolEnvelope(
                 type: MessageType.routeRefresh,
                 requestID: envelope.requestID,
                 payload: payload
-            ))
+            )
+            guard await sink.sendAndWait(response) else {
+                throw RelayAuthorizationFlowError.cancelled
+            }
+            await routeRefresher.activateRuntimeRouteRefresh(route)
         } catch {
+            sink.send(routeRefreshUnavailableEnvelope(requestID: envelope.requestID))
+        }
+    }
+
+    private func handleRelayAllocationAuthorization(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink
+    ) async {
+        let requestKey = RelayAuthorizationRequestKey(
+            connectionID: sink.connectionID,
+            requestID: envelope.requestID
+        )
+        guard let pending = claimPendingRelayAuthorization(requestKey) else {
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
-                code: "route_refresh_unavailable",
-                message: "AetherLink Runtime could not refresh remote route material.",
-                retryable: true
+                code: "relay_allocation_authorization_rejected",
+                message: "Relay allocation authorization was not accepted.",
+                retryable: false
             ))
+            return
+        }
+
+        do {
+            try validateAllowedRequestPayload(
+                envelope,
+                allowedKeys: allowedRelayAllocationAuthorizationPayloadKeys
+            )
+            let payload = try RelayAllocationAuthorizationPayload(
+                proofScheme: requiredString("proof_scheme", in: envelope.payload),
+                authorizationID: requiredString("authorization_id", in: envelope.payload),
+                challenge: requiredString("challenge", in: envelope.payload),
+                clientKeyFingerprint: requiredString("client_key_fingerprint", in: envelope.payload),
+                transportBinding: requiredString("transport_binding", in: envelope.payload),
+                clientSignature: requiredString("client_signature", in: envelope.payload)
+            )
+            guard payload.authorizationID == pending.challenge.authorizationID,
+                  payload.challenge == pending.challenge.challenge,
+                  payload.clientKeyFingerprint == pending.snapshot.trustedClientKeyFingerprint,
+                  payload.clientKeyFingerprint == pending.challenge.clientKeyFingerprint,
+                  payload.transportBinding == pending.snapshot.transportBinding,
+                  payload.transportBinding == pending.challenge.transportBinding
+            else {
+                throw RelayAuthorizationFlowError.authorizationRejected
+            }
+
+            try await validateRelayAuthorizationSnapshot(pending.snapshot, sink: sink)
+            let clientProof = try PairedRelayAllocationClientProof(
+                publicKeyBase64: pending.snapshot.trustedClientPublicKeyBase64,
+                signatureBase64: payload.clientSignature
+            )
+            guard clientProof.publicKeyBase64 == pending.snapshot.trustedClientPublicKeyBase64,
+                  clientProof.verify(challenge: pending.challenge)
+            else {
+                throw RelayAuthorizationFlowError.authorizationRejected
+            }
+            try await validateRelayAuthorizationSnapshot(pending.snapshot, sink: sink)
+            _ = finishPendingRelayAuthorization(
+                requestKey,
+                token: pending.token,
+                result: .success(clientProof)
+            )
+        } catch {
+            _ = finishPendingRelayAuthorization(
+                requestKey,
+                token: pending.token,
+                result: .failure(error)
+            )
         }
     }
 
@@ -2014,6 +2271,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
     }
 
+    private func routeRefreshUnavailableEnvelope(requestID: String) -> ProtocolEnvelope {
+        errorEnvelope(
+            requestID: requestID,
+            code: "route_refresh_unavailable",
+            message: "AetherLink Runtime could not refresh remote route material.",
+            retryable: true
+        )
+    }
+
     private func healthPayload(for status: BackendStatus) -> JSONValue {
         switch status {
         case .available:
@@ -2057,34 +2323,155 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         try await trustedDeviceStore.load().first { $0.id == deviceID }
     }
 
-    private func authenticatedDeviceID(connectionID: UUID) -> String? {
+    private func authenticatedSession(
+        connectionID: UUID
+    ) -> (deviceID: String, publicKeyBase64: String, transportBinding: String?)? {
         authLock.withLock {
-            guard case .authenticated(let deviceID) = authSessions[connectionID] else {
+            guard case .authenticated(
+                let deviceID,
+                let publicKeyBase64,
+                let transportBinding
+            ) = authSessions[connectionID] else {
                 return nil
             }
-            return deviceID
+            return (deviceID, publicKeyBase64, transportBinding)
         }
+    }
+
+    private func authenticatedDeviceID(connectionID: UUID) -> String? {
+        authenticatedSession(connectionID: connectionID)?.deviceID
     }
 
     private func commandOwnerDeviceID(connectionID: UUID) -> String? {
         requiresAuthentication ? authenticatedDeviceID(connectionID: connectionID) : nil
     }
 
-    private func setChallenge(connectionID: UUID, deviceID: String, nonce: String) {
+    private func setChallenge(
+        connectionID: UUID,
+        deviceID: String,
+        nonce: String,
+        transportBinding: String?
+    ) {
         authLock.withLock {
-            authSessions[connectionID] = .challenged(deviceID: deviceID, nonce: nonce)
+            authSessions[connectionID] = .challenged(
+                deviceID: deviceID,
+                nonce: nonce,
+                transportBinding: transportBinding
+            )
         }
     }
 
-    private func challengeMatches(connectionID: UUID, deviceID: String, nonce: String) -> Bool {
+    private func challengeMatches(
+        connectionID: UUID,
+        deviceID: String,
+        nonce: String,
+        transportBinding: String?
+    ) -> Bool {
         authLock.withLock {
-            authSessions[connectionID] == .challenged(deviceID: deviceID, nonce: nonce)
+            authSessions[connectionID] == .challenged(
+                deviceID: deviceID,
+                nonce: nonce,
+                transportBinding: transportBinding
+            )
         }
     }
 
-    private func markAuthenticated(connectionID: UUID, deviceID: String) {
+    private func markAuthenticated(
+        connectionID: UUID,
+        deviceID: String,
+        publicKeyBase64: String,
+        transportBinding: String?
+    ) {
         authLock.withLock {
-            authSessions[connectionID] = .authenticated(deviceID: deviceID)
+            authSessions[connectionID] = .authenticated(
+                deviceID: deviceID,
+                publicKeyBase64: publicKeyBase64,
+                transportBinding: transportBinding
+            )
+        }
+    }
+
+    private func allowAuthenticatedRouteRefresh(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink
+    ) -> Bool {
+        guard requiresAuthentication else { return true }
+
+        let currentBinding: String?
+        do {
+            currentBinding = try currentTransportBinding(sink: sink)
+        } catch {
+            currentBinding = nil
+        }
+        guard let authenticatedSession = authenticatedSession(connectionID: sink.connectionID),
+              let authenticatedBinding = authenticatedSession.transportBinding,
+              Self.isCanonicalTransportBinding(authenticatedBinding),
+              let currentBinding,
+              currentBinding == authenticatedBinding else {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "authentication_required",
+                message: "Authenticate over a bound secure transport before refreshing routes.",
+                retryable: false
+            ))
+            return false
+        }
+        return true
+    }
+
+    private func validatedRequestTransportBinding(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink
+    ) throws -> String? {
+        let expectedBinding = try currentTransportBinding(sink: sink)
+        let requestedBinding: String?
+        switch envelope.payload["transport_binding"] {
+        case nil:
+            requestedBinding = nil
+        case .string(let value) where Self.isCanonicalTransportBinding(value):
+            requestedBinding = value
+        default:
+            throw LocalRuntimeRouterError.invalidPayload(
+                "Payload field transport_binding must be 64 lowercase hexadecimal characters"
+            )
+        }
+
+        guard requestedBinding == expectedBinding else {
+            if expectedBinding == nil {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field transport_binding is not allowed on this transport"
+                )
+            }
+            if requestedBinding == nil {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field transport_binding is required on this transport"
+                )
+            }
+            throw LocalRuntimeRouterError.invalidPayload(
+                "Payload field transport_binding does not match this transport"
+            )
+        }
+        return expectedBinding
+    }
+
+    private func currentTransportBinding(sink: any RuntimeMessageSink) throws -> String? {
+        guard let bindingID = sink.transportSecurityContext?.bindingID else {
+            return nil
+        }
+        guard Self.isCanonicalTransportBinding(bindingID) else {
+            throw LocalRuntimeRouterError.invalidPayload("Transport security context is invalid")
+        }
+        return bindingID
+    }
+
+    private func transportBindingMatches(
+        _ authenticatedBinding: String?,
+        sink: any RuntimeMessageSink
+    ) -> Bool {
+        do {
+            return try currentTransportBinding(sink: sink) == authenticatedBinding
+        } catch {
+            return false
         }
     }
 
@@ -2092,6 +2479,266 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         authLock.withLock {
             authSessions[connectionID] = nil
         }
+        cancelRelayAuthorizations(
+            connectionID: connectionID,
+            error: RelayAuthorizationFlowError.authenticationChanged
+        )
+    }
+
+    private func relayAuthorizationSnapshot(
+        envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink
+    ) async throws -> RelayAuthorizationSnapshot {
+        guard let session = authenticatedSession(connectionID: sink.connectionID),
+              let transportBinding = session.transportBinding,
+              Self.isCanonicalTransportBinding(transportBinding),
+              try currentTransportBinding(sink: sink) == transportBinding,
+              let trustedDevice = try await trustedDevice(deviceID: session.deviceID),
+              trustedDevice.publicKeyBase64 == session.publicKeyBase64
+        else {
+            throw RelayAuthorizationFlowError.authenticationChanged
+        }
+        let clientKeyFingerprint: String
+        do {
+            clientKeyFingerprint = try PairedRelayAllocationAuthorization.publicKeyFingerprint(
+                publicKeyBase64: trustedDevice.publicKeyBase64
+            )
+        } catch {
+            throw RelayAuthorizationFlowError.authenticationChanged
+        }
+        return RelayAuthorizationSnapshot(
+            requestID: envelope.requestID,
+            connectionID: sink.connectionID,
+            deviceID: session.deviceID,
+            trustedClientPublicKeyBase64: trustedDevice.publicKeyBase64,
+            trustedClientKeyFingerprint: clientKeyFingerprint,
+            transportBinding: transportBinding
+        )
+    }
+
+    private func validateRelayAuthorizationSnapshot(
+        _ snapshot: RelayAuthorizationSnapshot,
+        sink: any RuntimeMessageSink
+    ) async throws {
+        guard sink.connectionID == snapshot.connectionID,
+              let session = authenticatedSession(connectionID: snapshot.connectionID),
+              session.deviceID == snapshot.deviceID,
+              session.publicKeyBase64 == snapshot.trustedClientPublicKeyBase64,
+              session.transportBinding == snapshot.transportBinding,
+              try currentTransportBinding(sink: sink) == snapshot.transportBinding,
+              let trustedDevice = try await trustedDevice(deviceID: snapshot.deviceID),
+              trustedDevice.publicKeyBase64 == snapshot.trustedClientPublicKeyBase64,
+              try PairedRelayAllocationAuthorization.publicKeyFingerprint(
+                publicKeyBase64: trustedDevice.publicKeyBase64
+              ) == snapshot.trustedClientKeyFingerprint
+        else {
+            throw RelayAuthorizationFlowError.authenticationChanged
+        }
+    }
+
+    private func awaitRelayAllocationAuthorization(
+        challenge: PairedRelayAllocationAuthorizationChallenge,
+        snapshot: RelayAuthorizationSnapshot,
+        sink: any RuntimeMessageSink
+    ) async throws -> PairedRelayAllocationClientProof {
+        try challenge.validateShape()
+        let nowEpochMillis = currentRouteRefreshEpochMillis()
+        guard challenge.requestID == snapshot.requestID,
+              challenge.clientKeyFingerprint == snapshot.trustedClientKeyFingerprint,
+              challenge.transportBinding == snapshot.transportBinding,
+              challenge.isFresh(atEpochMillis: nowEpochMillis)
+        else {
+            throw RelayAuthorizationFlowError.invalidChallenge
+        }
+        try await validateRelayAuthorizationSnapshot(snapshot, sink: sink)
+
+        let requestKey = RelayAuthorizationRequestKey(
+            connectionID: snapshot.connectionID,
+            requestID: snapshot.requestID
+        )
+        let token = UUID()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let inserted = relayAuthorizationLock.withLock {
+                    guard activeRouteRefreshRequests.contains(requestKey),
+                          pendingRelayAuthorizations[requestKey] == nil else {
+                        return false
+                    }
+                    pendingRelayAuthorizations[requestKey] = PendingRelayAuthorization(
+                        token: token,
+                        challenge: challenge,
+                        snapshot: snapshot,
+                        continuation: continuation,
+                        claimed: false
+                    )
+                    return true
+                }
+                guard inserted else {
+                    continuation.resume(throwing: RelayAuthorizationFlowError.concurrentAuthorization)
+                    return
+                }
+                if Task.isCancelled {
+                    _ = finishPendingRelayAuthorization(
+                        requestKey,
+                        token: token,
+                        result: .failure(RelayAuthorizationFlowError.cancelled)
+                    )
+                    return
+                }
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.relayAllocationChallenge,
+                    requestID: snapshot.requestID,
+                    payload: relayAllocationChallengePayload(challenge)
+                ))
+                Task { [weak self] in
+                    await self?.monitorPendingRelayAuthorization(
+                        requestKey,
+                        token: token,
+                        challenge: challenge,
+                        snapshot: snapshot,
+                        sink: sink
+                    )
+                }
+            }
+        } onCancel: {
+            _ = self.finishPendingRelayAuthorization(
+                requestKey,
+                token: token,
+                result: .failure(RelayAuthorizationFlowError.cancelled)
+            )
+        }
+    }
+
+    private func monitorPendingRelayAuthorization(
+        _ requestKey: RelayAuthorizationRequestKey,
+        token: UUID,
+        challenge: PairedRelayAllocationAuthorizationChallenge,
+        snapshot: RelayAuthorizationSnapshot,
+        sink: any RuntimeMessageSink
+    ) async {
+        let challengeRemaining = max(
+            0,
+            TimeInterval(challenge.challengeExpiresAtEpochMillis - currentRouteRefreshEpochMillis()) / 1_000
+        )
+        let deadline = Date().addingTimeInterval(min(pairedRelayAuthorizationTimeout, challengeRemaining))
+        while pendingRelayAuthorizationExists(requestKey, token: token) {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else {
+                _ = finishPendingRelayAuthorization(
+                    requestKey,
+                    token: token,
+                    result: .failure(RelayAuthorizationFlowError.timedOut)
+                )
+                return
+            }
+            let sleepNanoseconds = UInt64(min(remaining, 0.025) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: max(1, sleepNanoseconds))
+            guard pendingRelayAuthorizationExists(requestKey, token: token) else { return }
+            do {
+                try await validateRelayAuthorizationSnapshot(snapshot, sink: sink)
+            } catch {
+                _ = finishPendingRelayAuthorization(
+                    requestKey,
+                    token: token,
+                    result: .failure(error)
+                )
+                return
+            }
+        }
+    }
+
+    private func reserveRouteRefreshRequest(_ requestKey: RelayAuthorizationRequestKey) -> Bool {
+        relayAuthorizationLock.withLock {
+            activeRouteRefreshRequests.insert(requestKey).inserted
+        }
+    }
+
+    private func finishRouteRefreshRequest(_ requestKey: RelayAuthorizationRequestKey) {
+        let continuation = relayAuthorizationLock.withLock { () -> CheckedContinuation<PairedRelayAllocationClientProof, Error>? in
+            activeRouteRefreshRequests.remove(requestKey)
+            return pendingRelayAuthorizations.removeValue(forKey: requestKey)?.continuation
+        }
+        continuation?.resume(throwing: RelayAuthorizationFlowError.cancelled)
+    }
+
+    private func claimPendingRelayAuthorization(
+        _ requestKey: RelayAuthorizationRequestKey
+    ) -> ClaimedRelayAuthorization? {
+        relayAuthorizationLock.withLock {
+            guard var pending = pendingRelayAuthorizations[requestKey], !pending.claimed else {
+                return nil
+            }
+            pending.claimed = true
+            pendingRelayAuthorizations[requestKey] = pending
+            return ClaimedRelayAuthorization(
+                token: pending.token,
+                challenge: pending.challenge,
+                snapshot: pending.snapshot
+            )
+        }
+    }
+
+    @discardableResult
+    private func finishPendingRelayAuthorization(
+        _ requestKey: RelayAuthorizationRequestKey,
+        token: UUID,
+        result: Result<PairedRelayAllocationClientProof, Error>
+    ) -> Bool {
+        let continuation = relayAuthorizationLock.withLock { () -> CheckedContinuation<PairedRelayAllocationClientProof, Error>? in
+            guard pendingRelayAuthorizations[requestKey]?.token == token else { return nil }
+            return pendingRelayAuthorizations.removeValue(forKey: requestKey)?.continuation
+        }
+        guard let continuation else { return false }
+        continuation.resume(with: result)
+        return true
+    }
+
+    private func pendingRelayAuthorizationExists(
+        _ requestKey: RelayAuthorizationRequestKey,
+        token: UUID
+    ) -> Bool {
+        relayAuthorizationLock.withLock {
+            pendingRelayAuthorizations[requestKey]?.token == token
+        }
+    }
+
+    private func cancelRelayAuthorizations(connectionID: UUID, error: Error) {
+        let continuations = relayAuthorizationLock.withLock { () -> [CheckedContinuation<PairedRelayAllocationClientProof, Error>] in
+            activeRouteRefreshRequests = Set(activeRouteRefreshRequests.filter {
+                $0.connectionID != connectionID
+            })
+            let keys = pendingRelayAuthorizations.keys.filter { $0.connectionID == connectionID }
+            return keys.compactMap { key in
+                pendingRelayAuthorizations.removeValue(forKey: key)?.continuation
+            }
+        }
+        continuations.forEach { $0.resume(throwing: error) }
+    }
+
+    private func relayAllocationChallengePayload(
+        _ challenge: PairedRelayAllocationAuthorizationChallenge
+    ) -> [String: JSONValue] {
+        [
+            "proof_scheme": .string(challenge.scheme),
+            "protocol_version": .number(Double(challenge.protocolVersion)),
+            "operation": .string(challenge.operation.rawValue),
+            "authorization_id": .string(challenge.authorizationID),
+            "current_relay_id": .string(challenge.currentRelayID),
+            "next_relay_id": .string(challenge.nextRelayID),
+            "route_token_hash": .string(challenge.routeTokenHash),
+            "runtime_key_fingerprint": .string(challenge.runtimeKeyFingerprint),
+            "client_key_fingerprint": .string(challenge.clientKeyFingerprint),
+            "current_ticket_generation": .number(Double(challenge.currentTicketGeneration)),
+            "next_ticket_generation": .number(Double(challenge.nextTicketGeneration)),
+            "current_relay_expires_at": .number(Double(challenge.currentRelayExpiresAtEpochMillis)),
+            "current_relay_nonce": .string(challenge.currentRelayNonce),
+            "next_relay_expires_at": .number(Double(challenge.nextRelayExpiresAtEpochMillis)),
+            "next_relay_nonce": .string(challenge.nextRelayNonce),
+            "challenge": .string(challenge.challenge),
+            "challenge_expires_at": .number(Double(challenge.challengeExpiresAtEpochMillis)),
+            "transport_binding": .string(challenge.transportBinding)
+        ]
     }
 
     private func scheduleChatTitleGenerationIfNeeded(
@@ -2605,11 +3252,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         publicKeyBase64: String,
         deviceID: String,
         nonce: String,
-        signatureBase64: String
+        signatureBase64: String,
+        transportBinding: String? = nil
     ) -> Bool {
         guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
               let signatureData = Data(base64Encoded: signatureBase64),
-              let messageData = clientAuthenticationResponseMessage(deviceID: deviceID, nonce: nonce).data(using: .utf8),
+              let messageData = clientAuthenticationResponseMessage(
+                deviceID: deviceID,
+                nonce: nonce,
+                transportBinding: transportBinding
+              ).data(using: .utf8),
               let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
               let signature = try? P256.Signing.ECDSASignature(derRepresentation: signatureData)
         else {
@@ -2618,16 +3270,68 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return publicKey.isValidSignature(signature, for: SHA256.hash(data: messageData))
     }
 
-    static func clientAuthenticationResponseMessage(deviceID: String, nonce: String) -> String {
-        "\(clientAuthenticationResponseContext)\n\(deviceID)\n\(nonce)"
+    static func clientAuthenticationResponseMessage(
+        deviceID: String,
+        nonce: String,
+        transportBinding: String? = nil
+    ) -> String {
+        if let transportBinding {
+            return "\(clientAuthenticationResponseContextV2)\n\(deviceID)\n\(nonce)\n\(transportBinding)"
+        }
+        return "\(clientAuthenticationResponseContextV1)\n\(deviceID)\n\(nonce)"
     }
 
-    private static let clientAuthenticationResponseContext = "AetherLink client auth response v1"
+    private static func isCanonicalTransportBinding(_ value: String) -> Bool {
+        value.utf8.count == 64 && value.utf8.allSatisfy { byte in
+            (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
+        }
+    }
+
+    private static let clientAuthenticationResponseContextV1 = "AetherLink client auth response v1"
+    private static let clientAuthenticationResponseContextV2 = "AetherLink client auth response v2"
 }
 
 private enum AuthSessionState: Equatable {
-    case challenged(deviceID: String, nonce: String)
-    case authenticated(deviceID: String)
+    case challenged(deviceID: String, nonce: String, transportBinding: String?)
+    case authenticated(deviceID: String, publicKeyBase64: String, transportBinding: String?)
+}
+
+private struct RelayAuthorizationRequestKey: Hashable {
+    var connectionID: UUID
+    var requestID: String
+}
+
+private struct RelayAuthorizationSnapshot: Equatable, Sendable {
+    var requestID: String
+    var connectionID: UUID
+    var deviceID: String
+    var trustedClientPublicKeyBase64: String
+    var trustedClientKeyFingerprint: String
+    var transportBinding: String
+}
+
+private struct PendingRelayAuthorization {
+    var token: UUID
+    var challenge: PairedRelayAllocationAuthorizationChallenge
+    var snapshot: RelayAuthorizationSnapshot
+    var continuation: CheckedContinuation<PairedRelayAllocationClientProof, Error>
+    var claimed: Bool
+}
+
+private struct ClaimedRelayAuthorization {
+    var token: UUID
+    var challenge: PairedRelayAllocationAuthorizationChallenge
+    var snapshot: RelayAuthorizationSnapshot
+}
+
+private enum RelayAuthorizationFlowError: Error {
+    case invalidChallenge
+    case concurrentAuthorization
+    case authorizationRejected
+    case authenticationChanged
+    case connectionClosed
+    case timedOut
+    case cancelled
 }
 
 private struct ChatTitleRuntimeRequest {
@@ -2730,6 +3434,10 @@ private extension RuntimeRouteRefreshResult {
             payload["relay_secret"] = .string(relaySecret)
             payload["relay_expires_at"] = .number(Double(relayExpiresAtEpochMillis))
             payload["relay_nonce"] = .string(relayNonce)
+            if let relayTicketGeneration {
+                guard relayTicketGeneration > 0 else { return nil }
+                payload["ticket_generation"] = .number(Double(relayTicketGeneration))
+            }
             if let validatedRelayScope {
                 payload["relay_scope"] = .string(validatedRelayScope)
             }
@@ -2928,18 +3636,32 @@ private let allowedPairingRequestPayloadKeys: Set<String> = [
     "device_id",
     "device_name",
     "public_key",
+    "pairing_proof_scheme",
+    "pairing_signature",
+    "transport_binding",
 ]
 
 private let allowedHelloPayloadKeys: Set<String> = [
     "device_id",
     "device_name",
     "client_capabilities",
+    "transport_binding",
 ]
 
 private let allowedAuthResponsePayloadKeys: Set<String> = [
     "device_id",
     "nonce",
     "signature",
+    "transport_binding",
+]
+
+private let allowedRelayAllocationAuthorizationPayloadKeys: Set<String> = [
+    "proof_scheme",
+    "authorization_id",
+    "challenge",
+    "client_key_fingerprint",
+    "transport_binding",
+    "client_signature",
 ]
 
 private let allowedModelsPullPayloadKeys: Set<String> = [

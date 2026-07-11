@@ -8,6 +8,7 @@ public enum ProtocolCodecError: Error, Equatable {
 
 public enum RelayFrameCipherError: Error, Equatable {
     case invalidCiphertextLength(Int)
+    case counterExhausted
 }
 
 public struct ProtocolCodec: Sendable {
@@ -64,79 +65,155 @@ public struct ProtocolCodec: Sendable {
 }
 
 public struct RelayFrameCipher: Sendable {
-    public static let aad = Data("AETHERLINK_RELAY_FRAME_V1".utf8)
-    private static let keyPrefix = Data("AetherLink relay frame v1\n".utf8)
-    private static let routeNonceContext = Data("\nroute_nonce\n".utf8)
+    private static let framesPerEpoch: Int64 = 65_536
+    private static let aadPrefix = Data("AETHERLINK_RELAY_FRAME_V2".utf8)
+    private static let epochPrefix = Data("AetherLink relay frame epoch v2\n".utf8)
     private static let authenticationTagBytes = 16
 
-    private let key: SymmetricKey
-    private var runtimeSendCounter: UInt64 = 0
-    private var clientSendCounter: UInt64 = 0
-    private var runtimeReceiveCounter: UInt64 = 0
-    private var clientReceiveCounter: UInt64 = 0
+    private let bindingDigest: Data
+    private let clientTrafficSecret: Data
+    private let runtimeTrafficSecret: Data
+    private var runtimeSendFrameIndex: Int64
+    private var clientSendFrameIndex: Int64
+    private var runtimeReceiveFrameIndex: Int64
+    private var clientReceiveFrameIndex: Int64
 
-    public init(relaySecret: String, routeNonce: String? = nil) {
-        var material = Self.keyPrefix
-        material.append(Data(relaySecret.utf8))
-        if let routeNonce, !routeNonce.isEmpty {
-            material.append(Self.routeNonceContext)
-            material.append(Data(routeNonce.utf8))
-        }
-        self.key = SymmetricKey(data: Data(SHA256.hash(data: material)))
+    public init(sessionKeys: RelaySessionKeys) {
+        self.init(sessionKeys: sessionKeys, frameIndex: 0)
+    }
+
+    init(sessionKeys: RelaySessionKeys, frameIndex: Int64) {
+        precondition(frameIndex >= 0, "Relay frame index must not be negative")
+        bindingDigest = sessionKeys.bindingDigest
+        clientTrafficSecret = sessionKeys.clientTrafficSecret
+        runtimeTrafficSecret = sessionKeys.runtimeTrafficSecret
+        runtimeSendFrameIndex = frameIndex
+        clientSendFrameIndex = frameIndex
+        runtimeReceiveFrameIndex = frameIndex
+        clientReceiveFrameIndex = frameIndex
     }
 
     public mutating func encryptRuntimeBody(_ body: Data) throws -> Data {
-        let encrypted = try encrypt(body, direction: "RUNT", counter: runtimeSendCounter)
-        runtimeSendCounter += 1
+        let encrypted = try encrypt(
+            body,
+            direction: Data("RUNT".utf8),
+            trafficSecret: runtimeTrafficSecret,
+            frameIndex: runtimeSendFrameIndex
+        )
+        runtimeSendFrameIndex += 1
         return encrypted
     }
 
     public mutating func decryptClientBody(_ body: Data) throws -> Data {
-        defer { clientReceiveCounter += 1 }
-        return try decrypt(body, direction: "CLNT", counter: clientReceiveCounter)
+        let decrypted = try decrypt(
+            body,
+            direction: Data("CLNT".utf8),
+            trafficSecret: clientTrafficSecret,
+            frameIndex: clientReceiveFrameIndex
+        )
+        clientReceiveFrameIndex += 1
+        return decrypted
     }
 
     public mutating func encryptClientBody(_ body: Data) throws -> Data {
-        let encrypted = try encrypt(body, direction: "CLNT", counter: clientSendCounter)
-        clientSendCounter += 1
+        let encrypted = try encrypt(
+            body,
+            direction: Data("CLNT".utf8),
+            trafficSecret: clientTrafficSecret,
+            frameIndex: clientSendFrameIndex
+        )
+        clientSendFrameIndex += 1
         return encrypted
     }
 
     public mutating func decryptRuntimeBody(_ body: Data) throws -> Data {
-        defer { runtimeReceiveCounter += 1 }
-        return try decrypt(body, direction: "RUNT", counter: runtimeReceiveCounter)
+        let decrypted = try decrypt(
+            body,
+            direction: Data("RUNT".utf8),
+            trafficSecret: runtimeTrafficSecret,
+            frameIndex: runtimeReceiveFrameIndex
+        )
+        runtimeReceiveFrameIndex += 1
+        return decrypted
     }
 
-    private func encrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
+    private func encrypt(
+        _ body: Data,
+        direction: Data,
+        trafficSecret: Data,
+        frameIndex: Int64
+    ) throws -> Data {
+        let parameters = try frameParameters(
+            direction: direction,
+            trafficSecret: trafficSecret,
+            frameIndex: frameIndex
+        )
         let sealed = try AES.GCM.seal(
             body,
-            using: key,
-            nonce: nonce(direction: direction, counter: counter),
-            authenticating: Self.aad
+            using: parameters.key,
+            nonce: parameters.nonce,
+            authenticating: parameters.aad
         )
         var framedBody = sealed.ciphertext
         framedBody.append(sealed.tag)
         return framedBody
     }
 
-    private func decrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
+    private func decrypt(
+        _ body: Data,
+        direction: Data,
+        trafficSecret: Data,
+        frameIndex: Int64
+    ) throws -> Data {
         guard body.count >= Self.authenticationTagBytes else {
             throw RelayFrameCipherError.invalidCiphertextLength(body.count)
         }
+        let parameters = try frameParameters(
+            direction: direction,
+            trafficSecret: trafficSecret,
+            frameIndex: frameIndex
+        )
         let ciphertext = body.prefix(body.count - Self.authenticationTagBytes)
         let tag = body.suffix(Self.authenticationTagBytes)
         let sealed = try AES.GCM.SealedBox(
-            nonce: nonce(direction: direction, counter: counter),
+            nonce: parameters.nonce,
             ciphertext: ciphertext,
             tag: tag
         )
-        return try AES.GCM.open(sealed, using: key, authenticating: Self.aad)
+        return try AES.GCM.open(sealed, using: parameters.key, authenticating: parameters.aad)
     }
 
-    private func nonce(direction: String, counter: UInt64) throws -> AES.GCM.Nonce {
-        var nonce = Data(direction.utf8)
-        var bigEndianCounter = counter.bigEndian
-        nonce.append(Data(bytes: &bigEndianCounter, count: MemoryLayout<UInt64>.size))
-        return try AES.GCM.Nonce(data: nonce)
+    private func frameParameters(
+        direction: Data,
+        trafficSecret: Data,
+        frameIndex: Int64
+    ) throws -> (key: SymmetricKey, nonce: AES.GCM.Nonce, aad: Data) {
+        guard frameIndex < Int64.max else { throw RelayFrameCipherError.counterExhausted }
+        let epoch = UInt64(frameIndex / Self.framesPerEpoch)
+        let sequence = UInt64(frameIndex & 0xffff)
+
+        var epochMaterial = Self.epochPrefix
+        epochMaterial.append(direction)
+        epochMaterial.append(bigEndianData(epoch))
+        let epochAuthenticationCode = HMAC<SHA256>.authenticationCode(
+            for: epochMaterial,
+            using: SymmetricKey(data: trafficSecret)
+        )
+        let key = SymmetricKey(data: Data(epochAuthenticationCode))
+
+        var nonceData = direction
+        nonceData.append(bigEndianData(sequence))
+
+        var aad = Self.aadPrefix
+        aad.append(bindingDigest)
+        aad.append(direction)
+        aad.append(bigEndianData(epoch))
+        aad.append(bigEndianData(sequence))
+        return (key, try AES.GCM.Nonce(data: nonceData), aad)
+    }
+
+    private func bigEndianData(_ value: UInt64) -> Data {
+        var bigEndianValue = value.bigEndian
+        return Data(bytes: &bigEndianValue, count: MemoryLayout<UInt64>.size)
     }
 }

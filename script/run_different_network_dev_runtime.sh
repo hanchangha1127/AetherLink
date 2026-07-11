@@ -38,7 +38,7 @@ This is connection infrastructure only. The trusted device still talks to the
 paired AetherLink runtime protocol; Ollama and LM Studio are never exposed directly.
 
 Options:
-  --preflight-only       Validate endpoint shape and allocation reachability,
+  --preflight-only       Validate endpoint shape and allocation capability contract,
                          then exit before starting RuntimeDevServer. The
                          allocation probe is marked preflight so it does not
                          persist a throwaway relay lease in the bootstrap relay
@@ -404,6 +404,12 @@ except json.JSONDecodeError:
 def allocation_bool(name):
     return allocation_payload.get(name) is True
 
+preflight_contract_valid = (
+    allocation_bool("preflight_acknowledged")
+    and allocation_payload.get("crypto_version") == 2
+    and allocation_payload.get("allocation_auth") == "runtime-p256-v1"
+)
+
 summary = {
     "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     "exit_status": int(exit_status),
@@ -411,7 +417,7 @@ summary = {
         "preflight_only": preflight_only == "1",
     },
     "coverage": {
-        "runtime_host_allocation_preflight": required_fields_present == "1" and use_legacy_relay != "1",
+        "runtime_host_allocation_preflight": preflight_contract_valid and use_legacy_relay != "1",
         "runtime_host_static_legacy_relay_validation": success_endpoint != "" and use_legacy_relay == "1",
         "trusted_device_relay_reachability": False,
         "trusted_device_pairing": False,
@@ -427,13 +433,18 @@ summary = {
         "allow_private_relay": allow_private_relay == "1",
     },
     "allocation": {
-        "required_fields_present": required_fields_present == "1",
+        "required_fields_present": preflight_contract_valid,
         "preflight_non_persistent": use_legacy_relay != "1",
+        "preflight_acknowledged": allocation_bool("preflight_acknowledged"),
         "legacy_allocation_skipped": use_legacy_relay == "1",
         "relay_id_present": allocation_bool("relay_id_present"),
         "relay_expires_at_present": allocation_bool("relay_expires_at_present"),
         "relay_nonce_present": allocation_bool("relay_nonce_present"),
         "has_relay_secret": allocation_bool("has_relay_secret"),
+        "crypto_version": allocation_payload.get("crypto_version"),
+        "allocation_auth": allocation_payload.get("allocation_auth"),
+        "endpoint_owned_relay_secret": allocation_bool("endpoint_owned_relay_secret"),
+        "route_material_returned": allocation_bool("route_material_returned"),
         "route_material_redacted": allocation_bool("route_material_redacted"),
     },
     "failure_detail": failure_detail.strip() or None,
@@ -584,7 +595,7 @@ if [[ "$USE_LEGACY_RELAY" != "1" ]]; then
   done
   if [[ "$allocation_preflight_succeeded" != "1" ]]; then
     echo "Relay allocation preflight failed for every configured endpoint." >&2
-    echo "A QR-only different-network pairing cannot proceed until at least one relay/bootstrap endpoint is reachable and returns allocation fields." >&2
+    echo "A QR-only different-network pairing cannot proceed until at least one relay/bootstrap endpoint advertises the allocation capability contract." >&2
     write_preflight_summary 1
     exit 1
   fi
@@ -597,7 +608,7 @@ if [[ "$PREFLIGHT_ONLY" == "1" ]]; then
   if [[ "$USE_LEGACY_RELAY" == "1" ]]; then
     echo "Legacy relay mode was statically validated; allocation API was skipped because relay id/secret were supplied manually."
   else
-    echo "At least one configured endpoint accepted AETHERLINK_RELAY allocate and returned route material."
+    echo "At least one configured endpoint acknowledged the runtime-p256-v1 allocation contract without returning route material."
   fi
   write_preflight_summary 0
   exit 0

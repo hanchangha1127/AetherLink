@@ -208,10 +208,13 @@ PY
 check_different_network_preflight_summary_guard() {
   local port
   local summary_path
+  local work_dir
 
   port="$(free_tcp_port)"
   summary_path="$(mktemp "${TMPDIR:-/tmp}/aetherlink-runtime-preflight-summary.XXXXXX")"
-  script/run_different_network_dev_runtime.sh \
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-runtime-preflight-store.XXXXXX")"
+  AETHERLINK_RELAY_ALLOCATION_STORE="$work_dir/allocations.json" \
+    script/run_different_network_dev_runtime.sh \
     --relay-host 127.0.0.1 \
     --relay-port "$port" \
     --start-local-relay \
@@ -237,10 +240,15 @@ assert summary["coverage"]["optical_qr_scan"] is False, summary
 assert summary["coverage"]["production_relay"] is False, summary
 assert summary["allocation"]["required_fields_present"] is True, summary
 assert summary["allocation"]["preflight_non_persistent"] is True, summary
-assert summary["allocation"]["relay_id_present"] is True, summary
-assert summary["allocation"]["relay_expires_at_present"] is True, summary
-assert summary["allocation"]["relay_nonce_present"] is True, summary
-assert summary["allocation"]["has_relay_secret"] is True, summary
+assert summary["allocation"]["preflight_acknowledged"] is True, summary
+assert summary["allocation"]["relay_id_present"] is False, summary
+assert summary["allocation"]["relay_expires_at_present"] is False, summary
+assert summary["allocation"]["relay_nonce_present"] is False, summary
+assert summary["allocation"]["has_relay_secret"] is False, summary
+assert summary["allocation"]["crypto_version"] == 2, summary
+assert summary["allocation"]["allocation_auth"] == "runtime-p256-v1", summary
+assert summary["allocation"]["endpoint_owned_relay_secret"] is True, summary
+assert summary["allocation"]["route_material_returned"] is False, summary
 assert summary["allocation"]["route_material_redacted"] is True, summary
 for marker in (
     '"relay_id"',
@@ -260,6 +268,7 @@ assert "not_production_end_to_end_transport_encryption_proof" in summary["caveat
 assert "local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay" in summary["caveats"], summary
 PY
   rm -f "$summary_path"
+  rm -rf "$work_dir"
 }
 
 check_no_adb_external_relay_url_host_redaction_guard() {
@@ -309,7 +318,6 @@ check_relay_preflight_allocation_guard() {
   local work_dir
   local store
   local relay_pid
-  local normal_output
 
   swift build --product AetherLinkRelay >/dev/null
   relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
@@ -343,48 +351,12 @@ contents = store.read_text(encoding="utf-8") if store.exists() else ""
 assert "preflight-route" not in contents, contents
 PY
   local preflight_store_status=$?
-  normal_output="$(python3 script/relay_allocation_preflight.py \
-    --host 127.0.0.1 \
-    --port "$port" \
-    --route-token normal-route \
-    --persist \
-  )"
-  local normal_status=$?
-  sleep 0.2
-  python3 - "$store" "$normal_output" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-payload = json.loads(sys.argv[2])
-contents = Path(sys.argv[1]).read_text(encoding="utf-8")
-assert "requested_route_token" not in payload, payload
-assert "rt1-" in contents, contents
-assert payload["relay_id_present"] is True, payload
-assert payload["relay_expires_at_present"] is True, payload
-assert payload["relay_nonce_present"] is True, payload
-assert payload["route_material_redacted"] is True, payload
-assert "relay_id" not in payload, payload
-assert "relay_expires_at" not in payload, payload
-assert "relay_nonce" not in payload, payload
-assert "relay_secret" not in payload, payload
-assert payload["has_relay_secret"] is True, payload
-assert "rt1-" not in json.dumps(payload), payload
-assert "normal-route" not in json.dumps(payload), payload
-assert "normal-route" not in contents, contents
-assert "preflight-route" not in contents, contents
-PY
-  local normal_store_status=$?
-  local status_code=$?
+  local status_code=0
   set -e
   if [[ "$preflight_status" -ne 0 ]]; then
     status_code="$preflight_status"
   elif [[ "$preflight_store_status" -ne 0 ]]; then
     status_code="$preflight_store_status"
-  elif [[ "$normal_status" -ne 0 ]]; then
-    status_code="$normal_status"
-  else
-    status_code="$normal_store_status"
   fi
 
   if [[ -n "$relay_pid" ]]; then
@@ -395,7 +367,7 @@ PY
   return "$status_code"
 }
 
-check_relay_preflight_rejects_raw_route_token_echo_guard() {
+check_relay_preflight_rejects_route_material_guard() {
   local port
   local work_dir
   local fake_pid
@@ -403,14 +375,13 @@ check_relay_preflight_rejects_raw_route_token_echo_guard() {
   local status_code
 
   port="$(free_tcp_port)"
-  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-echo-preflight.XXXXXX")"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-route-material-preflight.XXXXXX")"
   fake_pid=""
 
   python3 - "$port" "$work_dir" <<'PY' &
 import json
 import socket
 import sys
-import time
 from pathlib import Path
 
 port = int(sys.argv[1])
@@ -435,15 +406,13 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             buffer += chunk
         request = buffer.decode("utf-8", errors="replace").strip()
         request_path.write_text(request, encoding="utf-8")
-        parts = request.split()
-        route_token = parts[2] if len(parts) >= 3 else "missing-route-token"
         payload = {
-            "relay_id": route_token,
-            "relay_secret": "fake-relay-secret",
-            "relay_expires_at": int(time.time()) + 300,
-            "relay_nonce": "fake-relay-nonce",
+            "preflight": True,
+            "crypto_version": 2,
+            "allocation_auth": "runtime-p256-v1",
+            "relay_id": "rt2-forbidden-route-material",
         }
-        line = "AETHERLINK_RELAY allocation " + json.dumps(payload, separators=(",", ":")) + "\n"
+        line = "AETHERLINK_RELAY preflight " + json.dumps(payload, separators=(",", ":")) + "\n"
         connection.sendall(line.encode("utf-8"))
 PY
   fake_pid="$!"
@@ -453,14 +422,14 @@ PY
       break
     fi
     if ! kill -0 "$fake_pid" >/dev/null 2>&1; then
-      echo "Fake relay allocation echo server exited before listening." >&2
+      echo "Fake relay preflight route-material server exited before listening." >&2
       rm -rf "$work_dir"
       exit 1
     fi
     sleep 0.1
   done
   if [[ ! -f "$work_dir/ready" ]]; then
-    echo "Fake relay allocation echo server did not become ready." >&2
+    echo "Fake relay preflight route-material server did not become ready." >&2
     kill "$fake_pid" >/dev/null 2>&1 || true
     wait "$fake_pid" >/dev/null 2>&1 || true
     rm -rf "$work_dir"
@@ -471,7 +440,7 @@ PY
   output="$(python3 script/relay_allocation_preflight.py \
     --host 127.0.0.1 \
     --port "$port" \
-    --route-token echoed-route-token \
+    --route-token route-material-route-token \
     --timeout 2 \
     --quiet \
     2>&1 >/dev/null)"
@@ -480,18 +449,18 @@ PY
   set -e
 
   if [[ "$status_code" -eq 0 ]]; then
-    echo "Relay allocation preflight should reject relay_id values that echo the raw route token." >&2
+    echo "Relay allocation preflight should reject every route-material response field." >&2
     rm -rf "$work_dir"
     exit 1
   fi
-  if [[ "$output" != *"echoed the requested route token as relay_id"* ]]; then
-    echo "Relay allocation preflight did not explain the raw route-token relay_id echo rejection." >&2
+  if [[ "$output" != *"preflight response included unsupported metadata"* ]]; then
+    echo "Relay allocation preflight did not explain the forbidden route-material field rejection." >&2
     echo "$output" >&2
     rm -rf "$work_dir"
     exit 1
   fi
-  if ! grep -q "AETHERLINK_RELAY allocate echoed-route-token" "$work_dir/request.txt"; then
-    echo "Fake relay allocation echo server did not capture the expected route token request." >&2
+  if ! grep -q "AETHERLINK_RELAY allocate route-material-route-token crypto=2 preflight=1" "$work_dir/request.txt"; then
+    echo "Fake relay preflight route-material server did not capture the expected non-persisting request." >&2
     cat "$work_dir/request.txt" >&2 || true
     rm -rf "$work_dir"
     exit 1
@@ -572,7 +541,6 @@ PY
     --port "$port" \
     --route-token failure-redaction-route-token \
     --allocation-token failure-redaction-allocation-token \
-    --relay-secret failure-redaction-relay-secret \
     --timeout 2 \
     --quiet \
     2>&1 >/dev/null)"
@@ -581,11 +549,11 @@ PY
   set -e
 
   if [[ "$status_code" -eq 0 ]]; then
-    echo "Relay allocation preflight should fail for malformed allocation responses." >&2
+    echo "Relay allocation preflight should fail for malformed preflight responses." >&2
     rm -rf "$work_dir"
     exit 1
   fi
-  if [[ "$output" != *"did not return an allocation response"* ]]; then
+  if [[ "$output" != *"did not return a preflight response"* ]]; then
     echo "Relay allocation preflight did not preserve the safe unexpected-response failure." >&2
     echo "$output" >&2
     rm -rf "$work_dir"
@@ -640,7 +608,6 @@ check_relay_preflight_unexpected_field_rejection_guard() {
 import json
 import socket
 import sys
-import time
 from pathlib import Path
 
 port = int(sys.argv[1])
@@ -663,17 +630,16 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
                 break
             buffer += chunk
         payload = {
-            "relay_id": "rt1-unexpected-field-relay",
-            "relay_secret": "unexpected-field-relay-secret",
-            "relay_expires_at": int(time.time()) + 300,
-            "relay_nonce": "unexpected-field-relay-nonce",
+            "preflight": True,
+            "crypto_version": 2,
+            "allocation_auth": "runtime-p256-v1",
             "requested_route_token": "leaked-route-token",
             "backend_url": "http://127.0.0.1:11434/api/tags",
             "provider_url": "https://provider.example.test/v1/models",
             "allocation_token": "leaked-allocation-token",
             "relay_secret_debug": "leaked-relay-secret",
         }
-        line = "AETHERLINK_RELAY allocation " + json.dumps(payload, separators=(",", ":")) + "\n"
+        line = "AETHERLINK_RELAY preflight " + json.dumps(payload, separators=(",", ":")) + "\n"
         connection.sendall(line.encode("utf-8"))
 PY
   fake_pid="$!"
@@ -703,7 +669,6 @@ PY
     --port "$port" \
     --route-token unexpected-field-route-token \
     --allocation-token unexpected-field-allocation-token \
-    --relay-secret unexpected-field-relay-secret \
     --timeout 2 \
     --quiet \
     2>&1 >/dev/null)"
@@ -712,11 +677,11 @@ PY
   set -e
 
   if [[ "$status_code" -eq 0 ]]; then
-    echo "Relay allocation preflight should reject allocation responses with unexpected metadata fields." >&2
+    echo "Relay allocation preflight should reject preflight responses with unexpected metadata fields." >&2
     rm -rf "$work_dir"
     exit 1
   fi
-  if [[ "$output" != *"unsupported metadata"* ]]; then
+  if [[ "$output" != *"included unsupported metadata"* ]]; then
     echo "Relay allocation preflight did not preserve the safe unexpected-field failure reason." >&2
     echo "$output" >&2
     rm -rf "$work_dir"
@@ -764,7 +729,6 @@ check_relay_preflight_response_value_canonicality_guard() {
 import json
 import socket
 import sys
-import time
 from pathlib import Path
 
 port = int(sys.argv[1])
@@ -773,25 +737,22 @@ ready_path = work_dir / "ready"
 
 def payload(**overrides):
     value = {
-        "relay_id": "rt1-canonical-relay",
-        "relay_secret": "canonical-relay-secret",
-        "relay_expires_at": int(time.time()) + 300,
-        "relay_nonce": "canonical-relay-nonce",
+        "preflight": True,
+        "crypto_version": 2,
+        "allocation_auth": "runtime-p256-v1",
     }
     value.update(overrides)
     return value
 
 payloads = {
-    "case-relay-id-whitespace": payload(relay_id="rt1 bad"),
-    "case-relay-secret-whitespace": payload(relay_secret="secret value"),
-    "case-relay-nonce-whitespace": payload(relay_nonce="nonce value"),
-    "case-relay-id-url": payload(
-        relay_id="https://provider.example.test/v1/rooms?route_token=leaked-route-token"
-    ),
-    "case-relay-expires-non-int": payload(relay_expires_at="not-an-int"),
-    "case-relay-expires-numeric-string": payload(relay_expires_at=str(int(time.time()) + 300)),
-    "case-relay-expires-bool": payload(relay_expires_at=True),
-    "case-relay-expires-zero": payload(relay_expires_at=0),
+    "case-preflight-false": payload(preflight=False),
+    "case-preflight-one": payload(preflight=1),
+    "case-crypto-version-one": payload(crypto_version=1),
+    "case-crypto-version-bool": payload(crypto_version=True),
+    "case-allocation-auth-legacy": payload(allocation_auth="legacy-bearer-v1"),
+    "case-allocation-auth-bool": payload(allocation_auth=True),
+    "case-missing-auth": {"preflight": True, "crypto_version": 2},
+    "case-route-material": payload(relay_nonce="forbidden-relay-nonce"),
 }
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -812,9 +773,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
                 buffer += chunk
             request = buffer.decode("utf-8", errors="replace").strip()
             parts = request.split()
-            route_token = parts[2] if len(parts) >= 3 else "case-relay-id-whitespace"
-            response_payload = payloads.get(route_token, payloads["case-relay-id-whitespace"])
-            line = "AETHERLINK_RELAY allocation " + json.dumps(response_payload, separators=(",", ":")) + "\n"
+            route_token = parts[2] if len(parts) >= 3 else "case-preflight-false"
+            response_payload = payloads.get(route_token, payloads["case-preflight-false"])
+            line = "AETHERLINK_RELAY preflight " + json.dumps(response_payload, separators=(",", ":")) + "\n"
             connection.sendall(line.encode("utf-8"))
 PY
   fake_pid="$!"
@@ -839,14 +800,14 @@ PY
   fi
 
   for case_spec in \
-    "case-relay-id-whitespace|invalid relay_id" \
-    "case-relay-secret-whitespace|invalid relay_secret" \
-    "case-relay-nonce-whitespace|invalid relay_nonce" \
-    "case-relay-id-url|invalid relay_id" \
-    "case-relay-expires-non-int|invalid relay_expires_at" \
-    "case-relay-expires-numeric-string|invalid relay_expires_at" \
-    "case-relay-expires-bool|invalid relay_expires_at" \
-    "case-relay-expires-zero|expired relay_expires_at"
+    "case-preflight-false|did not acknowledge preflight" \
+    "case-preflight-one|did not acknowledge preflight" \
+    "case-crypto-version-one|invalid crypto_version" \
+    "case-crypto-version-bool|invalid crypto_version" \
+    "case-allocation-auth-legacy|invalid allocation_auth" \
+    "case-allocation-auth-bool|invalid allocation_auth" \
+    "case-missing-auth|did not match the expected closed field set" \
+    "case-route-material|included unsupported metadata"
   do
     route_token="${case_spec%%|*}"
     expected="${case_spec##*|}"
@@ -872,14 +833,8 @@ PY
       exit 1
     fi
     for marker in \
-      "rt1 bad" \
-      "secret value" \
-      "nonce value" \
-      "provider.example.test" \
-      "route_token=" \
-      "leaked-route-token" \
-      "not-an-int" \
-      "true"
+      "legacy-bearer-v1" \
+      "forbidden-relay-nonce"
     do
       if [[ "$output" == *"$marker"* ]]; then
         echo "Relay allocation preflight leaked non-canonical response marker $marker." >&2
@@ -903,7 +858,6 @@ check_relay_preflight_host_input_guard() {
     --port 43171 \
     --route-token host-input-route-token \
     --allocation-token host-input-allocation-token \
-    --relay-secret host-input-relay-secret \
     --timeout 0.1 \
     --quiet \
     2>&1 >/dev/null)"
@@ -954,10 +908,7 @@ check_relay_allocation_token_authorization_guard() {
   local wrong_status
   local preflight_status
   local preflight_store_status
-  local persisted_status
-  local persisted_store_status
   local status_code
-  local persisted_output
 
   swift build --product AetherLinkRelay >/dev/null
   relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
@@ -1030,64 +981,26 @@ PY
     --quiet
   preflight_status=$?
   sleep 0.2
-  python3 - "$store" <<'PY'
+  python3 - "$store" "$work_dir/relay.log" <<'PY'
 import sys
 from pathlib import Path
 
 store = Path(sys.argv[1])
 contents = store.read_text(encoding="utf-8") if store.exists() else ""
+log_contents = Path(sys.argv[2]).read_text(encoding="utf-8")
 assert "token-preflight-route" not in contents, contents
-PY
-  preflight_store_status=$?
-  persisted_output="$(python3 script/relay_allocation_preflight.py \
-    --host 127.0.0.1 \
-    --port "$port" \
-    --route-token token-persisted-route \
-    --relay-secret token-relay-secret-should-not-persist \
-    --allocation-token no-device-allocation-token \
-    --persist \
-    --timeout 2 \
-  )"
-  persisted_status=$?
-  sleep 0.2
-  python3 - "$store" "$persisted_output" "$work_dir/relay.log" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-payload = json.loads(sys.argv[2])
-contents = Path(sys.argv[1]).read_text(encoding="utf-8")
-log_contents = Path(sys.argv[3]).read_text(encoding="utf-8")
-assert "requested_route_token" not in payload, payload
-assert "rt1-" in contents, contents
-assert payload["relay_id_present"] is True, payload
-assert payload["relay_expires_at_present"] is True, payload
-assert payload["relay_nonce_present"] is True, payload
-assert payload["route_material_redacted"] is True, payload
-assert "relay_id" not in payload, payload
-assert "relay_expires_at" not in payload, payload
-assert "relay_nonce" not in payload, payload
-assert "relay_secret" not in payload, payload
-assert payload["has_relay_secret"] is True, payload
-assert "rt1-" not in json.dumps(payload), payload
-assert "token-persisted-route" not in json.dumps(payload), payload
-assert "token-relay-secret-should-not-persist" not in json.dumps(payload), payload
-assert "token-persisted-route" not in contents, contents
 assert "token-preflight-route" not in contents, contents
 assert "unauthorized-missing-token-route" not in contents, contents
 assert "unauthorized-wrong-token-route" not in contents, contents
-assert "token-relay-secret-should-not-persist" not in contents, contents
 assert "no-device-allocation-token" not in contents, contents
 assert "wrong-no-device-allocation-token" not in contents, contents
-assert "token-persisted-route" not in log_contents, log_contents
 assert "token-preflight-route" not in log_contents, log_contents
 assert "unauthorized-missing-token-route" not in log_contents, log_contents
 assert "unauthorized-wrong-token-route" not in log_contents, log_contents
-assert "token-relay-secret-should-not-persist" not in log_contents, log_contents
 assert "no-device-allocation-token" not in log_contents, log_contents
 assert "wrong-no-device-allocation-token" not in log_contents, log_contents
 PY
-  persisted_store_status=$?
+  preflight_store_status=$?
   set -e
 
   status_code=0
@@ -1103,10 +1016,6 @@ PY
     status_code="$preflight_status"
   elif [[ "$preflight_store_status" -ne 0 ]]; then
     status_code="$preflight_store_status"
-  elif [[ "$persisted_status" -ne 0 ]]; then
-    status_code="$persisted_status"
-  else
-    status_code="$persisted_store_status"
   fi
 
   if [[ -n "$relay_pid" ]]; then
@@ -1125,6 +1034,10 @@ check_relay_exposed_bind_token_guard() {
   local relay_pid
   local output
   local status_code
+  local ephemeral_output
+  local ephemeral_status
+  local legacy_output
+  local legacy_status
 
   swift build --product AetherLinkRelay >/dev/null
   relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
@@ -1150,11 +1063,44 @@ check_relay_exposed_bind_token_guard() {
     exit 1
   fi
 
-  "$relay_bin" \
+  set +e
+  ephemeral_output="$("$relay_bin" \
     --host 0.0.0.0 \
     --port "$token_port" \
     --require-allocation \
     --ephemeral-allocations \
+    --allocation-token no-device-bind-token \
+    2>&1 >/dev/null)"
+  ephemeral_status=$?
+  set -e
+  if [[ "$ephemeral_status" -ne 1 || "$ephemeral_output" != *"durable allocation store required for strict non-loopback relay bind 0.0.0.0"* ]]; then
+    echo "Wildcard strict relay should reject ephemeral allocation storage even with an allocation token." >&2
+    echo "$ephemeral_output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  set +e
+  legacy_output="$("$relay_bin" \
+    --host 0.0.0.0 \
+    --port "$token_port" \
+    --allow-legacy \
+    --allocation-token no-device-bind-token \
+    2>&1 >/dev/null)"
+  legacy_status=$?
+  set -e
+  if [[ "$legacy_status" -ne 1 || "$legacy_output" != *"legacy unallocated relay mode is loopback-only"* ]]; then
+    echo "Wildcard relay bind must reject legacy unallocated mode even with an allocation token." >&2
+    echo "$legacy_output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  "$relay_bin" \
+    --host 0.0.0.0 \
+    --port "$token_port" \
+    --require-allocation \
+    --allocation-store "$work_dir/allocations.json" \
     --allocation-token no-device-bind-token \
     >"$work_dir/relay.log" 2>&1 &
   relay_pid="$!"
@@ -1188,18 +1134,41 @@ check_relay_wrapper_dry_run_allocation_token_redaction_guard() {
   local summary_path
   local status_code
   local token
+  local work_dir
+  local real_python3
+  local python_argv_log
 
   token="no-device-dry-run-token"
-  summary_path="$(mktemp "${TMPDIR:-/tmp}/aetherlink-relay-dry-run-summary.XXXXXX")"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-dry-run-summary.XXXXXX")"
+  summary_path="$work_dir/summary.json"
+  python_argv_log="$work_dir/python-argv.log"
+  real_python3="$(command -v python3)"
+  mkdir -p "$work_dir/bin"
+  cat >"$work_dir/bin/python3" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+{
+  printf 'python3'
+  for argument in "$@"; do
+    printf '\t%s' "$argument"
+  done
+  printf '\n'
+} >>"$PYTHON_ARGV_LOG"
+exec "$REAL_PYTHON3" "$@"
+SH
+  chmod +x "$work_dir/bin/python3"
   set +e
   output="$(
-    script/run_allocation_relay.sh \
-      --host 0.0.0.0 \
-      --port 43171 \
-      --allocation-token "$token" \
-      --dry-run \
-      --summary-json "$summary_path" \
-      2>&1
+    PATH="$work_dir/bin:$PATH" \
+      REAL_PYTHON3="$real_python3" \
+      PYTHON_ARGV_LOG="$python_argv_log" \
+      script/run_allocation_relay.sh \
+        --host 0.0.0.0 \
+        --port 43171 \
+        --allocation-token "$token" \
+        --dry-run \
+        --summary-json "$summary_path" \
+        2>&1
   )"
   status_code=$?
   set -e
@@ -1221,6 +1190,18 @@ check_relay_wrapper_dry_run_allocation_token_redaction_guard() {
       exit 1
     fi
   done
+  if grep -Fq "$token" "$python_argv_log"; then
+    echo "run_allocation_relay dry-run exposed the raw allocation token in Python child argv." >&2
+    cat "$python_argv_log" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  if ! grep -Fq "$summary_path" "$python_argv_log"; then
+    echo "run_allocation_relay dry-run Python argv guard did not observe summary generation." >&2
+    cat "$python_argv_log" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
   python3 - "$summary_path" "$token" <<'PY'
 import json
 import sys
@@ -1239,6 +1220,31 @@ assert summary["relay"]["development_relay_started"] is False, summary
 assert summary["allocation"]["required"] is True, summary
 assert summary["allocation"]["token_present"] is True, summary
 assert summary["allocation"]["token_redacted"] is True, summary
+assert summary["abuse_controls"]["probe_policy"] == "loopback-only", summary
+assert summary["abuse_controls"]["control_timeout_seconds"] == 10.0, summary
+assert summary["abuse_controls"]["max_connections"] == 256, summary
+assert summary["abuse_controls"]["source_peer_quotas"] == {
+    "max_concurrent_connections_per_source": 64,
+    "max_waiting_peers_per_source": 32,
+    "runtime_enforcement_verified": False,
+    "shared_nat_vpn_bucket": True,
+    "source_identity": "accepted_socket_address",
+}, summary
+assert summary["abuse_controls"]["waiting_peer_policy"] == {
+    "max_duration_seconds": 60,
+    "max_waiting_peers_per_authenticated_identity": 4,
+    "post_authentication_only": True,
+    "runtime_enforcement_verified": False,
+    "unauthenticated_bootstrap_clients_source_only": True,
+}, summary
+source_rate_limits = summary["abuse_controls"]["source_rate_limits"]
+assert source_rate_limits == {
+    "preflight_rate_per_minute": 120,
+    "preflight_burst": 30,
+    "allocation_rate_per_minute": 30,
+    "allocation_burst": 10,
+    "max_rate_limit_sources": 4096,
+}, summary
 coverage = summary["coverage"]
 assert coverage["relay_wrapper_dry_run_summary"] is True, summary
 assert coverage["development_relay_started"] is False, summary
@@ -1250,7 +1256,34 @@ assert "dry_run_not_relay_process_proof" in summary["caveats"], summary
 assert "not_production_relay_proof" in summary["caveats"], summary
 assert "not_trusted_device_reachability_proof" in summary["caveats"], summary
 PY
-  rm -f "$summary_path"
+
+  set +e
+  output="$(
+    script/run_allocation_relay.sh \
+      --host 0.0.0.0 \
+      --port 43171 \
+      --allocation-token "$token" \
+      --ephemeral-allocations \
+      --dry-run \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "run_allocation_relay dry-run should reject ephemeral non-loopback strict allocation storage, got $status_code" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"Durable allocation storage is required for non-loopback relay bind 0.0.0.0"* ]]; then
+    echo "run_allocation_relay did not explain the durable allocation-store requirement." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" == *"$token"* ]]; then
+    echo "run_allocation_relay durable-store rejection leaked the allocation token." >&2
+    echo "$output" >&2
+    exit 1
+  fi
 
   set +e
   output="$(
@@ -1269,6 +1302,447 @@ PY
   fi
   if [[ "$output" != *"Allocation token required for non-loopback relay bind 0.0.0.0"* ]]; then
     echo "run_allocation_relay dry-run did not explain the non-loopback token requirement." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  rm -rf "$work_dir"
+}
+
+check_relay_source_rate_limit_configuration_guard() {
+  local output
+  local status_code
+  local summary_path
+  local work_dir
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-source-rate-limit.XXXXXX")"
+  summary_path="$work_dir/summary.json"
+  output="$(
+    AETHERLINK_RELAY_PREFLIGHT_RATE_PER_MINUTE=121 \
+      AETHERLINK_RELAY_PREFLIGHT_BURST=31 \
+      AETHERLINK_RELAY_ALLOCATION_RATE_PER_MINUTE=32 \
+      AETHERLINK_RELAY_ALLOCATION_BURST=11 \
+      AETHERLINK_RELAY_MAX_RATE_LIMIT_SOURCES=4100 \
+      script/run_allocation_relay.sh \
+        --host 127.0.0.1 \
+        --ephemeral-allocations \
+        --dry-run \
+        --summary-json "$summary_path" \
+        2>&1
+  )"
+  if [[ "$output" != *"Source limits apply only to allocation, preflight, and paired-renewal control records"* ]] ||
+    [[ "$output" != *"Shared NAT/VPN users share source quotas and rate-limit buckets"* ]]; then
+    echo "run_allocation_relay did not preserve the source-rate-limit scope and shared-source caveat." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  python3 - "$summary_path" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert summary["abuse_controls"]["source_rate_limits"] == {
+    "preflight_rate_per_minute": 121,
+    "preflight_burst": 31,
+    "allocation_rate_per_minute": 32,
+    "allocation_burst": 11,
+    "max_rate_limit_sources": 4100,
+}, summary
+assert summary["coverage"]["development_relay_started"] is False, summary
+assert summary["coverage"]["production_relay"] is False, summary
+PY
+
+  local invalid_case
+  for invalid_case in \
+    "--preflight-rate-per-minute 0" \
+    "--preflight-rate-per-minute 08" \
+    "--preflight-burst 1000001" \
+    "--allocation-rate-per-minute 0" \
+    "--allocation-burst 1000001" \
+    "--max-rate-limit-sources 65537"
+  do
+    set -- $invalid_case
+    set +e
+    output="$(script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations "$1" "$2" --dry-run 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid "* ]]; then
+      echo "run_allocation_relay should reject invalid source-rate-limit arguments: $invalid_case" >&2
+      echo "$output" >&2
+      rm -rf "$work_dir"
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(
+    script/run_allocation_relay.sh \
+      --host 127.0.0.1 \
+      --ephemeral-allocations \
+      --preflight-rate-per-minute 1 \
+      --preflight-burst 16 \
+      --dry-run \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"burst must fully refill within 900 seconds"* ]]; then
+    echo "run_allocation_relay should reject source-rate limits that can reset before full refill." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  set +e
+  output="$(
+    script/run_allocation_relay.sh \
+      --host 127.0.0.1 \
+      --ephemeral-allocations \
+      --allocation-rate-per-minute 1 \
+      --allocation-burst 16 \
+      --dry-run \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid allocation rate/burst combination"* ]]; then
+    echo "run_allocation_relay should reject allocation limits that can reset before full refill." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  set +e
+  output="$(
+    AETHERLINK_RELAY_MAX_RATE_LIMIT_SOURCES=65537 \
+      script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations --dry-run 2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid maximum rate-limit sources"* ]]; then
+    echo "run_allocation_relay should reject invalid source-rate-limit environment values." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  rm -rf "$work_dir"
+}
+
+check_relay_source_peer_quota_configuration_guard() {
+  local invalid_case
+  local output
+  local status_code
+  local summary_path
+  local work_dir
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-source-peer-quota.XXXXXX")"
+  summary_path="$work_dir/summary.json"
+  output="$(
+    AETHERLINK_RELAY_MAX_CONNECTIONS_PER_SOURCE=96 \
+      AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_SOURCE=40 \
+      script/run_allocation_relay.sh \
+        --host 127.0.0.1 \
+        --ephemeral-allocations \
+        --dry-run \
+        --summary-json "$summary_path" \
+        2>&1
+  )"
+  if [[ "$output" != *"Source quotas: connections=96; waiting peers=40"* ]] ||
+    [[ "$output" != *"Shared NAT/VPN users share source quotas"* ]] ||
+    [[ "$output" != *"Active bridges remain counted against the source connection quota; frame forwarding is not throttled."* ]]; then
+    echo "run_allocation_relay did not preserve the source peer quota scope and NAT/VPN caveat." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  python3 - "$summary_path" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert summary["abuse_controls"]["source_peer_quotas"] == {
+    "max_concurrent_connections_per_source": 96,
+    "max_waiting_peers_per_source": 40,
+    "runtime_enforcement_verified": False,
+    "shared_nat_vpn_bucket": True,
+    "source_identity": "accepted_socket_address",
+}, summary
+assert summary["coverage"]["development_relay_started"] is False, summary
+assert summary["coverage"]["production_relay"] is False, summary
+PY
+
+  for invalid_case in \
+    "--max-connections-per-source 0" \
+    "--max-connections-per-source 08" \
+    "--max-connections-per-source 65537" \
+    "--max-waiting-peers-per-source 0" \
+    "--max-waiting-peers-per-source +8" \
+    "--max-waiting-peers-per-source 65537"
+  do
+    set -- $invalid_case
+    set +e
+    output="$(script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations "$1" "$2" --dry-run 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid "* ]]; then
+      echo "run_allocation_relay should reject invalid source peer quota arguments: $invalid_case" >&2
+      echo "$output" >&2
+      rm -rf "$work_dir"
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(
+    script/run_allocation_relay.sh \
+      --host 127.0.0.1 \
+      --ephemeral-allocations \
+      --max-connections-per-source 63 \
+      --max-waiting-peers-per-source 32 \
+      --dry-run \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"twice maximum waiting peers per source"* ]]; then
+    echo "run_allocation_relay should preserve counterpart headroom in source peer quotas." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+
+  set +e
+  output="$(
+    AETHERLINK_RELAY_MAX_CONNECTIONS_PER_SOURCE=08 \
+      script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations --dry-run 2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid maximum connections per source"* ]]; then
+    echo "run_allocation_relay should reject noncanonical source peer quota environment values." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  rm -rf "$work_dir"
+}
+
+check_relay_waiting_peer_policy_configuration_guard() {
+  local invalid_case
+  local output
+  local status_code
+  local summary_path
+  local work_dir
+
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-waiting-policy.XXXXXX")"
+  summary_path="$work_dir/summary.json"
+  output="$(
+    AETHERLINK_RELAY_WAITING_TIMEOUT_SECONDS=180 \
+      AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_AUTHENTICATED_IDENTITY=12 \
+      script/run_allocation_relay.sh \
+        --host 127.0.0.1 \
+        --ephemeral-allocations \
+        --dry-run \
+        --summary-json "$summary_path" \
+        2>&1
+  )"
+  if [[ "$output" != *"Waiting policy: timeout=180s; authenticated identity waiting peers=12; unauthenticated bootstrap clients remain source-only."* ]]; then
+    echo "run_allocation_relay did not preserve the bounded waiting and post-auth identity policy." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  python3 - "$summary_path" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert summary["abuse_controls"]["waiting_peer_policy"] == {
+    "max_duration_seconds": 180,
+    "max_waiting_peers_per_authenticated_identity": 12,
+    "post_authentication_only": True,
+    "runtime_enforcement_verified": False,
+    "unauthenticated_bootstrap_clients_source_only": True,
+}, summary
+assert summary["coverage"]["development_relay_started"] is False, summary
+assert summary["coverage"]["production_relay"] is False, summary
+PY
+
+  for invalid_case in \
+    "--waiting-timeout-seconds 0" \
+    "--waiting-timeout-seconds 08" \
+    "--waiting-timeout-seconds 3601" \
+    "--max-waiting-peers-per-authenticated-identity 0" \
+    "--max-waiting-peers-per-authenticated-identity +8" \
+    "--max-waiting-peers-per-authenticated-identity 65537"
+  do
+    set -- $invalid_case
+    set +e
+    output="$(script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations "$1" "$2" --dry-run 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid "* ]]; then
+      echo "run_allocation_relay should reject invalid waiting peer policy arguments: $invalid_case" >&2
+      echo "$output" >&2
+      rm -rf "$work_dir"
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(
+    AETHERLINK_RELAY_WAITING_TIMEOUT_SECONDS=08 \
+      script/run_allocation_relay.sh --host 127.0.0.1 --ephemeral-allocations --dry-run 2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]] || [[ "$output" != *"Invalid waiting timeout seconds"* ]]; then
+    echo "run_allocation_relay should reject noncanonical waiting policy environment values." >&2
+    echo "$output" >&2
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  rm -rf "$work_dir"
+}
+
+check_relay_binary_source_rate_limit_cli_guard() {
+  local invalid_case
+  local output
+  local relay_bin
+  local status_code
+
+  relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
+  for invalid_case in \
+    "--preflight-rate-per-minute 08" \
+    "--allocation-burst +8"
+  do
+    set -- $invalid_case
+    set +e
+    output="$("$relay_bin" "$1" "$2" --help 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]]; then
+      echo "AetherLinkRelay should reject noncanonical source-rate-limit CLI input: $invalid_case" >&2
+      echo "$output" >&2
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(AETHERLINK_RELAY_MAX_RATE_LIMIT_SOURCES=08 "$relay_bin" --help 2>&1)"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "AetherLinkRelay should reject noncanonical source-rate-limit environment input." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+
+  set +e
+  output="$(
+    "$relay_bin" \
+      --host 0.0.0.0 \
+      --ephemeral-allocations \
+      --allocation-rate-per-minute 1 \
+      --allocation-burst 16 \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "AetherLinkRelay should reject allocation limits that can reset before full refill." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+}
+
+check_relay_binary_source_peer_quota_cli_guard() {
+  local invalid_case
+  local output
+  local relay_bin
+  local status_code
+
+  relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
+  for invalid_case in \
+    "--max-connections 08" \
+    "--max-connections-per-source 08" \
+    "--max-waiting-peers-per-source +8"
+  do
+    set -- $invalid_case
+    set +e
+    output="$("$relay_bin" "$1" "$2" --help 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]]; then
+      echo "AetherLinkRelay should reject noncanonical source peer quota CLI input: $invalid_case" >&2
+      echo "$output" >&2
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(
+    AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_SOURCE=08 \
+      "$relay_bin" --help 2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "AetherLinkRelay should reject noncanonical source peer quota environment input." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+
+  set +e
+  output="$(
+    "$relay_bin" \
+      --max-connections-per-source 63 \
+      --max-waiting-peers-per-source 32 \
+      2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "AetherLinkRelay should reject source peer quotas without counterpart headroom." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+}
+
+check_relay_binary_waiting_peer_policy_cli_guard() {
+  local invalid_case
+  local output
+  local relay_bin
+  local status_code
+
+  relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
+  for invalid_case in \
+    "--waiting-timeout-seconds 08" \
+    "--waiting-timeout-seconds 3601" \
+    "--max-waiting-peers-per-authenticated-identity +8" \
+    "--max-waiting-peers-per-authenticated-identity 65537"
+  do
+    set -- $invalid_case
+    set +e
+    output="$("$relay_bin" "$1" "$2" --help 2>&1)"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 2 ]]; then
+      echo "AetherLinkRelay should reject noncanonical waiting peer policy CLI input: $invalid_case" >&2
+      echo "$output" >&2
+      exit 1
+    fi
+  done
+
+  set +e
+  output="$(
+    AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_AUTHENTICATED_IDENTITY=08 \
+      "$relay_bin" --help 2>&1
+  )"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "AetherLinkRelay should reject noncanonical waiting peer policy environment input." >&2
     echo "$output" >&2
     exit 1
   fi
@@ -1361,7 +1835,6 @@ check_relay_wrapper_allocation_token_argv_redaction_guard() {
     --host 127.0.0.1 \
     --port "$port" \
     --route-token wrapper-wrong-token-route \
-    --relay-secret "secret+with/symbols=" \
     --allocation-token wrong-wrapper-token \
     --quiet \
     >"$work_dir/wrong.out" 2>&1
@@ -1380,7 +1853,6 @@ check_relay_wrapper_allocation_token_argv_redaction_guard() {
     --host 127.0.0.1 \
     --port "$port" \
     --route-token wrapper-valid-token-route \
-    --relay-secret "secret+with/symbols=" \
     --allocation-token "$token" \
     --quiet \
     >"$work_dir/valid.out"
@@ -1402,7 +1874,8 @@ check_different_network_wrapper_allocation_token_argv_redaction_guard() {
   wrapper_pid=""
   token="no-device-different-network-wrapper-token"
 
-  script/run_different_network_dev_runtime.sh \
+  AETHERLINK_RELAY_ALLOCATION_STORE="$work_dir/allocations.json" \
+    script/run_different_network_dev_runtime.sh \
     --relay-host 127.0.0.1 \
     --relay-port "$port" \
     --allocation-token "$token" \
@@ -1782,6 +2255,7 @@ for marker in (
 
 route_summary = summary["probe_summaries"]["device_relay_route"]
 assert route_summary["probe"]["reachable"] is True, summary
+assert route_summary["probe"]["supported"] is True, summary
 assert route_summary["probe"]["route_ready"] is True, summary
 assert route_summary["relay"]["relay_id_present"] is True, summary
 assert "relay_id" not in route_summary["relay"], summary
@@ -1794,6 +2268,7 @@ assert "relay_secret" not in probe_output, summary
 assert "route_token" not in probe_output, summary
 assert "route_material=<redacted>" in probe_output, summary
 assert summary["coverage"]["external_relay_probe_reachable"] is True, summary
+assert summary["coverage"]["external_relay_probe_supported"] is True, summary
 assert summary["coverage"]["external_relay_route_ready"] is True, summary
 assert summary["coverage"]["probe_summary_redaction_self_test"] is True, summary
 assert summary["coverage"]["android_pairing_summary_json_present"] is True, summary
@@ -1965,6 +2440,10 @@ check_android_relay_reachability_probe_route_material_redaction_guard() {
   local summary_json
   local stdout_log
   local stderr_log
+  local case_summary_json
+  local case_stdout_log
+  local case_stderr_log
+  local probe_case
   local status_code
 
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-probe-redaction.XXXXXX")"
@@ -2004,9 +2483,63 @@ if [[ "${1:-}" == "shell" ]]; then
     echo "NetworkAgentInfo WIFI validated"
     exit 0
   fi
-  if [[ "$command_line" == *"AETHERLINK_RELAY probe"* ]]; then
-    echo "AETHERLINK_RELAY probe known=1 runtime_waiting=1 relay_id=rt1-sensitive-route-material"
+  if [[ "$command_line" == nc\ -z\ * ]]; then
+    if [[ "${FAKE_RELAY_TCP_UNREACHABLE:-0}" == "1" ]]; then
+      echo "nc: tcp-failure-secret" >&2
+      exit 1
+    fi
     exit 0
+  fi
+  if [[ "$command_line" == *"AETHERLINK_RELAY probe"* ]]; then
+    response_status=0
+    case "${FAKE_RELAY_PROBE_CASE:-known_ready}" in
+      known_ready)
+        echo "AETHERLINK_RELAY probe known=1 runtime_waiting=1"
+        ;;
+      allocated_ready)
+        echo "AETHERLINK_RELAY probe allocated=YES runtime_waiting=TRUE"
+        ;;
+      known_false)
+        echo "AETHERLINK_RELAY probe known=0 runtime_waiting=1"
+        ;;
+      allocated_false)
+        echo "AETHERLINK_RELAY probe allocated=false runtime_waiting=yes"
+        ;;
+      runtime_not_waiting)
+        echo "AETHERLINK_RELAY probe known=true runtime_waiting=no"
+        ;;
+      empty)
+        ;;
+      extra)
+        echo "AETHERLINK_RELAY probe known=1 runtime_waiting=1 extra=extra-probe-secret"
+        ;;
+      duplicate)
+        echo "AETHERLINK_RELAY probe known=1 known=duplicate-probe-secret runtime_waiting=1"
+        ;;
+      secret_bearing)
+        echo "AETHERLINK_RELAY probe known=1 runtime_waiting=1 relay_secret=secret-bearing-probe-marker"
+        response_status=7
+        ;;
+      known_ready_nonzero)
+        echo "AETHERLINK_RELAY probe known=1 runtime_waiting=1"
+        response_status=7
+        ;;
+      known_false_nonzero)
+        echo "AETHERLINK_RELAY probe known=0 runtime_waiting=1"
+        response_status=7
+        ;;
+      incomplete)
+        echo "AETHERLINK_RELAY probe known=incomplete-probe-secret"
+        ;;
+      unknown)
+        echo "UNKNOWN_RELAY_RESPONSE unknown-probe-secret"
+        ;;
+      *)
+        echo "Unexpected fake relay probe case" >&2
+        exit 1
+        ;;
+    esac
+    exit "$response_status"
   fi
 fi
 
@@ -2051,6 +2584,7 @@ assert summary["device"]["adb_serial"] is None, summary
 assert "relay_id" not in summary["relay"], summary
 assert summary["relay"]["relay_id_present"] is True, summary
 assert summary["probe"]["route_ready"] is True, summary
+assert summary["probe"]["supported"] is True, summary
 assert summary["probe"]["reachable"] is True, summary
 assert summary["coverage"]["android_relay_probe_redaction_self_test"] is True, summary
 assert summary["coverage"]["live_android_relay_probe_verified"] is False, summary
@@ -2061,9 +2595,204 @@ assert summary["coverage"]["production_end_to_end_transport_encryption"] is Fals
 assert "android_relay_probe_redaction_self_test_not_phone_reachability_proof" in summary["caveats"], summary
 assert "not_production_session_key_exchange_proof" in summary["caveats"], summary
 assert "not_production_end_to_end_transport_encryption_proof" in summary["caveats"], summary
-assert summary["probe"]["output"] == "AETHERLINK_RELAY probe known=1 runtime_waiting=1 relay_id=<relay-id>", summary
+assert summary["probe"]["result"] == "ready", summary
+assert summary["probe"]["raw_exit_status"] == 0, summary
+assert summary["probe"]["response_exit_status"] == 0, summary
+assert summary["probe"]["route_known"] is True, summary
+assert summary["probe"]["runtime_waiting"] is True, summary
+assert summary["probe"]["output"] == "AETHERLINK_RELAY probe known=true runtime_waiting=true", summary
 assert "redaction self-test" in stdout, stdout
 assert "not phone reachability proof" in stdout, stdout
+PY
+
+  case_summary_json="$work_dir/allocated-ready-summary.json"
+  case_stdout_log="$work_dir/allocated-ready-stdout.log"
+  case_stderr_log="$work_dir/allocated-ready-stderr.log"
+  set +e
+  FAKE_RELAY_PROBE_CASE=allocated_ready AETHERLINK_RELAY_PROBE_SELF_TEST=1 ADB="$fake_adb" \
+    script/android_relay_reachability_probe.sh \
+      --host relay.example.test \
+      --port 43171 \
+      --relay-id rt1-sensitive-route-material \
+      --json "$case_summary_json" \
+      >"$case_stdout_log" \
+      2>"$case_stderr_log"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 0 ]]; then
+    echo "Canonical allocated=true relay probe should be route-ready, got $status_code" >&2
+    cat "$case_stdout_log" >&2 || true
+    cat "$case_stderr_log" >&2 || true
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  python3 - "$case_summary_json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert summary["probe"]["result"] == "ready", summary
+assert summary["probe"]["raw_exit_status"] == 0, summary
+assert summary["probe"]["response_exit_status"] == 0, summary
+assert summary["probe"]["supported"] is True, summary
+assert summary["probe"]["route_ready"] is True, summary
+assert summary["probe"]["route_known"] is True, summary
+assert summary["probe"]["runtime_waiting"] is True, summary
+assert summary["probe"]["output"] == "AETHERLINK_RELAY probe known=true runtime_waiting=true", summary
+PY
+
+  for probe_case in known_false allocated_false runtime_not_waiting; do
+    case_summary_json="$work_dir/$probe_case-summary.json"
+    case_stdout_log="$work_dir/$probe_case-stdout.log"
+    case_stderr_log="$work_dir/$probe_case-stderr.log"
+    set +e
+    FAKE_RELAY_PROBE_CASE="$probe_case" AETHERLINK_RELAY_PROBE_SELF_TEST=1 ADB="$fake_adb" \
+      script/android_relay_reachability_probe.sh \
+        --host relay.example.test \
+        --port 43171 \
+        --relay-id rt1-sensitive-route-material \
+        --json "$case_summary_json" \
+        >"$case_stdout_log" \
+        2>"$case_stderr_log"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 1 ]]; then
+      echo "Canonical unavailable relay probe case $probe_case should fail, got $status_code" >&2
+      cat "$case_stdout_log" >&2 || true
+      cat "$case_stderr_log" >&2 || true
+      rm -rf "$work_dir"
+      exit 1
+    fi
+    python3 - "$case_summary_json" "$probe_case" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+probe_case = sys.argv[2]
+probe = summary["probe"]
+assert probe["result"] == "unavailable", summary
+assert probe["raw_exit_status"] == 0, summary
+assert probe["response_exit_status"] == 0, summary
+assert probe["supported"] is True, summary
+assert probe["tcp_reachable"] is True, summary
+assert probe["route_ready"] is False, summary
+assert probe["reachable"] is False, summary
+assert probe["route_known"] is (probe_case == "runtime_not_waiting"), summary
+assert probe["runtime_waiting"] is (probe_case != "runtime_not_waiting"), summary
+assert probe["output"] in {
+    "AETHERLINK_RELAY probe known=false runtime_waiting=true",
+    "AETHERLINK_RELAY probe known=true runtime_waiting=false",
+}, summary
+assert "relay_route_probe_unsupported_authenticated_connection_required" not in summary["caveats"], summary
+PY
+  done
+
+  for probe_case in empty extra duplicate secret_bearing known_ready_nonzero known_false_nonzero incomplete unknown; do
+    case_summary_json="$work_dir/$probe_case-summary.json"
+    case_stdout_log="$work_dir/$probe_case-stdout.log"
+    case_stderr_log="$work_dir/$probe_case-stderr.log"
+    set +e
+    FAKE_RELAY_PROBE_CASE="$probe_case" AETHERLINK_RELAY_PROBE_SELF_TEST=1 ADB="$fake_adb" \
+      script/android_relay_reachability_probe.sh \
+        --host relay.example.test \
+        --port 43171 \
+        --relay-id rt1-sensitive-route-material \
+        --json "$case_summary_json" \
+        >"$case_stdout_log" \
+        2>"$case_stderr_log"
+    status_code=$?
+    set -e
+    if [[ "$status_code" -ne 0 ]]; then
+      echo "Unsupported relay probe case $probe_case should continue to authenticated pairing, got $status_code" >&2
+      cat "$case_stdout_log" >&2 || true
+      cat "$case_stderr_log" >&2 || true
+      rm -rf "$work_dir"
+      exit 1
+    fi
+    python3 - "$case_summary_json" "$case_stdout_log" "$case_stderr_log" "$probe_case" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+stdout = Path(sys.argv[2]).read_text(encoding="utf-8")
+stderr = Path(sys.argv[3]).read_text(encoding="utf-8")
+probe_case = sys.argv[4]
+combined = json.dumps(summary, sort_keys=True) + stdout + stderr
+probe = summary["probe"]
+assert probe["result"] == "unsupported", summary
+assert probe["raw_exit_status"] == 0, summary
+assert probe["response_exit_status"] == (
+    7 if probe_case in {"secret_bearing", "known_ready_nonzero", "known_false_nonzero"} else 0
+), summary
+assert summary["probe"]["supported"] is False, summary
+assert summary["probe"]["reachable"] is True, summary
+assert summary["probe"]["route_ready"] is False, summary
+assert probe["tcp_reachable"] is True, summary
+assert probe["route_known"] is None, summary
+assert probe["runtime_waiting"] is None, summary
+assert probe["output"] is None, summary
+assert summary["coverage"]["live_android_relay_probe_verified"] is False, summary
+assert summary["coverage"]["live_android_route_probe_verified"] is False, summary
+assert "relay_route_probe_unsupported_authenticated_connection_required" in summary["caveats"], summary
+assert "authenticated pairing must verify the route" in stdout, stdout
+for marker in (
+    "rt1-sensitive-route-material",
+    "extra-probe-secret",
+    "duplicate-probe-secret",
+    "secret-bearing-probe-marker",
+    "incomplete-probe-secret",
+    "unknown-probe-secret",
+):
+    assert marker not in combined, (probe_case, marker, combined)
+PY
+  done
+
+  case_summary_json="$work_dir/tcp-unavailable-summary.json"
+  case_stdout_log="$work_dir/tcp-unavailable-stdout.log"
+  case_stderr_log="$work_dir/tcp-unavailable-stderr.log"
+  set +e
+  FAKE_RELAY_TCP_UNREACHABLE=1 AETHERLINK_RELAY_PROBE_SELF_TEST=1 ADB="$fake_adb" \
+    script/android_relay_reachability_probe.sh \
+      --host relay.example.test \
+      --port 43171 \
+      --relay-id rt1-sensitive-route-material \
+      --json "$case_summary_json" \
+      >"$case_stdout_log" \
+      2>"$case_stderr_log"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 1 ]]; then
+    echo "Genuine relay TCP connection failure should be unavailable, got $status_code" >&2
+    cat "$case_stdout_log" >&2 || true
+    cat "$case_stderr_log" >&2 || true
+    rm -rf "$work_dir"
+    exit 1
+  fi
+  python3 - "$case_summary_json" "$case_stdout_log" "$case_stderr_log" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+stdout = Path(sys.argv[2]).read_text(encoding="utf-8")
+stderr = Path(sys.argv[3]).read_text(encoding="utf-8")
+combined = json.dumps(summary, sort_keys=True) + stdout + stderr
+probe = summary["probe"]
+assert probe["result"] == "unavailable", summary
+assert probe["raw_exit_status"] == 1, summary
+assert probe["response_exit_status"] is None, summary
+assert probe["tcp_reachable"] is False, summary
+assert probe["supported"] is False, summary
+assert probe["route_ready"] is False, summary
+assert probe["reachable"] is False, summary
+assert probe["route_known"] is None, summary
+assert probe["runtime_waiting"] is None, summary
+assert probe["output"] is None, summary
+assert "relay_route_probe_unsupported_authenticated_connection_required" not in summary["caveats"], summary
+assert "tcp-failure-secret" not in combined, combined
 PY
 
   rm -rf "$work_dir"
@@ -2545,6 +3274,7 @@ run python3 -m py_compile \
   script/check_android_string_parity.py \
   script/check_macos_localization.py \
   script/check_protocol_schema.py \
+  script/check_production_relay_security_design.py \
   script/check_copy_hygiene.py \
   script/check_docs_hygiene.py \
   script/check_license.py \
@@ -2565,13 +3295,16 @@ run check_different_network_relay_endpoint_input_redaction_guard
 run check_no_adb_external_relay_url_host_redaction_guard
 run check_different_network_preflight_summary_guard
 run check_relay_preflight_allocation_guard
-run check_relay_preflight_rejects_raw_route_token_echo_guard
+run check_relay_preflight_rejects_route_material_guard
 run check_relay_preflight_failure_output_redaction_guard
 run check_relay_preflight_unexpected_field_rejection_guard
 run check_relay_preflight_response_value_canonicality_guard
 run check_relay_preflight_host_input_guard
 run check_relay_exposed_bind_token_guard
 run check_relay_wrapper_dry_run_allocation_token_redaction_guard
+run check_relay_source_rate_limit_configuration_guard
+run check_relay_source_peer_quota_configuration_guard
+run check_relay_waiting_peer_policy_configuration_guard
 run check_relay_wrapper_allocation_token_argv_redaction_guard
 run check_different_network_wrapper_allocation_token_argv_redaction_guard
 run check_no_adb_wrapper_allocation_token_argv_redaction_guard
@@ -2586,6 +3319,7 @@ run git diff --check
 run python3 script/check_android_string_parity.py
 run python3 script/check_macos_localization.py
 run python3 script/check_protocol_schema.py
+run python3 script/check_production_relay_security_design.py
 run ./gradlew --no-daemon \
 	  :core:pairing:testDebugUnitTest \
 	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload \
@@ -3409,7 +4143,9 @@ PY
 run ./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh
 
 run ./gradlew --no-daemon \
-  :core:pairing:testDebugUnitTest \
+	  :core:pairing:testDebugUnitTest \
+	  --tests com.localagentbridge.android.core.pairing.InitialPairingProofTest \
+	  --tests com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizationTest \
   --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest \
   --tests com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifierTest \
   --tests com.localagentbridge.android.core.pairing.DeviceIdentityStoreTest \
@@ -3425,7 +4161,12 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRoundTripsExactWireShape \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRoundTripsExactWireShape \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples \
+	  --tests com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadRejectsUnknownCodes \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata \
@@ -3501,12 +4242,23 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.expiredRemoteRoutesAreRejectedBeforeConnectorAttempt \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameCryptorBindsRouteNonceIntoKey \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectFailsWhenReadyLineRejectsRoute \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayChannelEncryptsSentFramesAndDecryptsRuntimeResponses \
-  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoMatchesP256ScalarOneAndTwoVectors \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2MatchesEpochBoundaryVectors \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsReplayWithoutAdvancingAfterFailedAuthentication \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsExhaustedCounterBeforeCrypt \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayEphemeralKeyRequiresCanonicalOnCurveP256Point \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.plaintextRelayPreservesLegacyRegistrationAndFrames \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsInvalidRuntimeConfirmationAndClosesSocket \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRelayAuthorizesMatchingChallengeThenCompletesStrictCrypto \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMissingChallengeAsDowngradeBeforeAuthorizer \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsChallengeMismatchesBeforeAuthorizer \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMatchingChallengeWhenAuthorizerIsMissing \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayAuthenticationFailureClosesTransport \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesStrictEncryptionWithConcurrentSends \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives \
   -Pkotlin.incremental=false
 
 run ./gradlew --no-daemon \
@@ -3648,6 +4400,12 @@ run ./gradlew --no-daemon \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrAcceptedPairingRestoresRelayReconnectWithoutManualEndpoint \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimSignsExactAuthorizationAndPersistsFinalGeneration \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRenewalPersistsNextGeneration \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimsUnversionedRouteAfterRuntimeOnlyBootstrapRenewals \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsWrongMutatedExpiredSecretBearingAndDuplicateChallenges \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsFinalBeforeProofMismatchAndMissingGeneration \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationTimeoutDisconnectAndPlaintextChannelClearWithoutSigning \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveUntrustedConnection \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveDifferentTrustedRuntimeConnection \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameRuntimePairingQrDoesNotPreemptActiveTrustedConnection \
@@ -3659,7 +4417,7 @@ run ./gradlew --no-daemon \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.rejectedCompactRelayQrPairingResultClearsPendingRouteAndSecret \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.unsignedRejectedPairingResultKeepsPendingRouteAndSecretForAuthenticatedRetry \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteRelayRouteInsteadOfDirectFallback \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback \
@@ -3684,6 +4442,7 @@ run ./gradlew --no-daemon \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetWaitsForFreshRouteWhenOnlyTrustedLastKnownEndpointExists \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectRouteCandidatesDoNotUseTrustedLastKnownEndpointAsFallback \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectDirectModelProviderPortsFromSelectedAndDiscoveredRoutes \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.transportBoundAuthenticationRejectsDowngradeMismatchAndOldBindingReplay \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.privateOverlayRelayQrPairingUsesRealRelayTcpClientAndPersistsOverlayRoute \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession \
@@ -3706,6 +4465,7 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalSavedRelayMaterial \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalPendingRelayMaterial \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerPlansPendingP2pRendezvousBeforeRelayRoute \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingP2pRendezvousRecord \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeP2pReconnectUsesStoredQrRendezvousMetadata \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer \
@@ -3724,7 +4484,9 @@ run ./gradlew --no-daemon \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeSchedulesRouteRefreshBeforeRecordExpiry \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshErrorBeforeRecordExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataDropsDirectEndpointFromPendingPairingRouteStorage \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrRetriesAndSendsPairingRequestAfterRelayBecomesReady \
@@ -3838,10 +4600,13 @@ run ./gradlew --no-daemon \
 				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease \
 				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint \
 				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease \
+			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry \
 				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity \
 				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity \
@@ -3943,16 +4708,35 @@ run ./gradlew --no-daemon \
   -Pkotlin.incremental=false
 
 run swift build --product AetherLink
-run swift test --filter RelayServerCoreTests
-run swift test --filter 'RelayHandshakeTests/testRejectsNonCanonicalRelayID|RelayProbeTests/testRejectsNonCanonicalRelayID|RelayHandshakeTests/testServerLineFramingRequiresNewlineForRelayHandshake|RelayHandshakeTests/testServerLineFramingRequiresNewlineForAllocationRequest|RelayProbeTests/testServerLineFramingRequiresNewlineForProbeRequest|RelayMatcherTests/testRuntimeWaitingProbeDoesNotConsumePendingRuntime|RelayMatcherTests/testRuntimeWaitingProbeIgnoresWaitingClient'
-run swift test --filter 'RelayAllocationTests/testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret|RelayAllocationTests/testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken'
-run swift test --filter 'RelayAllocationTests/testParsesAllocationRequestWithBase64RequestedRelaySecret|RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret'
-run swift test --filter RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata
-run swift test --filter RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields
-run swift test --filter RelayAllocationTests/testRejectsUnexpectedAllocationResponseLineMetadata
-run swift test --filter 'RelayAllocationTests/testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID|RelayAllocationTests/testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce|RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket|RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad'
-run swift test --filter RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata
-run swift test --filter 'RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL|RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs|RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs|RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs'
+run swift build --product AetherLinkRelay
+run check_relay_binary_source_rate_limit_cli_guard
+run check_relay_binary_source_peer_quota_cli_guard
+run check_relay_binary_waiting_peer_policy_cli_guard
+run swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'
+run swift test --filter 'RelayIdentityBoundSocketTests/testControlLineReaderUsesAbsoluteDeadlineAndPreserves4096ByteLimit|RelayIdentityBoundSocketTests/testControlLineReaderRecomputesDeadlineAfterEveryPollAndReceiveInterrupt|RelayIdentityBoundSocketTests/testIdleControlTimeoutReclaimsConnectionPermit|RelayIdentityBoundSocketTests/testWaitingPeerDisconnectReclaimsConnectionPermit|RelayIdentityBoundSocketTests/testAcceptedSocketResetDuringResponseDoesNotTerminateServer|RelayIdentityBoundSocketTests/testSinglePeerCloseReclaimsBothBridgePermitsAndActiveRoom|RelayIdentityBoundSocketTests/testExposedBindDisablesProbeUnlessLegacyDiagnosticPolicyIsExplicit|RelayAllocationTests/testRelayConfigurationRejectsInvalidAbuseControlLimits|RelayAllocationTests/testLegacyUnallocatedRelayModeIsLoopbackOnly|RelayAllocationTests/testProbePolicyDefaultsToLoopbackOnlyAndRequiresExplicitExposedOptIn'
+run swift test --filter 'RelaySourceRateLimiterTests|RelayIdentityBoundSocketTests/testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability|RelayIdentityBoundSocketTests/testMalformedAllocationControlRecordsConsumeClassifiedSourceBudgets|RelayIdentityBoundSocketTests/testAllocationMutationBucketIsSeparateFromPreflightBucket|RelayIdentityBoundSocketTests/testPairedRenewalSharesAllocationMutationBucket|RelayIdentityBoundSocketTests/testRateLimitedSourceStillUsesPeerAdmissionAndBridgeTraffic'
+run swift test --filter 'RelaySourceQuotaLimiterTests|RelayMatcherTests/testSourceWaitingQuotaRejectsOnlyNewWaitersAndAllowsImmediateMatch|RelayMatcherTests/testCrossSourceReplacementRejectionPreservesOriginalWaiter|RelayMatcherTests/testWaitingQuotaReleasesOnInvalidation|RelayMatcherTests/testCounterpartOnlyRegistrationAllowsMatchOrSameSourceReplacement|RelayMatcherTests/testSourceReserveCandidateCannotDischargeAnotherSourcesWaiter|RelayIdentityBoundSocketTests/testSourceConnectionQuotaRejectsExcessWhileActiveBridgeStillForwards|RelayIdentityBoundSocketTests/testSourceWaitingQuotaRejectsOnlyNewWaiterAndAllowsImmediateCounterpart|RelayIdentityBoundSocketTests/testWaitingDisconnectReleasesSourceQuotaBeforeConnectionPermit|RelayIdentityBoundSocketTests/testCounterpartReserveSurvivesActiveBridgeAndRejectsNonmatchingCandidate'
+run swift test --filter 'RelayWaitingPeerPolicyTests|RelayMatcherTests/testWaitingDeadlinePersistsAcrossSameRoleReplacement|RelayMatcherTests/testAuthenticatedIdentityQuotaIsCrossSourceAndReleasesEveryWaitingPath|RelayIdentityBoundSocketTests/testWaitingTimeoutReleasesSourceAndIdentityCapacityAndAllowsRetry|RelayIdentityBoundSocketTests/testMatchedBridgeCancelsWaitingTimeoutAndContinuesForwarding|RelayIdentityBoundSocketTests/testAuthenticatedIdentityWaitingQuotaRejectsOnlySameIdentity|RelayIdentityBoundSocketTests/testPairedClientIdentityWaitingQuotaRequiresVerifiedClientProof|RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime'
+run ./gradlew --no-daemon \
+  :app:testDebugUnitTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnsupportedProbeContinuesToRelayConnector \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResultRejectsMalformedDuplicateAndUnknownFieldsAsUnsupported \
+  -Pkotlin.incremental=false
+run swift test --filter 'RelayIdentityBoundSocketTests/testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute|RelayIdentityBoundSocketTests/testChallengeAllocationAndRuntimeAdmissionSucceeds|RelayIdentityBoundSocketTests/testAllocationProofReplayAndFieldMutationFailClosed|RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime|RelayIdentityBoundSocketTests/testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned|RelayIdentityBoundSocketTests/testSecondRunOnSameServerThrowsAlreadyRunningAndOriginalListenerStillWorks|RelayIdentityBoundSocketTests/testBindFailureReleasesAllocationStoreOwnershipForRetainedServer|RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope|RelayAllocationTests/testSchemaV3PairedBindingRotatesToPairScopedRoomAndPersistsTombstone|RelayAllocationTests/testSchemaV2MigrationPersistenceFailureFailsClosed|RelayAllocationTests/testStoreReloadsActiveBindingAndRetainsExpiredTombstone|RelayAllocationTests/testRenewalRequiresSameKeyAndGenerationCAS|RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed|RelayAllocationTests/testStrictNonLoopbackRelayRejectsEphemeralAllocationStore|RelayAllocationTests/testStaleBootstrapCreateCannotRecreateConsumedPairClaim|RelayAllocationTests/testRepeatedRegistryCreationReusesPooledLockDescriptor|RelayAllocationTests/testClosingSiblingTransactionLockDoesNotReleaseActiveProcessRecordLock|RelayAllocationTests/testStoreOwnershipCanonicalizesSymlinkedParentAliases|RelayAllocationTests/testDeletedEstablishedDurableStoreFailsClosedForLiveAndRestartedRegistries|RelayAllocationTests/testGroupOrWorldWritableStoreParentFailsClosed|RelayAllocationTests/testValidUnversionedV1StoreIsRevokedIntoEmptyTokenBoundV4Store|RelayAllocationTests/testDanglingDurableStoreSymlinkFailsClosed|RelayAllocationTests/testHardLinkedStoreAliasFailsClosedWithoutDivergingAtomicWrites|RelayAllocationTests/testPostRenameDirectorySyncFailureReconcilesCommittedEnvelopeBeforeSuccess|RelayAllocationTests/testUninitializedMarkerRecoversTokenMatchedDurableStoreAfterInterruptedInitialization|RelayAllocationTests/testEstablishedLockReplacementQuarantinesLiveAndReplacementRegistries|RelayAllocationTests/testCaseVariantStorePathSharesOneOwnerOnCaseInsensitiveVolumes'
+run ./script/relay_allocation_store_ownership_smoke.sh
+run swift test --filter RelayIdentityAuthorizationTests
+run swift test --filter RuntimeIdentityKeyStoreTests
+run swift test --filter InitialPairingProofTests
+run swift test --filter PairedRelayAllocationAuthorizationTests
+run swift test --filter PairedRelayAllocationRuntimeSigningTests
+run swift test --filter PairedRelayAllocationClientTests
+run swift test --filter PairedRuntimeRouteRefreshTests
+run swift test --filter PairScopedRelayRouteStoreTests
+run swift test --filter 'RelayIdentityBoundSocketTests/testPairedClaimThenRenewSucceedsAndPersistsPinnedClient|RelayIdentityBoundSocketTests/testPairedRenewalRejectsTokenSubstitutionDowngradeAndAbsentTicketBeforeChallenge|RelayIdentityBoundSocketTests/testPairedProofReplayAndConcurrentGenerationRaceFailCAS|RelayIdentityBoundSocketTests/testPairedProofRejectsMissingWrongAndSwappedRoleSignatures|RelayIdentityBoundSocketTests/testPairedChallengeMutationAndExpiryFailWithoutCommit|RelayIdentityBoundSocketTests/testPairedClaimCanRecoverExpiredPersistedTombstone'
+run swift test --filter 'RelayIdentityBoundSocketTests/testPairedClaimChallengesClientAndAdmitsValidPinnedProof|RelayIdentityBoundSocketTests/testRejectedClientProofsCannotDisplaceVerifiedWaitingRuntime|RelayIdentityBoundSocketTests/testActiveRoomRejectsSecondPairUntilBridgeClosesThenReconnects|RelayIdentityBoundSocketTests/testPairedRenewalInvalidatesStaleWaitingGeneration|RelayIdentityBoundSocketTests/testTwoPairScopedRoomsBridgeConcurrentlyWithoutCrossTalk|RelayClientRegistrationAdmissionTests'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshRejectsNilTransportBindingBeforeRefresherDispatch|LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshRejectsMismatchedLiveBindingBeforeRefresherDispatch|LocalRuntimeMessageRouterTests/testAuthenticatedRouteRefreshForwardsExactRelayChallengeAndAcceptsCanonicalClientProof|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationWrongProofFailsClosedAndIsOneShot|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationTimesOutAndResumesRouteRefresh|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationDisconnectCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationTrustReplacementCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testRelayAllocationAuthorizationBindingMutationCancelsPendingContinuation|LocalRuntimeMessageRouterTests/testConcurrentRouteRefreshWithSameConnectionAndRequestAdmitsSingleAuthorization'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocator|LocalRuntimeMessageRouterTests/testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty|LocalRuntimeMessageRouterTests/testPairingRequestRejectsMutatedProofWithoutConsumingSession|LocalRuntimeMessageRouterTests/testPairingResultSignerFailureReleasesReservationBeforeTrust'
 run swift test --filter TransportTests
 run swift test --filter 'RuntimeAdvertisementMetadataTests/testRuntimeAdvertisementMetadataPublishesOnlyRouteTokenIdentityHint|RuntimeAdvertisementMetadataTests/testRejectsWhitespaceMutatedRouteTokenInsteadOfNormalizing|RuntimeAdvertisementMetadataTests/testRejectsRequestedRouteTokenHintsFromDiscoveryTxtMetadata|LocalRuntimeMessageRouterTests/testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses|LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage'
@@ -3984,7 +4768,12 @@ run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionW
 	run swift test --filter DocumentTextExtractorTests
 	run swift test --filter ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsMalformedRequiredFields
 	run swift test --filter ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields
-	run swift test --filter ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata
+		run swift test --filter ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata
+			run swift test --filter 'ProtocolCodecTests/testRelaySessionNonceGenerationIsCanonicalAndUnique|ProtocolCodecTests/testRelayEphemeralKeysMatchP256ScalarVectorsAndValidateOnCurve|ProtocolCodecTests/testRelaySessionCryptoMatchesBindingHkdfAndConfirmationVectors|ProtocolCodecTests/testRelaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys|ProtocolCodecTests/testRelayKeyConfirmationRequiresExactRoleBindingProofAndLineFeed|ProtocolCodecTests/testRelayFrameCipherMatchesDirectionalFrameZeroVectors|ProtocolCodecTests/testRelayFrameCipherRoundTripsAndRejectsWrongDirection|ProtocolCodecTests/testRelayFrameCipherDoesNotAdvanceReceiveCounterAfterAuthenticationFailure|ProtocolCodecTests/testRelayFrameCipherRotatesAtEpochBoundaryUsingFixedVectors|ProtocolCodecTests/testRelayFrameCipherRejectsCounterAtInt64MaxBeforeCryptography'
+			run swift test --filter 'RelayPeerClientTests/testStrictRelayPeerClientCompletesCrypto2HandshakeAndEncryptsFrames|RelayPeerClientTests/testStrictRelayPeerClientRejectsPlainRegisteredWithoutV1Fallback|RelayPeerClientTests/testStrictRelayPeerClientRejectsOffCurvePeerKey|RelayPeerClientTests/testStrictRelayPeerClientFailsClosedOnWrongClientConfirmation|RelayPeerClientTests/testStrictRelayPeerClientClosesImmediatelyOnFrameAuthenticationFailure'
+			run swift test --filter 'RelayHandshakeTests/testParsesExactCryptoV2Handshake|RelayHandshakeTests/testRejectsAnyCryptoVersionOtherThanTwo|RelayHandshakeTests/testRejectsNonCanonicalEphemeralKeyShapeWithoutCheckingCurve|RelayHandshakeTests/testBuildsExactCryptoV2ControlLines|RelayMatcherTests/testMatchedRegistrationsPreserveCryptoV2Metadata|RelayServerSocketTests/testStrictServerRejectsLegacyAndIncompleteCryptoRegistrations|RelayServerSocketTests/testLegacyServerRejectsCryptoV2Registration|RelayServerSocketTests/testLegacyServerConnectsTwoPeersWithLegacyReadyLine|RelayServerSocketTests/testStrictServerSendsExactRegisteredAndPeerReadyFields|RelayServerSocketTests/testStrictServerForwardsConfirmationAndFrameBytesOpaquely'
+		run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreSignsTransportBoundV2AuthChallengeWithoutV1Downgrade|RuntimeIdentityKeyStoreTests/testKeychainStoreSignsTransportBoundV2AuthChallenge|RuntimeIdentityKeyStoreTests/testRuntimeIdentitySignersRejectNoncanonicalTransportBindings'
+		run swift test --filter 'LocalRuntimeMessageRouterTests/testTransportBoundHelloAndAuthResponseUseV2SignaturesAndDispatchCommands|LocalRuntimeMessageRouterTests/testTransportBoundHelloRejectsMissingMalformedAndMismatchedBindingsBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsReplayedOldBindingAfterSinkBindingChanges|LocalRuntimeMessageRouterTests/testUnboundSinkRejectsUnexpectedTransportBindingBeforeChallengeAndCommands'
 		run swift test --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|OllamaBackendTests/testUnloadModelPostsEmptyChatWithKeepAliveZero|OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID|LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel|AggregatingLlmBackendResidencyTests/testRepeatedSameModelDoesNotUnloadBetweenChats|AggregatingLlmBackendResidencyTests/testIdlePolicyUnloadsActiveModelAfterDelay|AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion|AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama|AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider|AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing'
 	run swift test --filter 'LMStudioBackendTests/testChatWithImageAttachmentUsesNativeImageInput|LMStudioBackendTests/testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects'
 	run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreLoadOrCreatePersistsRuntimeIdentity|RuntimeIdentityKeyStoreTests/testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity|RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge'
@@ -4009,7 +4798,7 @@ run swift test --filter PairingCoordinatorTests
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial|LocalRuntimeMessageRouterTests/testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider'
-run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault|LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeDataSummaryFromInjectedStores|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeHistoryTranscriptPreviewAcrossOwners|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesPreservesChatSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsPreservesMemorySummaryError'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingRequiresRemoteQRCodeRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsBlankDraftIDBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsBlankDraftIDBeforeStoreMutation'
@@ -4029,7 +4818,7 @@ echo "Covered Settings compact addendum: Android Settings trusted-runtime panel 
 echo "Covered QR lease addendum: near-expiry remote relay lease QR renewal."
 echo "Covered macOS stale GUI relay QR renewal addendum: ready stale or expired GUI-allocated relay leases are replaced with fresh relay id, secret, expiry, and nonce before QR generation."
 echo "Covered remote QR lease monotonicity addendum: macOS runtime host accepts same-relay bootstrap lease renewal only when expiry advances and nonce changes."
-echo "Covered relay probe addendum: non-consuming relay readiness probe and Android route-level relay preflight."
+echo "Covered relay probe addendum: non-consuming relay readiness probe is loopback-only by default, exposed relays close it unless diagnostic legacy opt-in is explicit, and Android route-level relay preflight treats a closed probe as unsupported before attempting authenticated relay connection."
 echo "Covered Android relay reachability probe input guard addendum: physical relay probe rejects URL-shaped hosts, invalid ports, and malformed relay IDs before ADB access."
 echo "Covered Android relay reachability probe route-material redaction addendum: physical relay probe JSON, stdout, and stderr omit raw relay IDs while preserving seeded redaction-test route-ready evidence."
 echo "Covered Android relay reachability probe self-test proof-boundary addendum: fake-ADB relay probe artifacts mark fake_adb_redaction_self_test, keep observed adb serial absent, and keep live Android relay/route proof false."
@@ -4037,17 +4826,21 @@ echo "Covered relay probe/physical wrapper production proof-boundary addendum: A
 echo "Covered Android pairing deeplink am-start route-material redaction addendum: physical deeplink smoke stores and prints sanitized am start output without raw pairing or relay route material."
 echo "Covered Android pairing deeplink am-start sanitizer self-test proof-boundary addendum: hidden no-device sanitizer self-test output carries an in-band not-phone-pairing-proof marker."
 echo "Covered Android pairing failure artifact redaction addendum: physical deeplink smoke sanitizes failed activity/logcat artifacts and filtered stderr tails while preserving structured failure diagnostics."
-echo "Covered relay bind addendum: tokenless AetherLinkRelay binds are loopback-only and wildcard/non-loopback binds require an allocation token."
-echo "Covered relay allocation-token addendum: token-required AetherLinkRelay allocation rejects missing or wrong tokens, keeps unauthorized and preflight routes out of the allocation store, and persists only authorized lease metadata."
+echo "Covered relay bind addendum: tokenless AetherLinkRelay binds are loopback-only; wildcard/non-loopback binds require an allocation token and durable allocation storage."
+echo "Covered relay allocation-token addendum: token-required AetherLinkRelay preflight rejects missing or wrong bearer tokens without creating route material; normal allocation additionally requires runtime-key proof."
+echo "Covered runtime-key-bound relay allocation addendum: allocation-required relays accept canonical crypto=2 runtime-p256-v1 identities, verify same-socket allocation challenge proofs, return exact secret-free rt2 lease metadata, and leave the runtime host to own the 32-byte QR and traffic secret."
+echo "Covered runtime-role admission addendum: strict relay runtime registration signs the current lease, nonce, generation, session nonce, and ephemeral key before the matcher can accept or replace a runtime role."
+echo "Covered pairing trust-order addendum: macOS revalidates the stable transport binding before persisting a newly trusted client, and a binding change leaves the trust store empty."
 echo "Covered relay allocation request unexpected metadata rejection addendum: AETHERLINK_RELAY allocate rejects unknown key=value request metadata before treating it as relay secret material."
-echo "Covered relay opaque-id addendum: AetherLinkRelay allocation returns opaque stable relay IDs instead of raw route tokens, and keeps raw route tokens out of allocation stores and relay logs."
-echo "Covered relay allocation opacity addendum: allocation responses, persisted stores, and relay logs use opaque stable relay IDs without exposing raw route tokens."
+echo "Covered relay opaque-id addendum: AetherLinkRelay derives rt2 relay IDs from the route token and runtime-key fingerprint, while keeping raw route tokens out of allocation stores and relay logs."
+echo "Covered relay allocation opacity addendum: allocation responses, schema-v2 persisted bindings, and relay logs use opaque key-bound relay IDs without exposing raw route tokens."
 echo "Covered Android private-overlay QR missing-scope diagnostic addendum: private, CGNAT, and ULA relay hosts without relay_scope=private_overlay map to latest-QR route recovery instead of generic invalid QR."
-echo "Covered relay preflight opaque-id echo rejection addendum: relay_allocation_preflight rejects allocation responses that echo the requested route token as relay_id."
-echo "Covered relay preflight output redaction addendum: relay_allocation_preflight success JSON omits requested route tokens, relay secrets, raw relay IDs, raw relay expiries, and raw relay nonces while keeping safe presence booleans."
-echo "Covered relay allocation renewal addendum: AetherLinkRelay allocation registry ignores non-advancing renewals for stable relay IDs and accepts only advancing renewals with fresh nonces."
-echo "Covered relay allocation store-load addendum: AetherLinkRelay allocation registry deduplicates persisted relay tickets and skips malformed ticket entries on load."
-echo "Covered relay allocation lease lifecycle addendum: AetherLinkRelay uses a short default allocation TTL, persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load."
+echo "Covered relay preflight route-material rejection addendum: relay_allocation_preflight accepts only preflight, crypto_version, and allocation_auth fields and rejects relay IDs, expiries, nonces, secrets, and other metadata."
+echo "Covered relay preflight output redaction addendum: relay_allocation_preflight success JSON records the allocation capability contract without returning requested route tokens or allocated route material; preflight itself is not runtime-signed."
+echo "Covered relay allocation renewal addendum: AetherLinkRelay renews an rt2 binding only for the same runtime key with an advancing generation compare-and-swap."
+echo "Covered relay per-connection session key addendum: strict allocated relay peers exchange independent 128-bit session nonces, Android and macOS bind both nonces into shared frame keys, reconnects cannot reuse prior session ciphertext keys, encrypted peers reject legacy ready lines, and plaintext legacy peers reject nonce-bearing ready lines."
+echo "Covered relay allocation store-load addendum: AetherLinkRelay schema-v2 persistence fails closed on legacy, corrupt, duplicate, or unknown-version stores instead of treating them as empty."
+echo "Covered relay allocation lease lifecycle addendum: AetherLinkRelay uses a short default allocation TTL, persists public identity and lease metadata without secrets, and retains expired bindings as ownership tombstones."
 echo "Covered relay wrapper dry-run allocation-token redaction addendum: run_allocation_relay --dry-run reports token-required mode without printing raw allocation-token values or argv-form token flags."
 echo "Covered relay wrapper dry-run summary proof-boundary addendum: run_allocation_relay --dry-run --summary-json records no relay process, production relay, trusted-device, or optical QR proof while keeping allocation tokens redacted."
 echo "Covered relay wrapper allocation-token argv redaction addendum: run_allocation_relay, run_different_network_dev_runtime, and no_adb_external_relay_pairing_smoke pass allocation tokens through environment variables so child process argv omits --allocation-token and the raw token while token-required allocation still works."
@@ -4056,12 +4849,11 @@ echo "Covered no-ADB proof-boundary summary addendum: no_adb_external_relay_pair
 echo "Covered no-ADB external-relay URL host input redaction addendum: no_adb_external_relay_pairing_smoke rejects URL-shaped relay-host input without echoing provider/backend/route-token/relay-secret material."
 echo "Covered no-ADB external-network proof-boundary addendum: no_adb_external_relay_pairing_smoke keeps operator-confirmed external-network relay proof, full-run trusted-device proof, and production relay proof false for emit-only and unverified QR summaries."
 echo "Covered Swift relay allocation unexpected metadata rejection addendum: RelayAllocation.parseResponseLine rejects allocation responses with extra backend, provider, route-token, allocation-token, or relay-secret metadata fields."
-echo "Covered relay allocation store unexpected metadata rejection addendum: RelayAllocationRegistry skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields."
-echo "Covered relay preflight failure-output redaction addendum: relay_allocation_preflight redacts malformed allocation response bodies from stderr while preserving a safe failure reason."
+echo "Covered relay allocation store unexpected metadata rejection addendum: RelayAllocationRegistry fails closed when schema-v2 bindings contain backend, provider, route-token, allocation-token, relay-secret, challenge, or signature metadata."
+echo "Covered relay preflight failure-output redaction addendum: relay_allocation_preflight redacts malformed preflight response bodies from stderr while preserving a safe failure reason."
 echo "Covered different-network relay endpoint input redaction addendum: run_different_network_dev_runtime rejects URL-shaped relay endpoints and malformed endpoint-list values without echoing provider, backend, route-token, or relay-secret material in stderr or summary JSON."
-echo "Covered relay preflight unexpected-field rejection addendum: relay_allocation_preflight rejects allocation responses with extra metadata fields without echoing those fields or values."
-echo "Covered relay preflight response value canonicality addendum: relay_allocation_preflight rejects whitespace-mutated relay_id, relay_secret, relay_nonce, URL-shaped relay_id, and invalid relay_expires_at values without echoing response values."
-echo "Covered relay preflight expiry type strictness addendum: relay_allocation_preflight rejects numeric-string and boolean relay_expires_at values without coercion or response-value echoing."
+echo "Covered relay preflight unexpected-field rejection addendum: relay_allocation_preflight rejects preflight responses with extra metadata fields without echoing those fields or values."
+echo "Covered relay preflight response canonicality addendum: relay_allocation_preflight requires boolean preflight=true, integer crypto_version=2, and allocation_auth=runtime-p256-v1 without coercion."
 echo "Covered relay preflight host input guard addendum: relay_allocation_preflight rejects URL-shaped relay hosts before network access without echoing host, provider, backend, or route-token material."
 echo "Covered QR production bootstrap addendum: QR production relay bootstrap verifier requires runtime public key, route token, and complete relay route material."
 echo "Covered Android product QR bootstrap addendum: normal QR scans require runtime public key, route token, and complete remote route material; diagnostic identity-only fallback must opt out explicitly."
@@ -4080,6 +4872,11 @@ echo "Covered rejected pairing addendum: Android rejected relay QR pairing clear
 echo "Covered accepted pairing direct-endpoint cleanup addendum: Android accepted pairing drops direct endpoint material before trusted runtime storage."
 echo "Covered stale relay refresh addendum: Android authenticated route.refresh keeps the current relay route and schedules retry when refreshed relay material reuses the active nonce or lease."
 echo "Covered Android route.refresh timing policy addendum: Android route.refresh renewal and retry delays stay inside the active remote-route lease window."
+echo "Covered Android mixed remote-route lease boundary addendum: urgent renewal runs immediately instead of at or after expiry, while mixed P2P and relay helpers select the earliest active and retryable leases independently."
+echo "Covered Android near-expiry route-refresh immediate dispatch addendum: authenticated relay and P2P sessions with only the minimum lease window each send exactly one route.refresh without advancing the coroutine scheduler clock."
+echo "Covered Android mixed-route lease retry fallback addendum: an active P2P session refreshes immediately for an urgent relay lease, then retries a transient failure from the alternate retryable P2P lease without dialing relay or dropping connection state."
+echo "Covered Android mixed-route relay-fallback retry addendum: failed P2P connection falls back to relay, refreshes immediately for the urgent P2P lease, then retries a transient failure from the alternate retryable relay lease without redialing routes or dropping connection state."
+echo "Covered Android non-retryable route-refresh contract addendum: retryable=false stops automatic route.refresh retries while preserving the authenticated connection, trusted route material, and latest-QR recovery guidance."
 echo "Covered Android route.refresh scalar route-material decode addendum: Android RouteRefreshPayload rejects schema-invalid scalar relay and P2P route material during JSON DTO decode, including noncanonical opaque route values, invalid relay ports, nonpositive expiries, unsupported relay_scope values, unsupported p2p_class values, oversized encrypted bodies, and unsupported p2p_protocol_version values before trusted route storage, route-refresh retry handling, live relay/P2P behavior, direct Android backend access, or physical Android proof exists."
 echo "Covered Android route.refresh complete route-material decode addendum: Android RouteRefreshPayload accepts empty route.refresh responses and complete relay or P2P route-material families, but rejects identity-only, missing-runtime-identity, partial relay, relay_scope-only, partial P2P, and missing-p2p_class payloads during JSON DTO decode before trusted route storage, route-refresh retry handling, live relay/P2P behavior, direct Android backend access, or physical Android proof exists."
 echo "Covered Android authenticated relay route.refresh scheduling/retry addendum: authenticated relay sessions send route.refresh before lease expiry and retry retryable route.refresh errors inside the active lease."
@@ -4141,6 +4938,7 @@ echo "Covered Android app P2P encrypted body 2048-byte route material addendum: 
 echo "Covered Android P2P connector dispatch addendum: identity-only trusted targets with prepared P2P material use RuntimePeerToPeerConnector without direct TCP fallback."
 echo "Covered Android remote route direct transport boundary addendum: prepared P2P or relay routes never fall through to direct TCP when the dedicated connector is unavailable."
 echo "Covered P2P QR planning addendum: Android QR-carried opaque P2P rendezvous records persist as pending route material and plan before relay."
+echo "Covered Android pending dual-route QR authority addendum: matching pending QR P2P and relay material plans in order, stays pinned to the QR runtime identity, does not reuse route_token as route material, and supersedes saved trusted routes."
 echo "Covered P2P trusted-runtime restore addendum: Android trusted P2P rendezvous material persists after accepted pairing and restores as a prepared remote route without direct endpoint fallback."
 echo "Covered remote route mismatch addendum: Android remote route identity mismatch QR recovery."
 echo "Covered P2P failure recovery addendum: Android failed P2P route without saved relay fallback scans a fresh QR with relay or private overlay details."
@@ -4207,6 +5005,7 @@ echo "Covered macOS RelayPeerClient ciphertext addendum: macOS RelayPeerClient s
 echo "Covered Android relay TCP ciphertext addendum: Android RuntimeRelayTcpClient encrypts sent frame bodies and decrypts nonce-bound runtime responses on a real socket channel."
 echo "Covered runtime pairing relay smoke addendum: RuntimeDevServer relay rejected pairing request leaves device untrusted before accepted pairing."
 echo "Covered RuntimeDevServer accepted pairing runtime identity confirmation addendum: accepted relay pairing.result must echo the QR-pinned runtime id, runtime_public_key, and runtime_key_fingerprint before the smoke treats pairing as trusted."
+echo "Covered initial pairing mutual P-256 proof addendum: Android signs the QR-pinned pairing request, the runtime verifies client key possession before trust, accepted pairing results are request-digest and transport-bound runtime signatures, and both sides persist trust only after verification."
 echo "Covered runtime auth relay smoke addendum: RuntimeDevServer relay unauthenticated runtime command and untrusted hello rejection."
 echo "Covered RuntimeDevServer relay trusted hello runtime proof addendum: file-backed RuntimeDevServer identity signs relay auth.challenge and the smoke verifies runtime_signature against the QR-pinned runtime_public_key."
 echo "Covered untrusted-client rejection addendum: LocalRuntimeMessageRouter rejects unknown-device hello with non-retryable pairing_required while RuntimeDevServer relay smoke rejects unauthenticated runtime commands and untrusted hello."
@@ -4544,5 +5343,13 @@ echo "Covered Android memory summary draft response bounds decode addendum: Andr
 echo "Covered Android memory.summary.drafts.list closed-payload app-path addendum: RuntimeClientViewModel rejects unknown top-level memory.summary.drafts.list response metadata, unknown per-draft metadata, unknown draft session metadata, and unknown draft source-pointer metadata before memory review state publication or device storage mutation, then accepts a canonical retry before source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered Android memory summary draft decision result closed-payload app-path addendum: RuntimeClientViewModel rejects unknown memory.summary.draft.approve result metadata and unknown memory.summary.draft.dismiss result metadata before runtime memory mutation, memory review state mutation, or device storage mutation, preserves pending draft decisions for canonical retry, and keeps backend_url and workspace_id canaries out of state/storage before source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered Android memory CRUD result closed-payload app-path addendum: RuntimeClientViewModel rejects unknown memory.upsert result metadata and unknown memory.delete result metadata before runtime memory state mutation or device storage mutation, then accepts canonical retries while keeping backend_url and workspace_id canaries out of state/storage before source approval, citation, trusted-source review, permission, or audit semantics exist."
+echo "Covered strict allocated relay crypto v2 addendum: Android and macOS perform ephemeral P-256 ECDH, mix the shared secret with the QR relay secret through HKDF-SHA256 over a canonical per-connection transcript, mutually confirm the derived binding before encrypted frames, bind paired-identity v2 authentication to it, rotate directional AES-GCM epoch keys every 65,536 frames, reject ordered replay and authentication failures without advancing receive state, and fail closed before Int64 frame-counter exhaustion. Local direct and legacy plaintext diagnostics remain unchanged. This is not post-compromise security, a complete unordered replay window, production end-to-end deployment, or physical-device proof."
+echo "Covered pair-scoped relay room authorization addendum: shared Swift and Android runtime-client-p256-v2 transcripts bind current and next relay ids, schema-v4 atomically rotates a consumed bootstrap allocation into a pair-derived room with a persistent tombstone, paired client sockets authenticate before matcher admission, active rooms reject duplicate pairs until release, stale waiting generations are closed, and Android fails closed on missing or mismatched admission challenges. This no-device foundation does not provide allocation-channel TLS/server authentication, immediate active-session revocation, production P2P/NAT traversal, or physical Android proof."
+echo "Covered relay allocation cross-process ownership addendum: durable schema-v4 registry operations bind an established marker token to the store, reload under transaction byte-range 0 before compare-and-swap, persist through descriptor-relative mode-600 fsync-and-rename, and hold owner byte-range 1 for the relay lifetime so a second process cannot split matcher or active-room state. Timed monotonic lock retries prevent unbounded startup waits, inode aliases reuse one process lock descriptor, consumed bootstrap leases cannot be recreated by stale writers, interrupted token-matched initialization recovers, and same-instance concurrent run attempts fail without releasing the live listener. Missing/replaced/hard-linked state fails closed, simultaneous first start converges to one owner, process exit releases ownership, and a successor reopens the same token-bound store. This does not provide distributed multi-host consensus, allocation-channel TLS/server authentication, or physical Android proof."
+echo "Covered relay abuse-control foundation addendum: accepted sockets hold one global permit across control handling, waiting-peer storage, and active bridging; disconnected waiters reclaim permits; every control record uses one absolute monotonic read deadline while preserving the 4096-byte limit; exposed probe is disabled by default; exposed legacy relay mode fails closed; Android continues to authenticated relay connection when the probe oracle is unsupported. This is no-device development-relay hardening, not allocation rate limiting, per-IP quotas, production TLS, public-relay deployment, or physical Android proof."
+echo "Covered relay source-aware allocation control addendum: only the exact cheap strict preflight envelope selects preflight; malformed, duplicate, mutation-like allocation and renewal attempts consume the stricter mutation bucket before full parsing. Separate monotonic token buckets use canonical accepted IPv4/IPv6 source and IPv6 scope. A shared unknown-source bucket, shared overflow bucket without capacity-reset bypass, periodically counted idle sweeps, full-refill-before-retention validation, stable source-free reason counters, and CLI defaults 120/30 and 30/10 bound at most 4096 tracked buckets without per-request full-map scans. Peer admission, waiting rooms, active bridges, probes, and encrypted forwarding do not consume these rate buckets; separate source peer quotas govern accepted-connection and waiting admission. This is no-device development-relay control-plane hardening, not production capacity validation, public-relay deployment, live-network proof, or physical Android proof."
+echo "Covered relay source peer quota addendum: canonical accepted IPv4/IPv6 source identity now bounds concurrent accepted sockets at 64 per source and unmatched waiting peers at 32 per source by default, with no disable value and 2:1 counterpart headroom validation. Normal admission keeps one global and one per-source slot available before the first waiter, and every waiting insertion atomically rechecks both connection-plus-reservation bounds. Global/source reserve provenance remains attached to each candidate, so per-source reserve can discharge only a waiter owned by that source while global-only reserve may match across sources. A socket admitted from reserve is counterpart-only, cannot run probe/allocation or become another waiter, and is confirmed only by an immediate permitted opposite-role match or authenticated same-source waiting replacement. Nonmatching and cross-source replacement candidates close with source-free counters without displacing the original waiter, while matcher-atomic accounting releases counts on match, replacement, disconnect, generation invalidation, and close. Active bridges remain counted against source connection quotas, while established encrypted frame forwarding is not throttled or evicted. Stable source-free reasons and saturating metrics expose only aggregate counts. Shared carrier-NAT/VPN users share quotas, so these are configurable development-relay guardrails rather than per-user isolation or production capacity proof. This is no-device synthetic and loopback evidence, not public-relay, live-network, or physical Android proof."
+echo "Covered relay bounded waiting and authenticated identity fairness addendum: unmatched rooms retain one monotonic first-registration deadline across same-role replacements, cap it by allocation lease expiry, and close after 60 seconds by default. Runtime keys and paired-client keys that complete cryptographic relay admission may hold at most 4 unmatched waits per role-separated identity across source addresses; unauthenticated bootstrap clients remain source-quota-only. Timeout, match, replacement, disconnect, invalidation, and close release exact source and identity counts. Stable source-free timeout and identity-quota reasons plus saturating metrics expose aggregate counts only. Active bridges cancel waiting timers and remain unthrottled. This is configurable no-device development-relay fairness evidence, not per-user isolation, public-network capacity proof, production identity service, or physical Android proof."
+echo "Covered production relay security design addendum: evidence-pinned portfolio recommends TLS 1.3 plus delegated signed lease capabilities, peer-verifiable identity KEX, and a monotonic pair-epoch recovery state machine with deny-only revocation and signed status reconciliation. This validates design artifacts only; it does not claim implementation, production relay deployment, public-network behavior, or physical Android proof."
 echo "Physical external-relay QA gate: script/check_physical_external_relay_pairing.sh --relay-host <public-or-vpn-host> writes build/qa/android-external-relay-pairing.json and must be run with a real attached phone on the target network."
 echo "Not covered by this no-device gate: physical install, camera QR scan, real device haptics, physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, launcher/Dock screenshots, physical/live-backend streamed chat/cancel or chat-complete, and real different-network runtime connectivity."

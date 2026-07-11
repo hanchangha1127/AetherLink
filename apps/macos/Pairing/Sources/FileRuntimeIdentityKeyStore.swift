@@ -1,3 +1,4 @@
+import BridgeProtocol
 import CryptoKit
 import Foundation
 
@@ -18,7 +19,7 @@ public enum FileRuntimeIdentityKeyStoreError: Error, LocalizedError, Equatable, 
     }
 }
 
-public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchecked Sendable {
+public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, RelayIdentityAuthorizationSigning, InitialPairingRuntimeResultSigning, PairedRelayAllocationRuntimeSigning, @unchecked Sendable {
     private struct StoredIdentityKey: Codable {
         var version: Int
         var privateKeyBase64: String
@@ -57,12 +58,101 @@ public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchec
         return RuntimeIdentityKeyStore.identityKey(from: privateKey)
     }
 
-    public func signAuthChallenge(deviceID: String, nonce: String) throws -> RuntimeChallengeSignature {
+    public func relayRuntimeIdentity() throws -> RelayRuntimeIdentity {
         let privateKey = try loadOrCreatePrivateKey()
-        let messageData = RuntimeIdentityKeyStore.authChallengeMessageData(deviceID: deviceID, nonce: nonce)
+        return try relayRuntimeIdentity(from: privateKey)
+    }
+
+    public func signRelayAllocationChallenge(
+        _ challenge: RelayAllocationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        let privateKey = try loadOrCreatePrivateKey()
+        let identity = try relayRuntimeIdentity(from: privateKey)
+        guard challenge.runtimeKeyFingerprint == identity.fingerprint else {
+            throw RelayIdentityAuthorizationError.invalidChallenge
+        }
+        let signature = try privateKey.signature(
+            for: SHA256.hash(data: challenge.signedMessageData())
+        )
+        return try RelayIdentityAuthorizationProof(
+            runtimeIdentity: identity,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+
+    public func signRelayRuntimeRegistrationChallenge(
+        _ challenge: RelayRuntimeRegistrationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        let privateKey = try loadOrCreatePrivateKey()
+        let identity = try relayRuntimeIdentity(from: privateKey)
+        guard challenge.runtimeKeyFingerprint == identity.fingerprint else {
+            throw RelayIdentityAuthorizationError.invalidChallenge
+        }
+        let signature = try privateKey.signature(
+            for: SHA256.hash(data: challenge.signedMessageData())
+        )
+        return try RelayIdentityAuthorizationProof(
+            runtimeIdentity: identity,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+
+    public func signPairedRelayAllocationAuthorization(
+        _ challenge: PairedRelayAllocationAuthorizationChallenge
+    ) throws -> PairedRelayAllocationRuntimeProof {
+        let privateKey = try loadOrCreatePrivateKey()
+        let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
+        guard challenge.runtimeKeyFingerprint == identity.fingerprint else {
+            throw PairedRelayAllocationAuthorizationError.invalidFingerprint(
+                "runtime_key_fingerprint"
+            )
+        }
+        let proof = try PairedRelayAllocationRuntimeProof.sign(
+            challenge: challenge,
+            using: privateKey
+        )
+        guard proof.verify(challenge: challenge) else {
+            throw PairedRelayAllocationAuthorizationError.invalidSignature(
+                "runtime_signature"
+            )
+        }
+        return proof
+    }
+
+    public func signAuthChallenge(
+        deviceID: String,
+        nonce: String,
+        transportBinding: String? = nil
+    ) throws -> RuntimeChallengeSignature {
+        guard transportBinding.map(RuntimeIdentityKeyStore.isCanonicalTransportBinding) ?? true else {
+            throw RuntimeIdentityKeyStoreError.invalidTransportBinding
+        }
+        let privateKey = try loadOrCreatePrivateKey()
+        let messageData = RuntimeIdentityKeyStore.authChallengeMessageData(
+            deviceID: deviceID,
+            nonce: nonce,
+            transportBinding: transportBinding
+        )
         let signature = try privateKey.signature(for: SHA256.hash(data: messageData))
         return RuntimeChallengeSignature(
             runtimeKeyFingerprint: RuntimeIdentityKeyStore.identityKey(from: privateKey).fingerprint,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+
+    public func signInitialPairingResult(
+        _ result: InitialPairingRuntimeResult
+    ) throws -> InitialPairingRuntimeResultProof {
+        try result.validate()
+        let privateKey = try loadOrCreatePrivateKey()
+        let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
+        guard result.runtimePublicKey == identity.publicKeyBase64,
+              result.runtimeKeyFingerprint == identity.fingerprint else {
+            throw InitialPairingProofError.invalidPublicKey("runtime_public_key")
+        }
+        let signature = try privateKey.signature(for: SHA256.hash(data: result.signedMessageData()))
+        return try InitialPairingRuntimeResultProof(
+            result: result,
             signatureBase64: signature.derRepresentation.base64EncodedString()
         )
     }
@@ -78,6 +168,16 @@ public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchec
         let privateKey = P256.Signing.PrivateKey()
         try store(privateKey)
         return privateKey
+    }
+
+    private func relayRuntimeIdentity(
+        from privateKey: P256.Signing.PrivateKey
+    ) throws -> RelayRuntimeIdentity {
+        let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
+        return try RelayRuntimeIdentity(
+            publicKeyBase64: identity.publicKeyBase64,
+            fingerprint: identity.fingerprint
+        )
     }
 
     private func loadPrivateKey() throws -> P256.Signing.PrivateKey? {

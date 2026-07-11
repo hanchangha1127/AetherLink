@@ -3,6 +3,11 @@ package com.localagentbridge.android.runtime
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.localagentbridge.android.core.pairing.DeviceIdentity
+import com.localagentbridge.android.core.pairing.INITIAL_PAIRING_PROOF_SCHEME
+import com.localagentbridge.android.core.pairing.InitialPairingAcceptedResult
+import com.localagentbridge.android.core.pairing.InitialPairingClientRequest
+import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorization
+import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizationProof
 import com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifier
 import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.protocol.AuthChallengePayload
@@ -18,15 +23,21 @@ import com.localagentbridge.android.core.protocol.ModelInfoPayload
 import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
+import com.localagentbridge.android.core.protocol.PAIRED_CLIENT_RELAY_REGISTRATION_CHALLENGE_PREFIX
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationProof
 import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultItemPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
+import com.localagentbridge.android.core.protocol.RelayAllocationAuthorizationPayload
+import com.localagentbridge.android.core.protocol.RelayAllocationChallengePayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.transport.DiscoveredRuntime
+import com.localagentbridge.android.core.transport.RelayClientRegistrationAuthorizer
 import com.localagentbridge.android.core.transport.RuntimeRelaySocketFactory
 import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeTransportClient
@@ -41,6 +52,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
@@ -58,17 +70,224 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
+import java.math.BigInteger
+import java.security.AlgorithmParameters
+import java.security.KeyFactory
+import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
+import java.security.spec.ECParameterSpec
+import java.security.spec.ECPoint
+import java.security.spec.ECPublicKeySpec
+import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
+import javax.crypto.KeyAgreement
+import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import java.security.interfaces.ECPublicKey
 import kotlin.concurrent.thread
+
+private const val TEST_RUNTIME_RELAY_SESSION_NONCE = "ffeeddccbbaa99887766554433221100"
+private val TEST_RELAY_SESSION_NONCE_PATTERN = Regex("^[0-9a-f]{32}$")
+private val TEST_RELAY_EPHEMERAL_KEY_PATTERN = Regex("^04[0-9a-f]{128}$")
+
+private data class TestRelayClientHandshake(
+    val sessionNonce: String,
+    val ephemeralKey: String,
+)
+
+private fun clientRelayHandshake(handshake: String, relayId: String): TestRelayClientHandshake {
+    val pattern = Regex(
+        "AETHERLINK_RELAY client ${Regex.escape(relayId)} crypto=2 " +
+            "session_nonce=([0-9a-f]{32}) ephemeral_key=(04[0-9a-f]{128})",
+    )
+    val match = requireNotNull(pattern.matchEntire(handshake)) { "Unexpected relay handshake" }
+    return TestRelayClientHandshake(
+        sessionNonce = match.groupValues[1],
+        ephemeralKey = match.groupValues[2],
+    ).also {
+        require(TEST_RELAY_SESSION_NONCE_PATTERN.matches(it.sessionNonce))
+        require(TEST_RELAY_EPHEMERAL_KEY_PATTERN.matches(it.ephemeralKey))
+    }
+}
+
+private data class TestRelaySession(
+    val bindingId: String,
+    val clientTrafficSecret: ByteArray,
+    val runtimeTrafficSecret: ByteArray,
+)
+
+private class TestRelaySessionKeyConfirmationV2(
+    secret: String,
+    relayId: String,
+    routeNonce: String,
+    clientSessionNonce: String,
+    runtimeSessionNonce: String,
+    clientEphemeralKey: String,
+    runtimeKeyPair: KeyPair,
+) {
+    val runtimeEphemeralKey = runtimeKeyPair.public.toX963Hex()
+    private val bindingDigest = MessageDigest.getInstance("SHA-256").digest(
+        (
+            "AetherLink relay session binding v2\ncrypto_version\n2\nrelay_id\n" +
+                relayId +
+                "\nroute_nonce\n" +
+                routeNonce +
+                "\nclient_session_nonce\n" +
+                clientSessionNonce +
+                "\nruntime_session_nonce\n" +
+                runtimeSessionNonce +
+                "\nclient_ephemeral_key\n" +
+                clientEphemeralKey +
+                "\nruntime_ephemeral_key\n" +
+                runtimeEphemeralKey
+            ).toByteArray(Charsets.UTF_8),
+    )
+    val bindingId = bindingDigest.toLowercaseHex()
+    private val sharedSecret = KeyAgreement.getInstance("ECDH").run {
+        init(runtimeKeyPair.private)
+        doPhase(clientEphemeralKey.toP256PublicKey(), true)
+        generateSecret()
+    }
+    private val ikm = sharedSecret + secret.toByteArray(Charsets.UTF_8)
+    private val confirmationKey = hkdfSha256(
+        ikm = ikm,
+        salt = bindingDigest,
+        info = "AetherLink relay confirmation v2".toByteArray(Charsets.UTF_8),
+    )
+    val clientTrafficSecret = hkdfSha256(
+        ikm = ikm,
+        salt = bindingDigest,
+        info = "AetherLink relay client traffic v2".toByteArray(Charsets.UTF_8),
+    )
+    val runtimeTrafficSecret = hkdfSha256(
+        ikm = ikm,
+        salt = bindingDigest,
+        info = "AetherLink relay runtime traffic v2".toByteArray(Charsets.UTF_8),
+    )
+
+    fun controlLine(role: String): String {
+        val message = (
+            "AetherLink relay key confirmation v2\nrole\n" +
+                role +
+                "\ntransport_binding\n" +
+                bindingId
+            ).toByteArray(Charsets.UTF_8)
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(confirmationKey, "HmacSHA256"))
+        return "AETHERLINK_RELAY confirm $role binding=$bindingId proof=${mac.doFinal(message).toLowercaseHex()}"
+    }
+}
+
+private fun completeRelayKeyConfirmation(
+    input: InputStream,
+    output: java.io.OutputStream,
+    relayId: String,
+    relaySecret: String,
+    routeNonce: String,
+    clientHandshake: TestRelayClientHandshake,
+): TestRelaySession {
+    val runtimeKeyPair = KeyPairGenerator.getInstance("EC").run {
+        initialize(ECGenParameterSpec("secp256r1"))
+        generateKeyPair()
+    }
+    val confirmation = TestRelaySessionKeyConfirmationV2(
+        secret = relaySecret,
+        relayId = relayId,
+        routeNonce = routeNonce,
+        clientSessionNonce = clientHandshake.sessionNonce,
+        runtimeSessionNonce = TEST_RUNTIME_RELAY_SESSION_NONCE,
+        clientEphemeralKey = clientHandshake.ephemeralKey,
+        runtimeKeyPair = runtimeKeyPair,
+    )
+    output.write(
+        (
+            "AETHERLINK_RELAY ready crypto=2 " +
+                "peer_session_nonce=$TEST_RUNTIME_RELAY_SESSION_NONCE " +
+                "peer_ephemeral_key=${confirmation.runtimeEphemeralKey}\n"
+            )
+            .toByteArray(Charsets.UTF_8),
+    )
+    output.flush()
+    require(input.readAsciiLine() == confirmation.controlLine("client")) {
+        "Relay client key confirmation failed"
+    }
+    output.write("${confirmation.controlLine("runtime")}\n".toByteArray(Charsets.UTF_8))
+    output.flush()
+    return TestRelaySession(
+        bindingId = confirmation.bindingId,
+        clientTrafficSecret = confirmation.clientTrafficSecret,
+        runtimeTrafficSecret = confirmation.runtimeTrafficSecret,
+    )
+}
+
+private fun ByteArray.toLowercaseHex(): String {
+    val digits = "0123456789abcdef"
+    val result = CharArray(size * 2)
+    forEachIndexed { index, byte ->
+        val value = byte.toInt() and 0xff
+        result[index * 2] = digits[value ushr 4]
+        result[index * 2 + 1] = digits[value and 0x0f]
+    }
+    return String(result)
+}
+
+private fun String.toHexBytes(): ByteArray {
+    require(length % 2 == 0 && all { it in '0'..'9' || it in 'a'..'f' })
+    return ByteArray(length / 2) { index ->
+        substring(index * 2, index * 2 + 2).toInt(16).toByte()
+    }
+}
+
+private fun java.security.PublicKey.toX963Hex(): String {
+    val publicKey = this as ECPublicKey
+    return (
+        byteArrayOf(0x04) +
+            publicKey.w.affineX.toUnsignedFixedBytes(32) +
+            publicKey.w.affineY.toUnsignedFixedBytes(32)
+        ).toLowercaseHex()
+}
+
+private fun BigInteger.toUnsignedFixedBytes(size: Int): ByteArray {
+    val encoded = toByteArray()
+    val unsigned = if (encoded.size == size + 1 && encoded.first() == 0.toByte()) {
+        encoded.copyOfRange(1, encoded.size)
+    } else {
+        encoded
+    }
+    require(unsigned.size <= size)
+    return ByteArray(size - unsigned.size) + unsigned
+}
+
+private fun String.toP256PublicKey(): java.security.PublicKey {
+    require(TEST_RELAY_EPHEMERAL_KEY_PATTERN.matches(this))
+    val bytes = toHexBytes()
+    val parameters = AlgorithmParameters.getInstance("EC").apply {
+        init(ECGenParameterSpec("secp256r1"))
+    }.getParameterSpec(ECParameterSpec::class.java)
+    val point = ECPoint(
+        BigInteger(1, bytes.copyOfRange(1, 33)),
+        BigInteger(1, bytes.copyOfRange(33, 65)),
+    )
+    return KeyFactory.getInstance("EC").generatePublic(ECPublicKeySpec(point, parameters))
+}
+
+private fun hkdfSha256(ikm: ByteArray, salt: ByteArray, info: ByteArray): ByteArray {
+    val extract = Mac.getInstance("HmacSHA256").run {
+        init(SecretKeySpec(salt, "HmacSHA256"))
+        doFinal(ikm)
+    }
+    return Mac.getInstance("HmacSHA256").run {
+        init(SecretKeySpec(extract, "HmacSHA256"))
+        doFinal(info + byteArrayOf(1))
+    }
+}
 
 class RuntimeClientViewModelRelayIntegrationTest {
     private val json = Json {
@@ -76,6 +295,9 @@ class RuntimeClientViewModelRelayIntegrationTest {
         explicitNulls = false
         encodeDefaults = true
     }
+    private val testClientKeyPair = KeyPairGenerator.getInstance("EC")
+        .apply { initialize(ECGenParameterSpec("secp256r1")) }
+        .generateKeyPair()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
@@ -91,8 +313,6 @@ class RuntimeClientViewModelRelayIntegrationTest {
             relaySecret = relaySecret,
             relayNonce = relayNonce,
             runtimeDeviceId = "runtime-real",
-            runtimePublicKey = "runtime-public-key",
-            runtimeFingerprint = "runtime-fingerprint",
         ).use { relay ->
             var viewModel: RuntimeClientViewModel? = null
             try {
@@ -120,8 +340,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
                     ),
                 )
                 val rawUri = "aetherlink://pair?v=1&n=nonce-real&c=246810" +
-                    "&rid=runtime-real&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
-                    "&rk=runtime-public-key&rt=route-real" +
+                    "&rid=runtime-real&rn=AetherLink%20Runtime&rf=${relay.runtimeFingerprint}" +
+                    "&rk=${relay.runtimePublicKey}&rt=route-real" +
                     "&rh=127.0.0.1&rp=${relay.port}&ri=$relayId&rs=$relaySecret" +
                     "&rx=4102444800000&rrn=$relayNonce&rsc=usb_reverse"
 
@@ -140,8 +360,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertEquals("246810", pairingPayload.pairingCode)
                 assertEquals("client-real", pairingPayload.deviceId)
                 assertEquals("AetherLink Test Client", pairingPayload.deviceName)
-                assertEquals("client-public-key-real", pairingPayload.publicKey)
-                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(Base64.getEncoder().encodeToString(testClientKeyPair.public.encoded), pairingPayload.publicKey)
+                assertEquals(32, clientRelayHandshake(relay.handshakeLine.get(1, TimeUnit.SECONDS), relayId).sessionNonce.length)
                 assertEquals("runtime-real", trusted.deviceId)
                 assertEquals("route-real", trusted.routeToken)
                 assertNull(trusted.host)
@@ -183,8 +403,6 @@ class RuntimeClientViewModelRelayIntegrationTest {
             relaySecret = relaySecret,
             relayNonce = relayNonce,
             runtimeDeviceId = "runtime-overlay",
-            runtimePublicKey = "runtime-overlay-public-key",
-            runtimeFingerprint = "runtime-overlay-fingerprint",
         ).use { relay ->
             var viewModel: RuntimeClientViewModel? = null
             try {
@@ -224,8 +442,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
                     ),
                 )
                 val rawUri = "aetherlink://pair?v=1&n=nonce-overlay&c=135790" +
-                    "&rid=runtime-overlay&rn=AetherLink%20Runtime&rf=runtime-overlay-fingerprint" +
-                    "&rk=runtime-overlay-public-key&rt=route-overlay" +
+                    "&rid=runtime-overlay&rn=AetherLink%20Runtime&rf=${relay.runtimeFingerprint}" +
+                    "&rk=${relay.runtimePublicKey}&rt=route-overlay" +
                     "&rh=100.64.1.10&rp=443&ri=$relayId&rs=$relaySecret" +
                     "&rx=4102444800000&rrn=$relayNonce&rsc=private_overlay"
 
@@ -243,7 +461,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertEquals("nonce-overlay", pairingPayload.pairingNonce)
                 assertEquals("135790", pairingPayload.pairingCode)
                 assertEquals("client-real", pairingPayload.deviceId)
-                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(32, clientRelayHandshake(relay.handshakeLine.get(1, TimeUnit.SECONDS), relayId).sessionNonce.length)
                 assertEquals("runtime-overlay", trusted.deviceId)
                 assertEquals("route-overlay", trusted.routeToken)
                 assertNull(trusted.host)
@@ -280,9 +498,20 @@ class RuntimeClientViewModelRelayIntegrationTest {
         val relaySecret = "trusted-overlay-relay-secret"
         val relayNonce = "trusted-overlay-relay-nonce"
         val refreshedRelayNonce = "trusted-overlay-relay-nonce-refreshed"
+        val currentRelayExpiresAt = 4_102_444_800_000L
         val refreshedRelayExpiresAt = 4102448400000L
-        val relayId = "trusted-overlay-relay-id"
+        val routeToken = "route-trusted-overlay"
+        val currentTicketGeneration = 7L
         val runtimeIdentity = testRuntimeIdentityMaterial()
+        val clientPublicKeyBase64 = Base64.getEncoder().encodeToString(testClientKeyPair.public.encoded)
+        val clientFingerprint = MessageDigest.getInstance("SHA-256")
+            .digest(Base64.getDecoder().decode(clientPublicKeyBase64))
+            .joinToString("") { "%02x".format(it) }
+        val relayId = PairedRelayAllocationAuthorizationProof.pairedRelayId(
+            routeToken = routeToken,
+            runtimeKeyFingerprint = runtimeIdentity.fingerprint,
+            clientKeyFingerprint = clientFingerprint,
+        )
         FakeAuthenticatedRelayRuntimeServer(
             json = json,
             relayId = relayId,
@@ -291,6 +520,10 @@ class RuntimeClientViewModelRelayIntegrationTest {
             refreshedRelayNonce = refreshedRelayNonce,
             refreshedRelayExpiresAtEpochMillis = refreshedRelayExpiresAt,
             runtimeIdentity = runtimeIdentity,
+            routeToken = routeToken,
+            currentRelayExpiresAtEpochMillis = currentRelayExpiresAt,
+            currentTicketGeneration = currentTicketGeneration,
+            clientPublicKeyBase64 = clientPublicKeyBase64,
         ).use { relay ->
             var viewModel: RuntimeClientViewModel? = null
             try {
@@ -300,16 +533,17 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         name = "AetherLink Runtime",
                         fingerprint = runtimeIdentity.fingerprint,
                         publicKeyBase64 = runtimeIdentity.publicKeyBase64,
-                        routeToken = "route-trusted-overlay",
+                        routeToken = routeToken,
                         host = null,
                         port = null,
                         relayHost = "100.64.2.20",
                         relayPort = 443,
                         relayId = relayId,
                         relaySecret = relaySecret,
-                        relayExpiresAtEpochMillis = 4102444800000L,
+                        relayExpiresAtEpochMillis = currentRelayExpiresAt,
                         relayNonce = relayNonce,
                         relayScope = "private_overlay",
+                        relayTicketGeneration = currentTicketGeneration,
                     ),
                 )
                 val localStore = FakeRuntimeLocalDataStore(
@@ -337,16 +571,28 @@ class RuntimeClientViewModelRelayIntegrationTest {
                             directConnectionAttempts += 1
                             error("Direct TCP must not be used for private-overlay trusted relay reconnect")
                         },
-                        relayConnector = RuntimeRelayTcpClient(socketFactory = socketFactory),
+                        relayConnector = RuntimeRelayTcpClient(
+                            socketFactory = socketFactory,
+                            clientRegistrationAuthorizer = RelayClientRegistrationAuthorizer { challenge ->
+                                val identity = testDeviceIdentity()
+                                PairedClientRelayRegistrationProof(
+                                    clientPublicKeyBase64 = identity.publicKeyBase64,
+                                    clientSignatureBase64 = identity
+                                        .signPairedClientRelayRegistrationAuthorization(challenge),
+                                )
+                            },
+                        ),
                         discovery = EmptyRuntimeDiscoverySource,
                         trustedRuntimeStore = trustedRuntimeStore,
                         deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
                         localDataStore = localStore,
                         lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
-                        authenticatedRouteRefreshEnabled = true,
-                        currentTimeMillis = { 1_000L },
+                        authenticatedRouteRefreshEnabled = false,
+                        currentTimeMillis = { currentRelayExpiresAt - 500L },
                     ),
                 )
+                viewModel.connectToTrustedRuntime()
+                runCurrent()
 
                 val helloEnvelope = awaitFuture(relay.helloRequest)
                 val helloPayload = json.decodeFromJsonElement(
@@ -359,6 +605,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                     authResponseEnvelope.payload,
                 )
                 val routeRefreshEnvelope = awaitFuture(relay.routeRefreshRequest)
+                val allocationAuthorizationEnvelope = awaitFuture(relay.allocationAuthorizationRequest)
                 val healthEnvelope = awaitFuture(relay.healthRequest)
                 val refreshedTrusted = awaitFuture(trustedRuntimeStore.trustedRuntimeWritten)
                 val connectedState = awaitActiveRouteKind(viewModel, RuntimeActiveRouteKind.Relay)
@@ -394,7 +641,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 val chatSendPayloadText = chatSendEnvelope.payload.toString()
 
                 assertEquals(0, directConnectionAttempts)
-                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(32, clientRelayHandshake(relay.handshakeLine.get(1, TimeUnit.SECONDS), relayId).sessionNonce.length)
                 assertEquals(MessageType.Hello, helloEnvelope.type)
                 assertEquals("client-real", helloPayload.deviceId)
                 assertEquals("AetherLink Test Client", helloPayload.deviceName)
@@ -403,6 +650,11 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertEquals("trusted-auth-nonce", authResponsePayload.nonce)
                 assertTrue(!authResponsePayload.signature.isNullOrBlank())
                 assertEquals(MessageType.RouteRefresh, routeRefreshEnvelope.type)
+                assertEquals(
+                    MessageType.RelayAllocationAuthorization,
+                    allocationAuthorizationEnvelope.type,
+                )
+                assertEquals(routeRefreshEnvelope.requestId, allocationAuthorizationEnvelope.requestId)
                 assertEquals(MessageType.RuntimeHealth, healthEnvelope.type)
                 assertEquals(MessageType.IndexDocumentsList, indexDocumentsEnvelope.type)
                 assertEquals(100, indexDocumentsRequest.limit)
@@ -456,12 +708,18 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertEquals(refreshedRelayExpiresAt, refreshedTrusted.relayExpiresAtEpochMillis)
                 assertEquals(refreshedRelayNonce, refreshedTrusted.relayNonce)
                 assertEquals("private_overlay", refreshedTrusted.relayScope)
+                assertEquals(currentTicketGeneration + 1L, refreshedTrusted.relayTicketGeneration)
                 assertEquals("100.64.2.20", trustedRuntimeStore.trusted?.relayHost)
                 assertEquals(refreshedRelayExpiresAt, trustedRuntimeStore.trusted?.relayExpiresAtEpochMillis)
                 assertEquals(refreshedRelayNonce, trustedRuntimeStore.trusted?.relayNonce)
                 assertEquals("private_overlay", trustedRuntimeStore.trusted?.relayScope)
+                assertEquals(currentTicketGeneration + 1L, trustedRuntimeStore.trusted?.relayTicketGeneration)
                 assertEquals(refreshedRelayExpiresAt, viewModel.state.value.trustedRuntime?.relayExpiresAtEpochMillis)
                 assertEquals(refreshedRelayNonce, viewModel.state.value.trustedRuntime?.relayNonce)
+                assertEquals(
+                    currentTicketGeneration + 1L,
+                    viewModel.state.value.trustedRuntime?.relayTicketGeneration,
+                )
                 assertNull(relay.closedWithoutServerError())
             } finally {
                 viewModel?.stopForTest()
@@ -549,7 +807,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 val errorState = awaitRuntimeError(viewModel, "runtime_authentication_failed")
 
                 assertEquals(0, directConnectionAttempts)
-                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(32, clientRelayHandshake(relay.handshakeLine.get(1, TimeUnit.SECONDS), relayId).sessionNonce.length)
                 assertEquals(MessageType.Hello, helloEnvelope.type)
                 assertNull(
                     "Android must not send auth.response or runtime.health after invalid runtime proof",
@@ -645,7 +903,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 val errorState = awaitRuntimeError(viewModel, "runtime_authentication_failed")
 
                 assertEquals(0, directConnectionAttempts)
-                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(32, clientRelayHandshake(relay.handshakeLine.get(1, TimeUnit.SECONDS), relayId).sessionNonce.length)
                 assertEquals(MessageType.Hello, helloEnvelope.type)
                 assertNull(
                     "Android must not send auth.response or runtime.health after runtime fingerprint mismatch",
@@ -666,10 +924,10 @@ class RuntimeClientViewModelRelayIntegrationTest {
     private fun <T> TestScope.awaitFuture(future: CompletableFuture<T>): T {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (!future.isDone && System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return future.get(1, TimeUnit.SECONDS)
     }
 
@@ -680,12 +938,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     ): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (state.activeRouteKind == expected) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -696,12 +954,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     ): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (state.runtimeStatus == expected) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -709,12 +967,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     private fun TestScope.awaitDocumentCatalog(viewModel: RuntimeClientViewModel): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (!state.isLoadingDocumentCatalog && state.documentCatalog.documents.isNotEmpty()) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -722,12 +980,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     private fun TestScope.awaitDocumentSearchResult(viewModel: RuntimeClientViewModel): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (!state.isSearchingDocuments && state.documentSearchResults.isNotEmpty()) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -738,12 +996,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     ): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (!state.isLoadingModels && state.selectedModelId == expectedModelId) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -754,12 +1012,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
     ): RuntimeUiState {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
         while (System.nanoTime() < deadline) {
-            advanceUntilIdle()
+            runCurrent()
             val state = viewModel.state.value
             if (state.error?.code == expected) return state
             Thread.sleep(10)
         }
-        advanceUntilIdle()
+        runCurrent()
         return viewModel.state.value
     }
 
@@ -769,10 +1027,16 @@ class RuntimeClientViewModelRelayIntegrationTest {
         private val relaySecret: String,
         private val relayNonce: String,
         private val runtimeDeviceId: String,
-        private val runtimePublicKey: String,
-        private val runtimeFingerprint: String,
     ) : Closeable {
         private val codec = ProtocolCodec(json)
+        private val runtimeSigningKeyPair = KeyPairGenerator.getInstance("EC")
+            .apply { initialize(ECGenParameterSpec("secp256r1")) }
+            .generateKeyPair()
+        val runtimePublicKey: String = Base64.getEncoder()
+            .encodeToString(runtimeSigningKeyPair.public.encoded)
+        val runtimeFingerprint: String = MessageDigest.getInstance("SHA-256")
+            .digest(runtimeSigningKeyPair.public.encoded)
+            .joinToString("") { "%02x".format(it) }
         private val server = ServerSocket(0)
         private val serverError = CompletableFuture<Throwable?>()
         val port: Int = server.localPort
@@ -784,18 +1048,78 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 server.accept().use { socket ->
                     val input = socket.getInputStream()
                     val output = socket.getOutputStream()
-                    val handshake = input.readAsciiLine()
+                    val handshake = input.readAsciiLine(maxBytes = 512)
                     handshakeLine.complete(handshake)
-                    require(handshake == "AETHERLINK_RELAY client $relayId") {
-                        "Unexpected relay handshake: $handshake"
-                    }
-                    output.write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
-                    output.flush()
+                    val clientHandshake = clientRelayHandshake(handshake, relayId)
+                    val relaySession = completeRelayKeyConfirmation(
+                        input = input,
+                        output = output,
+                        relayId = relayId,
+                        relaySecret = relaySecret,
+                        routeNonce = relayNonce,
+                        clientHandshake = clientHandshake,
+                    )
 
-                    val cryptor = TestRelayFrameBodyCryptor(relaySecret, relayNonce)
+                    val cryptor = TestRelayFrameBodyCryptor(
+                        bindingId = relaySession.bindingId,
+                        clientTrafficSecret = relaySession.clientTrafficSecret,
+                        runtimeTrafficSecret = relaySession.runtimeTrafficSecret,
+                    )
                     val encryptedBody = codec.readFrameBody(input)
                     val envelope = codec.decode(cryptor.decryptClientFrameBody(encryptedBody))
                     pairingRequest.complete(envelope)
+
+                    val requestPayload = json.decodeFromJsonElement(
+                        PairingRequestPayload.serializer(),
+                        envelope.payload,
+                    )
+                    require(requestPayload.transportBinding == relaySession.bindingId)
+                    require(requestPayload.pairingProofScheme == INITIAL_PAIRING_PROOF_SCHEME)
+                    val clientPublicKeyBytes = Base64.getDecoder().decode(requestPayload.publicKey)
+                    val clientFingerprint = MessageDigest.getInstance("SHA-256")
+                        .digest(clientPublicKeyBytes)
+                        .joinToString("") { "%02x".format(it) }
+                    val clientRequest = InitialPairingClientRequest(
+                        scheme = requestPayload.pairingProofScheme,
+                        protocolVersion = 1,
+                        requestId = envelope.requestId,
+                        pairingNonce = requestPayload.pairingNonce,
+                        pairingCode = requestPayload.pairingCode,
+                        runtimeDeviceId = runtimeDeviceId,
+                        runtimePublicKey = runtimePublicKey,
+                        runtimeKeyFingerprint = runtimeFingerprint,
+                        clientDeviceId = requestPayload.deviceId,
+                        clientDeviceName = requestPayload.deviceName,
+                        clientPublicKey = requestPayload.publicKey,
+                        clientKeyFingerprint = clientFingerprint,
+                        transportBinding = requestPayload.transportBinding,
+                    )
+                    val clientPublicKey = KeyFactory.getInstance("EC")
+                        .generatePublic(java.security.spec.X509EncodedKeySpec(clientPublicKeyBytes))
+                    require(Signature.getInstance("SHA256withECDSA").run {
+                        initVerify(clientPublicKey)
+                        update(clientRequest.transcript())
+                        verify(Base64.getDecoder().decode(requestPayload.pairingSignature))
+                    })
+                    val message = "trusted"
+                    val pairingResult = InitialPairingAcceptedResult(
+                        scheme = INITIAL_PAIRING_PROOF_SCHEME,
+                        protocolVersion = 1,
+                        requestId = envelope.requestId,
+                        pairingRequestDigest = clientRequest.digest(),
+                        accepted = true,
+                        runtimeDeviceId = runtimeDeviceId,
+                        runtimePublicKey = runtimePublicKey,
+                        runtimeKeyFingerprint = runtimeFingerprint,
+                        trustedDeviceId = requestPayload.deviceId,
+                        message = message,
+                        transportBinding = relaySession.bindingId,
+                    )
+                    val resultSignature = Signature.getInstance("SHA256withECDSA").run {
+                        initSign(runtimeSigningKeyPair.private)
+                        update(pairingResult.transcript())
+                        Base64.getEncoder().encodeToString(sign())
+                    }
 
                     val response = ProtocolEnvelope(
                         type = MessageType.PairingResult,
@@ -807,8 +1131,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                 runtimeDeviceIdV2 = runtimeDeviceId,
                                 runtimePublicKey = runtimePublicKey,
                                 runtimeKeyFingerprint = runtimeFingerprint,
-                                trustedDeviceId = "client-real",
-                                message = "trusted",
+                                trustedDeviceId = requestPayload.deviceId,
+                                message = message,
+                                pairingProofScheme = INITIAL_PAIRING_PROOF_SCHEME,
+                                pairingRequestDigest = clientRequest.digest(),
+                                runtimePairingSignature = resultSignature,
+                                transportBinding = relaySession.bindingId,
                             ),
                         ).jsonObject,
                     )
@@ -857,25 +1185,51 @@ class RuntimeClientViewModelRelayIntegrationTest {
         private val releaseConnection: CompletableFuture<Unit> = CompletableFuture()
         private val worker = thread(start = true, isDaemon = true) {
             runCatching {
-                server.accept().use { socket ->
-                    socket.soTimeout = 750
+                server.soTimeout = 4_000
+                var acceptedSocket: Socket? = null
+                var acceptedHandshake: String? = null
+                repeat(2) {
+                    if (acceptedSocket != null) return@repeat
+                    val candidate = server.accept()
+                    candidate.soTimeout = 4_000
+                    val candidateHandshake = candidate.getInputStream().readAsciiLineOrNull()
+                    if (candidateHandshake == null) {
+                        candidate.close()
+                    } else {
+                        acceptedSocket = candidate
+                        acceptedHandshake = candidateHandshake
+                    }
+                }
+                requireNotNull(acceptedSocket).use { socket ->
+                    socket.soTimeout = 4_000
                     val input = socket.getInputStream()
                     val output = socket.getOutputStream()
-                    val handshake = input.readAsciiLine()
+                    val handshake = requireNotNull(acceptedHandshake)
                     handshakeLine.complete(handshake)
-                    require(handshake == "AETHERLINK_RELAY client $relayId") {
-                        "Unexpected relay handshake: $handshake"
-                    }
-                    output.write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
-                    output.flush()
-
-                    val cryptor = TestRelayFrameBodyCryptor(relaySecret, relayNonce)
+                    val clientHandshake = clientRelayHandshake(handshake, relayId)
+                    val relaySession = completeRelayKeyConfirmation(
+                        input = input,
+                        output = output,
+                        relayId = relayId,
+                        relaySecret = relaySecret,
+                        routeNonce = relayNonce,
+                        clientHandshake = clientHandshake,
+                    )
+                    val transportBinding = relaySession.bindingId
+                    val cryptor = TestRelayFrameBodyCryptor(
+                        bindingId = relaySession.bindingId,
+                        clientTrafficSecret = relaySession.clientTrafficSecret,
+                        runtimeTrafficSecret = relaySession.runtimeTrafficSecret,
+                    )
                     val hello = readEncryptedEnvelope(input, cryptor)
                     helloRequest.complete(hello)
                     val helloPayload = json.decodeFromJsonElement(
                         HelloPayload.serializer(),
                         hello.payload,
                     )
+                    require(helloPayload.transportBinding == transportBinding) {
+                        "Relay hello transport binding did not match"
+                    }
                     val challengeNonce = "trusted-auth-nonce"
                     writeEncryptedEnvelope(
                         output = output,
@@ -892,12 +1246,15 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                     runtimeSignature = runtimeIdentity.signChallenge(
                                         deviceId = helloPayload.deviceId,
                                         nonce = signatureNonce,
+                                        transportBinding = transportBinding,
                                     ),
+                                    transportBinding = transportBinding,
                                 ),
                             ).jsonObject,
                         ),
                     )
 
+                    socket.soTimeout = 750
                     val nextRequest = try {
                         readEncryptedEnvelope(input, cryptor)
                     } catch (_: SocketTimeoutException) {
@@ -954,6 +1311,10 @@ class RuntimeClientViewModelRelayIntegrationTest {
         private val refreshedRelayNonce: String,
         private val refreshedRelayExpiresAtEpochMillis: Long,
         private val runtimeIdentity: RuntimeIdentityMaterial,
+        private val routeToken: String,
+        private val currentRelayExpiresAtEpochMillis: Long,
+        private val currentTicketGeneration: Long,
+        private val clientPublicKeyBase64: String,
     ) : Closeable {
         private val codec = ProtocolCodec(json)
         private val server = ServerSocket(0)
@@ -963,6 +1324,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
         val helloRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val authResponseRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val routeRefreshRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val allocationAuthorizationRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val healthRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val modelsListRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
         val indexDocumentsListRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
@@ -974,21 +1336,76 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 server.accept().use { socket ->
                     val input = socket.getInputStream()
                     val output = socket.getOutputStream()
-                    val handshake = input.readAsciiLine()
+                    val handshake = input.readAsciiLine(maxBytes = 512)
                     handshakeLine.complete(handshake)
-                    require(handshake == "AETHERLINK_RELAY client $relayId") {
-                        "Unexpected relay handshake: $handshake"
-                    }
-                    output.write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
+                    val clientHandshake = clientRelayHandshake(handshake, relayId)
+                    val clientFingerprint = MessageDigest.getInstance("SHA-256")
+                        .digest(Base64.getDecoder().decode(clientPublicKeyBase64))
+                        .joinToString("") { "%02x".format(it) }
+                    val registrationChallenge = PairedClientRelayRegistrationChallenge(
+                        relayId = relayId,
+                        relayExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis,
+                        relayNonce = relayNonce,
+                        runtimeKeyFingerprint = runtimeIdentity.fingerprint,
+                        clientKeyFingerprint = clientFingerprint,
+                        ticketGeneration = currentTicketGeneration,
+                        sessionNonce = clientHandshake.sessionNonce,
+                        ephemeralKey = clientHandshake.ephemeralKey,
+                        challenge = "d".repeat(64),
+                        challengeExpiresAtEpochMillis = 4_102_444_800_000L,
+                    )
+                    output.write(
+                        (
+                            PAIRED_CLIENT_RELAY_REGISTRATION_CHALLENGE_PREFIX +
+                                json.encodeToString(
+                                    PairedClientRelayRegistrationChallenge.serializer(),
+                                    registrationChallenge,
+                                ) +
+                                "\n"
+                            ).toByteArray(Charsets.UTF_8),
+                    )
                     output.flush()
-
-                    val cryptor = TestRelayFrameBodyCryptor(relaySecret, relayNonce)
+                    val registrationProof = input.readAsciiLine(maxBytes = 4_096)
+                    val proofParts = registrationProof.split(' ')
+                    require(proofParts.size == 6)
+                    require(proofParts[0] == "AETHERLINK_RELAY")
+                    require(proofParts[1] == "client_registration_proof")
+                    require(proofParts[2] == "crypto=2")
+                    require(proofParts[3] == "challenge=${registrationChallenge.challenge}")
+                    val proofPublicKey = proofParts[4].removePrefix("client_public_key=")
+                    val proofSignature = proofParts[5].removePrefix("client_signature=")
+                    require(proofPublicKey == clientPublicKeyBase64)
+                    val signingKey = KeyFactory.getInstance("EC").generatePublic(
+                        X509EncodedKeySpec(Base64.getDecoder().decode(proofPublicKey))
+                    )
+                    require(Signature.getInstance("SHA256withECDSA").run {
+                        initVerify(signingKey)
+                        update(registrationChallenge.transcript())
+                        verify(Base64.getDecoder().decode(proofSignature))
+                    })
+                    val relaySession = completeRelayKeyConfirmation(
+                        input = input,
+                        output = output,
+                        relayId = relayId,
+                        relaySecret = relaySecret,
+                        routeNonce = relayNonce,
+                        clientHandshake = clientHandshake,
+                    )
+                    val transportBinding = relaySession.bindingId
+                    val cryptor = TestRelayFrameBodyCryptor(
+                        bindingId = relaySession.bindingId,
+                        clientTrafficSecret = relaySession.clientTrafficSecret,
+                        runtimeTrafficSecret = relaySession.runtimeTrafficSecret,
+                    )
                     val hello = readEncryptedEnvelope(input, cryptor)
                     helloRequest.complete(hello)
                     val helloPayload = json.decodeFromJsonElement(
                         HelloPayload.serializer(),
                         hello.payload,
                     )
+                    require(helloPayload.transportBinding == transportBinding) {
+                        "Relay hello transport binding did not match"
+                    }
                     val challengeNonce = "trusted-auth-nonce"
                     writeEncryptedEnvelope(
                         output = output,
@@ -1005,7 +1422,9 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                     runtimeSignature = runtimeIdentity.signChallenge(
                                         deviceId = helloPayload.deviceId,
                                         nonce = challengeNonce,
+                                        transportBinding = transportBinding,
                                     ),
+                                    transportBinding = transportBinding,
                                 ),
                             ).jsonObject,
                         ),
@@ -1013,6 +1432,13 @@ class RuntimeClientViewModelRelayIntegrationTest {
 
                     val authResponse = readEncryptedEnvelope(input, cryptor)
                     authResponseRequest.complete(authResponse)
+                    val authResponsePayload = json.decodeFromJsonElement(
+                        AuthResponsePayload.serializer(),
+                        authResponse.payload,
+                    )
+                    require(authResponsePayload.transportBinding == transportBinding) {
+                        "Relay auth response transport binding did not match"
+                    }
                     writeEncryptedEnvelope(
                         output = output,
                         cryptor = cryptor,
@@ -1021,14 +1447,19 @@ class RuntimeClientViewModelRelayIntegrationTest {
                             requestId = authResponse.requestId,
                             payload = json.encodeToJsonElement(
                                 AuthResponsePayload.serializer(),
-                                AuthResponsePayload(accepted = true),
+                                AuthResponsePayload(
+                                    accepted = true,
+                                    transportBinding = transportBinding,
+                                ),
                             ).jsonObject,
                         ),
                     )
 
+                    var pendingAllocationChallenge: RelayAllocationChallengePayload? = null
                     while (
                         !healthRequest.isDone ||
                         !routeRefreshRequest.isDone ||
+                        !allocationAuthorizationRequest.isDone ||
                         !modelsListRequest.isDone ||
                         !indexDocumentsListRequest.isDone ||
                         !retrievalQueryRequest.isDone ||
@@ -1038,6 +1469,84 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         when (request.type) {
                             MessageType.RouteRefresh -> {
                                 routeRefreshRequest.complete(request)
+                                val clientFingerprint = MessageDigest.getInstance("SHA-256")
+                                    .digest(Base64.getDecoder().decode(clientPublicKeyBase64))
+                                    .joinToString("") { "%02x".format(it) }
+                                val challenge = RelayAllocationChallengePayload(
+                                    proofScheme = "runtime-client-p256-v2",
+                                    protocolVersion = 2,
+                                    operation = "renew",
+                                    authorizationId = "encrypted-allocation-authorization",
+                                    currentRelayId = relayId,
+                                    nextRelayId = relayId,
+                                    routeTokenHash = MessageDigest.getInstance("SHA-256")
+                                        .digest(routeToken.toByteArray(Charsets.UTF_8))
+                                        .joinToString("") { "%02x".format(it) },
+                                    runtimeKeyFingerprint = runtimeIdentity.fingerprint,
+                                    clientKeyFingerprint = clientFingerprint,
+                                    currentTicketGeneration = currentTicketGeneration,
+                                    nextTicketGeneration = currentTicketGeneration + 1L,
+                                    currentRelayExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis,
+                                    currentRelayNonce = relayNonce,
+                                    nextRelayExpiresAtEpochMillis = refreshedRelayExpiresAtEpochMillis,
+                                    nextRelayNonce = refreshedRelayNonce,
+                                    challenge = "c".repeat(64),
+                                    challengeExpiresAtEpochMillis = currentRelayExpiresAtEpochMillis,
+                                    transportBinding = transportBinding,
+                                )
+                                pendingAllocationChallenge = challenge
+                                writeEncryptedEnvelope(
+                                    output = output,
+                                    cryptor = cryptor,
+                                    envelope = ProtocolEnvelope(
+                                        type = MessageType.RelayAllocationChallenge,
+                                        requestId = request.requestId,
+                                        payload = json.encodeToJsonElement(
+                                            RelayAllocationChallengePayload.serializer(),
+                                            challenge,
+                                        ).jsonObject,
+                                    ),
+                                )
+                            }
+                            MessageType.RelayAllocationAuthorization -> {
+                                val challenge = requireNotNull(pendingAllocationChallenge)
+                                val payload = json.decodeFromJsonElement(
+                                    RelayAllocationAuthorizationPayload.serializer(),
+                                    request.payload,
+                                )
+                                val authorization = PairedRelayAllocationAuthorization(
+                                    operation = challenge.operation,
+                                    requestId = request.requestId,
+                                    authorizationId = challenge.authorizationId,
+                                    currentRelayId = challenge.currentRelayId,
+                                    nextRelayId = challenge.nextRelayId,
+                                    routeTokenHash = challenge.routeTokenHash,
+                                    runtimeKeyFingerprint = challenge.runtimeKeyFingerprint,
+                                    clientKeyFingerprint = challenge.clientKeyFingerprint,
+                                    currentTicketGeneration = challenge.currentTicketGeneration,
+                                    nextTicketGeneration = challenge.nextTicketGeneration,
+                                    currentRelayExpiresAtEpochMillis = challenge.currentRelayExpiresAtEpochMillis,
+                                    currentRelayNonce = challenge.currentRelayNonce,
+                                    nextRelayExpiresAtEpochMillis = challenge.nextRelayExpiresAtEpochMillis,
+                                    nextRelayNonce = challenge.nextRelayNonce,
+                                    challenge = challenge.challenge,
+                                    challengeExpiresAtEpochMillis = challenge.challengeExpiresAtEpochMillis,
+                                    transportBinding = challenge.transportBinding,
+                                )
+                                require(request.requestId == routeRefreshRequest.get().requestId)
+                                require(payload.authorizationId == challenge.authorizationId)
+                                require(payload.challenge == challenge.challenge)
+                                require(payload.clientKeyFingerprint == challenge.clientKeyFingerprint)
+                                require(payload.transportBinding == transportBinding)
+                                require(
+                                    PairedRelayAllocationAuthorizationProof.verifyClient(
+                                        authorization = authorization,
+                                        clientPublicKeyBase64 = clientPublicKeyBase64,
+                                        signatureBase64 = payload.clientSignature,
+                                    )
+                                )
+                                allocationAuthorizationRequest.complete(request)
+                                pendingAllocationChallenge = null
                                 writeEncryptedEnvelope(
                                     output = output,
                                     cryptor = cryptor,
@@ -1056,6 +1565,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                                 relayExpiresAtEpochMillis = refreshedRelayExpiresAtEpochMillis,
                                                 relayNonce = refreshedRelayNonce,
                                                 relayScope = "private_overlay",
+                                                ticketGeneration = currentTicketGeneration + 1L,
                                             ),
                                         ).jsonObject,
                                     ),
@@ -1174,6 +1684,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 helloRequest.completeExceptionally(error)
                 authResponseRequest.completeExceptionally(error)
                 routeRefreshRequest.completeExceptionally(error)
+                allocationAuthorizationRequest.completeExceptionally(error)
                 healthRequest.completeExceptionally(error)
                 modelsListRequest.completeExceptionally(error)
                 indexDocumentsListRequest.completeExceptionally(error)
@@ -1225,8 +1736,12 @@ class RuntimeClientViewModelRelayIntegrationTest {
         }
     }
 
-    private class TestRelayFrameBodyCryptor(secret: String, routeNonce: String) {
-        private val key = SecretKeySpec(deriveKey(secret, routeNonce), "AES")
+    private class TestRelayFrameBodyCryptor(
+        bindingId: String,
+        private val clientTrafficSecret: ByteArray,
+        private val runtimeTrafficSecret: ByteArray,
+    ) {
+        private val bindingDigest = bindingId.toHexBytes()
         private var clientCounter = 0L
         private var runtimeCounter = 0L
 
@@ -1234,7 +1749,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
             val plaintext = crypt(
                 mode = Cipher.DECRYPT_MODE,
                 direction = CLIENT_DIRECTION,
-                counter = clientCounter,
+                frameIndex = clientCounter,
+                trafficSecret = clientTrafficSecret,
                 input = ciphertext,
             )
             clientCounter += 1
@@ -1245,7 +1761,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
             val ciphertext = crypt(
                 mode = Cipher.ENCRYPT_MODE,
                 direction = RUNTIME_DIRECTION,
-                counter = runtimeCounter,
+                frameIndex = runtimeCounter,
+                trafficSecret = runtimeTrafficSecret,
                 input = plaintext,
             )
             runtimeCounter += 1
@@ -1255,36 +1772,36 @@ class RuntimeClientViewModelRelayIntegrationTest {
         private fun crypt(
             mode: Int,
             direction: ByteArray,
-            counter: Long,
+            frameIndex: Long,
+            trafficSecret: ByteArray,
             input: ByteArray,
         ): ByteArray {
+            require(frameIndex in 0 until Long.MAX_VALUE)
+            val epoch = frameIndex ushr 16
+            val sequence = frameIndex and 0xffffL
+            val epochBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(epoch).array()
+            val sequenceBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(sequence).array()
+            val epochKey = Mac.getInstance("HmacSHA256").run {
+                init(SecretKeySpec(trafficSecret, "HmacSHA256"))
+                doFinal(FRAME_EPOCH_PREFIX + direction + epochBytes)
+            }
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(mode, key, GCMParameterSpec(GCM_TAG_BITS, nonce(direction, counter)))
-            cipher.updateAAD(AAD)
+            cipher.init(
+                mode,
+                SecretKeySpec(epochKey, "AES"),
+                GCMParameterSpec(GCM_TAG_BITS, direction + sequenceBytes),
+            )
+            cipher.updateAAD(AAD_PREFIX + bindingDigest + direction + epochBytes + sequenceBytes)
             return cipher.doFinal(input)
         }
 
         private companion object {
-            private val KEY_PREFIX = "AetherLink relay frame v1\n".toByteArray(Charsets.UTF_8)
-            private val ROUTE_NONCE_CONTEXT = "\nroute_nonce\n".toByteArray(Charsets.UTF_8)
-            private val AAD = "AETHERLINK_RELAY_FRAME_V1".toByteArray(Charsets.UTF_8)
+            private val FRAME_EPOCH_PREFIX =
+                "AetherLink relay frame epoch v2\n".toByteArray(Charsets.UTF_8)
+            private val AAD_PREFIX = "AETHERLINK_RELAY_FRAME_V2".toByteArray(Charsets.UTF_8)
             private val CLIENT_DIRECTION = "CLNT".toByteArray(Charsets.US_ASCII)
             private val RUNTIME_DIRECTION = "RUNT".toByteArray(Charsets.US_ASCII)
             private const val GCM_TAG_BITS = 128
-
-            private fun deriveKey(secret: String, routeNonce: String): ByteArray {
-                val digest = MessageDigest.getInstance("SHA-256")
-                digest.update(KEY_PREFIX)
-                digest.update(secret.toByteArray(Charsets.UTF_8))
-                digest.update(ROUTE_NONCE_CONTEXT)
-                digest.update(routeNonce.toByteArray(Charsets.UTF_8))
-                return digest.digest()
-            }
-
-            private fun nonce(direction: ByteArray, counter: Long): ByteArray {
-                val counterBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(counter).array()
-                return direction + counterBytes
-            }
         }
     }
 
@@ -1336,14 +1853,11 @@ class RuntimeClientViewModelRelayIntegrationTest {
     }
 
     private fun testDeviceIdentity(): DeviceIdentity {
-        val keyPair = KeyPairGenerator.getInstance("EC")
-            .apply { initialize(ECGenParameterSpec("secp256r1")) }
-            .generateKeyPair()
         return DeviceIdentity(
             deviceId = "client-real",
             deviceName = "AetherLink Test Client",
-            publicKeyBase64 = "client-public-key-real",
-            keyPair = keyPair,
+            publicKeyBase64 = Base64.getEncoder().encodeToString(testClientKeyPair.public.encoded),
+            keyPair = testClientKeyPair,
         )
     }
 
@@ -1352,10 +1866,15 @@ class RuntimeClientViewModelRelayIntegrationTest {
         val fingerprint: String,
         private val privateKey: java.security.PrivateKey,
     ) {
-        fun signChallenge(deviceId: String, nonce: String): String {
+        fun signChallenge(
+            deviceId: String,
+            nonce: String,
+            transportBinding: String? = null,
+        ): String {
             val message = RuntimeIdentityProofVerifier.authenticationChallengeMessage(
                 deviceId = deviceId,
                 nonce = nonce,
+                transportBinding = transportBinding,
             )
             return Signature.getInstance("SHA256withECDSA").run {
                 initSign(privateKey)
@@ -1398,4 +1917,15 @@ private fun InputStream.readAsciiLine(maxBytes: Int = 256): String {
         buffer.append(next.toChar())
     }
     error("ASCII line was not complete")
+}
+
+private fun InputStream.readAsciiLineOrNull(maxBytes: Int = 512): String? {
+    val buffer = StringBuilder()
+    while (buffer.length < maxBytes) {
+        val next = read()
+        if (next == -1) return null
+        if (next == '\n'.code) return buffer.toString().trimEnd('\r')
+        buffer.append(next.toChar())
+    }
+    error("ASCII line exceeded $maxBytes bytes")
 }

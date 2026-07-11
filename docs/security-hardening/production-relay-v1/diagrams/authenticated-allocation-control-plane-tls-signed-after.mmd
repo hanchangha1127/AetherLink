@@ -1,0 +1,10 @@
+flowchart LR
+    Offline["Offline service root"] -->|"delegates versioned key"| Signer["Online lease signer"]
+    Runtime["Runtime host"] -->|"TLS 1.3: allocation request and proof"| Control["Authenticated allocation service"]
+    Signer -->|"signed lease capability"| Control
+    Control -->|"TLS plus signed lease"| Runtime
+    Runtime -->|"QR: endpoint secret, lease, service key id"| Client["Android client"]
+    Runtime <-->|"device-signed PSK-mixed ECDH transcript includes lease digest"| Client
+    Data["Blind relay data plane"] -.->|"ciphertext only"| Runtime
+    Data -.->|"ciphertext only"| Client
+    Control -->|"lease and revocation state"| Data

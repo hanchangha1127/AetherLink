@@ -1,0 +1,10 @@
+flowchart LR
+    QR["Fresh QR recovery ceremony"] -->|"new key and epoch + 1"| Runtime["Runtime pair state"]
+    QR -->|"new key and epoch + 1"| Client["Android pair state"]
+    Runtime <-->|"co-signed normal transitions"| Client
+    Runtime -->|"signed lease: pair epoch, generation, revocation counter"| Authority["Allocation authority state machine"]
+    Client -->|"deny-only emergency revoke"| Authority
+    Runtime -->|"deny-only emergency revoke"| Authority
+    Authority -->|"signed revocation receipt"| Relay["Relay room owner"]
+    Relay -->|"close waiting and active rooms"| Closed["Revoked sessions"]
+    Authority -->|"reject lower epoch or counter"| Rollback["Rollback and replay attempts"]

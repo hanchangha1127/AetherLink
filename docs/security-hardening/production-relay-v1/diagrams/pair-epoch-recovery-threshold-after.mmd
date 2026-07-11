@@ -1,0 +1,8 @@
+flowchart LR
+    Runtime["Runtime key"] --> Quorum["Recovery quorum policy"]
+    ClientA["Trusted client A"] --> Quorum
+    ClientB["Trusted client B or offline recovery key"] --> Quorum
+    Quorum -->|"threshold-authorized epoch transition"| Authority["Allocation authority"]
+    Authority --> Relay["Relay revocation and lease state"]
+    Authority -->|"signed transition receipt"| Runtime
+    Authority -->|"signed transition receipt"| ClientA

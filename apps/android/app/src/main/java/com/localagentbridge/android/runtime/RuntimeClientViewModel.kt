@@ -53,15 +53,25 @@ import com.localagentbridge.android.core.protocol.ModelPullResultPayload
 import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationProof
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
+import com.localagentbridge.android.core.protocol.RelayAllocationAuthorizationPayload
+import com.localagentbridge.android.core.protocol.RelayAllocationChallengePayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.DeviceIdentityStore
+import com.localagentbridge.android.core.pairing.INITIAL_PAIRING_PROOF_SCHEME
+import com.localagentbridge.android.core.pairing.InitialPairingAcceptedResult
+import com.localagentbridge.android.core.pairing.InitialPairingClientRequest
+import com.localagentbridge.android.core.pairing.InitialPairingProof
+import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorization
+import com.localagentbridge.android.core.pairing.PairedRelayAllocationAuthorizationProof
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.core.pairing.PairingStore
@@ -82,6 +92,7 @@ import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
 import com.localagentbridge.android.core.transport.RuntimePeerToPeerConnector
 import com.localagentbridge.android.core.transport.RuntimeRelayConnector
+import com.localagentbridge.android.core.transport.RelayClientRegistrationAuthorizer
 import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
@@ -93,6 +104,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,6 +128,7 @@ import kotlinx.serialization.json.jsonObject
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
 import java.util.Locale
@@ -156,8 +169,17 @@ internal interface RuntimeAttachmentReader {
     fun readBytes(reference: String, maxBytes: Int): ByteArray?
 }
 
+internal enum class RuntimeRelayProbeResult {
+    Ready,
+    Unavailable,
+    Unsupported,
+}
+
 internal fun interface RuntimeRelayReachabilityChecker {
-    suspend fun isReachable(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int): Boolean
+    suspend fun check(
+        route: PreparedRemoteRuntimeRoute.Relay,
+        timeoutMillis: Int,
+    ): RuntimeRelayProbeResult
 }
 
 private data class PendingChatSessionLifecycleMutation(
@@ -170,6 +192,26 @@ private data class PendingChatSessionRenameMutation(
     val previousTitle: String,
     val previousTitleManuallyEdited: Boolean,
     val previousTitleGenerated: Boolean,
+)
+
+private data class PendingInitialPairingRequest(
+    val payload: RuntimePairingPayload,
+    val requestId: String,
+    val requestDigest: String,
+    val clientDeviceId: String,
+    val transportBinding: String?,
+)
+
+private data class PendingPairedRelayAllocationAuthorization(
+    val requestId: String,
+    val authorizationId: String,
+    val challenge: String,
+    val relayId: String,
+    val relayExpiresAtEpochMillis: Long,
+    val relayNonce: String,
+    val ticketGeneration: Long,
+    val transportBinding: String,
+    val clientKeyFingerprint: String,
 )
 
 internal data class RuntimeClientViewModelDependencies(
@@ -185,7 +227,9 @@ internal data class RuntimeClientViewModelDependencies(
     val lifecycleCallbacksRegistrar: RuntimeLifecycleCallbacksRegistrar,
     val attachmentReader: RuntimeAttachmentReader? = null,
     val attachmentPromptHeaderProvider: ((String) -> String)? = null,
-    val relayReachabilityChecker: RuntimeRelayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _ -> true },
+    val relayReachabilityChecker: RuntimeRelayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _ ->
+        RuntimeRelayProbeResult.Ready
+    },
     val authenticatedRouteRefreshEnabled: Boolean = false,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
@@ -193,16 +237,21 @@ internal data class RuntimeClientViewModelDependencies(
         fun create(application: Application): RuntimeClientViewModelDependencies {
             val json = runtimeClientJson()
             val transportClient = RuntimeTransportClient()
+            val deviceIdentityProvider = AndroidDeviceIdentityProvider(DeviceIdentityStore(application))
             return RuntimeClientViewModelDependencies(
                 json = json,
                 transportClient = transportClient,
                 transportConnector = RuntimeTransportConnector { host, port, timeoutMillis ->
                     transportClient.connect(host = host, port = port, timeoutMillis = timeoutMillis)
                 },
-                relayConnector = RuntimeRelayTcpClient(),
+                relayConnector = RuntimeRelayTcpClient(
+                    clientRegistrationAuthorizer = AndroidRelayClientRegistrationAuthorizer(
+                        deviceIdentityProvider,
+                    ),
+                ),
                 discovery = AndroidRuntimeDiscoverySource(BonjourDiscovery(application)),
                 trustedRuntimeStore = AndroidTrustedRuntimeStore(PairingStore(application)),
-                deviceIdentityProvider = AndroidDeviceIdentityProvider(DeviceIdentityStore(application)),
+                deviceIdentityProvider = deviceIdentityProvider,
                 localDataStore = AndroidRuntimeLocalDataStore(RuntimeLocalStore(application, json)),
                 lifecycleCallbacksRegistrar = AndroidRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = AndroidRuntimeAttachmentReader(application),
@@ -217,21 +266,30 @@ internal data class RuntimeClientViewModelDependencies(
 }
 
 private class AndroidRuntimeRelayReachabilityChecker : RuntimeRelayReachabilityChecker {
-    override suspend fun isReachable(
+    override suspend fun check(
         route: PreparedRemoteRuntimeRoute.Relay,
         timeoutMillis: Int,
-    ): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            Socket().use { socket ->
-                socket.tcpNoDelay = true
-                socket.soTimeout = timeoutMillis
+    ): RuntimeRelayProbeResult = withContext(Dispatchers.IO) {
+        val socket = runCatching { Socket() }.getOrElse {
+            return@withContext RuntimeRelayProbeResult.Unavailable
+        }
+        try {
+            socket.tcpNoDelay = true
+            socket.soTimeout = timeoutMillis
+            try {
                 socket.connect(InetSocketAddress(route.host, route.port), timeoutMillis)
+            } catch (_: Exception) {
+                return@withContext RuntimeRelayProbeResult.Unavailable
+            }
+            runCatching {
                 val request = "AETHERLINK_RELAY probe ${route.relayId.sanitizeRelayProbeToken()}\n"
                 socket.outputStream.write(request.toByteArray(Charsets.UTF_8))
                 socket.outputStream.flush()
-                socket.inputStream.readAsciiLine(maxBytes = 256).isRelayProbeKnown()
-            }
-        }.getOrDefault(false)
+                socket.inputStream.readAsciiLine(maxBytes = 256).relayProbeResult()
+            }.getOrDefault(RuntimeRelayProbeResult.Unsupported)
+        } finally {
+            runCatching { socket.close() }
+        }
     }
 }
 
@@ -250,6 +308,15 @@ internal fun String.isRelayProbeKnown(): Boolean {
     return relayProbeResponseOrNull()?.known == true
 }
 
+internal fun String.relayProbeResult(): RuntimeRelayProbeResult {
+    val response = relayProbeResponseOrNull() ?: return RuntimeRelayProbeResult.Unsupported
+    return if (response.known) {
+        RuntimeRelayProbeResult.Ready
+    } else {
+        RuntimeRelayProbeResult.Unavailable
+    }
+}
+
 private data class RelayProbeResponseFlags(
     val known: Boolean,
     val runtimeWaiting: Boolean,
@@ -257,26 +324,37 @@ private data class RelayProbeResponseFlags(
 
 private fun String.relayProbeResponseOrNull(): RelayProbeResponseFlags? {
     val tokens = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-    if (tokens.size < 3 || tokens[0] != "AETHERLINK_RELAY" || tokens[1] != "probe") {
+    if (tokens.size != 4 || tokens[0] != "AETHERLINK_RELAY" || tokens[1] != "probe") {
         return null
     }
-    val values = tokens.drop(2).associate { token ->
+    val values = mutableMapOf<String, Boolean>()
+    for (token in tokens.drop(2)) {
         val separator = token.indexOf('=')
-        if (separator <= 0) {
-            token to "true"
-        } else {
-            token.substring(0, separator) to token.substring(separator + 1)
+        if (separator <= 0 || separator == token.lastIndex || token.indexOf('=', separator + 1) >= 0) {
+            return null
         }
+        val key = token.substring(0, separator)
+        if (key !in RELAY_PROBE_RESPONSE_KEYS || key in values) return null
+        val value = token.substring(separator + 1).relayProbeBooleanOrNull() ?: return null
+        values[key] = value
     }
-    val known = values["known"].isRelayProbeTruthy() || values["allocated"].isRelayProbeTruthy()
+    val routeStatusKeys = values.keys.intersect(RELAY_PROBE_ROUTE_STATUS_KEYS)
+    if (routeStatusKeys.size != 1 || "runtime_waiting" !in values) return null
     return RelayProbeResponseFlags(
-        known = known,
-        runtimeWaiting = values["runtime_waiting"].isRelayProbeTruthy(),
+        known = values.getValue(routeStatusKeys.single()),
+        runtimeWaiting = values.getValue("runtime_waiting"),
     )
 }
 
-private fun String?.isRelayProbeTruthy(): Boolean {
-    return this == "1" || equals("true", ignoreCase = true) || equals("yes", ignoreCase = true)
+private val RELAY_PROBE_ROUTE_STATUS_KEYS = setOf("known", "allocated")
+private val RELAY_PROBE_RESPONSE_KEYS = RELAY_PROBE_ROUTE_STATUS_KEYS + "runtime_waiting"
+
+private fun String.relayProbeBooleanOrNull(): Boolean? {
+    return when {
+        this == "1" || equals("true", ignoreCase = true) || equals("yes", ignoreCase = true) -> true
+        this == "0" || equals("false", ignoreCase = true) || equals("no", ignoreCase = true) -> false
+        else -> null
+    }
 }
 
 private fun java.io.InputStream.readAsciiLine(maxBytes: Int): String {
@@ -308,6 +386,22 @@ private class AndroidDeviceIdentityProvider(
     private val store: DeviceIdentityStore,
 ) : RuntimeDeviceIdentityProvider {
     override suspend fun loadOrCreate(): DeviceIdentity = store.loadOrCreate()
+}
+
+private class AndroidRelayClientRegistrationAuthorizer(
+    private val identityProvider: RuntimeDeviceIdentityProvider,
+) : RelayClientRegistrationAuthorizer {
+    override suspend fun authorize(
+        challenge: PairedClientRelayRegistrationChallenge,
+    ): PairedClientRelayRegistrationProof {
+        val identity = identityProvider.loadOrCreate()
+        return PairedClientRelayRegistrationProof(
+            clientPublicKeyBase64 = identity.publicKeyBase64,
+            clientSignatureBase64 = identity.signPairedClientRelayRegistrationAuthorization(
+                challenge,
+            ),
+        )
+    }
 }
 
 private class AndroidRuntimeDiscoverySource(
@@ -404,6 +498,7 @@ private val AUTH_RESPONSE_RESULT_PAYLOAD_KEYS = setOf(
     "accepted",
     "device_id",
     "message",
+    "transport_binding",
 )
 
 private fun JsonObject.authResponseResultUnknownMetadataKey(): String? {
@@ -418,6 +513,23 @@ private val PAIRING_RESULT_PAYLOAD_KEYS = setOf(
     "runtime_key_fingerprint",
     "trusted_device_id",
     "message",
+    "pairing_proof_scheme",
+    "pairing_request_digest",
+    "runtime_pairing_signature",
+    "transport_binding",
+    "code",
+    "retryable",
+    "failed_attempts",
+    "max_failed_attempts",
+    "remaining_attempts",
+)
+
+private val PAIRING_REJECTION_RESULT_PAYLOAD_KEYS = setOf(
+    "code",
+    "retryable",
+    "failed_attempts",
+    "max_failed_attempts",
+    "remaining_attempts",
 )
 
 private fun JsonObject.pairingResultUnknownMetadataKey(): String? {
@@ -429,10 +541,16 @@ private val AUTH_CHALLENGE_PAYLOAD_KEYS = setOf(
     "nonce",
     "runtime_key_fingerprint",
     "runtime_signature",
+    "transport_binding",
 )
 
 private fun JsonObject.authChallengeUnknownMetadataKey(): String? {
     return keys.firstOrNull { it !in AUTH_CHALLENGE_PAYLOAD_KEYS }
+}
+
+private fun authenticationTransportBindingMatches(actual: String?, expected: String?): Boolean {
+    if (expected == null) return actual == null
+    return DeviceIdentity.isCanonicalTransportBinding(expected) && actual == expected
 }
 
 private val ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS = setOf(
@@ -445,6 +563,7 @@ private val ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS = setOf(
     "relay_expires_at",
     "relay_nonce",
     "relay_scope",
+    "ticket_generation",
     "p2p_class",
     "p2p_record_id",
     "p2p_encrypted_body",
@@ -965,6 +1084,7 @@ internal fun runtimeClientCapabilities(authenticatedRouteRefreshEnabled: Boolean
 internal const val ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS = 60_000L
 internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
 internal const val ROUTE_REFRESH_RETRY_DELAY_MS = 10_000L
+internal const val ROUTE_REFRESH_REQUEST_TIMEOUT_MS = 15_000L
 internal const val RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS = 1_500
 
 internal fun runtimeRouteRefreshLeaseDelayMillis(
@@ -974,8 +1094,15 @@ internal fun runtimeRouteRefreshLeaseDelayMillis(
     minimumDelayMillis: Long = ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
 ): Long? {
     val expiresAt = remoteRouteExpiresAtEpochMillis ?: return null
-    if (expiresAt <= nowEpochMillis) return null
-    return maxOf(minimumDelayMillis, expiresAt - nowEpochMillis - renewalLeadMillis)
+    val remainingMillis = expiresAt - nowEpochMillis
+    if (remainingMillis <= 0L) return null
+    val minimumDelay = minimumDelayMillis.coerceAtLeast(0L)
+    if (remainingMillis <= minimumDelay) return 0L
+    val scheduledDelay = maxOf(
+        minimumDelay,
+        remainingMillis - renewalLeadMillis.coerceAtLeast(0L),
+    )
+    return scheduledDelay.coerceAtMost(remainingMillis - 1L)
 }
 
 internal fun runtimeRouteRefreshRetryDelayMillis(
@@ -1038,9 +1165,11 @@ class RuntimeClientViewModel internal constructor(
     private var discoveryJob: Job? = null
     private var reconnectJob: Job? = null
     private var routeRefreshLeaseJob: Job? = null
+    private var routeRefreshRequestTimeoutJob: Job? = null
     private var activeChannel: RuntimeProtocolChannel? = null
     private var pendingPairingPayload: RuntimePairingPayload? = null
     private var pendingPairingRequestPayload: RuntimePairingPayload? = null
+    private var pendingInitialPairingRequest: PendingInitialPairingRequest? = null
     private var pendingPairingRetryJob: Job? = null
     private var pendingPairingDiscoveryTimeoutJob: Job? = null
     private var pendingPairingRetryAttempts = 0
@@ -1057,6 +1186,8 @@ class RuntimeClientViewModel internal constructor(
     private val pendingMemorySummaryDraftApprovalDraftIdsByRequestId = mutableMapOf<String, String>()
     private val pendingMemorySummaryDraftDismissalDraftIdsByRequestId = mutableMapOf<String, String>()
     private var pendingRouteRefreshRequestId: String? = null
+    private var pendingRouteRefreshRequiresPairedAuthorization = false
+    private var pendingPairedRelayAllocationAuthorization: PendingPairedRelayAllocationAuthorization? = null
     private val pendingChatSessionLifecycleRequestIds = mutableSetOf<String>()
     private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
     private val pendingChatSessionLifecycleMutationsByRequestId = mutableMapOf<String, PendingChatSessionLifecycleMutation>()
@@ -1091,6 +1222,12 @@ class RuntimeClientViewModel internal constructor(
         restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
         viewModelScope.launch {
             pairingStore.trustedRuntime.collect { trusted ->
+                if (
+                    pendingRouteRefreshRequestId != null &&
+                    !state.value.trustedRuntime.hasSameRelayAllocationRoute(trusted)
+                ) {
+                    clearPendingRouteRefreshRequest()
+                }
                 mutableState.update {
                     if (trusted == null) {
                         it.copy(trustedRuntime = null)
@@ -1110,6 +1247,7 @@ class RuntimeClientViewModel internal constructor(
                             relayExpiresAtEpochMillis = trusted.relayExpiresAtEpochMillis,
                             relayNonce = trusted.relayNonce,
                             relayScope = trusted.relayScope,
+                            relayTicketGeneration = trusted.relayTicketGeneration,
                             p2pRouteClass = trusted.p2pRouteClass,
                             p2pRecordId = trusted.p2pRecordId,
                             p2pEncryptedBody = trusted.p2pEncryptedBody,
@@ -1854,6 +1992,7 @@ class RuntimeClientViewModel internal constructor(
                 nowEpochMillis = nowMillis(),
             )
             if (refreshedTrustedRuntime != null) {
+                clearPendingRouteRefreshRequest()
                 cancelPendingPairingDiscoveryTimeout()
                 clearPersistedPendingPairingRoute()
                 val trustedEndpoint = refreshedTrustedRuntime.lastKnownEndpointHintOrNull()
@@ -1925,33 +2064,75 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         pendingPairingRequestPayload = payload
-        runCatching { deviceIdentityStore.loadOrCreate() }
-            .onSuccess { identity ->
+        runCatching {
+            val identity = deviceIdentityStore.loadOrCreate()
+            val runtimePublicKey = requireNotNull(payload.runtimePublicKeyBase64) {
+                "Pairing QR does not contain a runtime public key"
+            }
+            val requestId = UUID.randomUUID().toString()
+            val transportBinding = activeChannel?.transportSecurityContext?.bindingId
+            val clientRequest = InitialPairingClientRequest(
+                scheme = INITIAL_PAIRING_PROOF_SCHEME,
+                protocolVersion = 1,
+                requestId = requestId,
+                pairingNonce = payload.pairingNonce,
+                pairingCode = payload.pairingCode,
+                runtimeDeviceId = payload.runtimeDeviceId,
+                runtimePublicKey = runtimePublicKey,
+                runtimeKeyFingerprint = payload.fingerprint,
+                clientDeviceId = identity.deviceId,
+                clientDeviceName = identity.deviceName,
+                clientPublicKey = identity.publicKeyBase64,
+                clientKeyFingerprint = initialPairingPublicKeyFingerprint(identity.publicKeyBase64),
+                transportBinding = transportBinding,
+            )
+            val pairingSignature = identity.signInitialPairingRequest(clientRequest)
+            pendingInitialPairingRequest = PendingInitialPairingRequest(
+                payload = payload,
+                requestId = requestId,
+                requestDigest = clientRequest.digest(),
+                clientDeviceId = identity.deviceId,
+                transportBinding = transportBinding,
+            )
+
+            cancelPendingPairingRetry()
+            cancelPendingPairingDiscoveryTimeout()
+            sendEnvelope(
+                envelope(
+                    type = MessageType.PairingRequest,
+                    serializer = PairingRequestPayload.serializer(),
+                    payload = PairingRequestPayload(
+                        pairingNonce = payload.pairingNonce,
+                        pairingCode = payload.pairingCode,
+                        deviceId = identity.deviceId,
+                        deviceName = identity.deviceName,
+                        publicKey = identity.publicKeyBase64,
+                        pairingProofScheme = INITIAL_PAIRING_PROOF_SCHEME,
+                        pairingSignature = pairingSignature,
+                        transportBinding = transportBinding,
+                    ),
+                    requestId = requestId,
+                )
+            )
+        }
+            .onSuccess {
                 cancelPendingPairingRetry()
                 cancelPendingPairingDiscoveryTimeout()
-                sendEnvelope(
-                    envelope(
-                        type = MessageType.PairingRequest,
-                        serializer = PairingRequestPayload.serializer(),
-                        payload = PairingRequestPayload(
-                            pairingNonce = payload.pairingNonce,
-                            pairingCode = payload.pairingCode,
-                            deviceId = identity.deviceId,
-                            deviceName = identity.deviceName,
-                            publicKey = identity.publicKeyBase64,
-                        ),
-                    )
-                )
             }
             .onFailure { error ->
                 cancelPendingPairingRetry()
                 cancelPendingPairingDiscoveryTimeout()
                 pendingPairingPayload = null
-                pendingPairingRequestPayload = null
+                clearPendingPairingRequest()
                 clearPersistedPendingPairingRoute()
                 mutableState.update { it.withClearedPendingPairing() }
                 showError("device_identity_failed", error.message)
             }
+    }
+
+    private fun clearPendingPairingRequest() {
+        pendingPairingRequestPayload = null
+        pendingInitialPairingRequest = null
     }
 
     private fun persistPendingPairingPayload(payload: RuntimePairingPayload) {
@@ -2104,7 +2285,7 @@ class RuntimeClientViewModel internal constructor(
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(error = currentError)
@@ -2115,7 +2296,7 @@ class RuntimeClientViewModel internal constructor(
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
@@ -2139,7 +2320,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         pendingPairingPayload = null
-        pendingPairingRequestPayload = null
+        clearPendingPairingRequest()
         cancelPendingPairingDiscoveryTimeout()
         clearPersistedPendingPairingRoute()
         mutableState.update { it.withClearedPendingPairing() }
@@ -2150,7 +2331,7 @@ class RuntimeClientViewModel internal constructor(
         if (pendingPairingRetryAttempts >= MAX_PENDING_PAIRING_RETRY_ATTEMPTS) {
             cancelPendingPairingRetry()
             pendingPairingPayload = null
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
@@ -2168,7 +2349,7 @@ class RuntimeClientViewModel internal constructor(
             if (pendingPairingPayload != payload) return@launch
             val current = state.value
             if (current.isConnected || current.isConnecting) return@launch
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             val target = pairingRuntimeConnectionTarget(
                 state = current,
                 payload = payload,
@@ -2219,7 +2400,7 @@ class RuntimeClientViewModel internal constructor(
                 return@launch
             }
             pendingPairingPayload = null
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
@@ -2257,7 +2438,7 @@ class RuntimeClientViewModel internal constructor(
         cancelPendingPairingRetry()
         cancelPendingPairingDiscoveryTimeout()
         pendingPairingPayload = null
-        pendingPairingRequestPayload = null
+        clearPendingPairingRequest()
         clearPersistedPendingPairingRoute()
         mutableState.update {
             it.withClearedPendingPairing().copy(
@@ -2327,9 +2508,9 @@ class RuntimeClientViewModel internal constructor(
         clearPendingRuntimeDocumentRequests()
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.clear()
         pendingMemorySummaryDraftDismissalDraftIdsByRequestId.clear()
-        pendingRouteRefreshRequestId = null
+        clearPendingRouteRefreshRequest()
         pendingPairingPayload = null
-        pendingPairingRequestPayload = null
+        clearPendingPairingRequest()
         clearPendingRuntimeHistoryRequests()
         pendingChatSessionLifecycleRequestIds.clear()
         pendingChatSessionRenameRequestIds.clear()
@@ -2947,6 +3128,7 @@ class RuntimeClientViewModel internal constructor(
         readJob?.cancel()
         readJob = null
         cancelRuntimeRouteRefreshLease()
+        clearPendingRouteRefreshRequest()
         activeChannel?.close()
         activeChannel = null
         client.close()
@@ -3090,13 +3272,13 @@ class RuntimeClientViewModel internal constructor(
             .filterIsInstance<PreparedRemoteRuntimeRoute.Relay>()
             .firstOrNull()
             ?: return null
-        val reachable = runCatching {
-            dependencies.relayReachabilityChecker.isReachable(
+        val probeResult = runCatching {
+            dependencies.relayReachabilityChecker.check(
                 route = relayRoute,
                 timeoutMillis = RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS,
             )
-        }.getOrDefault(false)
-        if (reachable) return null
+        }.getOrDefault(RuntimeRelayProbeResult.Unsupported)
+        if (probeResult != RuntimeRelayProbeResult.Unavailable) return null
         return RuntimeUiError(
             code = "remote_route_unreachable_from_device",
             diagnosticCode = "route_diagnostic_relay_unreachable_from_device",
@@ -3122,8 +3304,8 @@ class RuntimeClientViewModel internal constructor(
                             pendingMemoryListRequestId = null
                             pendingMemorySummaryDraftsRequestId = null
                             clearPendingRuntimeDocumentRequests()
-                            pendingRouteRefreshRequestId = null
-                            pendingPairingRequestPayload = null
+                            clearPendingRouteRefreshRequest()
+                            clearPendingPairingRequest()
                             cancelRuntimeRouteRefreshLease()
                             clearPendingTitleRequest()
                             val current = state.value
@@ -3197,6 +3379,7 @@ class RuntimeClientViewModel internal constructor(
             MessageType.RuntimeHealth -> handleRuntimeHealth(envelope)
             MessageType.ModelsList, MessageType.ModelsResult -> handleModels(envelope)
             MessageType.ModelsPull -> handleModelPull(envelope)
+            MessageType.RelayAllocationChallenge -> handleRelayAllocationChallenge(envelope)
             MessageType.RouteRefresh -> handleRouteRefresh(envelope)
             MessageType.ChatSessionsList -> handleChatSessionsList(envelope)
             MessageType.ChatMessagesList -> handleChatMessagesList(envelope)
@@ -3230,6 +3413,8 @@ class RuntimeClientViewModel internal constructor(
             val identity = deviceIdentityStore.loadOrCreate()
             if (!verifyRuntimeAuthChallenge(payload, identity.deviceId)) {
                 isSessionAuthenticated = false
+                cancelRuntimeRouteRefreshLease()
+                clearPendingRouteRefreshRequest()
                 showError("runtime_authentication_failed")
                 return
             }
@@ -3240,7 +3425,11 @@ class RuntimeClientViewModel internal constructor(
                     payload = AuthResponsePayload(
                         deviceId = identity.deviceId,
                         nonce = payload.nonce,
-                        signature = identity.signAuthenticationResponse(payload.nonce),
+                        signature = identity.signAuthenticationResponse(
+                            nonce = payload.nonce,
+                            transportBinding = payload.transportBinding,
+                        ),
+                        transportBinding = payload.transportBinding,
                     ),
                     requestId = envelope.requestId,
                 )
@@ -3254,9 +3443,11 @@ class RuntimeClientViewModel internal constructor(
         payload: AuthChallengePayload,
         deviceId: String,
     ): Boolean {
-        val trustedRuntime = state.value.trustedRuntime ?: return true
+        val transportBinding = activeChannel?.transportSecurityContext?.bindingId
+        if (!authenticationTransportBindingMatches(payload.transportBinding, transportBinding)) return false
+        val trustedRuntime = state.value.trustedRuntime ?: return transportBinding == null
         val runtimePublicKey = trustedRuntime.publicKeyBase64?.takeIf { it.isNotBlank() }
-            ?: return true
+            ?: return transportBinding == null
         val challengedDeviceId = payload.deviceId?.takeIf { it.isNotBlank() } ?: return false
         if (challengedDeviceId != deviceId) return false
         val signature = payload.runtimeSignature?.takeIf { it.isNotBlank() } ?: return false
@@ -3270,6 +3461,7 @@ class RuntimeClientViewModel internal constructor(
             deviceId = challengedDeviceId,
             nonce = payload.nonce,
             signatureBase64 = signature,
+            transportBinding = transportBinding,
         )
     }
 
@@ -3279,6 +3471,14 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val payload = decodePayload(AuthResponsePayload.serializer(), envelope.payload) ?: return
+        val transportBinding = activeChannel?.transportSecurityContext?.bindingId
+        if (!authenticationTransportBindingMatches(payload.transportBinding, transportBinding)) {
+            isSessionAuthenticated = false
+            cancelRuntimeRouteRefreshLease()
+            clearPendingRouteRefreshRequest()
+            showError("runtime_authentication_failed")
+            return
+        }
         if (payload.accepted == true) {
             isSessionAuthenticated = true
             mutableState.update {
@@ -3295,6 +3495,7 @@ class RuntimeClientViewModel internal constructor(
         } else {
             isSessionAuthenticated = false
             cancelRuntimeRouteRefreshLease()
+            clearPendingRouteRefreshRequest()
             showError("authentication_failed", payload.message)
         }
     }
@@ -3306,26 +3507,63 @@ class RuntimeClientViewModel internal constructor(
         }
         val payload = decodePayload(PairingResultPayload.serializer(), envelope.payload) ?: return
         val pending = pendingPairingPayload
-        if (!payload.accepted || pending == null) {
+        val pendingRequest = pendingInitialPairingRequest
+        if (!payload.accepted) {
+            if (
+                pending == null ||
+                pendingRequest == null ||
+                pendingRequest.payload != pending ||
+                envelope.requestId != pendingRequest.requestId
+            ) {
+                showError("invalid_payload", "pairing.result does not match the active pairing request")
+                return
+            }
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
-            pendingPairingPayload = null
-            pendingPairingRequestPayload = null
-            clearPersistedPendingPairingRoute()
+            clearPendingPairingRequest()
             mutableState.update {
-                it.withClearedPendingPairing().copy(
-                    error = runtimeUiError("pairing_rejected", payload.message),
-                )
+                it.copy(error = runtimeUiError("pairing_rejected", payload.message))
+            }
+            return
+        }
+
+        val hasRejectionMetadata = envelope.payload.keys.any { it in PAIRING_REJECTION_RESULT_PAYLOAD_KEYS }
+        val currentTransportBinding = activeChannel?.transportSecurityContext?.bindingId
+        if (pending == null || pendingRequest == null) {
+            showError("invalid_payload", "pairing.result does not match the active pairing request")
+            return
+        }
+        val acceptedProofIsValid = pendingRequest.payload == pending &&
+            envelope.requestId == pendingRequest.requestId &&
+            !hasRejectionMetadata &&
+            currentTransportBinding == pendingRequest.transportBinding &&
+            acceptedInitialPairingProofIsValid(
+                pending = pending,
+                pendingRequest = pendingRequest,
+                payload = payload,
+            )
+        if (!acceptedProofIsValid) {
+            cancelPendingPairingRetry()
+            clearPendingPairingRequest()
+            mutableState.update {
+                it.copy(error = RuntimeUiError("runtime_identity_mismatch"))
             }
             return
         }
 
         viewModelScope.launch {
+            if (activeChannel?.transportSecurityContext?.bindingId != pendingRequest.transportBinding) {
+                clearPendingPairingRequest()
+                mutableState.update {
+                    it.copy(error = RuntimeUiError("runtime_identity_mismatch"))
+                }
+                return@launch
+            }
             val trusted = trustedRuntimeFromAcceptedPairing(pending, payload)
             if (trusted == null) {
                 cancelPendingPairingRetry()
                 pendingPairingPayload = null
-                pendingPairingRequestPayload = null
+                clearPendingPairingRequest()
                 clearPersistedPendingPairingRoute()
                 mutableState.update {
                     it.withClearedPendingPairing().copy(
@@ -3342,7 +3580,7 @@ class RuntimeClientViewModel internal constructor(
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
-            pendingPairingRequestPayload = null
+            clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
             isSessionAuthenticated = true
             publishPersistedRuntimeData(
@@ -3354,7 +3592,17 @@ class RuntimeClientViewModel internal constructor(
                     .withTrustedRuntimeRouteFields(runtime, sessionEndpoint)
                     .copy(routeRefreshNoticeRuntimeName = null, error = null)
             }
-            scheduleRuntimeRouteRefreshLease()
+            val secureBinding = pendingRequest.transportBinding
+                ?.takeIf(DeviceIdentity::isCanonicalTransportBinding)
+            if (
+                trusted.relayId != null &&
+                secureBinding != null &&
+                activeChannel?.transportSecurityContext?.bindingId == secureBinding
+            ) {
+                requestRuntimeRouteRefresh(forcePairedClaim = true)
+            } else {
+                scheduleRuntimeRouteRefreshLease()
+            }
             requestRuntimeHealthInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
@@ -3374,6 +3622,7 @@ class RuntimeClientViewModel internal constructor(
                                 deviceId = identity.deviceId,
                                 deviceName = identity.deviceName,
                                 capabilities = clientCapabilities,
+                                transportBinding = activeChannel?.transportSecurityContext?.bindingId,
                             ),
                         )
                     )
@@ -3384,20 +3633,160 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun requestRuntimeRouteRefresh() {
-        if (!dependencies.authenticatedRouteRefreshEnabled) return
+    private fun requestRuntimeRouteRefresh(forcePairedClaim: Boolean = false) {
         if (!isSessionAuthenticated) return
-        if (activeChannel?.isConnected != true) return
-        if (state.value.trustedRuntime == null) return
+        val channel = activeChannel ?: return
+        if (!channel.isConnected) return
+        val trustedRuntime = state.value.trustedRuntime ?: return
+        val hasTicketGeneration = trustedRuntime.relayTicketGeneration != null
+        val requiresPairedAuthorization = forcePairedClaim || hasTicketGeneration
+        if (requiresPairedAuthorization) {
+            val binding = channel.transportSecurityContext?.bindingId ?: return
+            if (!DeviceIdentity.isCanonicalTransportBinding(binding)) return
+            if (forcePairedClaim && hasTicketGeneration) return
+        } else if (!dependencies.authenticatedRouteRefreshEnabled) {
+            return
+        }
         if (pendingRouteRefreshRequestId != null) return
         val requestId = UUID.randomUUID().toString()
         pendingRouteRefreshRequestId = requestId
+        pendingRouteRefreshRequiresPairedAuthorization = requiresPairedAuthorization
+        pendingPairedRelayAllocationAuthorization = null
+        routeRefreshRequestTimeoutJob?.cancel()
+        routeRefreshRequestTimeoutJob = if (requiresPairedAuthorization) {
+            viewModelScope.launch {
+                delay(ROUTE_REFRESH_REQUEST_TIMEOUT_MS)
+                if (pendingRouteRefreshRequestId != requestId) return@launch
+                clearPendingRouteRefreshRequest()
+            }
+        } else {
+            null
+        }
         sendEnvelope(ProtocolEnvelope(type = MessageType.RouteRefresh, requestId = requestId))
+    }
+
+    private suspend fun handleRelayAllocationChallenge(envelope: ProtocolEnvelope) {
+        val requestId = pendingRouteRefreshRequestId ?: return
+        if (envelope.requestId != requestId) return
+        if (pendingPairedRelayAllocationAuthorization != null) return
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel ?: return
+        if (!channel.isConnected) return
+        val binding = channel.transportSecurityContext?.bindingId ?: return
+        if (!DeviceIdentity.isCanonicalTransportBinding(binding)) return
+        val payload = decodePayload(RelayAllocationChallengePayload.serializer(), envelope.payload) ?: return
+        val current = state.value.trustedRuntime ?: return
+        val expectedOperation = if (current.relayTicketGeneration == null) "claim" else "renew"
+        val storedTicketGeneration = current.relayTicketGeneration
+        val routeToken = current.routeToken?.takeIf(::isCanonicalOpaqueRouteValue) ?: return
+        val relayId = current.relayId ?: return
+        val relayExpiresAt = current.relayExpiresAtEpochMillis ?: return
+        val relayNonce = current.relayNonce ?: return
+        val runtimeFingerprint = current.fingerprint ?: return
+        if (
+            payload.operation != expectedOperation ||
+            payload.transportBinding != binding ||
+            payload.currentRelayId != relayId ||
+            payload.currentRelayExpiresAtEpochMillis != relayExpiresAt ||
+            relayExpiresAt <= nowMillis() ||
+            payload.currentRelayNonce != relayNonce ||
+            payload.runtimeKeyFingerprint != runtimeFingerprint ||
+            payload.routeTokenHash != pairedRelayRouteTokenHash(routeToken) ||
+            (storedTicketGeneration != null && payload.currentTicketGeneration != storedTicketGeneration) ||
+            payload.currentTicketGeneration == Long.MAX_VALUE ||
+            payload.nextTicketGeneration != payload.currentTicketGeneration + 1L ||
+            payload.challengeExpiresAtEpochMillis <= nowMillis()
+        ) {
+            return
+        }
+
+        val identity = runCatching { deviceIdentityStore.loadOrCreate() }.getOrNull() ?: return
+        val clientFingerprint = runCatching {
+            initialPairingPublicKeyFingerprint(identity.publicKeyBase64)
+        }.getOrNull() ?: return
+        val expectedPairedRelayId = runCatching {
+            PairedRelayAllocationAuthorizationProof.pairedRelayId(
+                routeToken = routeToken,
+                runtimeKeyFingerprint = runtimeFingerprint,
+                clientKeyFingerprint = clientFingerprint,
+            )
+        }.getOrNull() ?: return
+        if (
+            payload.clientKeyFingerprint != clientFingerprint ||
+            payload.nextRelayId != expectedPairedRelayId
+        ) {
+            return
+        }
+        if (
+            pendingRouteRefreshRequestId != requestId ||
+            pendingPairedRelayAllocationAuthorization != null ||
+            !isSessionAuthenticated ||
+            activeChannel !== channel ||
+            channel.transportSecurityContext?.bindingId != binding ||
+            state.value.trustedRuntime != current ||
+            payload.challengeExpiresAtEpochMillis <= nowMillis()
+        ) {
+            return
+        }
+
+        val authorization = runCatching {
+            PairedRelayAllocationAuthorization(
+                operation = payload.operation,
+                requestId = requestId,
+                authorizationId = payload.authorizationId,
+                currentRelayId = payload.currentRelayId,
+                nextRelayId = payload.nextRelayId,
+                routeTokenHash = payload.routeTokenHash,
+                runtimeKeyFingerprint = payload.runtimeKeyFingerprint,
+                clientKeyFingerprint = payload.clientKeyFingerprint,
+                currentTicketGeneration = payload.currentTicketGeneration,
+                nextTicketGeneration = payload.nextTicketGeneration,
+                currentRelayExpiresAtEpochMillis = payload.currentRelayExpiresAtEpochMillis,
+                currentRelayNonce = payload.currentRelayNonce,
+                nextRelayExpiresAtEpochMillis = payload.nextRelayExpiresAtEpochMillis,
+                nextRelayNonce = payload.nextRelayNonce,
+                challenge = payload.challenge,
+                challengeExpiresAtEpochMillis = payload.challengeExpiresAtEpochMillis,
+                transportBinding = payload.transportBinding,
+            )
+        }.getOrNull() ?: return
+        val signature = runCatching {
+            identity.signPairedRelayAllocationAuthorization(authorization)
+        }.getOrNull() ?: return
+
+        pendingPairedRelayAllocationAuthorization = PendingPairedRelayAllocationAuthorization(
+            requestId = requestId,
+            authorizationId = payload.authorizationId,
+            challenge = payload.challenge,
+            relayId = payload.nextRelayId,
+            relayExpiresAtEpochMillis = payload.nextRelayExpiresAtEpochMillis,
+            relayNonce = payload.nextRelayNonce,
+            ticketGeneration = payload.nextTicketGeneration,
+            transportBinding = binding,
+            clientKeyFingerprint = clientFingerprint,
+        )
+        sendEnvelopeInternal(
+            envelope(
+                type = MessageType.RelayAllocationAuthorization,
+                serializer = RelayAllocationAuthorizationPayload.serializer(),
+                payload = RelayAllocationAuthorizationPayload(
+                    proofScheme = payload.proofScheme,
+                    authorizationId = payload.authorizationId,
+                    challenge = payload.challenge,
+                    clientKeyFingerprint = clientFingerprint,
+                    transportBinding = binding,
+                    clientSignature = signature,
+                ),
+                requestId = requestId,
+            )
+        )
     }
 
     private fun handleRouteRefresh(envelope: ProtocolEnvelope) {
         if (pendingRouteRefreshRequestId != envelope.requestId) return
-        pendingRouteRefreshRequestId = null
+        val requiresPairedAuthorization = pendingRouteRefreshRequiresPairedAuthorization
+        val pendingAuthorization = pendingPairedRelayAllocationAuthorization
+        clearPendingRouteRefreshRequest()
         if (!envelope.payload.hasOnlyRouteRefreshResponsePayloadKeys()) {
             scheduleRuntimeRouteRefreshRetry()
             return
@@ -3407,6 +3796,29 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val current = state.value.trustedRuntime ?: return
+        if (!isSessionAuthenticated) return
+        if (pendingAuthorization == null) {
+            if (
+                requiresPairedAuthorization ||
+                current.relayTicketGeneration != null ||
+                payload.ticketGeneration != null
+            ) {
+                scheduleRuntimeRouteRefreshRetry()
+                return
+            }
+        } else {
+            val binding = activeChannel?.transportSecurityContext?.bindingId
+            if (
+                binding != pendingAuthorization.transportBinding ||
+                payload.relayId != pendingAuthorization.relayId ||
+                payload.relayExpiresAtEpochMillis != pendingAuthorization.relayExpiresAtEpochMillis ||
+                payload.relayNonce != pendingAuthorization.relayNonce ||
+                payload.ticketGeneration != pendingAuthorization.ticketGeneration
+            ) {
+                scheduleRuntimeRouteRefreshRetry()
+                return
+            }
+        }
         val trusted = trustedRuntimeFromRouteRefreshPayload(
             current = current,
             payload = payload,
@@ -3416,6 +3828,13 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         viewModelScope.launch {
+            if (state.value.trustedRuntime != current) return@launch
+            if (
+                pendingAuthorization != null &&
+                activeChannel?.transportSecurityContext?.bindingId != pendingAuthorization.transportBinding
+            ) {
+                return@launch
+            }
             didAttemptTrustedRuntimeRestore = true
             pairingStore.trustRuntime(trusted)
             val runtime = trusted.toRuntimeTrustedRuntime()
@@ -3430,13 +3849,18 @@ class RuntimeClientViewModel internal constructor(
     private fun scheduleRuntimeRouteRefreshLease() {
         routeRefreshLeaseJob?.cancel()
         routeRefreshLeaseJob = null
-        if (!dependencies.authenticatedRouteRefreshEnabled) return
         if (!isSessionAuthenticated) return
         val channel = activeChannel ?: return
         if (!channel.isConnected) return
         val current = state.value
         if (!current.isConnected) return
         val trustedRuntime = current.trustedRuntime ?: return
+        if (trustedRuntime.relayTicketGeneration != null) {
+            val binding = channel.transportSecurityContext?.bindingId ?: return
+            if (!DeviceIdentity.isCanonicalTransportBinding(binding)) return
+        } else if (!dependencies.authenticatedRouteRefreshEnabled) {
+            return
+        }
         val now = nowMillis()
         val expiresAt = trustedRuntime.activeRemoteRouteLeaseExpiresAtEpochMillis(now) ?: return
         val delayMillis = runtimeRouteRefreshLeaseDelayMillis(
@@ -3453,13 +3877,18 @@ class RuntimeClientViewModel internal constructor(
     private fun scheduleRuntimeRouteRefreshRetry(): Boolean {
         routeRefreshLeaseJob?.cancel()
         routeRefreshLeaseJob = null
-        if (!dependencies.authenticatedRouteRefreshEnabled) return false
         if (!isSessionAuthenticated) return false
         val channel = activeChannel ?: return false
         if (!channel.isConnected) return false
         val current = state.value
         if (!current.isConnected) return false
         val trustedRuntime = current.trustedRuntime
+        if (trustedRuntime?.relayTicketGeneration != null) {
+            val binding = channel.transportSecurityContext?.bindingId ?: return false
+            if (!DeviceIdentity.isCanonicalTransportBinding(binding)) return false
+        } else if (!dependencies.authenticatedRouteRefreshEnabled) {
+            return false
+        }
         val now = nowMillis()
         val delayMillis = runtimeRouteRefreshRetryDelayMillis(
             nowEpochMillis = now,
@@ -3500,6 +3929,14 @@ class RuntimeClientViewModel internal constructor(
         routeRefreshLeaseJob = null
     }
 
+    private fun clearPendingRouteRefreshRequest() {
+        routeRefreshRequestTimeoutJob?.cancel()
+        routeRefreshRequestTimeoutJob = null
+        pendingRouteRefreshRequestId = null
+        pendingRouteRefreshRequiresPairedAuthorization = false
+        pendingPairedRelayAllocationAuthorization = null
+    }
+
     private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
         envelope.payload.runtimeHealthUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "runtime.health response contains unsupported metadata: $unknownKey")
@@ -3508,6 +3945,8 @@ class RuntimeClientViewModel internal constructor(
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
         if (payload.status.isPairingRequiredRuntimeCode()) {
             isSessionAuthenticated = false
+            cancelRuntimeRouteRefreshLease()
+            clearPendingRouteRefreshRequest()
             mutableState.update {
                 it.withPairingRequiredRuntimeState(detail = null)
             }
@@ -4078,7 +4517,7 @@ class RuntimeClientViewModel internal constructor(
         }
         if (pendingRouteRefreshRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            pendingRouteRefreshRequestId = null
+            clearPendingRouteRefreshRequest()
             if (payload?.code.isPairingRequiredRuntimeCode()) {
                 isSessionAuthenticated = false
                 cancelRuntimeRouteRefreshLease()
@@ -4087,6 +4526,11 @@ class RuntimeClientViewModel internal constructor(
                     payload?.withoutRouteRefreshSensitiveDetail(),
                     pendingModelPullRequestId,
                 )
+            } else if (payload?.retryable == false) {
+                cancelRuntimeRouteRefreshLease()
+                mutableState.update {
+                    it.copy(error = RuntimeUiError("remote_routes_unavailable"))
+                }
             } else {
                 scheduleRuntimeRouteRefreshRetry()
             }
@@ -4100,6 +4544,8 @@ class RuntimeClientViewModel internal constructor(
         }
         if (payload?.code.isPairingRequiredRuntimeCode()) {
             isSessionAuthenticated = false
+            cancelRuntimeRouteRefreshLease()
+            clearPendingRouteRefreshRequest()
         }
         val updatedState = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
         mutableState.value = updatedState
@@ -4183,7 +4629,10 @@ class RuntimeClientViewModel internal constructor(
                     } else {
                         null
                     }
-                val isRouteRefreshRequest = envelope.type == MessageType.RouteRefresh &&
+                val isRouteRefreshRequest = (
+                    envelope.type == MessageType.RouteRefresh ||
+                        envelope.type == MessageType.RelayAllocationAuthorization
+                    ) &&
                     pendingRouteRefreshRequestId == envelope.requestId
                 val isPairingRequest = envelope.type == MessageType.PairingRequest
                 val isRuntimeHistoryRequest = (
@@ -4194,7 +4643,7 @@ class RuntimeClientViewModel internal constructor(
                         pendingChatMessagesRequestId == envelope.requestId
                     )
                 if (isPairingRequest) {
-                    pendingPairingRequestPayload = null
+                    clearPendingPairingRequest()
                 }
                 if (isRuntimeHistoryRequest) {
                     clearPendingRuntimeHistoryRequests()
@@ -4244,7 +4693,7 @@ class RuntimeClientViewModel internal constructor(
                     return@onFailure
                 }
                 if (isRouteRefreshRequest) {
-                    pendingRouteRefreshRequestId = null
+                    clearPendingRouteRefreshRequest()
                     scheduleRuntimeRouteRefreshRetry()
                     return@onFailure
                 }
@@ -4578,6 +5027,7 @@ class RuntimeClientViewModel internal constructor(
         dependencies.lifecycleCallbacksRegistrar.unregister(getApplication(), lifecycleCallbacks)
         stopDiscoveryInternal()
         closeRuntimeConnection()
+        viewModelScope.cancel()
         super.onCleared()
     }
 
@@ -5455,6 +5905,7 @@ private fun RuntimeTrustedRuntime.withoutRelayRoute(): RuntimeTrustedRuntime {
         relayExpiresAtEpochMillis = null,
         relayNonce = null,
         relayScope = null,
+        relayTicketGeneration = null,
     )
 }
 
@@ -5467,6 +5918,7 @@ private fun RuntimeTrustedRuntime.withoutRemoteRoutes(): RuntimeTrustedRuntime {
         relayExpiresAtEpochMillis = null,
         relayNonce = null,
         relayScope = null,
+        relayTicketGeneration = null,
         p2pRouteClass = null,
         p2pRecordId = null,
         p2pEncryptedBody = null,
@@ -5501,6 +5953,7 @@ private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        relayTicketGeneration = relayTicketGeneration,
         p2pRouteClass = p2pRouteClass,
         p2pRecordId = p2pRecordId,
         p2pEncryptedBody = p2pEncryptedBody,
@@ -5576,6 +6029,83 @@ internal fun shouldPreemptActiveConnectionForPairingQr(
     return false
 }
 
+private fun initialPairingPublicKeyFingerprint(publicKeyBase64: String): String {
+    val publicKeyBytes = Base64.getDecoder().decode(publicKeyBase64)
+    require(Base64.getEncoder().encodeToString(publicKeyBytes) == publicKeyBase64) {
+        "Device public key is not canonical Base64"
+    }
+    return MessageDigest.getInstance("SHA-256")
+        .digest(publicKeyBytes)
+        .joinToString("") { "%02x".format(it) }
+}
+
+private fun pairedRelayRouteTokenHash(routeToken: String): String {
+    return MessageDigest.getInstance("SHA-256")
+        .digest(routeToken.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+}
+
+private fun RuntimeTrustedRuntime?.hasSameRelayAllocationRoute(other: TrustedRuntime?): Boolean {
+    if (this == null || other == null) return this == null && other == null
+    return deviceId == other.deviceId &&
+        fingerprint == other.fingerprint &&
+        routeToken == other.routeToken &&
+        relayId == other.relayId &&
+        relayExpiresAtEpochMillis == other.relayExpiresAtEpochMillis &&
+        relayNonce == other.relayNonce &&
+        relayTicketGeneration == other.relayTicketGeneration
+}
+
+private fun acceptedInitialPairingProofIsValid(
+    pending: RuntimePairingPayload,
+    pendingRequest: PendingInitialPairingRequest,
+    payload: PairingResultPayload,
+): Boolean {
+    val runtimeDeviceId = payload.runtimeDeviceIdV2 ?: return false
+    val runtimePublicKey = payload.runtimePublicKey ?: return false
+    val runtimeKeyFingerprint = payload.runtimeKeyFingerprint ?: return false
+    val trustedDeviceId = payload.trustedDeviceId ?: return false
+    val pairingProofScheme = payload.pairingProofScheme ?: return false
+    val pairingRequestDigest = payload.pairingRequestDigest ?: return false
+    val runtimePairingSignature = payload.runtimePairingSignature ?: return false
+    if (
+        pairingProofScheme != INITIAL_PAIRING_PROOF_SCHEME ||
+        pairingRequestDigest != pendingRequest.requestDigest ||
+        runtimeDeviceId != pending.runtimeDeviceId ||
+        runtimePublicKey != pending.runtimePublicKeyBase64 ||
+        runtimeKeyFingerprint != pending.fingerprint ||
+        trustedDeviceId != pendingRequest.clientDeviceId ||
+        payload.transportBinding != pendingRequest.transportBinding
+    ) {
+        return false
+    }
+
+    val result = runCatching {
+        InitialPairingAcceptedResult(
+            scheme = pairingProofScheme,
+            protocolVersion = 1,
+            requestId = pendingRequest.requestId,
+            pairingRequestDigest = pairingRequestDigest,
+            accepted = true,
+            runtimeDeviceId = runtimeDeviceId,
+            runtimePublicKey = runtimePublicKey,
+            runtimeKeyFingerprint = runtimeKeyFingerprint,
+            trustedDeviceId = trustedDeviceId,
+            message = payload.message,
+            transportBinding = payload.transportBinding,
+        )
+    }.getOrNull() ?: return false
+
+    return InitialPairingProof.verifyAcceptedResult(
+        result = result,
+        signatureBase64 = runtimePairingSignature,
+        expectedRequestId = pendingRequest.requestId,
+        expectedPairingRequestDigest = pendingRequest.requestDigest,
+        expectedTrustedDeviceId = pendingRequest.clientDeviceId,
+        expectedTransportBinding = pendingRequest.transportBinding,
+    )
+}
+
 internal fun trustedRuntimeFromAcceptedPairing(
     pending: RuntimePairingPayload,
     payload: PairingResultPayload,
@@ -5585,18 +6115,14 @@ internal fun trustedRuntimeFromAcceptedPairing(
     val hasPeerToPeerRoute = pending.hasPeerToPeerRoute()
     if (!hasRelayRoute && pending.hasAnyRelayRouteMaterial()) return null
     if (!hasPeerToPeerRoute && pending.hasAnyPeerToPeerRouteMaterial()) return null
-    val acceptedRuntimeDeviceId = payload.runtimeDeviceIdV2
-        ?: payload.runtimeDeviceId
-        ?: pending.runtimeDeviceId
-    val acceptedFingerprint = payload.runtimeKeyFingerprint
-        ?.takeIf(String::isNotBlank)
-        ?: pending.fingerprint
-    val acceptedPublicKey = payload.runtimePublicKey?.takeIf(String::isNotBlank)
-        ?: pending.runtimePublicKeyBase64
+    val acceptedRuntimeDeviceId = payload.runtimeDeviceIdV2 ?: return null
+    val acceptedFingerprint = payload.runtimeKeyFingerprint?.takeIf(String::isNotBlank) ?: return null
+    val acceptedPublicKey = payload.runtimePublicKey?.takeIf(String::isNotBlank) ?: return null
     if (
         acceptedRuntimeDeviceId != pending.runtimeDeviceId ||
         acceptedFingerprint != pending.fingerprint ||
-        !runtimePublicKeyMatches(pending.runtimePublicKeyBase64, acceptedPublicKey)
+        pending.runtimePublicKeyBase64 == null ||
+        acceptedPublicKey != pending.runtimePublicKeyBase64
     ) {
         return null
     }
@@ -5615,6 +6141,7 @@ internal fun trustedRuntimeFromAcceptedPairing(
         relayExpiresAtEpochMillis = if (hasRelayRoute) pending.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayRoute) pending.relayNonce else null,
         relayScope = if (hasRelayRoute) pending.relayScope else null,
+        relayTicketGeneration = null,
         p2pRouteClass = if (hasPeerToPeerRoute) pending.p2pRouteClass else null,
         p2pRecordId = if (hasPeerToPeerRoute) pending.p2pRecordId else null,
         p2pEncryptedBody = if (hasPeerToPeerRoute) pending.p2pEncryptedBody else null,
@@ -5663,6 +6190,7 @@ internal fun trustedRuntimeFromRouteRefreshQr(
         relayExpiresAtEpochMillis = if (hasRelayRoute) payload.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayRoute) payload.relayNonce else null,
         relayScope = if (hasRelayRoute) payload.relayScope else null,
+        relayTicketGeneration = null,
         p2pRouteClass = if (hasPeerToPeerRoute) payload.p2pRouteClass else null,
         p2pRecordId = if (hasPeerToPeerRoute) payload.p2pRecordId else null,
         p2pEncryptedBody = if (hasPeerToPeerRoute) payload.p2pEncryptedBody else null,
@@ -5728,6 +6256,7 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         relayExpiresAtEpochMillis = if (hasRelayMaterial) payload.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayMaterial) payload.relayNonce else null,
         relayScope = if (hasRelayMaterial) relayScope else null,
+        relayTicketGeneration = if (hasRelayMaterial) payload.ticketGeneration else null,
         p2pRouteClass = if (hasPeerToPeerMaterial) payload.p2pRouteClass else null,
         p2pRecordId = if (hasPeerToPeerMaterial) payload.p2pRecordId else null,
         p2pEncryptedBody = if (hasPeerToPeerMaterial) payload.p2pEncryptedBody else null,
@@ -5753,6 +6282,7 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         relayExpiresAtEpochMillis = if (hasRelayMaterial) payload.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayMaterial) payload.relayNonce else null,
         relayScope = if (hasRelayMaterial) relayScope else null,
+        relayTicketGeneration = if (hasRelayMaterial) payload.ticketGeneration else null,
         p2pRouteClass = if (hasPeerToPeerMaterial) payload.p2pRouteClass else null,
         p2pRecordId = if (hasPeerToPeerMaterial) payload.p2pRecordId else null,
         p2pEncryptedBody = if (hasPeerToPeerMaterial) payload.p2pEncryptedBody else null,
@@ -5817,7 +6347,8 @@ private fun RouteRefreshPayload.hasAnyRouteRefreshRelayMaterial(): Boolean {
         relaySecret != null ||
         relayExpiresAtEpochMillis != null ||
         relayNonce != null ||
-        relayScope != null
+        relayScope != null ||
+        ticketGeneration != null
 }
 
 private fun RouteRefreshPayload.hasAnyRouteRefreshPeerToPeerMaterial(): Boolean {
@@ -5954,6 +6485,7 @@ private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        relayTicketGeneration = relayTicketGeneration,
         p2pRouteClass = p2pRouteClass,
         p2pRecordId = p2pRecordId,
         p2pEncryptedBody = p2pEncryptedBody,

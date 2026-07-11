@@ -109,6 +109,7 @@ class PairingStore(
         val relayExpiresAtEpochMillis = prefs[Keys.runtimeRelayExpiresAtEpochMillis]
         val relayNonce = prefs[Keys.runtimeRelayNonce]
         val relayScope = prefs[Keys.runtimeRelayScope]
+        val relayTicketGeneration = prefs[Keys.runtimeRelayTicketGeneration]
         val p2pRouteClass = prefs[Keys.runtimeP2pRouteClass]
         val p2pRecordId = prefs[Keys.runtimeP2pRecordId]
         val p2pEncryptedBody = prefs[Keys.runtimeP2pEncryptedBody]
@@ -130,6 +131,7 @@ class PairingStore(
             relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
             relayNonce = relayNonce,
             relayScope = relayScope,
+            relayTicketGeneration = relayTicketGeneration,
             p2pRouteClass = p2pRouteClass,
             p2pRecordId = p2pRecordId,
             p2pEncryptedBody = p2pEncryptedBody,
@@ -231,6 +233,12 @@ class PairingStore(
                 } else {
                     prefs.remove(Keys.runtimeRelayScope)
                 }
+                val relayTicketGeneration = runtime.relayTicketGeneration
+                if (relayTicketGeneration != null && relayTicketGeneration > 0L) {
+                    prefs[Keys.runtimeRelayTicketGeneration] = relayTicketGeneration
+                } else {
+                    prefs.remove(Keys.runtimeRelayTicketGeneration)
+                }
             } else {
                 prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
                 prefs.removeRelayRouteKeys()
@@ -273,6 +281,7 @@ class PairingStore(
         val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
         val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
         val runtimeRelayScope = stringPreferencesKey("runtime_relay_scope")
+        val runtimeRelayTicketGeneration = longPreferencesKey("runtime_relay_ticket_generation")
         val runtimeP2pRouteClass = stringPreferencesKey("runtime_p2p_route_class")
         val runtimeP2pRecordId = stringPreferencesKey("runtime_p2p_record_id")
         val runtimeP2pEncryptedBody = stringPreferencesKey("runtime_p2p_encrypted_body")
@@ -323,6 +332,7 @@ class PairingStore(
         remove(Keys.runtimeRelayExpiresAtEpochMillis)
         remove(Keys.runtimeRelayNonce)
         remove(Keys.runtimeRelayScope)
+        remove(Keys.runtimeRelayTicketGeneration)
     }
 
     private fun MutablePreferences.removeP2pRouteKeys() {
@@ -352,7 +362,8 @@ class PairingStore(
             this[Keys.runtimeRelaySecretRef] != null ||
             this[Keys.runtimeRelayExpiresAtEpochMillis] != null ||
             this[Keys.runtimeRelayNonce] != null ||
-            this[Keys.runtimeRelayScope] != null
+            this[Keys.runtimeRelayScope] != null ||
+            this[Keys.runtimeRelayTicketGeneration] != null
     }
 
     private fun Preferences.hasStoredP2pRoute(): Boolean {
@@ -515,7 +526,8 @@ private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
         isCanonicalOpaqueRouteValue(relaySecret) &&
         expiresAt != null &&
         expiresAt > 0L &&
-        isCanonicalOpaqueRouteValue(relayNonce)
+        isCanonicalOpaqueRouteValue(relayNonce) &&
+        (relayTicketGeneration == null || relayTicketGeneration > 0L)
 }
 
 private fun TrustedRuntime.hasCompleteP2pRoute(): Boolean {
@@ -538,6 +550,7 @@ private fun TrustedRuntime.withoutRelayRoute(): TrustedRuntime {
         relayExpiresAtEpochMillis = null,
         relayNonce = null,
         relayScope = null,
+        relayTicketGeneration = null,
     )
 }
 

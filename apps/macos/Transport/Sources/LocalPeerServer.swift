@@ -10,9 +10,20 @@ public enum PeerServerStatus: Equatable, Sendable {
 
 public protocol RuntimeMessageSink: Sendable {
     var connectionID: UUID { get }
+    var transportSecurityContext: TransportSecurityContext? { get }
 
     func send(_ envelope: ProtocolEnvelope)
+    func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool
     func close()
+}
+
+public extension RuntimeMessageSink {
+    var transportSecurityContext: TransportSecurityContext? { nil }
+
+    func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
+        send(envelope)
+        return true
+    }
 }
 
 public typealias LocalPeerMessageHandler = @Sendable (ProtocolEnvelope, any RuntimeMessageSink) -> Void
@@ -173,6 +184,7 @@ public final class LocalPeerServer: RuntimeTransport, @unchecked Sendable {
 public final class LocalPeerConnection: RuntimeMessageSink, @unchecked Sendable {
     public let id = UUID()
     public var connectionID: UUID { id }
+    public var transportSecurityContext: TransportSecurityContext? { nil }
 
     private let connection: NWConnection
     private let codec: ProtocolCodec
@@ -191,6 +203,22 @@ public final class LocalPeerConnection: RuntimeMessageSink, @unchecked Sendable 
                 connection.send(content: frame, completion: .contentProcessed { _ in })
             } catch {
                 connection.cancel()
+            }
+        }
+    }
+
+    public func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
+        await withCheckedContinuation { continuation in
+            sendQueue.async { [connection, codec] in
+                do {
+                    let frame = try codec.encodeFrame(envelope)
+                    connection.send(content: frame, completion: .contentProcessed { error in
+                        continuation.resume(returning: error == nil)
+                    })
+                } catch {
+                    connection.cancel()
+                    continuation.resume(returning: false)
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
-import BridgeProtocol
 import XCTest
+@testable import BridgeProtocol
 
 final class ProtocolCodecTests: XCTestCase {
     func testLengthPrefixedRoundTrip() throws {
@@ -10,6 +10,156 @@ final class ProtocolCodecTests: XCTestCase {
 
         XCTAssertEqual(decoded.type, MessageType.modelsList)
         XCTAssertEqual(decoded.requestID, envelope.requestID)
+    }
+
+    func testRelayAllocationChallengePayloadRoundTripsExactWireShape() throws {
+        let payload = try relayAllocationChallengePayload()
+        let encoded = try JSONEncoder().encode(payload)
+        let object = try jsonObject(encoded)
+        let decoded = try JSONDecoder().decode(RelayAllocationChallengePayload.self, from: encoded)
+
+        XCTAssertEqual(decoded, payload)
+        XCTAssertEqual(
+            Set(object.keys),
+            [
+                "proof_scheme", "protocol_version", "operation", "authorization_id",
+                "current_relay_id", "next_relay_id", "route_token_hash",
+                "runtime_key_fingerprint",
+                "client_key_fingerprint", "current_ticket_generation",
+                "next_ticket_generation", "current_relay_expires_at",
+                "current_relay_nonce", "next_relay_expires_at", "next_relay_nonce",
+                "challenge", "challenge_expires_at", "transport_binding",
+            ]
+        )
+        XCTAssertNil(object["request_id"])
+        XCTAssertEqual(MessageType.relayAllocationChallenge, "relay.allocation.challenge")
+        XCTAssertEqual(MessageType.relayAllocationAuthorization, "relay.allocation.authorization")
+    }
+
+    func testRelayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples() throws {
+        let decoder = JSONDecoder()
+        let base = try jsonObject(JSONEncoder().encode(relayAllocationChallengePayload()))
+        var invalidSamples: [(String, [String: Any])] = [
+            ("missing field", removing("authorization_id", from: base)),
+            ("unknown field", replacing("unknown", with: "metadata", in: base)),
+            ("route token secret", replacing("route_token", with: "secret", in: base)),
+            ("relay secret", replacing("relay_secret", with: "secret", in: base)),
+            ("wrong scheme", replacing("proof_scheme", with: "runtime-p256-v1", in: base)),
+            ("wrong version", replacing("protocol_version", with: 1, in: base)),
+            ("wrong operation", replacing("operation", with: "create", in: base)),
+            ("blank authorization id", replacing("authorization_id", with: "   ", in: base)),
+            ("oversized authorization id", replacing("authorization_id", with: String(repeating: "a", count: 513), in: base)),
+            ("legacy relay id", replacing("relay_id", with: "rt2-\(Self.hexA)", in: base)),
+            ("malformed current relay id", replacing("current_relay_id", with: Self.hexA, in: base)),
+            ("malformed next relay id", replacing("next_relay_id", with: Self.hexB, in: base)),
+            ("equal claim relay ids", replacing("next_relay_id", with: "rt2-\(Self.hexA)", in: base)),
+            ("malformed route token hash", replacing("route_token_hash", with: Self.hexA.uppercased(), in: base)),
+            ("malformed runtime fingerprint", replacing("runtime_key_fingerprint", with: String(Self.hexA.dropLast()), in: base)),
+            ("malformed client fingerprint", replacing("client_key_fingerprint", with: Self.hexB.uppercased(), in: base)),
+            ("malformed challenge", replacing("challenge", with: String(Self.hexA.dropLast()), in: base)),
+            ("malformed binding", replacing("transport_binding", with: Self.hexB.uppercased(), in: base)),
+            ("whitespace current nonce", replacing("current_relay_nonce", with: "current nonce", in: base)),
+            ("oversized next nonce", replacing("next_relay_nonce", with: String(repeating: "n", count: 513), in: base)),
+            ("noninteger generation", replacing("current_ticket_generation", with: 1.5, in: base)),
+        ]
+        for field in [
+            "current_ticket_generation",
+            "next_ticket_generation",
+            "current_relay_expires_at",
+            "next_relay_expires_at",
+            "challenge_expires_at",
+        ] {
+            invalidSamples.append(("nonpositive \(field)", replacing(field, with: 0, in: base)))
+        }
+
+        for (label, sample) in invalidSamples {
+            XCTAssertThrowsError(
+                try decoder.decode(
+                    RelayAllocationChallengePayload.self,
+                    from: JSONSerialization.data(withJSONObject: sample)
+                ),
+                label
+            )
+        }
+    }
+
+    func testRelayAllocationChallengePayloadRenewAllowsEqualOrDifferentRelayIDs() throws {
+        let decoder = JSONDecoder()
+        let base = try jsonObject(JSONEncoder().encode(relayAllocationChallengePayload()))
+        let renew = replacing("operation", with: "renew", in: base)
+
+        XCTAssertNoThrow(try decoder.decode(
+            RelayAllocationChallengePayload.self,
+            from: JSONSerialization.data(withJSONObject: renew)
+        ))
+        XCTAssertNoThrow(try decoder.decode(
+            RelayAllocationChallengePayload.self,
+            from: JSONSerialization.data(withJSONObject: replacing(
+                "next_relay_id",
+                with: "rt2-\(Self.hexA)",
+                in: renew
+            ))
+        ))
+    }
+
+    func testRelayAllocationAuthorizationPayloadRoundTripsExactWireShape() throws {
+        let payload = try RelayAllocationAuthorizationPayload(
+            proofScheme: relayAllocationProofScheme,
+            authorizationID: "authorization-1",
+            challenge: Self.hexA,
+            clientKeyFingerprint: Self.hexB,
+            transportBinding: Self.hexA,
+            clientSignature: "MEUCIQ=="
+        )
+        let encoded = try JSONEncoder().encode(payload)
+        let object = try jsonObject(encoded)
+
+        XCTAssertEqual(try JSONDecoder().decode(RelayAllocationAuthorizationPayload.self, from: encoded), payload)
+        XCTAssertEqual(
+            Set(object.keys),
+            [
+                "proof_scheme", "authorization_id", "challenge",
+                "client_key_fingerprint", "transport_binding", "client_signature",
+            ]
+        )
+        XCTAssertNil(object["request_id"])
+    }
+
+    func testRelayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples() throws {
+        let valid = try RelayAllocationAuthorizationPayload(
+            proofScheme: relayAllocationProofScheme,
+            authorizationID: "authorization-1",
+            challenge: Self.hexA,
+            clientKeyFingerprint: Self.hexB,
+            transportBinding: Self.hexA,
+            clientSignature: "MEUCIQ=="
+        )
+        let base = try jsonObject(JSONEncoder().encode(valid))
+        let invalidSamples: [(String, [String: Any])] = [
+            ("missing field", removing("client_signature", from: base)),
+            ("unknown field", replacing("unknown", with: "metadata", in: base)),
+            ("route token secret", replacing("route_token", with: "secret", in: base)),
+            ("relay secret", replacing("relay_secret", with: "secret", in: base)),
+            ("wrong scheme", replacing("proof_scheme", with: "runtime-p256-v1", in: base)),
+            ("blank authorization id", replacing("authorization_id", with: "\t", in: base)),
+            ("oversized authorization id", replacing("authorization_id", with: String(repeating: "a", count: 513), in: base)),
+            ("malformed challenge", replacing("challenge", with: String(Self.hexA.dropLast()), in: base)),
+            ("malformed client fingerprint", replacing("client_key_fingerprint", with: Self.hexB.uppercased(), in: base)),
+            ("malformed binding", replacing("transport_binding", with: Self.hexA.uppercased(), in: base)),
+            ("blank signature", replacing("client_signature", with: "", in: base)),
+            ("noncanonical signature", replacing("client_signature", with: "TQ=", in: base)),
+            ("oversized signature", replacing("client_signature", with: String(repeating: "A", count: 516), in: base)),
+        ]
+
+        for (label, sample) in invalidSamples {
+            XCTAssertThrowsError(
+                try JSONDecoder().decode(
+                    RelayAllocationAuthorizationPayload.self,
+                    from: JSONSerialization.data(withJSONObject: sample)
+                ),
+                label
+            )
+        }
     }
 
     func testProtocolEnvelopeDecodeRejectsMalformedRequiredFields() throws {
@@ -142,90 +292,229 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertNil(decoded.qualifiedID)
     }
 
-    func testRelayFrameCipherRoundTripUsesCiphertextBody() throws {
-        let codec = ProtocolCodec()
-        let envelope = ProtocolEnvelope(
-            type: MessageType.runtimeHealth,
-            requestID: "health-1",
-            payload: ["relay": .bool(true)]
+    func testRelaySessionNonceGenerationIsCanonicalAndUnique() {
+        let first = RelaySessionNonce.generate()
+        let second = RelaySessionNonce.generate()
+
+        XCTAssertTrue(RelaySessionNonce.isCanonical(first))
+        XCTAssertTrue(RelaySessionNonce.isCanonical(second))
+        XCTAssertNotEqual(first, second)
+        XCTAssertFalse(RelaySessionNonce.isCanonical(first.uppercased()))
+        XCTAssertFalse(RelaySessionNonce.isCanonical("\(first)0"))
+        XCTAssertFalse(RelaySessionNonce.isCanonical(String(repeating: "١", count: 32)))
+    }
+
+    func testRelayEphemeralKeysMatchP256ScalarVectorsAndValidateOnCurve() throws {
+        let vector = try relayVector()
+
+        XCTAssertEqual(vector.clientKey.publicKeyHex, Self.clientPublicKey)
+        XCTAssertEqual(vector.runtimeKey.publicKeyHex, Self.runtimePublicKey)
+        XCTAssertTrue(RelaySessionCrypto.isCanonicalEphemeralKey(Self.clientPublicKey))
+        XCTAssertFalse(RelaySessionCrypto.isCanonicalEphemeralKey(Self.clientPublicKey.uppercased()))
+        XCTAssertFalse(RelaySessionCrypto.isCanonicalEphemeralKey("04" + String(repeating: "0", count: 128)))
+    }
+
+    func testRelaySessionCryptoMatchesBindingHkdfAndConfirmationVectors() throws {
+        let vector = try relayVector()
+
+        XCTAssertEqual(vector.clientKeys.bindingID, "44ed84bb0519061c52e320518660a2d0fbc0a29fdc3b7a62a14e151a2c4e6219")
+        XCTAssertEqual(vector.clientKeys.bindingDigest.hexString, vector.clientKeys.bindingID)
+        XCTAssertEqual(vector.clientKeys.confirmationKey.hexString, "be7a46fc32b5055bd5721007150a707ce7a4ea5d1928e699b1dd0daf15a7191c")
+        XCTAssertEqual(vector.clientKeys.clientTrafficSecret.hexString, "44fd2d03a7cd5532d3d15f80b5a244ae196ddc493c7ac2723dc27cedbeed7124")
+        XCTAssertEqual(vector.clientKeys.runtimeTrafficSecret.hexString, "cef511632ab211cb0aba20f8a9100fb3d95504246af5abc5c9fbb151e991bd4f")
+        XCTAssertEqual(vector.runtimeKeys.bindingID, vector.clientKeys.bindingID)
+        XCTAssertEqual(vector.runtimeKeys.confirmationKey, vector.clientKeys.confirmationKey)
+        XCTAssertEqual(vector.runtimeKeys.clientTrafficSecret, vector.clientKeys.clientTrafficSecret)
+        XCTAssertEqual(vector.runtimeKeys.runtimeTrafficSecret, vector.clientKeys.runtimeTrafficSecret)
+        XCTAssertEqual(RelayKeyConfirmation.proof(role: .client, sessionKeys: vector.clientKeys), "dc22099339654d46ec3a06d23183311c7d9e503200bdbeeb969179b02a5e498a")
+        XCTAssertEqual(RelayKeyConfirmation.proof(role: .runtime, sessionKeys: vector.clientKeys), "b5742c284b726d42f692e2cbc2bbb0ceb7c7f2183d2c24aebedb48fd102d346c")
+    }
+
+    func testRelaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys() throws {
+        let vector = try relayVector()
+        let changedNonceKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: vector.clientKey,
+            relayID: "relay-vector",
+            routeNonce: "different-relay-nonce",
+            relaySecret: "relay-secret-vector",
+            clientSessionNonce: "00112233445566778899aabbccddeeff",
+            runtimeSessionNonce: "ffeeddccbbaa99887766554433221100",
+            clientEphemeralKey: vector.clientKey.publicKeyHex,
+            runtimeEphemeralKey: vector.runtimeKey.publicKeyHex
         )
-        let plaintextBody = try codec.encodeEnvelopeBody(envelope)
-        var clientCipher = RelayFrameCipher(relaySecret: "test relay secret")
-        var runtimeCipher = RelayFrameCipher(relaySecret: "test relay secret")
+        var sender = RelayFrameCipher(sessionKeys: vector.clientKeys)
+        var wrongNonceReceiver = RelayFrameCipher(sessionKeys: changedNonceKeys)
+        let ciphertext = try sender.encryptRuntimeBody(Data("route-bound".utf8))
 
-        let encryptedBody = try clientCipher.encryptClientBody(plaintextBody)
-        XCTAssertNotEqual(encryptedBody, plaintextBody)
-
-        let decryptedBody = try runtimeCipher.decryptClientBody(encryptedBody)
-        let decoded = try codec.decodeEnvelope(decryptedBody)
-
-        XCTAssertEqual(decoded.type, envelope.type)
-        XCTAssertEqual(decoded.requestID, envelope.requestID)
-        XCTAssertEqual(decoded.payload, envelope.payload)
-
-        let runtimeResponseBody = try codec.encodeEnvelopeBody(ProtocolEnvelope(
-            type: MessageType.runtimeHealth,
-            requestID: "health-response-1",
-            payload: ["ok": .bool(true)]
-        ))
-        let encryptedResponseBody = try runtimeCipher.encryptRuntimeBody(runtimeResponseBody)
-        let decryptedResponseBody = try clientCipher.decryptRuntimeBody(encryptedResponseBody)
-
-        XCTAssertEqual(decryptedResponseBody, runtimeResponseBody)
+        XCTAssertNotEqual(vector.clientKeys.bindingID, changedNonceKeys.bindingID)
+        XCTAssertThrowsError(try wrongNonceReceiver.decryptRuntimeBody(ciphertext))
     }
 
-    func testRelayFrameCipherRejectsWrongDirectionCounter() throws {
-        let body = Data("{}".utf8)
-        var clientCipher = RelayFrameCipher(relaySecret: "test relay secret")
-        var runtimeCipher = RelayFrameCipher(relaySecret: "test relay secret")
+    func testRelayKeyConfirmationRequiresExactRoleBindingProofAndLineFeed() throws {
+        let keys = try relayVector().clientKeys
+        let line = RelayKeyConfirmation.controlLine(role: .client, sessionKeys: keys)
 
-        let encryptedBody = try clientCipher.encryptClientBody(body)
-
-        XCTAssertThrowsError(try runtimeCipher.decryptRuntimeBody(encryptedBody))
+        XCTAssertEqual(
+            line,
+            "AETHERLINK_RELAY confirm client binding=\(keys.bindingID) " +
+                "proof=dc22099339654d46ec3a06d23183311c7d9e503200bdbeeb969179b02a5e498a\n"
+        )
+        XCTAssertTrue(RelayKeyConfirmation.validateControlLine(line, expectedRole: .client, sessionKeys: keys))
+        XCTAssertFalse(RelayKeyConfirmation.validateControlLine(line, expectedRole: .runtime, sessionKeys: keys))
+        XCTAssertFalse(RelayKeyConfirmation.validateControlLine(String(line.dropLast()), expectedRole: .client, sessionKeys: keys))
+        XCTAssertFalse(RelayKeyConfirmation.validateControlLine(line.replacingOccurrences(of: "proof=d", with: "proof=0"), expectedRole: .client, sessionKeys: keys))
     }
 
-    func testRelayFrameCipherBindsRouteNonceIntoKey() throws {
+    func testRelayFrameCipherMatchesDirectionalFrameZeroVectors() throws {
+        let keys = try relayVector().clientKeys
+        var clientCipher = RelayFrameCipher(sessionKeys: keys)
+        var runtimeCipher = RelayFrameCipher(sessionKeys: keys)
+
+        XCTAssertEqual(try clientCipher.encryptClientBody(Data("frame-zero".utf8)).hexString, "c0a6cad42dc9c28451e990b566a3dbbf845435e12640ae5e89d7")
+        XCTAssertEqual(try runtimeCipher.encryptRuntimeBody(Data("frame-zero".utf8)).hexString, "48e80b6d79586ee44b567e7b7d00fa246e656c181fe492ebb6a8")
+    }
+
+    func testRelayFrameCipherRoundTripsAndRejectsWrongDirection() throws {
+        let keys = try relayVector().clientKeys
         let body = envelopeBody(type: "models.list", requestID: "request-1")
-        var clientCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-1")
-        var runtimeCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-1")
-        var wrongNonceRuntimeCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-2")
+        var sender = RelayFrameCipher(sessionKeys: keys)
+        var receiver = RelayFrameCipher(sessionKeys: keys)
+        let encrypted = try sender.encryptClientBody(body)
 
-        let encryptedBody = try clientCipher.encryptClientBody(body)
-
-        XCTAssertEqual(try runtimeCipher.decryptClientBody(encryptedBody), body)
-        XCTAssertThrowsError(try wrongNonceRuntimeCipher.decryptClientBody(encryptedBody))
+        XCTAssertEqual(try receiver.decryptClientBody(encrypted), body)
+        var wrongDirection = RelayFrameCipher(sessionKeys: keys)
+        XCTAssertThrowsError(try wrongDirection.decryptRuntimeBody(encrypted))
     }
 
-    func testRelayFrameCipherMatchesSharedCiphertextVectors() throws {
-        var clientCipher = RelayFrameCipher(relaySecret: "relay-secret-vector")
-        var runtimeCipher = RelayFrameCipher(relaySecret: "relay-secret-vector")
-        let clientBody = envelopeBody(type: "models.list", requestID: "vector-1")
-        let runtimeBody = envelopeBody(type: "runtime.health", requestID: "vector-2")
+    func testRelayFrameCipherDoesNotAdvanceReceiveCounterAfterAuthenticationFailure() throws {
+        let keys = try relayVector().clientKeys
+        let body = Data("authenticated".utf8)
+        var sender = RelayFrameCipher(sessionKeys: keys)
+        var receiver = RelayFrameCipher(sessionKeys: keys)
+        let encrypted = try sender.encryptClientBody(body)
+        var tampered = encrypted
+        tampered[tampered.startIndex] ^= 0x01
 
-        XCTAssertEqual(
-            try clientCipher.encryptClientBody(clientBody).hexString,
-            "4457302b6e0e70e258f180ee79190c41c14adf2d39607afcbc1f5f8ad354dddada75b39f5ef97814d51175e757669a651fda7fa386b53e9a1957608bec1ee575f365fee212e8ccde9e5a23e7cf47de8158f69db5fb2abe3cd20cfed775ef7f1464a2657fdc0a920e2fe563addbd472c93730fb106d9d48b51b4e"
+        XCTAssertThrowsError(try receiver.decryptClientBody(tampered))
+        XCTAssertEqual(try receiver.decryptClientBody(encrypted), body)
+        XCTAssertThrowsError(try receiver.decryptClientBody(encrypted))
+    }
+
+    func testRelayFrameCipherRotatesAtEpochBoundaryUsingFixedVectors() throws {
+        let keys = try relayVector().clientKeys
+        var edgeCipher = RelayFrameCipher(sessionKeys: keys, frameIndex: 65_535)
+        var nextEpochCipher = RelayFrameCipher(sessionKeys: keys, frameIndex: 65_536)
+
+        XCTAssertEqual(try edgeCipher.encryptClientBody(Data("epoch-edge".utf8)).hexString, "20086e2cf3df35fc8483ee4826ef529dbd223dc39d6df2e1ee92")
+        XCTAssertEqual(try nextEpochCipher.encryptClientBody(Data("epoch-edge".utf8)).hexString, "a0cd1619ae98e59b6a7213b109015754312b1bbd1002c962842f")
+    }
+
+    func testRelayFrameCipherRejectsCounterAtInt64MaxBeforeCryptography() throws {
+        let keys = try relayVector().clientKeys
+        var cipher = RelayFrameCipher(sessionKeys: keys, frameIndex: Int64.max)
+
+        XCTAssertThrowsError(try cipher.encryptClientBody(Data("x".utf8))) { error in
+            XCTAssertEqual(error as? RelayFrameCipherError, .counterExhausted)
+        }
+        XCTAssertThrowsError(try cipher.decryptRuntimeBody(Data(repeating: 0, count: 16))) { error in
+            XCTAssertEqual(error as? RelayFrameCipherError, .counterExhausted)
+        }
+    }
+
+    private static let hexA = String(repeating: "0123456789abcdef", count: 4)
+    private static let hexB = String(repeating: "fedcba9876543210", count: 4)
+    private static let clientPublicKey = "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+    private static let runtimePublicKey = "047cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc4766997807775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1"
+
+    private func relayVector() throws -> (
+        clientKey: RelaySessionEphemeralKey,
+        runtimeKey: RelaySessionEphemeralKey,
+        clientKeys: RelaySessionKeys,
+        runtimeKeys: RelaySessionKeys
+    ) {
+        var clientScalar = Data(repeating: 0, count: 32)
+        clientScalar[31] = 1
+        var runtimeScalar = Data(repeating: 0, count: 32)
+        runtimeScalar[31] = 2
+        let clientKey = try RelaySessionEphemeralKey(privateKeyRawRepresentation: clientScalar)
+        let runtimeKey = try RelaySessionEphemeralKey(privateKeyRawRepresentation: runtimeScalar)
+        let arguments = (
+            relayID: "relay-vector",
+            routeNonce: "relay-nonce-vector",
+            relaySecret: "relay-secret-vector",
+            clientSessionNonce: "00112233445566778899aabbccddeeff",
+            runtimeSessionNonce: "ffeeddccbbaa99887766554433221100"
         )
-        XCTAssertEqual(
-            try runtimeCipher.encryptRuntimeBody(runtimeBody).hexString,
-            "ec6f7a31b099afb0f0da44a2c4c25d1943b7abb5e8bb00729b0001f9903b5f60925dee392ac4fd6ebeb307d719073662d89e8d1c198f754d732bb2afa58dc0278b69ce81c6d3e87f48caf26707488d0f3b980bd0a8ab21809e13dec4ab8867a0eeee4166d732d39bb932b3ed437e8908e61fbb33d83a59089f217505da"
+        let clientKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: clientKey,
+            relayID: arguments.relayID,
+            routeNonce: arguments.routeNonce,
+            relaySecret: arguments.relaySecret,
+            clientSessionNonce: arguments.clientSessionNonce,
+            runtimeSessionNonce: arguments.runtimeSessionNonce,
+            clientEphemeralKey: clientKey.publicKeyHex,
+            runtimeEphemeralKey: runtimeKey.publicKeyHex
+        )
+        let runtimeKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .runtime,
+            localEphemeralKey: runtimeKey,
+            relayID: arguments.relayID,
+            routeNonce: arguments.routeNonce,
+            relaySecret: arguments.relaySecret,
+            clientSessionNonce: arguments.clientSessionNonce,
+            runtimeSessionNonce: arguments.runtimeSessionNonce,
+            clientEphemeralKey: clientKey.publicKeyHex,
+            runtimeEphemeralKey: runtimeKey.publicKeyHex
+        )
+        return (clientKey, runtimeKey, clientKeys, runtimeKeys)
+    }
+
+    private func relayAllocationChallengePayload() throws -> RelayAllocationChallengePayload {
+        try RelayAllocationChallengePayload(
+            proofScheme: relayAllocationProofScheme,
+            protocolVersion: relayAllocationProtocolVersion,
+            operation: "claim",
+            authorizationID: "authorization-1",
+            currentRelayID: "rt2-\(Self.hexA)",
+            nextRelayID: "rt2-\(Self.hexB)",
+            routeTokenHash: Self.hexB,
+            runtimeKeyFingerprint: Self.hexA,
+            clientKeyFingerprint: Self.hexB,
+            currentTicketGeneration: 1,
+            nextTicketGeneration: 2,
+            currentRelayExpiresAtEpochMillis: 1,
+            currentRelayNonce: "current-nonce",
+            nextRelayExpiresAtEpochMillis: Int64.max,
+            nextRelayNonce: "next-nonce",
+            challenge: Self.hexA,
+            challengeExpiresAtEpochMillis: 1,
+            transportBinding: Self.hexB
         )
     }
 
-    func testRelayFrameCipherMatchesNonceBoundSharedCiphertextVectors() throws {
-        var clientCipher = RelayFrameCipher(relaySecret: "relay-secret-vector", routeNonce: "relay-nonce-vector")
-        var runtimeCipher = RelayFrameCipher(relaySecret: "relay-secret-vector", routeNonce: "relay-nonce-vector")
-        let clientBody = envelopeBody(type: "models.list", requestID: "vector-1")
-        let runtimeBody = envelopeBody(type: "runtime.health", requestID: "vector-2")
+    private func jsonObject(_ data: Data) throws -> [String: Any] {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        return object
+    }
 
-        XCTAssertEqual(
-            try clientCipher.encryptClientBody(clientBody).hexString,
-            "74f168f9702f3ad65c2315b5dfdcc27e5b570d3fa6e71e471766b7cf8990f55750b50b36a967f9797d4b0074adc986356f329444776df3365208f9de7d25aa1387c574d3c7beb9e4e339ef3f974686d67dfc2c19d3abf398af4c4867b2ccfe44b54f80647e18a4e64f9b15c76989a56f23d99d30b227fc9ea2a2"
-        )
-        XCTAssertEqual(
-            try runtimeCipher.encryptRuntimeBody(runtimeBody).hexString,
-            "aae3d6418242e599b7b0e00107da8af0461fee8c8ccb32d80efbf7e592fef9832005892f4ea46f0d2e6615adfa278c68dc8df3a7236817784d9dfbe22ab6da43ae564e34c2d41df80a866ebbc7f60e3258f50af91235842f92a56137c6e48d83be96821c54f8c37e9c801c29419047e1296e5b48ea12b32e56426f4abf"
-        )
+    private func replacing(
+        _ field: String,
+        with value: Any,
+        in object: [String: Any]
+    ) -> [String: Any] {
+        var result = object
+        result[field] = value
+        return result
+    }
+
+    private func removing(_ field: String, from object: [String: Any]) -> [String: Any] {
+        var result = object
+        result.removeValue(forKey: field)
+        return result
     }
 
     private func envelopeBody(type: String, requestID: String) -> Data {

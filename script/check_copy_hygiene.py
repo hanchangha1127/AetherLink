@@ -782,6 +782,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_roadmap_path = ROOT / "docs/roadmap.md"
     docs_security_path = ROOT / "docs/security.md"
     docs_connection_overlay_path = ROOT / "docs/connection-overlay.md"
+    docs_protocol_path = ROOT / "docs/protocol.md"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     qr_scan_result_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/PairingQrScanResult.kt"
     qr_scan_result_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt"
@@ -794,6 +795,17 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
         "RuntimeRelayTcpClientTest.kt"
     )
+    relay_tcp_client_path = (
+        ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/"
+        "RuntimeRelayTcpClient.kt"
+    )
+    macos_protocol_codec_path = ROOT / "apps/macos/Protocol/Sources/ProtocolCodec.swift"
+    macos_protocol_codec_test_path = ROOT / "apps/macos/Protocol/Tests/ProtocolCodecTests.swift"
+    macos_relay_handshake_path = ROOT / "apps/macos/RelayServerCore/Sources/RelayHandshake.swift"
+    macos_relay_server_path = ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift"
+    macos_relay_handshake_test_path = ROOT / "apps/macos/RelayServerCore/Tests/RelayHandshakeTests.swift"
+    macos_relay_server_socket_test_path = ROOT / "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift"
+    runtime_authenticated_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     macos_relay_peer_client_path = ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift"
     macos_relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
     runtime_connection_manager_path = (
@@ -846,6 +858,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
     docs_security_text = docs_security_path.read_text(encoding="utf-8", errors="replace")
     docs_connection_overlay_text = docs_connection_overlay_path.read_text(encoding="utf-8", errors="replace")
+    docs_protocol_text = docs_protocol_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
     qr_scan_result_text = qr_scan_result_path.read_text(encoding="utf-8", errors="replace")
     qr_scan_result_test_text = qr_scan_result_test_path.read_text(encoding="utf-8", errors="replace")
@@ -859,6 +872,26 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     client_screens_test_text = client_screens_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
     relay_tcp_client_test_text = relay_tcp_client_test_path.read_text(encoding="utf-8", errors="replace")
+    relay_tcp_client_text = relay_tcp_client_path.read_text(encoding="utf-8", errors="replace")
+    macos_protocol_codec_text = macos_protocol_codec_path.read_text(encoding="utf-8", errors="replace")
+    macos_protocol_codec_test_text = macos_protocol_codec_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    macos_relay_handshake_text = macos_relay_handshake_path.read_text(encoding="utf-8", errors="replace")
+    macos_relay_server_text = macos_relay_server_path.read_text(encoding="utf-8", errors="replace")
+    macos_relay_handshake_test_text = macos_relay_handshake_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    macos_relay_server_socket_test_text = macos_relay_server_socket_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    runtime_authenticated_mock_smoke_text = runtime_authenticated_mock_smoke_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     macos_relay_peer_client_text = macos_relay_peer_client_path.read_text(encoding="utf-8", errors="replace")
     macos_relay_peer_client_test_text = macos_relay_peer_client_test_path.read_text(
         encoding="utf-8",
@@ -1061,6 +1094,222 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_private_overlay_scanner_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_pending_dual_route_qr_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pending Dual-Route QR Authority No-Device Gate",
+            "Progress docs must record the pending dual-route QR authority gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial",
+            "Progress docs must record the focused pending dual-route QR regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pending Dual-Route QR Authority No-Device Gate",
+            "QA evidence must record the pending dual-route QR authority gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android pending dual-route QR authority addendum",
+            "QA evidence must record the pending dual-route QR default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android pending dual-route QR authority no-device gate",
+            "Roadmap must record the latest pending dual-route QR authority gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pending_dual_route_qr_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_mixed_remote_route_lease_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Mixed Remote-Route Lease Boundary No-Device Gate",
+            "Progress docs must record the mixed remote-route lease boundary gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease",
+            "Progress docs must record the urgent route-refresh lease regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease",
+            "QA evidence must record the mixed remote-route lease helper regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android mixed remote-route lease boundary addendum",
+            "QA evidence must record the mixed remote-route lease default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android mixed remote-route lease boundary no-device gate",
+            "Roadmap must record the latest mixed remote-route lease boundary gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_mixed_remote_route_lease_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_near_expiry_route_refresh_dispatch_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Near-Expiry Route-Refresh Immediate Dispatch No-Device Gate",
+            "Progress docs must record the near-expiry route-refresh immediate dispatch gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "schedulerTimeBeforeAuthResponse",
+            "Progress docs must record the zero-scheduler-advance dispatch assertion.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry",
+            "Progress docs must record the near-expiry relay immediate dispatch regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry",
+            "QA evidence must record the near-expiry P2P immediate dispatch regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry",
+            "QA evidence must record the near-expiry relay immediate dispatch regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android near-expiry route-refresh immediate dispatch addendum",
+            "QA evidence must record the near-expiry immediate dispatch default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android near-expiry route-refresh immediate dispatch no-device gate",
+            "Roadmap must record the latest near-expiry route-refresh dispatch gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android near-expiry route-refresh immediate dispatch addendum",
+            "Roadmap must record the near-expiry dispatch default-gate summary.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_near_expiry_route_refresh_dispatch_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_mixed_route_lease_retry_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Mixed-Route Lease Retry Fallback No-Device Gate",
+            "Progress docs must record the mixed-route lease retry fallback gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease",
+            "Progress docs must record the focused mixed-route retry regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android mixed-route lease retry fallback addendum",
+            "QA evidence must record the mixed-route retry default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android mixed-route lease retry fallback no-device gate",
+            "Roadmap must record the latest mixed-route lease retry gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_mixed_route_lease_retry_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_mixed_route_relay_fallback_retry_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Mixed-Route Relay-Fallback Retry No-Device Gate",
+            "Progress docs must record the mixed-route relay-fallback retry gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease",
+            "Progress docs must record the focused relay-fallback retry regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android mixed-route relay-fallback retry addendum",
+            "QA evidence must record the relay-fallback retry default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android mixed-route relay-fallback retry no-device gate",
+            "Roadmap must record the latest mixed-route relay-fallback retry gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_mixed_route_relay_fallback_retry_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_non_retryable_route_refresh_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Non-Retryable Route-Refresh Contract No-Device Gate",
+            "Progress docs must record the non-retryable route-refresh contract gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError",
+            "Progress docs must record the focused non-retryable route-refresh regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android non-retryable route-refresh contract addendum",
+            "QA evidence must record the non-retryable route-refresh default-gate summary.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest Android non-retryable route-refresh contract no-device gate",
+            "Roadmap must record the latest non-retryable route-refresh contract gate.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_non_retryable_route_refresh_doc_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
@@ -3184,10 +3433,16 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "hasPeerToPeerRoute",
         "persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry",
         "runtimeRemoteRoutePlannerPlansPendingP2pRendezvousBeforeRelayRoute",
+        "runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial",
+        "qr-p2p-record",
+        "saved-p2p-record",
+        "qr-relay-id",
+        "saved-relay-id",
         "runtimeRemoteRoutePlannerUsesInjectedClockForPendingP2pRendezvousRecord",
         "persistedRuntimeDataRejectsIncompletePendingPairingRoute",
         "isCanonicalOpaqueRouteValue",
         "Android QR-carried opaque P2P rendezvous records persist as pending route material and plan before relay",
+        "Android pending dual-route QR authority addendum",
     )
     for snippet in required_p2p_qr_storage_planner_snippets:
         if snippet not in f"{runtime_store_text}\n{runtime_remote_route_planner_text}\n{runtime_test_text}\n{no_device_text}":
@@ -3362,6 +3617,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     required_p2p_route_refresh_lease_snippets = (
         "activeRemoteRouteLeaseExpiresAtEpochMillis",
         "retryableRemoteRouteLeaseExpiresAtEpochMillis",
+        "remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease",
         "hasCompleteRemoteRouteMaterial",
         "isFreshPeerToPeerRouteRefresh",
         "payloadP2pRecordIdReusesCurrent",
@@ -3369,11 +3625,21 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "authenticatedTrustedP2pRuntimeSchedulesRouteRefreshBeforeRecordExpiry",
         "authenticatedTrustedP2pRuntimeRetriesRouteRefreshErrorBeforeRecordExpiry",
         "authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry",
+        "authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease",
+        "authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease",
+        "authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError",
+        "schedulerTimeBeforeAuthResponse",
+        "assertEquals(schedulerTimeBeforeAuthResponse, testScheduler.currentTime)",
         "routeRefreshPayloadRejectsReusedP2pRendezvousRecordOrNonce",
         "routeRefreshPayloadRejectsNonAdvancingP2pExpiry",
         "authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedP2pRecord",
         "authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingP2pExpiry",
         "Android P2P-only trusted routes schedule, retry, and expire route.refresh renewal from the P2P rendezvous record lease",
+        "Android mixed remote-route lease boundary addendum",
+        "Android near-expiry route-refresh immediate dispatch addendum",
+        "Android mixed-route lease retry fallback addendum",
+        "Android mixed-route relay-fallback retry addendum",
+        "Android non-retryable route-refresh contract addendum",
         "Android route.refresh rejects reused or non-advancing P2P rendezvous records before storage",
         "Android authenticated route.refresh keeps the current P2P rendezvous route and schedules retry when refreshed P2P material reuses the active record or lease",
     )
@@ -4400,14 +4666,287 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Roadmap smoke coverage queue must name Android relay frame cryptor nonce-bound vector coverage.",
         ),
     )
+    # Crypto v2 coverage is pinned by strict_relay_transport_binding_guard_failures below.
+    required_relay_nonce_vector_no_device_snippets = ()
     for haystack, path, snippet, guidance in required_relay_nonce_vector_no_device_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_session_key_no_device_snippets = (
+        (
+            relay_tcp_client_text,
+            relay_tcp_client_path,
+            'append(" session_nonce=${it.requireSessionNonce()}")',
+            "Android encrypted relay handshakes must send a canonical per-connection client session nonce.",
+        ),
+        (
+            relay_tcp_client_text,
+            relay_tcp_client_path,
+            'Regex("AETHERLINK_RELAY ready peer_session_nonce=([0-9a-f]{32})")',
+            "Android encrypted relay clients must require the runtime peer session nonce from the ready line.",
+        ),
+        (
+            relay_tcp_client_text,
+            relay_tcp_client_path,
+            "if (requiresPeerSessionNonce) {",
+            "Android relay ready parsing must keep encrypted and plaintext control-line contracts separate.",
+        ),
+        (
+            relay_tcp_client_text,
+            relay_tcp_client_path,
+            '"\\nclient_session_nonce\\n"',
+            "Android relay frame keys must domain-separate the client session nonce.",
+        ),
+        (
+            relay_tcp_client_text,
+            relay_tcp_client_path,
+            '"\\nruntime_session_nonce\\n"',
+            "Android relay frame keys must domain-separate the runtime session nonce.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayFrameCryptorMatchesSessionBoundSharedCiphertextVectors",
+            "Android relay frame cryptor tests must pin session-bound cross-language ciphertext vectors.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayFrameCryptorBindsSessionNoncesIntoKey",
+            "Android relay frame cryptor tests must reject ciphertext from a prior peer session nonce pair.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayFrameCryptorRequiresBothSessionNonces",
+            "Android relay frame cryptor tests must reject one-sided session nonce configuration.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "encryptedRelayRejectsNonCanonicalReadyLines",
+            "Android encrypted relay tests must reject legacy or non-canonical ready lines.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "plaintextRelayRejectsNonceBearingReadyLine",
+            "Android plaintext legacy relay tests must reject nonce-bearing encrypted-session ready lines.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "b77ddb79392cc3be9ff595f534bdf785890e8e9f5d6e4eb2305eaca7203f689ccb14a5864623d02811a7d491066af4a8aa6168698e743fa696602d3062bceb868a931b807589884c70794baf91e22967c7f30f7312be6398828920fb61cc9fca1e274f11d816c774976e37bf89168c0dd8a37baaf225d8657807",
+            "Android relay frame cryptor tests must keep the session-bound client ciphertext vector stable.",
+        ),
+        (
+            macos_protocol_codec_text,
+            macos_protocol_codec_path,
+            "public enum RelaySessionNonce",
+            "The shared macOS protocol layer must own canonical relay session nonce generation.",
+        ),
+        (
+            macos_protocol_codec_text,
+            macos_protocol_codec_path,
+            'Data("\\nclient_session_nonce\\n".utf8)',
+            "The macOS relay frame key must domain-separate the client session nonce.",
+        ),
+        (
+            macos_protocol_codec_text,
+            macos_protocol_codec_path,
+            'Data("\\nruntime_session_nonce\\n".utf8)',
+            "The macOS relay frame key must domain-separate the runtime session nonce.",
+        ),
+        (
+            macos_protocol_codec_test_text,
+            macos_protocol_codec_test_path,
+            "testRelayFrameCipherMatchesSessionBoundSharedCiphertextVectors",
+            "The macOS protocol tests must pin the session-bound cross-language ciphertext vectors.",
+        ),
+        (
+            macos_protocol_codec_test_text,
+            macos_protocol_codec_test_path,
+            "testRelayFrameCipherBindsBothPeerSessionNoncesIntoKey",
+            "The macOS protocol tests must prove both peer session nonces affect the relay frame key.",
+        ),
+        (
+            macos_protocol_codec_test_text,
+            macos_protocol_codec_test_path,
+            "testRelayFrameCipherUsesFreshCiphertextAcrossSessions",
+            "The macOS protocol tests must prove reconnects produce fresh ciphertext.",
+        ),
+        (
+            macos_protocol_codec_test_text,
+            macos_protocol_codec_test_path,
+            "testRelaySessionNonceGenerationIsCanonicalAndUnique",
+            "The macOS protocol tests must prove generated relay session nonces are canonical and unique.",
+        ),
+        (
+            macos_relay_handshake_text,
+            macos_relay_handshake_path,
+            'guard fieldParts[0] == "session_nonce" else',
+            "RelayServerCore must parse only the named session nonce handshake extension.",
+        ),
+        (
+            macos_relay_handshake_text,
+            macos_relay_handshake_path,
+            'Data("AETHERLINK_RELAY ready peer_session_nonce=\\(peerSessionNonce)\\n".utf8)',
+            "RelayServerCore must return the opposite peer session nonce in its ready line.",
+        ),
+        (
+            macos_relay_server_text,
+            macos_relay_server_path,
+            "guard !configuration.requiresAllocation || handshake.sessionNonce != nil else",
+            "Strict allocated relays must reject peers that omit a session nonce.",
+        ),
+        (
+            macos_relay_server_text,
+            macos_relay_server_path,
+            "case (nil, nil) where !configuration.requiresAllocation:",
+            "Only unallocated legacy relay mode may bridge peers without session nonces.",
+        ),
+        (
+            macos_relay_handshake_test_text,
+            macos_relay_handshake_test_path,
+            "testParsesHandshakeWithCanonicalSessionNonce",
+            "RelayServerCore tests must cover canonical nonce-bearing handshakes.",
+        ),
+        (
+            macos_relay_handshake_test_text,
+            macos_relay_handshake_test_path,
+            "testRejectsNonCanonicalSessionNonce",
+            "RelayServerCore tests must reject non-canonical session nonces.",
+        ),
+        (
+            macos_relay_server_socket_test_text,
+            macos_relay_server_socket_test_path,
+            "testStrictServerRejectsRegistrationWithoutSessionNonce",
+            "RelayServerCore socket tests must reject strict registrations without session nonces.",
+        ),
+        (
+            macos_relay_server_socket_test_text,
+            macos_relay_server_socket_test_path,
+            "testLegacyServerRejectsPairWhenOnlyOnePeerHasSessionNonce",
+            "RelayServerCore socket tests must reject mixed nonce and legacy peer pairs.",
+        ),
+        (
+            macos_relay_server_socket_test_text,
+            macos_relay_server_socket_test_path,
+            "testLegacyServerConnectsTwoPeersWithLegacyReadyLine",
+            "RelayServerCore socket tests must preserve explicit two-peer legacy diagnostics.",
+        ),
+        (
+            macos_relay_server_socket_test_text,
+            macos_relay_server_socket_test_path,
+            "testStrictServerSendsEachPeerTheOtherSessionNonce",
+            "RelayServerCore socket tests must prove strict peers receive the opposite session nonce.",
+        ),
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            'line += " session_nonce=\\(runtimeSessionNonce)"',
+            "The macOS runtime relay handshake must send a fresh runtime session nonce.",
+        ),
+        (
+            macos_relay_peer_client_test_text,
+            macos_relay_peer_client_test_path,
+            "testEncryptedRelayPeerClientRejectsLegacyReadyWithoutPeerSessionNonce",
+            "The macOS encrypted relay client must reject a legacy ready line without the peer nonce.",
+        ),
+        (
+            runtime_authenticated_mock_smoke_text,
+            runtime_authenticated_mock_smoke_path,
+            'Data("AETHERLINK_RELAY client \\(relayID) session_nonce=\\(clientSessionNonce)\\n".utf8)',
+            "The authenticated relay smoke client must negotiate a per-connection client session nonce.",
+        ),
+        (
+            runtime_authenticated_mock_smoke_text,
+            runtime_authenticated_mock_smoke_path,
+            'let readyPrefix = "AETHERLINK_RELAY ready peer_session_nonce="',
+            "The authenticated relay smoke must require the runtime peer session nonce.",
+        ),
+        (
+            runtime_authenticated_mock_smoke_text,
+            runtime_authenticated_mock_smoke_path,
+            "requireFreshReconnectNonces",
+            "The authenticated relay smoke must prove peer session nonces are fresh across reconnects.",
+        ),
+        (
+            runtime_authenticated_mock_smoke_text,
+            runtime_authenticated_mock_smoke_path,
+            "Relay session nonce and transport binding freshness verified across",
+            "The authenticated relay smoke must report only the count of session nonce and binding freshness observations.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.relayFrameCryptorMatchesSessionBoundSharedCiphertextVectors",
+            "The default no-device gate must run the Android session-bound relay vector regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.plaintextRelayRejectsNonceBearingReadyLine",
+            "The default no-device gate must run the Android plaintext legacy ready-line boundary regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "ProtocolCodecTests/testRelayFrameCipherUsesFreshCiphertextAcrossSessions",
+            "The default no-device gate must run the macOS reconnect ciphertext freshness regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "relay per-connection session key addendum",
+            "The default no-device gate summary must name per-connection relay session key coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Strict Allocated Relay Per-Connection Session Nonce No-Device Foundation",
+            "Progress docs must record the strict allocated relay per-connection session nonce foundation.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Strict Allocated Relay Per-Connection Session Nonce No-Device Foundation",
+            "QA evidence must record the strict allocated relay per-connection session nonce foundation.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Latest strict allocated relay per-connection session nonce no-device foundation",
+            "The roadmap queue must name the latest relay per-connection session nonce foundation.",
+        ),
+        (
+            docs_security_text,
+            docs_security_path,
+            "Strict allocated encrypted connections additionally bind fresh ordered client/runtime 128-bit canonical lowercase hexadecimal session nonces into that frame key.",
+            "Security docs must describe the strict session-bound frame-key contract without overstating authentication.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "For a strict allocated encrypted connection, runtime and client registration lines append `session_nonce=<32-lowercase-hex>`",
+            "Protocol docs must record the strict relay session nonce control-line extension.",
+        ),
+        (
+            docs_connection_overlay_text,
+            docs_connection_overlay_path,
+            "AETHERLINK_RELAY ready peer_session_nonce=<opposite-peer-nonce>",
+            "Connection overlay docs must record relay peer session nonce exchange.",
+        ),
+    )
+    # The v1 session-key guard is superseded by the crypto v2 source/vector/wire guard.
+    required_relay_session_key_no_device_snippets = ()
+    for haystack, path, snippet, guidance in required_relay_session_key_no_device_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_concurrent_send_serialization_no_device_snippets = (
         (
             relay_tcp_client_test_text,
             relay_tcp_client_test_path,
-            "relayClientSerializesEncryptionWithConcurrentSends",
+            "relayClientSerializesStrictEncryptionWithConcurrentSends",
             "Android relay TCP tests must prove concurrent sends serialize encrypted relay frames.",
         ),
         (
@@ -4431,7 +4970,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
-            "RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends",
+            "RuntimeRelayTcpClientTest.relayClientSerializesStrictEncryptionWithConcurrentSends",
             "Default no-device gate must run the Android relay TCP concurrent encrypted-send regression.",
         ),
         (
@@ -7053,7 +7592,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_app_relay_route_material_canonicality_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
-    if "compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute" not in runtime_test_text:
+    if "secureCompactRelayPairingForcesOneInitialClaimWithDiagnosticRefreshDisabled" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android relay QR completion test that "
             "persists trusted relay material and clears the pending route."
@@ -7226,12 +7765,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
         (
             runtime_text,
-            "if (!dependencies.authenticatedRouteRefreshEnabled) return",
+            "val requiresPairedAuthorization = forcePairedClaim || hasTicketGeneration",
             runtime_path,
         ),
         (
             runtime_text,
-            "if (!dependencies.authenticatedRouteRefreshEnabled) return false",
+            "else if (!dependencies.authenticatedRouteRefreshEnabled) {",
             runtime_path,
         ),
         (
@@ -7475,7 +8014,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
         (
             runtime_text,
-            "!runtimePublicKeyMatches(pending.runtimePublicKeyBase64, acceptedPublicKey)",
+            "acceptedPublicKey != pending.runtimePublicKeyBase64",
             runtime_path,
             "Android accepted-pairing trust creation must reject mismatched runtime public keys.",
         ),
@@ -7666,8 +8205,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "replaces an expired trusted relay route and reconnects through relay."
         )
     if (
-        "relayConnectFailsWhenReadyLineRejectsRoute" not in relay_tcp_client_test_text or
-        "Relay did not accept route" not in relay_tcp_client_test_text
+        "strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback" not in relay_tcp_client_test_text or
+        '"AETHERLINK_RELAY ready crypto=1 peer_session_nonce=' not in relay_tcp_client_test_text
     ):
         failures.append(
             f"{relay_tcp_client_test_path.relative_to(ROOT)}: Missing Android relay TCP handshake "
@@ -7676,7 +8215,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     required_relay_ready_timeout_test_snippets = (
         "relayConnectTimesOutWhenReadyLineNeverArrives",
         "Thread.sleep(1_000)",
-        "client.connect(route, timeoutMillis = 150)",
+        "RuntimeRelayTcpClient().connect(legacyRoute(server.localPort), timeoutMillis = 150)",
         'assertTrue("Relay connect should not wait forever", elapsedMillis < 1_500)',
     )
     for snippet in required_relay_ready_timeout_test_snippets:
@@ -7932,7 +8471,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime",
         "relayProbeKnownParserAllowsRuntimeReconnectRace",
         "AETHERLINK_RELAY probe ready",
-        "relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+        "relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+        "relayQrPairingUnsupportedProbeContinuesToRelayConnector",
     )
     for snippet in required_relay_probe_snippets:
         if snippet not in runtime_text and snippet not in runtime_test_text:
@@ -8021,8 +8561,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             android_relay_reachability_probe_text,
             android_relay_reachability_probe_path,
-            "SAFE_PROBE_OUTPUT",
-            "Android relay reachability probe must redact raw relay IDs from probe output.",
+            "CANONICAL_PROBE_OUTPUT",
+            "Android relay reachability probe must persist only canonical parsed output, not raw relay responses.",
         ),
         (
             android_relay_reachability_probe_text,
@@ -8256,6 +8796,9 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             )
     required_route_refresh_terminal_snippets = (
         "authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry",
+        "authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry",
+        "schedulerTimeBeforeAuthResponse",
+        "assertEquals(schedulerTimeBeforeAuthResponse, testScheduler.currentTime)",
         "routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail",
         "assertFalse(viewModel.state.value.isConnected)",
         "assertFalse(viewModel.state.value.isConnecting)",
@@ -8267,6 +8810,144 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             failures.append(
                 f"{runtime_test_path.relative_to(ROOT)}: Missing Android terminal route.refresh "
                 "expiry state regression coverage."
+            )
+    near_expiry_dispatch_tests = (
+        "authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry",
+        "authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry",
+    )
+    for test_name in near_expiry_dispatch_tests:
+        start = runtime_test_text.find(f"fun {test_name}()")
+        end = runtime_test_text.find("\n    @", start + 1) if start >= 0 else -1
+        test_body = runtime_test_text[start:end if end >= 0 else len(runtime_test_text)] if start >= 0 else ""
+        for snippet in (
+            "val schedulerTimeBeforeAuthResponse = testScheduler.currentTime",
+            "runCurrent()",
+            "assertEquals(schedulerTimeBeforeAuthResponse, testScheduler.currentTime)",
+            "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })",
+        ):
+            if snippet not in test_body:
+                failures.append(
+                    f"{runtime_test_path.relative_to(ROOT)}: Near-expiry route.refresh test {test_name} "
+                    f"must prove zero-time exactly-once dispatch; missing {snippet}."
+                )
+    mixed_route_retry_test_name = "authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease"
+    mixed_route_retry_start = runtime_test_text.find(f"fun {mixed_route_retry_test_name}()")
+    mixed_route_retry_end = (
+        runtime_test_text.find("\n    @", mixed_route_retry_start + 1)
+        if mixed_route_retry_start >= 0
+        else -1
+    )
+    mixed_route_retry_body = (
+        runtime_test_text[
+            mixed_route_retry_start:
+            mixed_route_retry_end if mixed_route_retry_end >= 0 else len(runtime_test_text)
+        ]
+        if mixed_route_retry_start >= 0
+        else ""
+    )
+    for snippet in (
+        "relayExpiresAtEpochMillis = currentTimeMillis + ROUTE_REFRESH_LEASE_MIN_DELAY_MS",
+        "p2pExpiresAtEpochMillis = currentTimeMillis + 30_000L",
+        'error("Relay should not be dialed when mixed routes connect over P2P")',
+        "assertEquals(RuntimeActiveRouteKind.PeerToPeer, viewModel.state.value.activeRouteKind)",
+        'assertEquals("authenticated", viewModel.state.value.runtimeStatus)',
+        "assertEquals(schedulerTimeBeforeAuthResponse, testScheduler.currentTime)",
+        'assertNotNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))',
+        "advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS - 1L)",
+        "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })",
+        "assertEquals(2, routeRefreshRequests.size)",
+        "assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)",
+    ):
+        if snippet not in mixed_route_retry_body:
+            failures.append(
+                f"{runtime_test_path.relative_to(ROOT)}: Mixed-route lease retry test must prove urgent "
+                f"relay scheduling and P2P retry fallback; missing {snippet}."
+            )
+    mixed_route_relay_fallback_test_name = (
+        "authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease"
+    )
+    mixed_route_relay_fallback_start = runtime_test_text.find(f"fun {mixed_route_relay_fallback_test_name}()")
+    mixed_route_relay_fallback_end = (
+        runtime_test_text.find("\n    @", mixed_route_relay_fallback_start + 1)
+        if mixed_route_relay_fallback_start >= 0
+        else -1
+    )
+    mixed_route_relay_fallback_body = (
+        runtime_test_text[
+            mixed_route_relay_fallback_start:
+            mixed_route_relay_fallback_end
+            if mixed_route_relay_fallback_end >= 0
+            else len(runtime_test_text)
+        ]
+        if mixed_route_relay_fallback_start >= 0
+        else ""
+    )
+    for snippet in (
+        "p2pExpiresAtEpochMillis = currentTimeMillis + ROUTE_REFRESH_LEASE_MIN_DELAY_MS",
+        "relayExpiresAtEpochMillis = currentTimeMillis + 30_000L",
+        'routeAttempts += "p2p"',
+        'error("P2P rendezvous route did not establish a session")',
+        'routeAttempts += "relay"',
+        'assertEquals(listOf("p2p", "relay"), routeAttempts)',
+        "assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)",
+        "assertEquals(schedulerTimeBeforeAuthResponse, testScheduler.currentTime)",
+        'assertNotNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))',
+        "advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS - 1L)",
+        "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })",
+        "assertEquals(2, routeRefreshRequests.size)",
+        "assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)",
+    ):
+        if snippet not in mixed_route_relay_fallback_body:
+            failures.append(
+                f"{runtime_test_path.relative_to(ROOT)}: Mixed-route relay-fallback retry test must prove "
+                f"urgent P2P scheduling and relay retry fallback; missing {snippet}."
+            )
+    non_retryable_route_refresh_test_name = (
+        "authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError"
+    )
+    non_retryable_route_refresh_start = runtime_test_text.find(
+        f"fun {non_retryable_route_refresh_test_name}()"
+    )
+    non_retryable_route_refresh_end = (
+        runtime_test_text.find("\n    @", non_retryable_route_refresh_start + 1)
+        if non_retryable_route_refresh_start >= 0
+        else -1
+    )
+    non_retryable_route_refresh_body = (
+        runtime_test_text[
+            non_retryable_route_refresh_start:
+            non_retryable_route_refresh_end
+            if non_retryable_route_refresh_end >= 0
+            else len(runtime_test_text)
+        ]
+        if non_retryable_route_refresh_start >= 0
+        else ""
+    )
+    for snippet in (
+        "retryable = false",
+        'assertEquals("remote_routes_unavailable", stateAfterError.error?.code)',
+        "assertTrue(stateAfterError.isConnected)",
+        'assertEquals("authenticated", stateAfterError.runtimeStatus)',
+        "assertEquals(RuntimeActiveRouteKind.Relay, stateAfterError.activeRouteKind)",
+        'assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))',
+        'assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))',
+        "advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1L)",
+        "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })",
+        'assertEquals("secret-1", trustedStore.trusted?.relaySecret)',
+    ):
+        if snippet not in non_retryable_route_refresh_body:
+            failures.append(
+                f"{runtime_test_path.relative_to(ROOT)}: Non-retryable route-refresh test must stop "
+                f"automatic retry without dropping authenticated state or trusted route material; missing {snippet}."
+            )
+    for snippet in (
+        "payload?.retryable == false",
+        'it.copy(error = RuntimeUiError("remote_routes_unavailable"))',
+    ):
+        if snippet not in runtime_text:
+            failures.append(
+                f"{runtime_path.relative_to(ROOT)}: route.refresh errors with retryable=false must "
+                f"stop automatic retries and use latest-QR recovery state; missing {snippet}."
             )
     required_route_refresh_detail_minimization_snippets = (
         "payload?.withoutRouteRefreshSensitiveDetail()",
@@ -18999,7 +19680,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`pairing.request.payload` accepts only `pairing_nonce`, `pairing_code`, `device_id`, `device_name`, and `public_key`",
+            "`pairing.request.payload` accepts only `pairing_nonce`, `pairing_code`, `device_id`, `device_name`, `public_key`, `pairing_proof_scheme`, `pairing_signature`, and optional `transport_binding`",
             "Protocol docs must document the active pairing.request allowlist.",
         ),
         (
@@ -19071,7 +19752,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
-            "$defs.authResponsePayload request properties must stay limited to device_id, nonce, and signature",
+            "$defs.authResponsePayload request properties must stay limited to device_id, nonce, signature, and transport_binding",
             "Protocol schema checker must fail if auth.response request grows future metadata fields.",
         ),
         (
@@ -19197,7 +19878,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
-            "smoke-route-refresh-unknown-metadata",
+            'let malformedRequestID = "\\(requestID)-unknown-metadata"',
             "RuntimeDevServer smoke must reject route.refresh unknown metadata before normal route refresh checks.",
         ),
         (
@@ -26424,50 +27105,50 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "payload[\"relay_id\"] == requested_route_token",
-            "relay allocation preflight must reject allocation responses that echo the raw route token as relay_id.",
+            "ALLOWED_PREFLIGHT_RESPONSE_FIELDS",
+            "Relay allocation preflight must define the exact closed preflight response field set.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "echoed the requested route token as relay_id",
-            "relay allocation preflight must explain raw route-token relay_id echo rejection.",
+            "if set(payload) != ALLOWED_PREFLIGHT_RESPONSE_FIELDS:",
+            "Relay allocation preflight must reject missing and extra preflight response fields.",
         ),
         (
             gate_text,
             gate_path,
-            "check_relay_preflight_rejects_raw_route_token_echo_guard",
-            "Default no-device gate must run the raw route-token relay_id echo rejection helper.",
+            "check_relay_preflight_rejects_route_material_guard",
+            "Default no-device gate must run the preflight route-material rejection helper.",
         ),
         (
             gate_text,
             gate_path,
-            "echoed-route-token",
-            "Default no-device gate must exercise a fake allocation response that echoes the requested route token.",
+            '"relay_id": "rt2-forbidden-route-material"',
+            "Default no-device gate must exercise a closed preflight response with forbidden route material.",
         ),
         (
             gate_text,
             gate_path,
-            "relay preflight opaque-id echo rejection addendum",
-            "Default no-device gate summary must mention relay preflight opaque-id echo rejection coverage.",
+            "relay preflight route-material rejection addendum",
+            "Default no-device gate summary must mention relay preflight route-material rejection coverage.",
         ),
         (
             docs_progress_text,
             docs_progress_path,
-            "Relay Preflight Opaque ID Echo Rejection No-Device Gate",
-            "Progress docs must record the relay preflight opaque-id echo rejection no-device gate.",
+            "Allocation preflight returns exactly `preflight`, `crypto_version`, and `allocation_auth`",
+            "Progress docs must record the exact route-material-free preflight contract.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
-            "Relay Preflight Opaque ID Echo Rejection No-Device Gate",
-            "QA evidence must record the relay preflight opaque-id echo rejection no-device gate.",
+            "Allocation preflight returns exactly `preflight`, `crypto_version`, and `allocation_auth`",
+            "QA evidence must record the exact route-material-free preflight contract.",
         ),
         (
             docs_roadmap_text,
             docs_roadmap_path,
-            "relay preflight opaque-id echo rejection",
-            "Roadmap smoke coverage queue must name relay preflight opaque-id echo rejection coverage.",
+            "with no route material",
+            "Roadmap must keep preflight route-material-free.",
         ),
     )
     for haystack, path, snippet, guidance in required_relay_preflight_opaque_echo_snippets:
@@ -26477,68 +27158,68 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
-            "\"requested_route_token\" not in payload",
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw route tokens.",
+            'assert summary["allocation"]["preflight_acknowledged"] is True, summary',
+            "Default no-device gate must prove relay_allocation_preflight acknowledged strict preflight.",
         ),
         (
             gate_text,
             gate_path,
-            'assert payload["relay_id_present"] is True, payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-id presence boolean.",
+            'assert summary["allocation"]["relay_id_present"] is False, summary',
+            "Default no-device gate must prove relay_allocation_preflight returned no relay ID.",
         ),
         (
             gate_text,
             gate_path,
-            'assert payload["relay_expires_at_present"] is True, payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-expiry presence boolean.",
+            'assert summary["allocation"]["relay_expires_at_present"] is False, summary',
+            "Default no-device gate must prove relay_allocation_preflight returned no lease expiry.",
         ),
         (
             gate_text,
             gate_path,
-            'assert payload["relay_nonce_present"] is True, payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-nonce presence boolean.",
+            'assert summary["allocation"]["relay_nonce_present"] is False, summary',
+            "Default no-device gate must prove relay_allocation_preflight returned no relay nonce.",
         ),
         (
             gate_text,
             gate_path,
-            'assert payload["route_material_redacted"] is True, payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON marks route material redacted.",
+            'assert summary["allocation"]["route_material_returned"] is False, summary',
+            "Default no-device gate must prove relay_allocation_preflight returned no route material.",
         ),
         (
             gate_text,
             gate_path,
-            '"relay_id" not in payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay IDs.",
+            'assert summary["allocation"]["allocation_auth"] == "runtime-p256-v1", summary',
+            "Default no-device gate must prove preflight advertises runtime P-256 authorization.",
         ),
         (
             gate_text,
             gate_path,
-            '"relay_expires_at" not in payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay expiry values.",
+            'assert summary["allocation"]["crypto_version"] == 2, summary',
+            "Default no-device gate must prove preflight advertises crypto version 2.",
         ),
         (
             gate_text,
             gate_path,
-            '"relay_nonce" not in payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay nonces.",
+            'assert summary["allocation"]["has_relay_secret"] is False, summary',
+            "Default no-device gate must prove preflight returned no relay secret.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            '"relay_id_present": bool(payload.get("relay_id"))',
-            "Relay allocation preflight output must expose only a safe relay-id presence boolean.",
+            '"relay_id_present": False',
+            "Relay allocation preflight output must report that no relay ID was returned.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            '"relay_expires_at_present": bool(payload.get("relay_expires_at"))',
-            "Relay allocation preflight output must expose only a safe relay-expiry presence boolean.",
+            '"relay_expires_at_present": False',
+            "Relay allocation preflight output must report that no lease expiry was returned.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            '"relay_nonce_present": bool(payload.get("relay_nonce"))',
-            "Relay allocation preflight output must expose only a safe relay-nonce presence boolean.",
+            '"relay_nonce_present": False',
+            "Relay allocation preflight output must report that no relay nonce was returned.",
         ),
         (
             relay_allocation_preflight_text,
@@ -26549,44 +27230,50 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            '"has_relay_secret": bool(payload.get("relay_secret"))',
-            "Relay allocation preflight output must expose only a safe relay-secret presence boolean.",
+            '"has_relay_secret": False',
+            "Relay allocation preflight output must report that no relay secret was returned.",
         ),
         (
             gate_text,
             gate_path,
-            '"relay_secret" not in payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits relay_secret values.",
+            'assert summary["allocation"]["endpoint_owned_relay_secret"] is True, summary',
+            "Default no-device gate must preserve the endpoint-owned traffic-secret boundary.",
         ),
         (
             gate_text,
             gate_path,
-            'assert payload["has_relay_secret"] is True, payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON keeps only a safe secret-presence boolean.",
+            'assert summary["allocation"]["route_material_redacted"] is True, summary',
+            "Default no-device gate must keep the summary route-material redaction marker.",
         ),
         (
             gate_text,
             gate_path,
-            "\"rt1-\" not in json.dumps(payload)",
-            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw opaque relay IDs.",
+            "case-route-material|included unsupported metadata",
+            "Default no-device gate must reject route material as unsupported preflight metadata.",
         ),
         (
             gate_text,
             gate_path,
-            "\"normal-route\" not in json.dumps(payload)",
-            "Default no-device gate must prove normal relay preflight output omits the requested route token.",
+            "case-missing-auth|did not match the expected closed field set",
+            "Default no-device gate must reject incomplete preflight responses.",
         ),
         (
             gate_text,
             gate_path,
-            "\"token-persisted-route\" not in json.dumps(payload)",
-            "Default no-device gate must prove token-required relay preflight output omits the requested route token.",
+            "case-allocation-auth-legacy|invalid allocation_auth",
+            "Default no-device gate must reject non-runtime allocation authorization schemes.",
         ),
         (
             gate_text,
             gate_path,
-            "\"token-relay-secret-should-not-persist\" not in json.dumps(payload)",
-            "Default no-device gate must prove token-required relay preflight output omits raw requested relay secrets.",
+            "case-crypto-version-bool|invalid crypto_version",
+            "Default no-device gate must reject boolean crypto versions without integer coercion.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-preflight-one|did not acknowledge preflight",
+            "Default no-device gate must reject numeric preflight acknowledgements without boolean coercion.",
         ),
         (
             gate_text,
@@ -26637,7 +27324,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "did not return an allocation response",
+            "did not return a preflight response",
             "Relay allocation preflight must preserve a safe unexpected-response failure reason.",
         ),
         (
@@ -26685,7 +27372,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
-            "did not return an allocation response",
+            "did not return a preflight response",
             "Default no-device gate must preserve the safe malformed-response failure reason.",
         ),
         (
@@ -26726,14 +27413,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "ALLOWED_ALLOCATION_RESPONSE_FIELDS",
-            "Relay allocation preflight must define an allocation response field allowlist.",
+            "ALLOWED_PREFLIGHT_RESPONSE_FIELDS",
+            "Relay allocation preflight must define a preflight response field allowlist.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "set(payload) - ALLOWED_ALLOCATION_RESPONSE_FIELDS",
-            "Relay allocation preflight must reject allocation response fields outside the allowlist.",
+            "set(payload) - ALLOWED_PREFLIGHT_RESPONSE_FIELDS",
+            "Relay allocation preflight must reject preflight response fields outside the allowlist.",
         ),
         (
             relay_allocation_preflight_text,
@@ -26803,20 +27490,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "UNSAFE_RELAY_ID_TOKENS",
-            "Relay allocation preflight must define unsafe relay_id response value tokens.",
+            'if payload["preflight"] is not True:',
+            "Relay allocation preflight must require an exact boolean acknowledgement.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "validate_canonical_response_value",
-            "Relay allocation preflight must validate canonical relay response values.",
+            'type(payload["crypto_version"]) is not int or payload["crypto_version"] != 2',
+            "Relay allocation preflight must require integer crypto version 2 without coercion.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "returned invalid {key}",
-            "Relay allocation preflight must report safe field-level invalid response value reasons.",
+            'payload["allocation_auth"] != "runtime-p256-v1"',
+            "Relay allocation preflight must require runtime P-256 allocation authorization.",
         ),
         (
             gate_text,
@@ -26827,44 +27514,44 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
-            "case-relay-id-whitespace",
-            "Default no-device gate must exercise whitespace-mutated relay_id responses.",
+            "case-preflight-false|did not acknowledge preflight",
+            "Default no-device gate must reject false preflight acknowledgements.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-secret-whitespace",
-            "Default no-device gate must exercise whitespace-mutated relay_secret responses.",
+            "case-preflight-one|did not acknowledge preflight",
+            "Default no-device gate must reject numeric preflight acknowledgements.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-nonce-whitespace",
-            "Default no-device gate must exercise whitespace-mutated relay_nonce responses.",
+            "case-crypto-version-one|invalid crypto_version",
+            "Default no-device gate must reject non-v2 crypto versions.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-id-url",
-            "Default no-device gate must exercise URL-shaped relay_id responses.",
+            "case-crypto-version-bool|invalid crypto_version",
+            "Default no-device gate must reject boolean crypto versions.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-expires-non-int",
-            "Default no-device gate must exercise non-integer relay_expires_at responses.",
+            "case-allocation-auth-legacy|invalid allocation_auth",
+            "Default no-device gate must reject legacy allocation authorization schemes.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-expires-zero",
-            "Default no-device gate must exercise expired relay_expires_at responses.",
+            "case-route-material|included unsupported metadata",
+            "Default no-device gate must reject every route-material response field.",
         ),
         (
             gate_text,
             gate_path,
-            "relay preflight response value canonicality addendum",
-            "Default no-device gate summary must mention relay preflight response value canonicality.",
+            "relay preflight response canonicality addendum",
+            "Default no-device gate summary must mention strict preflight response canonicality.",
         ),
         (
             docs_progress_text,
@@ -26892,50 +27579,50 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "validate_relay_expires_at",
-            "Relay allocation preflight must keep relay_expires_at type validation explicit.",
+            '"route_material_returned": False',
+            "Relay allocation preflight must explicitly report that it returned no route material.",
         ),
         (
             relay_allocation_preflight_text,
             relay_allocation_preflight_path,
-            "type(expires_at) is not int",
-            "Relay allocation preflight must reject numeric-string and boolean relay_expires_at values without coercion.",
+            '"allocation_auth": payload.get("allocation_auth")',
+            "Relay allocation preflight summary must expose only the negotiated authorization scheme.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-expires-numeric-string",
-            "Default no-device gate must exercise numeric-string relay_expires_at responses.",
+            "case-allocation-auth-bool|invalid allocation_auth",
+            "Default no-device gate must reject non-string allocation authorization values.",
         ),
         (
             gate_text,
             gate_path,
-            "case-relay-expires-bool",
-            "Default no-device gate must exercise boolean relay_expires_at responses.",
+            "case-missing-auth|did not match the expected closed field set",
+            "Default no-device gate must reject preflight responses missing a required field.",
         ),
         (
             gate_text,
             gate_path,
-            "relay preflight expiry type strictness addendum",
-            "Default no-device gate summary must mention relay preflight expiry type strictness.",
+            "check_relay_preflight_rejects_route_material_guard",
+            "Default no-device gate must keep route-material rejection selected.",
         ),
         (
             docs_progress_text,
             docs_progress_path,
-            "Relay Preflight Expiry Type Strictness No-Device Gate",
-            "Progress docs must record relay preflight expiry type strictness coverage.",
+            "returns no relay ID, lease, nonce, secret, or other route material",
+            "Progress docs must record the route-material-free preflight boundary.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
-            "Relay Preflight Expiry Type Strictness No-Device Gate",
-            "QA evidence must record relay preflight expiry type strictness coverage.",
+            "with no route material",
+            "QA evidence must record the route-material-free preflight boundary.",
         ),
         (
             docs_roadmap_text,
             docs_roadmap_path,
-            "relay preflight expiry type strictness",
-            "Roadmap smoke coverage queue must name relay preflight expiry type strictness coverage.",
+            "with no route material",
+            "Roadmap must preserve the route-material-free preflight boundary.",
         ),
     )
     for haystack, path, snippet, guidance in required_relay_preflight_expiry_type_snippets:
@@ -27171,7 +27858,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             different_network_runtime_text,
             different_network_runtime_path,
-            '"runtime_host_allocation_preflight": required_fields_present == "1" and use_legacy_relay != "1"',
+            '"runtime_host_allocation_preflight": preflight_contract_valid and use_legacy_relay != "1"',
             "Different-network preflight summary must classify runtime-host allocation preflight coverage.",
         ),
         (
@@ -27213,8 +27900,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
-            'summary["allocation"]["relay_id_present"] is True',
-            "Default no-device gate must assert different-network preflight relay-id presence coverage.",
+            'summary["allocation"]["relay_id_present"] is False',
+            "Default no-device gate must assert different-network preflight returns no relay ID.",
         ),
         (
             gate_text,
@@ -27906,28 +28593,28 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality summary must mention RelayPeerClient nonce-bound runtime ciphertext send-path coverage.",
         ),
         (
-            "swift test --filter RelayServerCoreTests",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
             "Default no-device quality gate must run the macOS relay line-framing regressions.",
         ),
         (
-            "RelayHandshakeTests/testServerLineFramingRequiresNewlineForRelayHandshake",
-            "Default no-device quality gate must run the exact relay handshake newline framing regression.",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
+            "Default no-device quality gate must run relay server core framing coverage.",
         ),
         (
-            "RelayHandshakeTests/testServerLineFramingRequiresNewlineForAllocationRequest",
-            "Default no-device quality gate must run the exact relay allocation newline framing regression.",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
+            "Default no-device quality gate must run relay server core allocation framing coverage.",
         ),
         (
-            "RelayProbeTests/testServerLineFramingRequiresNewlineForProbeRequest",
-            "Default no-device quality gate must run the exact relay probe newline framing regression.",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
+            "Default no-device quality gate must run relay server core probe framing coverage.",
         ),
         (
-            "RelayMatcherTests/testRuntimeWaitingProbeDoesNotConsumePendingRuntime",
-            "Default no-device quality gate must run the exact non-consuming relay readiness probe regression.",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
+            "Default no-device quality gate must run relay matcher readiness coverage.",
         ),
         (
-            "RelayMatcherTests/testRuntimeWaitingProbeIgnoresWaitingClient",
-            "Default no-device quality gate must run the exact relay readiness runtime-only probe regression.",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
+            "Default no-device quality gate must run relay matcher runtime-only readiness coverage.",
         ),
         (
             "relay control-line framing addendum",
@@ -28034,8 +28721,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android pending relay QR secret cleanup regression.",
         ),
         (
-            "RuntimeClientViewModelTest.rejectedCompactRelayQrPairingResultClearsPendingRouteAndSecret",
-            "Default no-device quality gate must run the Android rejected pairing pending-route cleanup regression.",
+            "RuntimeClientViewModelTest.unsignedRejectedPairingResultKeepsPendingRouteAndSecretForAuthenticatedRetry",
+            "Default no-device quality gate must run the Android unsigned rejection state-preservation regression.",
         ),
         (
             "Android latest QR empty-state callback routing",
@@ -30186,6 +30873,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android private-overlay QR scanner acceptance.",
         ),
         (
+            "RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial",
+            "Default no-device gate must run the Android pending dual-route QR authority regression.",
+        ),
+        (
+            "Android pending dual-route QR authority addendum",
+            "Default no-device gate coverage summary must mention Android pending dual-route QR authority.",
+        ),
+        (
             "RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired",
             "Default no-device gate must run the Android product QR identity-only rejection parser regression.",
         ),
@@ -30246,15 +30941,15 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android relay TCP ready-line timeout regression.",
         ),
         (
-            "RuntimeRelayTcpClientTest.relayConnectFailsWhenReadyLineRejectsRoute",
+            "RuntimeRelayTcpClientTest.strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback",
             "Default no-device gate must run the Android relay TCP handshake rejection regression.",
         ),
         (
-            "RuntimeRelayTcpClientTest.relayFrameCryptorBindsRouteNonceIntoKey",
+            "RuntimeRelayTcpClientTest.relaySessionCryptoMatchesP256ScalarOneAndTwoVectors",
             "Default no-device gate must run the Android relay frame cryptor route-nonce key binding regression.",
         ),
         (
-            "RuntimeRelayTcpClientTest.relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors",
+            "RuntimeRelayTcpClientTest.relayFrameV2MatchesEpochBoundaryVectors",
             "Default no-device gate must run the Android relay frame cryptor nonce-bound vector regression.",
         ),
         (
@@ -30266,11 +30961,11 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android relay TCP ready-line timeout coverage.",
         ),
         (
-            "RuntimeRelayTcpClientTest.relayChannelEncryptsSentFramesAndDecryptsRuntimeResponses",
+            "RuntimeRelayTcpClientTest.initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames",
             "Default no-device gate must run the Android relay TCP real-channel ciphertext send/receive regression.",
         ),
         (
-            "RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends",
+            "RuntimeRelayTcpClientTest.relayClientSerializesStrictEncryptionWithConcurrentSends",
             "Default no-device gate must run the Android relay TCP concurrent encrypted-send regression.",
         ),
         (
@@ -30580,6 +31275,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
     local_peer_server_test_path = ROOT / "apps/macos/Transport/Tests/LocalPeerServerTests.swift"
     relay_peer_client_path = ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift"
     relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
+    macos_protocol_codec_test_path = ROOT / "apps/macos/Protocol/Tests/ProtocolCodecTests.swift"
     runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
@@ -30605,6 +31301,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         local_peer_server_test_path: local_peer_server_test_path.read_text(encoding="utf-8", errors="replace"),
         relay_peer_client_path: relay_peer_client_path.read_text(encoding="utf-8", errors="replace"),
         relay_peer_client_test_path: relay_peer_client_test_path.read_text(encoding="utf-8", errors="replace"),
+        macos_protocol_codec_test_path: macos_protocol_codec_test_path.read_text(encoding="utf-8", errors="replace"),
         runtime_dev_server_path: runtime_dev_server_path.read_text(encoding="utf-8", errors="replace"),
         runtime_mock_smoke_path: runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace"),
         no_device_path: no_device_path.read_text(encoding="utf-8", errors="replace"),
@@ -30629,6 +31326,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             local_peer_server_test_path,
             relay_peer_client_path,
             relay_peer_client_test_path,
+            macos_protocol_codec_test_path,
             runtime_dev_server_path,
             runtime_mock_smoke_path,
             no_device_path,
@@ -30643,17 +31341,23 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
                 f"{domain_context!r} message."
             )
 
-    if "fun signAuthenticationResponse(nonce: String)" not in path_texts[android_identity_path]:
+    if "fun signAuthenticationResponse(nonce: String, transportBinding: String? = null)" not in path_texts[android_identity_path]:
         failures.append(
             f"{android_identity_path.relative_to(ROOT)}: Android device identity must expose a named "
             "client-auth response signer instead of raw nonce signing."
         )
-    if "sign(authenticationResponseMessage(deviceId, nonce))" not in path_texts[android_identity_path]:
+    if "sign(authenticationResponseMessage(deviceId, nonce, transportBinding))" not in path_texts[android_identity_path]:
         failures.append(
             f"{android_identity_path.relative_to(ROOT)}: Android client auth signatures must bind "
             "device id and nonce to the AetherLink client-auth domain."
         )
-    if "identity.signAuthenticationResponse(payload.nonce)" not in path_texts[android_runtime_path]:
+    if not all(
+        snippet in path_texts[android_runtime_path]
+        for snippet in (
+            "signature = identity.signAuthenticationResponse(",
+            "transportBinding = payload.transportBinding",
+        )
+    ):
         failures.append(
             f"{android_runtime_path.relative_to(ROOT)}: Android auth.challenge handling must send "
             "the domain-separated client-auth response signature."
@@ -30711,14 +31415,21 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             f"{docs_roadmap_path.relative_to(ROOT)}: Roadmap must name Android first-run "
             "device identity atomic persistence coverage."
         )
-    if "clientAuthenticationResponseMessage(deviceID: deviceID, nonce: nonce)" not in path_texts[macos_router_path]:
+    if not all(
+        snippet in path_texts[macos_router_path]
+        for snippet in (
+            "Self.verifySignature(",
+            "transportBinding: transportBinding",
+        )
+    ):
         failures.append(
             f"{macos_router_path.relative_to(ROOT)}: macOS auth.response verifier must validate the "
             "domain-separated client-auth response message."
         )
     for snippet in (
-        "guard let authenticatedDeviceID = authenticatedDeviceID(connectionID: sink.connectionID)",
-        "guard try await trustedDevice(deviceID: authenticatedDeviceID) != nil",
+        "guard let authenticatedSession = authenticatedSession(connectionID: sink.connectionID)",
+        "guard let trustedDevice = try await trustedDevice(deviceID: authenticatedSession.deviceID)",
+        "trustedDevice.publicKeyBase64 == authenticatedSession.publicKeyBase64",
         "clearAuthentication(connectionID: sink.connectionID)",
         'code: "pairing_required"',
     ):
@@ -31274,12 +31985,12 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         ),
         (
             relay_peer_client_test_path,
-            "testRelayPeerClientEncryptsRuntimeFramesWithRouteNonceBoundCipher",
+            "testStrictRelayPeerClientCompletesCrypto2HandshakeAndEncryptsFrames",
             "Transport tests must prove RelayPeerClient encrypts runtime frame bodies with nonce-bound relay material.",
         ),
         (
-            relay_peer_client_test_path,
-            "wrongNonceCipher.decryptRuntimeBody",
+            macos_protocol_codec_test_path,
+            "testRelaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys",
             "Transport tests must prove RelayPeerClient runtime ciphertext cannot be decrypted with a different route nonce.",
         ),
         (
@@ -32889,7 +33600,9 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "routeRefreshPayloadRejectsReusedRelayNonce",
         "routeRefreshPayloadRejectsNonAdvancingRelayExpiry",
         "runtimeRouteRefreshLeaseDelayUsesRenewalWindow",
+        "runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease",
         "runtimeRouteRefreshRetryDelayStaysInsideActiveLease",
+        "remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease",
         "ROUTE_REFRESH_LEASE_MIN_DELAY_MS",
         "ROUTE_REFRESH_RETRY_DELAY_MS",
         "authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedRelayNonce",
@@ -33086,8 +33799,8 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         (
             macos_test_text,
             macos_test_path,
-            "testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
-            "macOS app model tests must prove explicit diagnostic route.refresh opt-in can emit route material.",
+            "testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled",
+            "macOS app model tests must prove diagnostic route.refresh cannot fall back to runtime-only renewal.",
         ),
         (
             macos_test_text,
@@ -33104,8 +33817,8 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
-            "LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
-            "Default no-device gate must run the macOS authenticated route.refresh diagnostic opt-in regression.",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled",
+            "Default no-device gate must run the macOS runtime-only route.refresh downgrade regression.",
         ),
         (
             no_device_text,
@@ -33759,7 +34472,9 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce",
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry",
         "RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow",
+        "RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease",
         "RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease",
+        "RuntimeClientViewModelTest.remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease",
         "RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry",
         "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry",
         "RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime",
@@ -33782,7 +34497,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues",
         "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider",
         "LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault",
-        "LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled",
         "route.refresh relay-scope enum validation",
         "route.refresh malformed relay material validation",
         "route.refresh private-overlay and usb-reverse scoped relay material validation",
@@ -37614,9 +38329,9 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             )
 
     required_pairing_result_protocol_doc_snippets = (
-        "pairing.result` payloads accept only `accepted`, `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, and `message`",
+        "Accepted `pairing.result` payloads accept only `accepted`, optional legacy `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, `message`, `pairing_proof_scheme`, `pairing_request_digest`, `runtime_pairing_signature`, and optional `transport_binding`",
         "Pairing results must not carry backend URLs, provider URLs, backend credentials, route tokens",
-        "Android clients reject unsupported pairing.result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout",
+        "Android clients reject unsupported or unsigned accepted result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout",
     )
     for snippet in required_pairing_result_protocol_doc_snippets:
         if snippet not in docs_protocol_text:
@@ -39879,6 +40594,128 @@ def relay_exposed_bind_token_guard_failures() -> list[str]:
     return failures
 
 
+def endpoint_owned_relay_secret_allocation_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
+            "public struct RelayServiceRouteAllocation",
+            "public func attachingEndpointSecret(",
+            "var requestParts = [",
+            '"allocation_auth=\\(relayIdentityAuthorizationScheme)"',
+            "cryptoVersion == 2",
+        ),
+        "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "private func generateRuntimeLocalRelaySecret() -> String",
+            "var bytes = [UInt8](repeating: 0, count: 32)",
+            "let endpointRelaySecret = preferredRelaySecret?.takeIfNotEmpty()",
+            "?? generateRuntimeLocalRelaySecret()",
+            "serviceAllocation.attachingEndpointSecret(",
+        ),
+        "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift": (
+            "let endpointRelaySecret = Self.preferredDevelopmentRelaySecret(environment: environment)",
+            "let serviceAllocation = try relayServiceRouteAllocator.allocateRelayRoute(",
+            "serviceAllocation.attachingEndpointSecret(",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "public static func parseStrictCryptoV2(_ line: String) throws",
+            'parts[3] == "crypto=2"',
+            "public struct RelayAllocationV2",
+            'case cryptoVersion = "crypto_version"',
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "? RelayAllocationRequest.parseStrictCryptoV2(line)",
+            "if request.usesEndpointOwnedSecret",
+            "guard !configuration.requiresAllocation else",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testStrictCryptoV2ParserAcceptsOnlyCanonicalOptions",
+            "testStrictCryptoV2ParserRejectsLegacyAndBypassShapes",
+            "testCryptoV2AllocationResponseUsesExactSecretFreeFields",
+            "testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute",
+            "testChallengeAllocationAndRuntimeAdmissionSucceeds",
+            "testInvalidDurableStoreParentFailsBeforeRelayListens",
+            "testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testEnvironmentRemoteRelayRouteAllocatorReusesPreferredEndpointSecretWithoutPassingItToService",
+            "testEnvironmentRemoteRelayRouteAllocatorGeneratesThirtyTwoByteEndpointSecret",
+            "testTCPRelayServiceRouteAllocatorSendsExactV2RequestAndReturnsSecretFreeMetadata",
+            "testTCPRelayServiceRouteAllocatorRejectsSecretAndAnyExtraV2ResponseFields",
+            "testTCPRelayServiceRouteAllocatorRequiresClosedV2ResponseShape",
+        ),
+        "script/relay_allocation_preflight.py": (
+            "ALLOWED_PREFLIGHT_RESPONSE_FIELDS",
+            'parts = ["AETHERLINK_RELAY", "allocate", route_token, "crypto=2"]',
+            "unexpected_fields = set(payload) - ALLOWED_PREFLIGHT_RESPONSE_FIELDS",
+            "if set(payload) != ALLOWED_PREFLIGHT_RESPONSE_FIELDS:",
+            '"endpoint_owned_relay_secret": True',
+        ),
+        "script/check_no_device_quality.sh": (
+            "RelayIdentityBoundSocketTests/testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute",
+            "RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            "LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocator",
+            'assert summary["allocation"]["has_relay_secret"] is False, summary',
+            'assert summary["allocation"]["crypto_version"] == 2, summary',
+            'assert summary["allocation"]["endpoint_owned_relay_secret"] is True, summary',
+            "runtime-key-bound relay allocation addendum",
+        ),
+        "docs/progress.md": (
+            "Endpoint-Owned Relay Secret Allocation V2 No-Device Gate",
+            "the allocation service does not receive, return, log, or persist it",
+        ),
+        "docs/qa-evidence.md": (
+            "Endpoint-Owned Relay Secret Allocation V2 No-Device Gate",
+            "A rejected legacy request leaves no derived relay ID usable for strict crypto-v2 registration",
+        ),
+        "docs/roadmap.md": (
+            "Latest endpoint-owned relay secret allocation v2 no-device gate",
+            "production allocation authentication and paired-identity authorization",
+        ),
+        "docs/security.md": (
+            "the allocation request, response, ticket store, and relay log do not contain it",
+            "production allocation identity/authorization",
+        ),
+        "docs/protocol.md": (
+            "Endpoint-Owned Relay Secret Allocation V2",
+            "The allocation service does not accept or return `relay_secret`",
+        ),
+        "docs/connection-overlay.md": (
+            "accepts only `AETHERLINK_RELAY allocate <route_token> crypto=2",
+            "the relay allocation service never receives or returns it",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for endpoint-owned relay secret allocation guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing endpoint-owned relay secret allocation guard snippet {snippet!r}."
+                )
+
+    forbidden_files = {
+        "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
+            "relaySecret: String?",
+            "invalidRelaySecret",
+        ),
+        "script/relay_allocation_preflight.py": ("--relay-secret",),
+    }
+    for relative, snippets in forbidden_files.items():
+        text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet in text:
+                failures.append(
+                    f"{relative}: Endpoint-owned allocation must not retain forbidden snippet {snippet!r}."
+                )
+    return failures
+
+
 def relay_allocation_token_authorization_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
@@ -39889,7 +40726,7 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "allowedResponseFieldNames",
             "JSONSerialization.jsonObject",
             "unexpectedResponseMetadata",
-            "hasUnexpectedMetadata",
+            "persistenceStateIsValid",
             "AnyCodingKey",
             "looksLikeUnknownOption",
             "isRecognizedOptionName",
@@ -39906,7 +40743,7 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "testRejectsUnexpectedAllocationRequestMetadata",
             "testRejectsInvalidAllocationResponseLineFields",
             "testRejectsUnexpectedAllocationResponseLineMetadata",
-            "testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata",
+            "testLegacyCorruptAndUnknownStoresFailClosed",
             "allocation_token=",
             "auth=",
             "requestedRelaySecret: \"\"",
@@ -39925,9 +40762,9 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "debug=leaked-relay-secret",
             "preflight=false",
             "relay-debug=enabled",
-            "\"relay_secret\": \"leaked-relay-secret\"",
-            "\"requested_route_token\": \"leaked-route-token\"",
-            "\"backend_url\": \"http://127.0.0.1:11434/api/tags\"",
+            "\"relay_secret\":\"secret-1\"",
+            "\"requested_route_token\":\"leaked-route-token\"",
+            "\"backend_url\":\"http://127.0.0.1:11434/api/tags\"",
             ".invalidAllocationToken",
             ".invalidRelaySecret",
             ".invalidExpiration",
@@ -39939,11 +40776,11 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN",
             "AETHERLINK_RELAY_ALLOCATION_TOKEN",
             "allocation_token=",
-            "--persist",
         ),
         "script/run_allocation_relay.sh": (
             'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
             "Allocation token is required for route allocation.",
+            "allocation_token_present",
         ),
         "script/run_different_network_dev_runtime.sh": (
             'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token"',
@@ -39959,6 +40796,7 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token"',
             'AETHERLINK_RELAY_ALLOCATION_TOKEN="$token"',
             'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+            '--allocation-store "$WORK_DIR/relay-allocations.json"',
         ),
         "script/check_physical_external_relay_pairing.sh": (
             'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
@@ -39976,24 +40814,24 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "no-device-no-adb-wrapper-token",
             "no-device-android-pairing-token",
             "check_relay_allocation_token_authorization_guard",
-            "RelayAllocationTests/testParsesAllocationRequestWithBase64RequestedRelaySecret",
-            "RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret",
-            "RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata",
-            "RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields",
-            "RelayAllocationTests/testRejectsUnexpectedAllocationResponseLineMetadata",
-            "RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata",
+            "RelayIdentityBoundSocketTests/testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute",
+            "RelayIdentityBoundSocketTests/testChallengeAllocationAndRuntimeAdmissionSucceeds",
+            "RelayIdentityBoundSocketTests/testAllocationProofReplayAndFieldMutationFailClosed",
+            "RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            "RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed",
+            "LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocator",
             "Missing allocation token should fail against a token-required relay.",
             "Wrong allocation token should fail against a token-required relay.",
-            "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+            "relay allocation-token addendum",
             "relay allocation request unexpected metadata rejection addendum",
             "relay allocation request input rejection addendum",
             "relay allocation base64 requested-secret addendum",
             "relay wrapper allocation-token argv redaction addendum",
             "Android pairing deeplink allocation-token argv redaction addendum",
+            "dry-run exposed the raw allocation token in Python child argv",
             "relay allocation response field validation addendum",
             "Swift relay allocation unexpected metadata rejection addendum",
             "relay allocation store unexpected metadata rejection addendum",
-            "token-relay-secret-should-not-persist",
         ),
         "docs/connection-overlay.md": (
             "Token-required allocation rejects missing or wrong `allocation_token` values",
@@ -40074,6 +40912,13 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
         failures.append(
             "script/run_allocation_relay.sh: run_allocation_relay must not pass allocation tokens in child process argv."
         )
+    dry_run_summary_start = run_allocation_relay_text.find("write_dry_run_summary()")
+    dry_run_summary_end = run_allocation_relay_text.find("\n}\n", dry_run_summary_start)
+    dry_run_summary_text = run_allocation_relay_text[dry_run_summary_start:dry_run_summary_end]
+    if re.search(r'^\s*python3\s+-\s+.*"\$ALLOCATION_TOKEN"', dry_run_summary_text, re.MULTILINE):
+        failures.append(
+            "script/run_allocation_relay.sh: dry-run summary generation must pass only allocation-token presence, not the raw token, in Python child argv."
+        )
     for relative in (
         "script/run_different_network_dev_runtime.sh",
         "script/no_adb_external_relay_pairing_smoke.sh",
@@ -40102,60 +40947,50 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
 def relay_opaque_id_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
+        "apps/macos/Protocol/Sources/RelayIdentityAuthorization.swift": (
+            'let material = "AetherLink relay id v2\\n\\(runtimeKeyFingerprint)\\n\\(routeToken)"',
+            'return "rt2-\\(digest)"',
+        ),
         "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
-            "relayID(forRouteToken",
-            "AetherLink relay allocation id v1",
-            "SHA256.hash",
-            "rt1-",
+            "guard isCanonicalRuntimeKeyBoundRelayID(relayID)",
+            "runtimeKeyFingerprint: runtimeIdentity.fingerprint",
+            "public static let schemaVersion = 4",
         ),
         "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
             "log(\"rejected allocation request\")",
-            "log(\"preflight allocation relay_id=",
-            "log(\"allocated relay_id=",
+            "RelayAllocationIdentityChallenge.relayID(",
+            "logAllocationResult(relayID: allocation.relayID, isPreflight: false)",
         ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
-            "testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret",
-            "XCTAssertNotEqual(differentRoute.relayID, allocation.relayID)",
-            "XCTAssertFalse(allocation.relayID.contains(\"route-token-1\"))",
-            "testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken",
+            "testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            'let routeToken = "route-token-that-must-not-persist"',
+            'XCTAssertEqual(envelope["schema_version"] as? Int, 4)',
+            'for forbidden in [routeToken, "allocation_token", "relay_secret", "signature", "challenge"]',
         ),
         "script/check_no_device_quality.sh": (
-            "RelayAllocationTests/testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret",
-            "RelayAllocationTests/testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken",
-            "\"requested_route_token\" not in payload",
-            "\"normal-route\" not in json.dumps(payload)",
-            "\"token-persisted-route\" not in json.dumps(payload)",
-            "assert \"rt1-\" in contents, contents",
-            "\"rt1-\" not in json.dumps(payload)",
+            "RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            "RelayIdentityAuthorizationTests",
             "raw route tokens out of allocation stores and relay logs",
-            "relay allocation opacity addendum",
+            "relay opaque-id addendum",
         ),
         "docs/connection-overlay.md": (
-            "opaque stable relay id derived from the route token",
-            "raw route token is not returned as the relay room id",
-            "raw route tokens stay out of allocation responses, preflight JSON, allocation stores, and relay logs",
-            "not `requested_route_token`",
+            "resulting `rt2` allocation ID is bound to the verified runtime-key fingerprint",
+            "with no route material",
         ),
         "docs/roadmap.md": (
-            "allocation path now issues opaque relay ids derived from route tokens",
-            "relay allocation opacity",
+            "derive the `rt2` allocation ID from the verified runtime-key fingerprint",
+            "runtime-key fingerprint",
         ),
         "docs/security.md": (
-            "allocation responses now return opaque relay ids instead of raw route tokens",
+            "successful `rt2` allocation ID is key-bound to the verified runtime-key fingerprint",
         ),
         "docs/progress.md": (
-            "AetherLinkRelay Opaque Relay ID Allocation Guard",
-            "AetherLinkRelay Opaque Relay ID Focused No-Device Gate",
-            "Relay Allocation Opacity No-Device Gate",
-            "raw route tokens out of allocation stores and relay logs",
-            "focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "Successful `rt2` allocation IDs are bound to the verified runtime-key fingerprint",
+            "allocation ticket schema v2",
         ),
         "docs/qa-evidence.md": (
-            "AetherLinkRelay Opaque Relay ID Allocation Guard",
-            "AetherLinkRelay Opaque Relay ID Focused No-Device Gate",
-            "Relay Allocation Opacity No-Device Gate",
-            "raw route tokens out of allocation stores and relay logs",
-            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "successful `rt2` allocation ID is bound to the verified runtime-key fingerprint",
+            "allocation ticket schema v2",
         ),
     }
     for relative, snippets in required_files.items():
@@ -40180,71 +41015,48 @@ def relay_allocation_renewal_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
         "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
-            "@discardableResult",
-            "isAdvancingReplacement(of:",
-            "for ticket in tickets where ticket.isLoadable",
-            "relayExpiresAtEpochMillis > existing.relayExpiresAtEpochMillis",
-            "relayNonce != existing.relayNonce",
-            "var isLoadable: Bool",
+            "public func proposedGeneration(",
+            "guard current.runtimeKeyFingerprint == runtimeIdentity.fingerprint",
+            "guard current.ticketGeneration < Int64.max",
+            "guard current?.ticketGeneration == replacingGeneration",
+            "guard binding.ticketGeneration == current.ticketGeneration + 1",
+            "binding.runtimeKeyFingerprint == current.runtimeKeyFingerprint",
         ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
             "testRelayServerConfigurationUsesShortDefaultAllocationTTL",
-            "testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
-            "testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
-            "testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
-            "testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
-            "testAllocationRegistryExpiresAndRemovesRelayIDs",
-            "testAllocationRegistryPersistsAndReloadsRelayIDs",
-            "testAllocationRegistryPrunesExpiredPersistedRelayIDs",
-            "XCTAssertFalse(registry.store(reusedNonce))",
-            "XCTAssertTrue(registry.store(renewed))",
+            "testStoreReloadsActiveBindingAndRetainsExpiredTombstone",
+            "testRenewalRequiresSameKeyAndGenerationCAS",
+            "testLegacyCorruptAndUnknownStoresFailClosed",
+            "try registry.proposedGeneration(relayID: relayID, runtimeIdentity: otherIdentity)",
+            "try registry.commit(renewed, replacingGeneration: 1)",
             "XCTAssertEqual(configuration.allocationTTLSeconds, 15 * 60)",
-            "XCTAssertFalse(persisted.contains(\"secret-that-must-not-be-persisted\"))",
-            "writeAllocationTicketsJSON",
+            'for forbidden in [routeToken, "allocation_token", "relay_secret", "signature", "challenge"]',
         ),
         "script/check_no_device_quality.sh": (
-            "RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL",
-            "RelayAllocationTests/testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
-            "RelayAllocationTests/testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
-            "RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
-            "RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
-            "RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs",
-            "RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs",
-            "RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs",
-            "ignores non-advancing renewals for stable relay IDs",
-            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
-            "relay allocation lease lifecycle addendum",
+            "RelayAllocationTests/testStoreReloadsActiveBindingAndRetainsExpiredTombstone",
+            "RelayAllocationTests/testRenewalRequiresSameKeyAndGenerationCAS",
+            "RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed",
+            "runtime-key-bound relay allocation addendum",
         ),
         "docs/connection-overlay.md": (
-            "A renewal for an existing relay id must advance the lease expiry and use a fresh relay nonce",
-            "When loading a persisted allocation store, duplicate relay-id tickets are deduplicated with the same advancing-renewal rule",
+            "allocation ticket schema v2 persists that fingerprint plus a generation",
+            "fail-closed required persistence",
         ),
         "docs/roadmap.md": (
-            "allocation registry ignores non-advancing relay renewals",
-            "deduplicates persisted relay tickets on load",
-            "short default allocation TTL, persists relay leases without secrets, removes expired relay ids, and prunes expired persisted tickets on load",
+            "persist allocation ticket schema v2 with fingerprint plus generation",
+            "Required persistence must fail closed",
         ),
         "docs/security.md": (
-            "non-advancing renewal attempts for the same relay id are ignored unless the lease expiry advances and the relay nonce changes",
-            "persisted allocation-store loading also skips malformed ticket entries and deduplicates duplicate relay ids",
+            "Allocation ticket schema v2 stores the runtime-key fingerprint and a generation",
+            "persistence failure rejects allocation rather than returning unpersisted route material",
         ),
         "docs/progress.md": (
-            "AetherLinkRelay Allocation Renewal Monotonicity Guard",
-            "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
-            "AetherLinkRelay Allocation Store Load Resilience Guard",
-            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
-            "AetherLinkRelay Allocation Lease Lifecycle No-Device Gate",
-            "persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load",
-            "focused SwiftPM regressions, short default TTL assertion, no-secret persistence assertion, expiry removal, persisted ticket pruning, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "allocation ticket schema v2 persists that fingerprint plus a generation",
+            "Required ticket persistence fails closed",
         ),
         "docs/qa-evidence.md": (
-            "AetherLinkRelay Allocation Renewal Monotonicity Guard",
-            "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
-            "AetherLinkRelay Allocation Store Load Resilience Guard",
-            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
-            "AetherLinkRelay Allocation Lease Lifecycle No-Device Gate",
-            "persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load",
-            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, short default TTL assertion, no-secret persistence assertion, expiry removal, persisted ticket pruning, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "allocation ticket schema v2 persists that fingerprint plus a generation",
+            "required persistence failures fail closed",
         ),
     }
     for relative, snippets in required_files.items():
@@ -40294,8 +41106,7 @@ def relay_control_line_relay_id_canonicality_guard_failures() -> list[str]:
             "relay#fragment",
         ),
         "script/check_no_device_quality.sh": (
-            "RelayHandshakeTests/testRejectsNonCanonicalRelayID",
-            "RelayProbeTests/testRejectsNonCanonicalRelayID",
+            "swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelaySourceQuotaLimiterTests|RelaySourceRateLimiterTests|RelayWaitingPeerPolicyTests|RelayClientRegistrationAdmissionTests|RelayHandshakeTests|RelayMatcherTests|RelayProbeTests'",
             "relay control-line relay-id canonicality addendum",
             "URL-shaped, path-shaped, query, fragment, user-info, and host:port relay ids",
         ),
@@ -40330,11 +41141,11 @@ def swift_relay_allocation_relay_id_canonicality_guard_failures() -> list[str]:
     required_files = {
         "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
             "guard isCanonicalRelayControlLineID(relayID) else",
-            "isCanonicalRelayControlLineID(relayID) &&",
+            "guard isCanonicalRuntimeKeyBoundRelayID(relayID)",
         ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
             "testRejectsInvalidAllocationResponseLineFields",
-            "testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "testLegacyCorruptAndUnknownStoresFailClosed",
             "nonCanonicalAllocationResponseRelayIDs",
             "relayControlLineRelayIDMaxCharacters + 1",
             "https://relay.example.test/room?route_token=secret",
@@ -40343,11 +41154,11 @@ def swift_relay_allocation_relay_id_canonicality_guard_failures() -> list[str]:
             "relay#fragment",
             "user@relay-id",
             "relay.example.test:443",
-            "nonce-oversized-relay",
+            "route-token-that-must-not-persist",
         ),
         "script/check_no_device_quality.sh": (
-            "RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields",
-            "RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            "RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed",
             "Swift relay allocation relay-id canonicality addendum",
             "URL-shaped, path-shaped, query, fragment, user-info, host:port, oversized, blank, and whitespace-mutated relay IDs",
         ),
@@ -40629,7 +41440,1768 @@ def macos_bonjour_txt_metadata_boundary_guard_failures() -> list[str]:
     return failures
 
 
+def runtime_key_bound_relay_admission_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "Package.swift": (
+            'name: "RelayServerCore",\n            dependencies: ["BridgeProtocol"]',
+            'name: "Pairing",\n            dependencies: ["BridgeProtocol", "TrustedDevices"]',
+        ),
+        "apps/macos/Protocol/Sources/RelayIdentityAuthorization.swift": (
+            'public let relayIdentityAuthorizationScheme = "runtime-p256-v1"',
+            "public protocol RelayIdentityAuthorizationSigning: Sendable",
+            "P256.Signing.PublicKey(derRepresentation: publicKeyData)",
+            "publicKey.derRepresentation == publicKeyData",
+            "signature.derRepresentation == signatureData",
+            "AetherLink relay allocation authorization v1",
+            "AetherLink relay runtime registration authorization v1",
+            'let material = "AetherLink relay id v2\\n\\(runtimeKeyFingerprint)\\n\\(routeToken)"',
+            'return "rt2-\\(digest)"',
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayIdentityAdmission.swift": (
+            "public struct RelayAllocationPreflightResponse",
+            "Set(payload.keys) == fields",
+            'public static let prefix = "\\(RelayHandshake.prefix) allocation_proof"',
+            'public static let prefix = "\\(RelayHandshake.prefix) registration_proof"',
+            "parts.count == 5",
+            'parts[2] == "crypto=2"',
+            'fieldValue(parts[3], name: "challenge")',
+            'fieldValue(parts[4], name: "signature")',
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "public struct RelayAllocationV2: Codable, Equatable, Sendable",
+            "runtimeKeyFingerprint: runtimeIdentity.fingerprint",
+            "public static let schemaVersion = 4",
+            "private var persistenceStateIsValid: Bool",
+            "guard persistenceStateIsValid else { throw RelayAllocationError.persistenceFailed }",
+            "case schemaVersion:",
+            "public func withRevalidatedBinding<T>",
+            "guard allocations[expected.relayID] == expected, expected.isActive(now: now)",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "RelayAllocationPreflightResponse().responseLine()",
+            "RelayAllocationProofRequest.parse(",
+            "proof.challenge == challenge.challenge",
+            "RelayIdentityAuthorization.verify(",
+            "try allocationRegistry.commit(",
+            "try authorizeRuntimeRegistration(",
+            "RelayRuntimeRegistrationProofRequest.parse(",
+            "registrationResult = try allocationRegistry.withRevalidatedBinding(allocationBinding)",
+            "matcher.register(",
+        ),
+        "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift": (
+            "identityAuthorizationSigner: any RelayIdentityAuthorizationSigning",
+            "guard try identityAuthorizationSigner.relayRuntimeIdentity() == runtimeIdentity",
+            '"allocation_auth=\\(relayIdentityAuthorizationScheme)"',
+            '"runtime_key_fingerprint=\\(runtimeIdentity.fingerprint)"',
+            '"runtime_public_key=\\(runtimeIdentity.publicKeyBase64)"',
+            "signRelayAllocationChallenge(challenge)",
+            'return "AETHERLINK_RELAY allocation_proof crypto=2 challenge=\\(challenge) " +',
+            "response.ticketGeneration == challenge.ticketGeneration",
+        ),
+        "apps/macos/Pairing/Sources/RuntimeIdentityKeyStore.swift": (
+            "RuntimeChallengeSigning, RelayIdentityAuthorizationSigning",
+            "public func signRelayAllocationChallenge(",
+            "public func signRelayRuntimeRegistrationChallenge(",
+            "signature.derRepresentation.base64EncodedString()",
+        ),
+        "apps/macos/Pairing/Sources/FileRuntimeIdentityKeyStore.swift": (
+            "RuntimeChallengeSigning, RelayIdentityAuthorizationSigning",
+            "public func signRelayAllocationChallenge(",
+            "public func signRelayRuntimeRegistrationChallenge(",
+            "signature.derRepresentation.base64EncodedString()",
+        ),
+        "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning",
+            "self.runtimeIdentityAuthorizationSigner = runtimeIdentity.signer",
+            "private func relayAllocationAuthorization() throws",
+            "identityAuthorizationSigner: authorization.signer",
+        ),
+        "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift": (
+            "relayConfiguration.identityAuthorizationSigner != nil",
+            "runtimeIdentity: authorization.identity",
+            "identityAuthorizationSigner: authorization.signer",
+        ),
+        "apps/macos/Transport/Sources/RelayPeerClient.swift": (
+            "public var identityAuthorizationSigner: (any RelayIdentityAuthorizationSigning)?",
+            "Relay runtime identity and authorization signer must be configured together",
+            "signer.signRelayRuntimeRegistrationChallenge(challenge)",
+            "sendRuntimeRegistrationProof(",
+        ),
+        "apps/macos/Protocol/Tests/RelayIdentityAuthorizationTests.swift": (
+            "testRuntimeIdentityMatchesCanonicalDERAndFingerprintVector",
+            "testAllocationChallengeMatchesExactTranscriptAndDerivationVectors",
+            "testRegistrationChallengeMatchesExactTranscript",
+            "testFixedAllocationSignatureRejectsTranscriptMutationAndWrongKey",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testStrictPreflightResponseIsClosedAndContainsNoRouteMaterial",
+            "testIdentityProofParsersRequireExactChallengeEchoShape",
+            "testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+            "testRenewalRequiresSameKeyAndGenerationCAS",
+            "testLegacyCorruptAndUnknownStoresFailClosed",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute",
+            "testChallengeAllocationAndRuntimeAdmissionSucceeds",
+            "testAllocationProofReplayAndFieldMutationFailClosed",
+            "testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime",
+            "testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned",
+        ),
+        "apps/macos/CompanionCore/Tests/RuntimeIdentityKeyStoreTests.swift": (
+            "testFileStoreSignsRelayAuthorizationWithPersistedKeyAndRejectsSubstitution",
+            "testKeychainStoreSignsBothRelayAuthorizationChallengesWithActualSignerIdentity",
+            "testRelayAuthorizationSignersRejectPresentationFingerprintOverrides",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty",
+            "testTCPRelayServiceRouteAllocatorRejectsMismatchedAndExpiredChallenges",
+            "testTCPRelayServiceRouteAllocatorFailsBeforeConnectForMismatchedSignerIdentity",
+        ),
+        "docs/roadmap.md": (
+            "Historical Roadmap Slice: Initial Pairing Mutual P-256 Proof",
+            "Android still does not co-sign allocation",
+            "post-compromise recovery",
+        ),
+        "docs/progress.md": (
+            "Runtime-Key-Bound Relay Allocation And Runtime-Role Admission Foundation",
+            "build/qa/check-no-device-quality-runtime-key-admission-20260710.log",
+            "not paired-device authorization",
+            "not a complete mutual identity-first key exchange",
+        ),
+        "docs/qa-evidence.md": (
+            "Runtime-Key-Bound Relay Allocation And Runtime-Role Admission Foundation",
+            "build/qa/runtime-authenticated-mock-relay-runtime-key-admission-20260710.log",
+            "not paired-device authorization",
+            "not a full mutual identity-first key exchange",
+        ),
+    }
+    texts: dict[str, str] = {}
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for runtime-key relay admission foundation guard.")
+            continue
+        source = path.read_text(encoding="utf-8", errors="replace")
+        texts[relative] = source
+        for snippet in snippets:
+            if snippet not in source:
+                failures.append(
+                    f"{relative}: Missing runtime-key relay admission foundation snippet {snippet!r}."
+                )
+
+    preflight_relative = "script/relay_allocation_preflight.py"
+    preflight_text = (ROOT / preflight_relative).read_text(encoding="utf-8", errors="replace")
+    closed_preflight_fields = re.search(
+        r"ALLOWED_PREFLIGHT_RESPONSE_FIELDS\s*=\s*\{\s*"
+        r'"preflight",\s*"crypto_version",\s*"allocation_auth",?\s*\}',
+        preflight_text,
+    )
+    if closed_preflight_fields is None:
+        failures.append(
+            f"{preflight_relative}: Preflight must allow exactly preflight, crypto_version, and allocation_auth."
+        )
+    for snippet in (
+        'if set(payload) != ALLOWED_PREFLIGHT_RESPONSE_FIELDS:',
+        'if payload["preflight"] is not True:',
+        'type(payload["crypto_version"]) is not int or payload["crypto_version"] != 2',
+        'payload["allocation_auth"] != "runtime-p256-v1"',
+        '"route_material_returned": False',
+    ):
+        if snippet not in preflight_text:
+            failures.append(f"{preflight_relative}: Missing strict preflight contract snippet {snippet!r}.")
+    if "--persist" in preflight_text:
+        failures.append(f"{preflight_relative}: Preflight must not expose the removed --persist allocation path.")
+
+    allocation_relative = "apps/macos/RelayServerCore/Sources/RelayAllocation.swift"
+    allocation_text = texts.get(allocation_relative, "")
+    binding_start = allocation_text.find("public struct RelayAllocationBinding")
+    binding_end = allocation_text.find("public final class RelayAllocationRegistry", binding_start)
+    if binding_start < 0 or binding_end < 0:
+        failures.append(f"{allocation_relative}: Missing allocation binding persistence block.")
+    else:
+        binding_block = allocation_text[binding_start:binding_end]
+        for forbidden in (
+            'case routeToken = "route_token"',
+            'case relaySecret = "relay_secret"',
+            'case allocationToken = "allocation_token"',
+            "case challenge",
+            "case signature",
+        ):
+            if forbidden in binding_block:
+                failures.append(
+                    f"{allocation_relative}: Schema-v3 ticket persistence must not include {forbidden!r}."
+                )
+
+    server_relative = "apps/macos/RelayServerCore/Sources/RelayServer.swift"
+    server_text = texts.get(server_relative, "")
+    authorization_position = server_text.find("try authorizeRuntimeRegistration(")
+    recheck_position = server_text.find(
+        "registrationResult = try allocationRegistry.withRevalidatedBinding(allocationBinding)"
+    )
+    matcher_position = server_text.find("matcher.register(", recheck_position)
+    if not (0 <= authorization_position < recheck_position < matcher_position):
+        failures.append(
+            f"{server_relative}: Runtime proof verification and ticket recheck must precede matcher admission."
+        )
+    commit_position = server_text.find("try allocationRegistry.commit(")
+    allocation_response_position = server_text.find(
+        "guard writeAll(socket: socket, data: try allocation.responseLine())",
+        commit_position,
+    )
+    if not (0 <= commit_position < allocation_response_position):
+        failures.append(
+            f"{server_relative}: Required ticket persistence must complete before allocation route material is returned."
+        )
+
+    router_relative = "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    router_text = (ROOT / router_relative).read_text(encoding="utf-8", errors="replace")
+    pairing_start = router_text.find("private func handlePairingRequest(")
+    pairing_end = router_text.find("private func handleChatSessionTitle", pairing_start)
+    if pairing_end < 0:
+        pairing_end = router_text.find("private func handleHello(", pairing_start)
+    pairing_block = router_text[pairing_start:pairing_end] if pairing_start >= 0 and pairing_end >= 0 else ""
+    binding_position = pairing_block.find("guard transportBindingMatches(transportBinding, sink: sink)")
+    trust_position = pairing_block.find("try await trustedDeviceStore.trust(validation.trustedDevice)")
+    if not (0 <= binding_position < trust_position):
+        failures.append(
+            f"{router_relative}: Pairing transport binding must be rechecked before trusted-device persistence."
+        )
+
+    gate_relative = "script/check_no_device_quality.sh"
+    gate_text = (ROOT / gate_relative).read_text(encoding="utf-8", errors="replace")
+    required_gate_selectors = (
+        "run swift test --filter RelayIdentityAuthorizationTests",
+        "RelayIdentityBoundSocketTests/testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute",
+        "RelayIdentityBoundSocketTests/testChallengeAllocationAndRuntimeAdmissionSucceeds",
+        "RelayIdentityBoundSocketTests/testAllocationProofReplayAndFieldMutationFailClosed",
+        "RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime",
+        "RelayIdentityBoundSocketTests/testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned",
+        "RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope",
+        "RelayAllocationTests/testStoreReloadsActiveBindingAndRetainsExpiredTombstone",
+        "RelayAllocationTests/testRenewalRequiresSameKeyAndGenerationCAS",
+        "RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed",
+        "LocalRuntimeMessageRouterTests/testTCPRelayServiceRouteAllocator",
+        "LocalRuntimeMessageRouterTests/testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty",
+    )
+    for selector in required_gate_selectors:
+        if selector not in gate_text:
+            failures.append(f"{gate_relative}: Missing focused no-device selector {selector!r}.")
+
+    return failures
+
+
+def strict_relay_transport_binding_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeProtocolChannel.kt": (
+            "data class TransportSecurityContext(",
+            "val transportSecurityContext: TransportSecurityContext?",
+        ),
+        "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RelaySessionCrypto.kt": (
+            "internal class RelayEphemeralKeyPair",
+            "AetherLink relay session binding v2",
+            "AetherLink relay confirmation v2",
+            "AetherLink relay client traffic v2",
+            "AetherLink relay runtime traffic v2",
+            "AetherLink relay frame epoch v2",
+            "Relay frame index is exhausted",
+        ),
+        "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClient.kt": (
+            "RelayEphemeralKeyPair.generate()",
+            "append(\" crypto=2\")",
+            "RelaySessionCrypto.establish(",
+            "confirmedTransportSecurityContext = TransportSecurityContext(sessionCrypto.bindingId)",
+        ),
+        "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClientTest.kt": (
+            "relaySessionCryptoMatchesP256ScalarOneAndTwoVectors",
+            "relaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys",
+            "relayFrameV2MatchesEpochBoundaryVectors",
+            "relayFrameV2RejectsReplayWithoutAdvancingAfterFailedAuthentication",
+            "relayFrameV2RejectsExhaustedCounterBeforeCrypt",
+            "relayEphemeralKeyRequiresCanonicalOnCurveP256Point",
+            "plaintextRelayPreservesLegacyRegistrationAndFrames",
+            "initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames",
+            "strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback",
+            "strictRelayRejectsInvalidRuntimeConfirmationAndClosesSocket",
+        ),
+        "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/DeviceIdentity.kt": (
+            "AetherLink client auth response v2",
+            "AetherLink runtime auth challenge v2",
+            "requireCanonicalTransportBinding",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "activeChannel?.transportSecurityContext?.bindingId",
+            "authenticationTransportBindingMatches",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "transportBoundAuthenticationRejectsDowngradeMismatchAndOldBindingReplay",
+        ),
+        "apps/macos/Protocol/Sources/RelaySessionCrypto.swift": (
+            "public struct TransportSecurityContext",
+            "public enum RelayKeyConfirmation",
+            "public struct RelaySessionEphemeralKey",
+            "AetherLink relay session binding v2",
+            "AetherLink relay confirmation v2",
+            "AetherLink relay client traffic v2",
+            "AetherLink relay runtime traffic v2",
+            "AetherLink relay key confirmation v2",
+        ),
+        "apps/macos/Protocol/Sources/ProtocolCodec.swift": (
+            "AetherLink relay frame epoch v2",
+            "guard frameIndex < Int64.max",
+        ),
+        "apps/macos/Transport/Sources/RelayPeerClient.swift": (
+            "crypto=2 session_nonce=",
+            "prepareRelaySession",
+            "validateClientConfirmation",
+            "sendRuntimeConfirmation",
+            "activateFrameCipher(sessionKeys:",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayHandshake.swift": (
+            "AETHERLINK_RELAY registered crypto=2",
+            "session_nonce",
+            "ephemeral_key",
+            "peer_ephemeral_key",
+        ),
+        "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift": (
+            "var transportSecurityContext: TransportSecurityContext? { wrapped.transportSecurityContext }",
+        ),
+        "apps/macos/Pairing/Sources/RuntimeIdentityKeyStore.swift": (
+            "AetherLink runtime auth challenge v2",
+            "invalidTransportBinding",
+        ),
+        "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift": (
+            "AetherLink client auth response v2",
+            "transportBindingMatches",
+            "validatedRequestTransportBinding",
+        ),
+        "apps/macos/Protocol/Tests/ProtocolCodecTests.swift": (
+            "testRelayEphemeralKeysMatchP256ScalarVectorsAndValidateOnCurve",
+            "testRelaySessionCryptoMatchesBindingHkdfAndConfirmationVectors",
+            "testRelaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys",
+            "testRelayKeyConfirmationRequiresExactRoleBindingProofAndLineFeed",
+            "testRelayFrameCipherRotatesAtEpochBoundaryUsingFixedVectors",
+            "testRelayFrameCipherDoesNotAdvanceReceiveCounterAfterAuthenticationFailure",
+            "testRelayFrameCipherRejectsCounterAtInt64MaxBeforeCryptography",
+        ),
+        "apps/macos/Transport/Tests/RelayPeerClientTests.swift": (
+            "testStrictRelayPeerClientCompletesCrypto2HandshakeAndEncryptsFrames",
+            "testStrictRelayPeerClientRejectsPlainRegisteredWithoutV1Fallback",
+            "testStrictRelayPeerClientRejectsOffCurvePeerKey",
+            "testStrictRelayPeerClientFailsClosedOnWrongClientConfirmation",
+            "testStrictRelayPeerClientClosesImmediatelyOnFrameAuthenticationFailure",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testChallengeAllocationAndRuntimeAdmissionSucceeds",
+            "testBootstrapInitialClientCanWaitWithoutProofBeforeAuthenticatedRuntime",
+            "testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime",
+            "testRegistrationChallengeFieldMutationFailsBeforeMatcherInsertion",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testTransportBoundHelloAndAuthResponseUseV2SignaturesAndDispatchCommands",
+            "testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands",
+            "testTransportBoundAuthRejectsReplayedOldBindingAfterSinkBindingChanges",
+        ),
+        "packages/protocol-schema/protocol.schema.json": (
+            '"transportBinding"',
+            '"pattern": "^[0-9a-f]{64}$"',
+            '"transport_binding"',
+        ),
+        "script/check_protocol_schema.py": (
+            "$defs.transportBinding must require exactly 64 lowercase hexadecimal characters",
+        ),
+        "script/runtime_authenticated_mock_smoke.swift": (
+            "Relay runtime key confirmation failed",
+            "Relay session nonce, ephemeral key, and transport binding freshness verified across",
+            "runtime_signature replayed against a different transport binding",
+            "AetherLink relay frame epoch v2",
+        ),
+        "script/check_no_device_quality.sh": (
+            "relaySessionCryptoMatchesP256ScalarOneAndTwoVectors",
+            "relayFrameV2MatchesEpochBoundaryVectors",
+            "strictRelayRejectsInvalidRuntimeConfirmationAndClosesSocket",
+            "testRelaySessionCryptoMatchesBindingHkdfAndConfirmationVectors",
+            "testStrictRelayPeerClientCompletesCrypto2HandshakeAndEncryptsFrames",
+            "RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime",
+            "testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands",
+            "strict allocated relay crypto v2 addendum",
+        ),
+        "docs/progress.md": (
+            "Strict Allocated Relay Crypto V2 No-Device Gate",
+            "ephemeral P-256 ECDH",
+        ),
+        "docs/qa-evidence.md": (
+            "Strict Allocated Relay Crypto V2 No-Device Gate",
+            "ephemeral P-256 ECDH",
+        ),
+        "docs/roadmap.md": (
+            "strict allocated relay crypto v2",
+            "65,536-frame epochs",
+        ),
+        "docs/security.md": (
+            "paired-identity transport binding",
+            "forward secrecy",
+            "65,536-frame epochs",
+        ),
+        "docs/protocol.md": (
+            "AETHERLINK_RELAY <client|runtime> <relay_id> crypto=2",
+            "AETHERLINK_RELAY confirm <role>",
+            "transport_binding",
+            "AetherLink relay frame epoch v2",
+        ),
+        "docs/connection-overlay.md": (
+            "ephemeral P-256 ECDH",
+            "paired-identity v2 signatures",
+            "65,536-frame epochs",
+        ),
+    }
+
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing strict relay transport-binding snippet {snippet!r}."
+                )
+
+    return failures
+
+
+def paired_relay_allocation_authorization_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "swift_contract": ROOT / "apps/macos/Protocol/Sources/PairedRelayAllocationAuthorization.swift",
+        "swift_contract_test": ROOT / "apps/macos/Protocol/Tests/PairedRelayAllocationAuthorizationTests.swift",
+        "android_contract": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairedRelayAllocationAuthorization.kt",
+        "android_contract_test": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairedRelayAllocationAuthorizationTest.kt",
+        "swift_protocol": ROOT / "apps/macos/Protocol/Sources/ProtocolEnvelope.swift",
+        "android_protocol": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
+        "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
+        "relay_store": ROOT / "apps/macos/RelayServerCore/Sources/RelayAllocation.swift",
+        "relay_store_coordination": ROOT / "apps/macos/RelayServerCore/Sources/RelayAllocationStoreCoordination.swift",
+        "relay_server": ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift",
+        "relay_allocation_tests": ROOT / "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift",
+        "relay_authorization": ROOT / "apps/macos/RelayServerCore/Sources/RelayPairedAllocationAuthorization.swift",
+        "relay_test": ROOT / "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift",
+        "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "router_test": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "android_app": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "android_app_test": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "android_store_test": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt",
+        "smoke": ROOT / "script/runtime_authenticated_mock_smoke.swift",
+        "ownership_smoke": ROOT / "script/relay_allocation_store_ownership_smoke.sh",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "protocol_doc": ROOT / "docs/protocol.md",
+        "security_doc": ROOT / "docs/security.md",
+        "overlay_doc": ROOT / "docs/connection-overlay.md",
+        "roadmap_doc": ROOT / "docs/roadmap.md",
+        "progress_doc": ROOT / "docs/progress.md",
+        "qa_doc": ROOT / "docs/qa-evidence.md",
+    }
+    for path in paths.values():
+        if not path.exists():
+            failures.append(
+                f"{path.relative_to(ROOT)} is missing for paired relay allocation authorization coverage."
+            )
+    if failures:
+        return failures
+    texts = {
+        name: path.read_text(encoding="utf-8", errors="replace")
+        for name, path in paths.items()
+    }
+
+    shared_contract_snippets = (
+        "runtime-client-p256-v2",
+        "AetherLink paired relay allocation runtime authorization v2",
+        "AetherLink paired relay allocation client authorization v2",
+        "current_relay_id",
+        "next_relay_id",
+        "current_ticket_generation",
+        "next_ticket_generation",
+        "transport_binding",
+    )
+    for name in ("swift_contract", "android_contract"):
+        for snippet in shared_contract_snippets:
+            if snippet not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} is missing paired-allocation contract {snippet!r}."
+                )
+
+    shared_digest_snippets = (
+        "445ee1adc3d521b2ba9d09e39d1ab23e913a262e5a5619f813ab162abc6ec37a",
+        "fa37320c45fef6dfdea036fd0315262d9f067f51b0ce335f7a31890419d822fa",
+    )
+    for name in ("swift_contract_test", "android_contract_test"):
+        for snippet in shared_digest_snippets:
+            if snippet not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} is missing fixed paired-allocation digest {snippet!r}."
+                )
+
+    for name in ("swift_protocol", "android_protocol", "schema"):
+        for snippet in (
+            "relay.allocation.challenge",
+            "relay.allocation.authorization",
+            "ticket_generation",
+        ):
+            if snippet not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} is missing paired-allocation protocol field {snippet!r}."
+                )
+
+    for snippet in (
+        "public static let schemaVersion = 4",
+        "RelayBootstrapConsumptionTombstone",
+        "consumedBootstrapAllocations",
+        'bootstrapRuntimeOnly = "bootstrap_runtime_only"',
+        'pairedDeviceP256V1 = "paired_device_p256_v1"',
+        "public func pairedRenewalProposal(",
+        "public func commitPairedRenewal(",
+        "allocations[expected.relayID] == expected",
+        "guard consumedBootstrapAllocations[binding.relayID] == nil else",
+    ):
+        if snippet not in texts["relay_store"]:
+            failures.append(f"Relay allocation store is missing {snippet!r}.")
+
+    for snippet in (
+        'storeURL.path + ".transaction.lock"',
+        "secureCanonicalFileURL",
+        "RelayAllocationStoreMarkerState",
+        "AETHERLINK_RELAY_ALLOCATION_LOCK_V1",
+        "O_NOFOLLOW",
+        "Darwin.openat",
+        "Darwin.renameat",
+        "Darwin.fstatat",
+        "metadata.st_nlink == 1",
+        "F_SETLK",
+        "recordLockTimeoutNanoseconds",
+        "Darwin.clock_gettime(CLOCK_MONOTONIC",
+        "Darwin.nanosleep",
+        "F_WRLCK",
+        "private static var lockFiles",
+        "Never close another descriptor for this inode while POSIX record locks may exist.",
+        "retainOrCloseFailedDescriptor",
+        "retainedDescriptorCount",
+        "validatePathIdentity",
+        "writeAtomically",
+        "Darwin.fsync",
+        "durabilityUncertainAfterRename",
+        "start: 0",
+        "start: 1",
+        "mode_t(S_IRUSR | S_IWUSR)",
+        "storeAlreadyOwned",
+    ):
+        if snippet not in texts["relay_store_coordination"]:
+            failures.append(f"Relay allocation store coordination is missing {snippet!r}.")
+    for snippet in (
+        "RelayAllocationStoreTransactionLock",
+        "coordinationToken",
+        "transactionLock.markEstablished",
+        "RelayAllocationStoreEnvelopeV1Ticket",
+        "withCoordinatedState",
+        "reloadLocked",
+        "expectedCoordinationToken",
+        "RelayAllocationStoreCoordination.writeAtomically",
+        "RelayAllocationStoreCoordination.readSecureFile",
+    ):
+        if snippet not in texts["relay_store"]:
+            failures.append(f"Durable relay allocation registry is missing {snippet!r}.")
+    for snippet in (
+        "RelayAllocationStoreOwnership",
+        "acquireAllocationStoreOwnershipIfNeeded",
+        "allocationStoreOwnership = nil",
+        "allocationStoreAlreadyOwned",
+        "allocationStoreLockFailed",
+        "RelayServerRunState",
+        "serverAlreadyRunning",
+    ):
+        if snippet not in texts["relay_server"]:
+            failures.append(f"Relay server store ownership path is missing {snippet!r}.")
+    for snippet in (
+        "testPreCreatedDurableRegistriesMergeDifferentRelayCommits",
+        "testStaleDurableCreateProposalsProduceOneCommitAndOneConflict",
+        "testStaleDurablePairedClaimsProduceOneBindingOneTombstoneAndOneConflict",
+        "testStaleBootstrapCreateCannotRecreateConsumedPairClaim",
+        "testPreCreatedDurableReaderObservesLaterCommit",
+        "testDurableStoreAndCoordinationFilesUseOwnerOnlyPermissions",
+        "testStoreOwnershipIsExclusiveInProcessAndReacquirableAfterRelease",
+        "testRepeatedRegistryCreationReusesPooledLockDescriptor",
+        "testClosingSiblingTransactionLockDoesNotReleaseActiveProcessRecordLock",
+        "testStoreOwnershipCanonicalizesSymlinkedParentAliases",
+        "testDeletedEstablishedDurableStoreFailsClosedForLiveAndRestartedRegistries",
+        "testGroupOrWorldWritableStoreParentFailsClosed",
+        "testValidUnversionedV1StoreIsRevokedIntoEmptyTokenBoundV4Store",
+        "testDanglingDurableStoreSymlinkFailsClosed",
+        "testHardLinkedStoreAliasFailsClosedWithoutDivergingAtomicWrites",
+        "testPostRenameDirectorySyncFailureReconcilesCommittedEnvelopeBeforeSuccess",
+        "testUninitializedMarkerRecoversTokenMatchedDurableStoreAfterInterruptedInitialization",
+        "testSchemaV2MigrationPersistenceFailureFailsClosed",
+        "testEstablishedLockReplacementQuarantinesLiveAndReplacementRegistries",
+        "testCaseVariantStorePathSharesOneOwnerOnCaseInsensitiveVolumes",
+        "testTransactionLockSymlinkAndNonregularTargetsFailClosed",
+        "testDurableStoreSymlinkFailsClosed",
+    ):
+        if snippet not in texts["relay_allocation_tests"]:
+            failures.append(f"Relay allocation ownership tests are missing {snippet!r}.")
+    for snippet in (
+        "allocation store is already owned by another relay process",
+        '"$STORE_PATH.transaction.lock"',
+        "coordination_token",
+        "wait_for_exactly_one_listener",
+        "process_is_listening",
+        "socket.create_connection",
+        "First-start ownership race did not converge to one relay.",
+        "wait_for_exit",
+        "terminate_process",
+        'kill -KILL "$pid"',
+        "Relay allocation store cross-process ownership smoke passed.",
+    ):
+        if snippet not in texts["ownership_smoke"]:
+            failures.append(f"Cross-process relay ownership smoke is missing {snippet!r}.")
+    isolated_store_snippet = 'AETHERLINK_RELAY_ALLOCATION_STORE="$work_dir/allocations.json"'
+    if texts["gate"].count(isolated_store_snippet) < 2:
+        failures.append(
+            "Default no-device gate must isolate both different-network local-relay guards "
+            "from the user's durable allocation store."
+        )
+
+    for snippet in (
+        'paired_allocation_challenge',
+        'paired_allocation_proof',
+        'runtime_signature',
+        'client_signature',
+    ):
+        if snippet not in texts["relay_authorization"]:
+            failures.append(f"Paired relay authorization wire path is missing {snippet!r}.")
+
+    for snippet in (
+        "testPairedClaimThenRenewSucceedsAndPersistsPinnedClient",
+        "testPairedProofRejectsMissingWrongAndSwappedRoleSignatures",
+        "testPairedChallengeMutationAndExpiryFailWithoutCommit",
+        "testPairedProofReplayAndConcurrentGenerationRaceFailCAS",
+        "testPairedRenewalRejectsTokenSubstitutionDowngradeAndAbsentTicketBeforeChallenge",
+        "testPairedClaimCanRecoverExpiredPersistedTombstone",
+        "testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned",
+        "testSecondRunOnSameServerThrowsAlreadyRunningAndOriginalListenerStillWorks",
+        "testBindFailureReleasesAllocationStoreOwnershipForRetainedServer",
+    ):
+        if snippet not in texts["relay_test"]:
+            failures.append(f"Paired relay socket tests are missing {snippet!r}.")
+
+    for snippet in (
+        "RelayAuthorizationSnapshot(",
+        "trustedClientPublicKeyBase64",
+        "trustedClientKeyFingerprint",
+        "transportBinding: transportBinding",
+        "validateRelayAuthorizationSnapshot(",
+        "MessageType.relayAllocationChallenge",
+        "clientProof.verify(challenge: pending.challenge)",
+    ):
+        if snippet not in texts["router"]:
+            failures.append(f"macOS relay authorization router is missing {snippet!r}.")
+    for snippet in (
+        "testAuthenticatedRouteRefreshForwardsExactRelayChallengeAndAcceptsCanonicalClientProof",
+        "testRelayAllocationAuthorizationWrongProofFailsClosedAndIsOneShot",
+        "testRelayAllocationAuthorizationTimesOutAndResumesRouteRefresh",
+        "testRelayAllocationAuthorizationDisconnectCancelsPendingContinuation",
+        "testRelayAllocationAuthorizationTrustReplacementCancelsPendingContinuation",
+        "testRelayAllocationAuthorizationBindingMutationCancelsPendingContinuation",
+        "testConcurrentRouteRefreshWithSameConnectionAndRequestAdmitsSingleAuthorization",
+    ):
+        if snippet not in texts["router_test"]:
+            failures.append(f"macOS relay authorization router tests are missing {snippet!r}.")
+
+    for snippet in (
+        "relayTicketGeneration",
+        'val expectedOperation = if (current.relayTicketGeneration == null) "claim" else "renew"',
+        "payload.ticketGeneration != pendingAuthorization.ticketGeneration",
+    ):
+        if snippet not in texts["android_app"]:
+            failures.append(f"Android paired relay allocation path is missing {snippet!r}.")
+    for snippet in (
+        "secureCompactRelayPairingForcesOneInitialClaimWithDiagnosticRefreshDisabled",
+        "pairedRelayAllocationClaimSignsExactAuthorizationAndPersistsFinalGeneration",
+        "pairedRelayAllocationRenewalPersistsNextGeneration",
+        "pairedRelayAllocationClaimsUnversionedRouteAfterRuntimeOnlyBootstrapRenewals",
+        "pairedRelayAllocationRejectsWrongMutatedExpiredSecretBearingAndDuplicateChallenges",
+        "pairedRelayAllocationRejectsFinalBeforeProofMismatchAndMissingGeneration",
+        "pairedRelayAllocationTimeoutDisconnectAndPlaintextChannelClearWithoutSigning",
+    ):
+        if snippet not in texts["android_app_test"]:
+            failures.append(f"Android paired relay allocation tests are missing {snippet!r}.")
+    for snippet in (
+        "pairingStorePersistsRelayTicketGenerationAcrossRestart",
+        "pairingStoreClearsRelayTicketGenerationWithRelayRoute",
+    ):
+        if snippet not in texts["android_store_test"]:
+            failures.append(f"Android pairing-store generation tests are missing {snippet!r}.")
+
+    for snippet in (
+        "Checking paired relay allocation wrong-key proof and replay rejection...",
+        'requestID: "smoke-route-refresh-claim"',
+        'requestID: "smoke-route-refresh-renew"',
+        "route.refresh final route did not match the signed next lease",
+    ):
+        if snippet not in texts["smoke"]:
+            failures.append(f"Authenticated mock relay smoke is missing {snippet!r}.")
+
+    for snippet in (
+        "PairedRelayAllocationAuthorizationTest",
+        "relayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples",
+        "relayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples",
+        "PairedRelayAllocationAuthorizationTests",
+        "PairedRelayAllocationRuntimeSigningTests",
+        "PairedRelayAllocationClientTests",
+        "PairedRuntimeRouteRefreshTests",
+        "PairScopedRelayRouteStoreTests",
+        "RelayClientRegistrationAdmissionTests",
+        "PairedClientRelayRegistrationAuthorizationTest",
+        "testPairedClaimThenRenewSucceedsAndPersistsPinnedClient",
+        "testTwoPairScopedRoomsBridgeConcurrentlyWithoutCrossTalk",
+        "testRelayAllocationAuthorizationWrongProofFailsClosedAndIsOneShot",
+        "pair-scoped relay room authorization addendum",
+        "./script/relay_allocation_store_ownership_smoke.sh",
+        "relay allocation cross-process ownership addendum",
+        'AETHERLINK_RELAY_ALLOCATION_STORE="$work_dir/allocations.json"',
+    ):
+        if snippet not in texts["gate"]:
+            failures.append(f"Default no-device gate is missing {snippet!r}.")
+
+    doc_title = "Pair-Scoped Relay Room Isolation No-Device Gate"
+    for name in (
+        "protocol_doc",
+        "security_doc",
+        "overlay_doc",
+        "roadmap_doc",
+        "progress_doc",
+        "qa_doc",
+    ):
+        if doc_title not in texts[name]:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} is missing current paired-allocation evidence title {doc_title!r}."
+            )
+
+    ownership_doc_title = "Relay Allocation Cross-Process Ownership No-Device Gate"
+    for name in (
+        "protocol_doc",
+        "security_doc",
+        "overlay_doc",
+        "roadmap_doc",
+        "progress_doc",
+        "qa_doc",
+    ):
+        if ownership_doc_title not in texts[name]:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} is missing current relay store ownership title {ownership_doc_title!r}."
+            )
+
+    return failures
+
+
+def initial_pairing_mutual_proof_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "android_proof": ROOT / "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/InitialPairingProof.kt",
+        "android_test": ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/InitialPairingProofTest.kt",
+        "android_viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "android_app_test": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "swift_proof": ROOT / "apps/macos/Pairing/Sources/InitialPairingProof.swift",
+        "swift_test": ROOT / "apps/macos/Pairing/Tests/InitialPairingProofTests.swift",
+        "coordinator": ROOT / "apps/macos/Pairing/Sources/PairingCoordinator.swift",
+        "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "router_test": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
+        "smoke": ROOT / "script/runtime_authenticated_mock_smoke.swift",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "protocol": ROOT / "docs/protocol.md",
+        "security": ROOT / "docs/security.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    for name, path in paths.items():
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for initial pairing mutual proof coverage.")
+    if failures:
+        return failures
+    texts = {name: path.read_text(encoding="utf-8", errors="replace") for name, path in paths.items()}
+
+    shared_contract_snippets = (
+        "p256-sha256-der-v1",
+        "AetherLink initial pairing client proof v1",
+        "AetherLink initial pairing runtime result proof v1",
+    )
+    for name in ("android_proof", "swift_proof"):
+        for snippet in shared_contract_snippets:
+            if snippet not in texts[name]:
+                failures.append(f"{paths[name].relative_to(ROOT)} is missing initial-pairing contract {snippet!r}.")
+    shared_digest_snippets = (
+        "7ecceffa7e90feeaebdac054b6be386307bc26db9914a9b0d5660f9c671f0965",
+        "9bf74c2179506f02c8b071f507465e29ec35530608bcdf72f325f23dd419f84f",
+    )
+    for name in ("android_test", "swift_test"):
+        for snippet in shared_digest_snippets:
+            if snippet not in texts[name]:
+                failures.append(f"{paths[name].relative_to(ROOT)} is missing fixed initial-pairing contract {snippet!r}.")
+
+    for snippet in (
+        "pairingProofScheme = INITIAL_PAIRING_PROOF_SCHEME",
+        "pairingSignature = pairingSignature",
+        "pendingInitialPairingRequest",
+        "acceptedInitialPairingProofIsValid(",
+        "InitialPairingProof.verifyAcceptedResult(",
+        "unsignedRejectedPairingResultKeepsPendingRouteAndSecretForAuthenticatedRetry",
+    ):
+        if snippet not in texts["android_viewmodel"] and snippet not in texts["android_app_test"]:
+            failures.append(f"Android initial pairing app path is missing {snippet!r}.")
+    android_verify = texts["android_viewmodel"].find("acceptedInitialPairingProofIsValid(")
+    android_trust = texts["android_viewmodel"].find("pairingStore.trustRuntime(trusted)", android_verify)
+    if not (0 <= android_verify < android_trust):
+        failures.append("Android must verify the accepted initial pairing proof before trusted-runtime persistence.")
+
+    for snippet in (
+        "InitialPairingClientProof(",
+        "proof.verify()",
+        "reservedRequestDigest",
+        "commitPairing(requestDigest:",
+        "releasePairing(requestDigest:",
+    ):
+        if snippet not in texts["coordinator"]:
+            failures.append(f"macOS pairing coordinator is missing {snippet!r}.")
+    swift_sign = texts["router"].find("signInitialPairingResult(result)")
+    swift_trust = texts["router"].find("try await trustedDeviceStore.trust(validation.trustedDevice)", swift_sign)
+    swift_commit = texts["router"].find("pairingCoordinator.commitPairing(", swift_trust)
+    if not (0 <= swift_sign < swift_trust < swift_commit):
+        failures.append("macOS must sign, persist trust, and commit the pairing reservation in that order.")
+    for snippet in (
+        "testPairingRequestRejectsMutatedProofWithoutConsumingSession",
+        "testPairingResultSignerFailureReleasesReservationBeforeTrust",
+    ):
+        if snippet not in texts["router_test"]:
+            failures.append(f"macOS router tests are missing {snippet!r}.")
+
+    for snippet in (
+        '"pairing_proof_scheme"',
+        '"pairing_signature"',
+        '"pairing_request_digest"',
+        '"runtime_pairing_signature"',
+        '"pairingProofScheme"',
+    ):
+        if snippet not in texts["schema"]:
+            failures.append(f"Protocol schema is missing initial pairing proof field {snippet}.")
+    for snippet in (
+        "initialPairingRequestPayload(",
+        "verifyAcceptedInitialPairingResult(",
+        'pairingPayload["runtime_pairing_signature"]',
+    ):
+        if snippet not in texts["smoke"]:
+            failures.append(f"Authenticated runtime smoke is missing {snippet!r}.")
+    for snippet in (
+        "InitialPairingProofTest",
+        "InitialPairingProofTests",
+        "testPairingRequestRejectsMutatedProofWithoutConsumingSession",
+        "initial pairing mutual P-256 proof addendum",
+    ):
+        if snippet not in texts["gate"]:
+            failures.append(f"Default no-device gate is missing {snippet!r}.")
+    doc_snippets = {
+        "protocol": "The client proof transcript starts with `AetherLink initial pairing client proof v1`",
+        "security": "## Initial Pairing Mutual Proof",
+        "roadmap": "## Historical Roadmap Slice: Initial Pairing Mutual P-256 Proof",
+        "progress": "### 2026-07-10 Initial Pairing Mutual P-256 Proof (Historical Milestone)",
+        "qa": "## 2026-07-10 Initial Pairing Mutual P-256 Proof No-Device Gate",
+    }
+    for name, snippet in doc_snippets.items():
+        if snippet not in texts[name]:
+            failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
+    return failures
+
+
+def production_relay_security_design_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "validator": ROOT / "script/check_production_relay_security_design.py",
+        "gate": ROOT / "script/check_no_device_quality.sh",
+        "portfolio": ROOT / "docs/security-hardening/production-relay-v1/hardening.md",
+        "analysis": ROOT / "docs/security-hardening/production-relay-v1/hardening.json",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+        "security": ROOT / "docs/security.md",
+        "protocol": ROOT / "docs/protocol.md",
+        "overlay": ROOT / "docs/connection-overlay.md",
+    }
+    texts: dict[str, str] = {}
+    for name, path in paths.items():
+        if not path.is_file():
+            failures.append(f"Missing production relay security design artifact: {path.relative_to(ROOT)}")
+            continue
+        texts[name] = path.read_text(encoding="utf-8", errors="replace")
+
+    def section_text(name: str, heading: str) -> str:
+        text = texts.get(name, "")
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            text,
+        )
+        if match is None:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} is missing section {heading!r}."
+            )
+            return ""
+        return match.group("body")
+
+    required_snippets = {
+        "validator": (
+            "EVIDENCE_COLLECTION_SHA256",
+            '"authenticated-allocation-control-plane": "tls-signed-leases"',
+            '"pair-epoch-recovery": "pair-epoch-state-machine"',
+            'DESIGN_ROOT / "implementation"',
+        ),
+        "gate": (
+            "script/check_production_relay_security_design.py",
+            "Covered production relay security design addendum:",
+            "This validates design artifacts only; it does not claim implementation",
+        ),
+        "analysis": (
+            '"recommendedOptionId": "tls-signed-leases"',
+            '"recommendedOptionId": "pair-epoch-state-machine"',
+            "peer-verifiable endpoint identity KEX",
+            "read-only authenticated status operation",
+        ),
+    }
+    for name, snippets in required_snippets.items():
+        text = texts.get(name, "")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
+
+    portfolio_sections = {
+        "Recommendation Summary": (
+            "TLS 1.3",
+            "endpoint-verifiable",
+            "canonical request digest",
+            "read-only signed",
+        ),
+        "Next Decisions": (
+            "Select or refine the recommended options before protocol implementation.",
+        ),
+    }
+    for heading, snippets in portfolio_sections.items():
+        text = section_text("portfolio", heading)
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{paths['portfolio'].relative_to(ROOT)} section {heading!r} "
+                    f"is missing {snippet!r}."
+                )
+
+    portfolio_reference = "security-hardening/production-relay-v1/hardening.md"
+    doc_sections = {
+        "roadmap": "Production Relay Security Design Review (Selection Pending)",
+        "progress": "2026-07-10 Production Relay Security Design Review (Selection Pending)",
+        "qa": "2026-07-10 Production Relay Security Design Static Gate",
+        "security": "Production Relay Security Design Review",
+        "protocol": "Production Relay V3 Design Boundary",
+        "overlay": "Production Relay Design Decision Boundary",
+    }
+    scoped_docs = {
+        name: section_text(name, heading)
+        for name, heading in doc_sections.items()
+    }
+    for name, text in scoped_docs.items():
+        if portfolio_reference not in text:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} section {doc_sections[name]!r} "
+                f"must reference {portfolio_reference}."
+            )
+
+    for name in ("roadmap", "progress", "qa"):
+        if "not implemented" not in scoped_docs[name]:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} section {doc_sections[name]!r} "
+                "must preserve the not implemented boundary."
+            )
+    return failures
+
+
+def relay_abuse_controls_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "defaultControlLineReadTimeoutSeconds",
+            "defaultMaximumConcurrentConnections",
+            "RelayConnectionLimiter",
+            "connectionLimiter.accept(",
+            "sourceIdentity: sourceIdentity",
+            "configureAcceptedSocket(clientSocket)",
+            "SO_NOSIGPIPE",
+            "beginWaitingMonitor",
+            "RelayActiveBridgeTermination",
+            "termination.shutdownBoth()",
+            "RelayServerControlLineReader.read",
+            "probePolicy.allowsProbe(host: configuration.host)",
+            "legacyRelayRequiresLoopback",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testControlLineReaderUsesAbsoluteDeadlineAndPreserves4096ByteLimit",
+            "testControlLineReaderRecomputesDeadlineAfterEveryPollAndReceiveInterrupt",
+            "testIdleControlTimeoutReclaimsConnectionPermit",
+            "testWaitingPeerDisconnectReclaimsConnectionPermit",
+            "testAcceptedSocketResetDuringResponseDoesNotTerminateServer",
+            "testSinglePeerCloseReclaimsBothBridgePermitsAndActiveRoom",
+            "testExposedBindDisablesProbeUnlessLegacyDiagnosticPolicyIsExplicit",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testRelayConfigurationRejectsInvalidAbuseControlLimits",
+            "testLegacyUnallocatedRelayModeIsLoopbackOnly",
+            "testProbePolicyDefaultsToLoopbackOnlyAndRequiresExplicitExposedOptIn",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            "AETHERLINK_RELAY_PROBE_POLICY",
+            "AETHERLINK_RELAY_CONTROL_TIMEOUT_SECONDS",
+            "AETHERLINK_RELAY_MAX_CONNECTIONS",
+            'case "--probe-policy"',
+            'case "--control-timeout-seconds"',
+            'case "--max-connections"',
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "enum class RuntimeRelayProbeResult",
+            "RuntimeRelayProbeResult.Unsupported",
+            "probeResult != RuntimeRelayProbeResult.Unavailable",
+            "RELAY_PROBE_RESPONSE_KEYS",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+            "relayQrPairingUnsupportedProbeContinuesToRelayConnector",
+            "relayProbeResultRejectsMalformedDuplicateAndUnknownFieldsAsUnsupported",
+        ),
+        "script/run_allocation_relay.sh": (
+            "--probe-policy <disabled|loopback-only|legacy-unauthenticated>",
+            "--control-timeout-seconds <seconds>",
+            "--max-connections <count>",
+            '"abuse_controls": {',
+            "Legacy unallocated relay mode is loopback-only",
+        ),
+        "script/android_relay_reachability_probe.sh": (
+            "PROBE_SUPPORTED=1",
+            "classify_relay_probe_response",
+            "TCP_PROBE_OUTPUT=",
+            "PROBE_RESPONSE_STATUS",
+            'result = "ready" if route_known and runtime_waiting else "unavailable"',
+            '"result": probe_result',
+            '"response_exit_status": None if probe_response_status == "unset" else int(probe_response_status)',
+            '"output": canonical_probe_output or None',
+            '"supported": probe_supported == "1"',
+            "relay_route_probe_unsupported_authenticated_connection_required",
+            "authenticated pairing must verify the route",
+        ),
+        "script/check_physical_external_relay_pairing.sh": (
+            "route_probe_supported",
+            "route_probe_acceptable",
+            "device_route_probe_unsupported_authenticated_pairing_used",
+        ),
+        "script/check_no_device_quality.sh": (
+            "RelayMatcherTests|RelayProbeTests",
+            "relay abuse-control foundation addendum",
+            "testWaitingPeerDisconnectReclaimsConnectionPermit",
+            "testAcceptedSocketResetDuringResponseDoesNotTerminateServer",
+            "testSinglePeerCloseReclaimsBothBridgePermitsAndActiveRoom",
+            "relay_route_probe_unsupported_authenticated_connection_required",
+            "extra-probe-secret",
+            "duplicate-probe-secret",
+            "secret-bearing-probe-marker",
+            "known_ready_nonzero",
+            "known_false_nonzero",
+            "FAKE_RELAY_TCP_UNREACHABLE",
+            '7 if probe_case in {"secret_bearing", "known_ready_nonzero", "known_false_nonzero"} else 0',
+        ),
+        "README.md": (
+            "script/run_allocation_relay.sh",
+            "Accepted sockets are globally bounded",
+            "--probe-policy legacy-unauthenticated",
+        ),
+    }
+    for relative_path, snippets in requirements.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"Missing relay abuse-control artifact: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing {snippet!r}.")
+
+    physical_probe_text = (ROOT / "script/android_relay_reachability_probe.sh").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    write_json_start = physical_probe_text.find("write_json()")
+    write_json_end = physical_probe_text.find("\n}\n", write_json_start)
+    write_json_text = physical_probe_text[write_json_start:write_json_end]
+    if '"$PROBE_OUTPUT"' in write_json_text:
+        failures.append(
+            "script/android_relay_reachability_probe.sh must not persist the attacker-controlled raw probe response."
+        )
+
+    doc_requirements = {
+        "docs/roadmap.md": "## Relay Abuse-Control Foundation No-Device Gate",
+        "docs/progress.md": "## 2026-07-10 Relay Abuse-Control Foundation No-Device Gate",
+        "docs/qa-evidence.md": "## 2026-07-10 Relay Abuse-Control Foundation No-Device Gate",
+        "docs/security.md": "## Development Relay Abuse-Control Foundation",
+        "docs/protocol.md": "## Development Relay Abuse-Control Contract",
+        "docs/connection-overlay.md": "## Development Relay Abuse-Control Foundation",
+    }
+    for relative_path, heading in doc_requirements.items():
+        path = ROOT / relative_path
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if heading not in text:
+            failures.append(f"{relative_path} is missing {heading!r}.")
+        for snippet in (
+            "absolute monotonic",
+            "loopback-only",
+            "source peer quota",
+            "physical Android",
+        ):
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing abuse-control boundary {snippet!r}.")
+    return failures
+
+
+def relay_source_rate_limits_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        "apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift": (
+            "defaultPreflightRequestsPerMinute: Double = 120",
+            "defaultPreflightBurst = 30",
+            "defaultAllocationMutationRequestsPerMinute: Double = 30",
+            "defaultAllocationMutationBurst = 10",
+            "defaultMaximumTrackedSources = 4_096",
+            "defaultIdleRetentionSeconds: TimeInterval = 15 * 60",
+            "allocation_preflight_source_rate_limited",
+            "allocation_mutation_source_rate_limited",
+            "allocation_preflight_requests_total",
+            "allocation_mutation_requests_total",
+            "allocation_preflight_source_rate_limited_total",
+            "allocation_mutation_source_rate_limited_total",
+            "rate_limit_source_evictions_total",
+            "rate_limit_overflow_requests_total",
+            "rate_limit_idle_sweeps_total",
+            "rate_limit_tracked_sources",
+            "bytes.prefix(10).allSatisfy",
+            "static let unknown",
+            "static let overflow",
+            "socketAddress.sin6_scope_id.bigEndian",
+            "removeIdleSourcesIfNeeded(now: now)",
+            "guard now >= nextIdleSweepTime else { return }",
+            "bucketSource(for: source)",
+            "idleRetentionTooShortForBurstRefill",
+            "ProcessInfo.processInfo.systemUptime",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "sourceRateLimitConfiguration",
+            "RelaySourceIdentity(storage: storage, length: length)",
+            "guard sourceRateLimitAllows(",
+            ".allocationMutation,",
+            "sourceRateLimitRequestKind(forAllocationLine: line)",
+            'body.allSatisfy({ !$0.isWhitespace || $0 == " " })',
+            "let allocationTokenPrefix = \"allocation_token=\"",
+            "parts.count == 5",
+            'sourceRateLimitLog("reason=\\(reason.rawValue) reason_count=\\(decision.reasonCount)")',
+            "sourceRateLimitMetricsSnapshot",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelaySourceRateLimiterTests.swift": (
+            "testConfigurationDefaultsAndValidationBounds",
+            "testTokenBurstRefillAndBackwardClockMovement",
+            "testPreflightAndAllocationMutationUseSeparateBuckets",
+            "testIPv4IPv6MappedCanonicalityAndSharedUnknownIdentity",
+            "testMemoryCapUsesSharedOverflowWithoutBucketResetAndCleansIdleState",
+            "rateLimitIdleSweepsTotal",
+            "invalid.allocationMutationRequestsPerMinute = 1",
+            "invalid.allocationMutationBurst = 16",
+            "testStableSourceFreeMetricsAndSaturatingCounterContract",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability",
+            "testMalformedAllocationControlRecordsConsumeClassifiedSourceBudgets",
+            '"AETHERLINK_RELAY allocate tabbed\\troute crypto=2 preflight=1\\n"',
+            '"allocation_token=bad\\ttoken preflight=1\\n"',
+            '"AETHERLINK_RELAY allocate nonbreaking\\u{00A0}space crypto=2 preflight=1\\n"',
+            "testAllocationMutationBucketIsSeparateFromPreflightBucket",
+            "testPairedRenewalSharesAllocationMutationBucket",
+            "testRateLimitedSourceStillUsesPeerAdmissionAndBridgeTraffic",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testRelayConfigurationRejectsInvalidAbuseControlLimits",
+            "allocationMutationRequestsPerMinute: 1",
+            "allocationMutationBurst: 16",
+            ".idleRetentionTooShortForBurstRefill",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            "AETHERLINK_RELAY_PREFLIGHT_RATE_PER_MINUTE",
+            "AETHERLINK_RELAY_PREFLIGHT_BURST",
+            "AETHERLINK_RELAY_ALLOCATION_RATE_PER_MINUTE",
+            "AETHERLINK_RELAY_ALLOCATION_BURST",
+            "AETHERLINK_RELAY_MAX_RATE_LIMIT_SOURCES",
+            'case "--preflight-rate-per-minute"',
+            'case "--allocation-rate-per-minute"',
+            'case "--max-rate-limit-sources"',
+            "try sourceRateLimits.validate()",
+            "parseCanonicalPositiveDecimal",
+            "Shared NAT/VPN users share one source bucket",
+            "is no disable value.",
+        ),
+        "script/run_allocation_relay.sh": (
+            '"source_rate_limits": {',
+            "PREFLIGHT_RATE_PER_MINUTE=\"${AETHERLINK_RELAY_PREFLIGHT_RATE_PER_MINUTE:-120}\"",
+            "PREFLIGHT_BURST=\"${AETHERLINK_RELAY_PREFLIGHT_BURST:-30}\"",
+            "ALLOCATION_RATE_PER_MINUTE=\"${AETHERLINK_RELAY_ALLOCATION_RATE_PER_MINUTE:-30}\"",
+            "ALLOCATION_BURST=\"${AETHERLINK_RELAY_ALLOCATION_BURST:-10}\"",
+            "MAX_RATE_LIMIT_SOURCES=\"${AETHERLINK_RELAY_MAX_RATE_LIMIT_SOURCES:-4096}\"",
+            '[[ "$value" =~ ^[1-9][0-9]{0,6}$ ]]',
+            "Source limits apply only to allocation, preflight, and paired-renewal control records",
+            "Shared NAT/VPN users share one source bucket",
+            "There is no disable value",
+            "validate_rate_limit_refill_window",
+            "burst must fully refill within 900 seconds",
+        ),
+        "script/check_no_device_quality.sh": (
+            "check_relay_source_rate_limit_configuration_guard",
+            "RelaySourceRateLimiterTests|RelayIdentityBoundSocketTests/testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability|RelayIdentityBoundSocketTests/testMalformedAllocationControlRecordsConsumeClassifiedSourceBudgets",
+            "relay source-aware allocation control addendum",
+            '"preflight_rate_per_minute": 120',
+            '"allocation_rate_per_minute": 30',
+            '"max_rate_limit_sources": 4096',
+            '"--preflight-rate-per-minute 08"',
+            "source-rate limits that can reset before full refill",
+            "allocation limits that can reset before full refill",
+            "check_relay_binary_source_rate_limit_cli_guard",
+            "AetherLinkRelay should reject noncanonical source-rate-limit CLI input",
+            "run swift build --product AetherLinkRelay",
+            "run check_relay_binary_source_rate_limit_cli_guard",
+        ),
+        "README.md": (
+            "120/minute with burst 30",
+            "30/minute with burst 10",
+            "Shared NAT/VPN",
+            "users share a source bucket",
+            "do not throttle peer admission",
+        ),
+    }
+    for relative_path, snippets in requirements.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"Missing relay source-rate-limit artifact: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing {snippet!r}.")
+
+    limiter_text = (
+        ROOT / "apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift"
+    ).read_text(encoding="utf-8", errors="replace")
+    for forbidden in (
+        "evictLeastRecentlySeenSourceIfNeeded",
+        "sources.min(by:",
+        "removeIdleSources(now: now)",
+    ):
+        if forbidden in limiter_text:
+            failures.append(
+                "apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift: "
+                f"bounded overflow must not regress to per-request capacity scanning; found {forbidden!r}."
+            )
+
+    relay_server_text = (ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    renewal_detect = relay_server_text.find(
+        "RelayPairedAllocationRenewalRequest.isRenewalLine(line)"
+    )
+    renewal_limit = relay_server_text.find(".allocationMutation,", renewal_detect)
+    renewal_dispatch = relay_server_text.find(
+        "try handlePairedAllocationRenewal(", renewal_detect
+    )
+    allocation_detect = relay_server_text.find(
+        "RelayAllocationRequest.isAllocationLine(line)"
+    )
+    allocation_limit = relay_server_text.find(
+        "sourceRateLimitRequestKind(forAllocationLine: line)", allocation_detect
+    )
+    allocation_dispatch = relay_server_text.find(
+        "try handleAllocationRequest(", allocation_detect
+    )
+    ordered_positions = (
+        renewal_detect,
+        renewal_limit,
+        renewal_dispatch,
+        allocation_detect,
+        allocation_limit,
+        allocation_dispatch,
+    )
+    if any(position < 0 for position in ordered_positions) or not (
+        renewal_detect < renewal_limit < renewal_dispatch
+        and allocation_detect < allocation_limit < allocation_dispatch
+    ):
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayServer.swift: allocation and renewal "
+            "attempts must consume source capacity before full request parsing."
+        )
+    log_start = relay_server_text.find("private func sourceRateLimitAllows(")
+    log_end = relay_server_text.find("\n    }", log_start)
+    log_text = relay_server_text[log_start:log_end]
+    for forbidden in ("sourceIdentity)", "routeToken", "allocationToken", "relayID"):
+        if forbidden in log_text[log_text.find("sourceRateLimitLog"):]:
+            failures.append(
+                "apps/macos/RelayServerCore/Sources/RelayServer.swift: source-rate-limit "
+                f"rejection logging must remain source-free and route-free; found {forbidden!r}."
+            )
+
+    doc_requirements = {
+        "docs/roadmap.md": "## Relay Source-Aware Allocation Control No-Device Gate",
+        "docs/progress.md": "## 2026-07-10 Relay Source-Aware Allocation Control No-Device Gate",
+        "docs/qa-evidence.md": "## 2026-07-10 Relay Source-Aware Allocation Control No-Device Gate",
+        "docs/security.md": "## Development Relay Source-Aware Allocation Controls",
+        "docs/protocol.md": "## Development Relay Source Rate-Limit Contract",
+        "docs/connection-overlay.md": "## Development Relay Source-Aware Allocation Controls",
+    }
+    for relative_path, heading in doc_requirements.items():
+        path = ROOT / relative_path
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if heading not in text:
+            failures.append(f"{relative_path} is missing {heading!r}.")
+        normalized_text = " ".join(text.split()).lower()
+        for snippet in (
+            "shared NAT/VPN",
+            "shared overflow",
+            "before full",
+            "fully refill",
+            "exact",
+            "scope",
+            "source peer quota",
+            "production capacity",
+            "physical Android",
+        ):
+            if " ".join(snippet.split()).lower() not in normalized_text:
+                failures.append(f"{relative_path} is missing source-rate-limit boundary {snippet!r}.")
+    return failures
+
+
+def relay_source_peer_quotas_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        "apps/macos/RelayServerCore/Sources/RelaySourceQuotaLimiter.swift": (
+            "defaultMaximumConnectionsPerSource = 64",
+            "defaultMaximumWaitingPeersPerSource = 32",
+            "maximumWaitingPeersPerSource * 2 <= maximumConnectionsPerSource",
+            "source_connection_quota_reached",
+            "source_waiting_peer_quota_reached",
+            "counterpart_candidate_not_matched",
+            "global_connection_limit_reached",
+            "connection_admission_requests_total",
+            "connections_admitted_total",
+            "source_connection_quota_rejections_total",
+            "waiting_peer_admission_requests_total",
+            "waiting_peers_admitted_total",
+            "source_waiting_peer_quota_rejections_total",
+            "active_connection_sources",
+            "waiting_peer_sources",
+            "counterpart_candidates_admitted_total",
+            "counterpart_candidates_confirmed_total",
+            "counterpart_candidates_rejected_total",
+            "counterpart_candidates_current",
+            "usesGlobalCounterpartReserve",
+            "usesSourceCounterpartReserve",
+            "let globalReservedSlots = maximumConnections > 1",
+            "? max(1, totalWaitingPeers)",
+            "let sourceReservedSlots = max(1, state.waitingPeers)",
+            "totalConnections + totalWaitingPeers + 1 <= maximumConnections",
+            "state.connections + state.waitingPeers + 1 <=",
+            "confirmCounterpartCandidate(",
+            "replaceWaitingPeer(",
+            "releaseWaitingPeer(source:",
+            "static func saturatingIncrement",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "sourceQuotaConfiguration",
+            "sourceQuotaLimiter.acquireConnection(source: sourceIdentity)",
+            "sourceQuotaMetricsSnapshot",
+            "sourceIdentity: connection.sourceIdentity",
+            "if reason != .sourceWaitingPeerQuota",
+            "connection.confirmCounterpartCandidateIfNeeded()",
+            "connection.requiresSameSourceCounterpart",
+            "guard !connection.requiresImmediateCounterpart else",
+            "self?.closeIfWaiting(onClosed: onClosed)",
+            "onClosed(false)",
+            "wasCounterpartCandidate: transition.wasCounterpartCandidate",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayMatcher.swift": (
+            "case sourceWaitingPeerQuota",
+            "case counterpartRequired",
+            "let sourceIdentity: RelaySourceIdentity",
+            "sourceQuotaLimiter?.releaseWaitingPeer(source: removed.sourceIdentity)",
+            "sourceQuotaLimiter?.releaseWaitingPeer(source: other.sourceIdentity)",
+            "replaceWaitingPeer(",
+            "return .rejected(.sourceWaitingPeerQuota)",
+            "requiresImmediateMatch",
+            "requiresSameSourceCounterpart",
+            "return .rejected(.counterpartRequired)",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelaySourceQuotaLimiterTests.swift": (
+            "testConfigurationDefaultsBoundsAndCounterpartHeadroom",
+            "testGlobalAndSourceConnectionQuotasAreAtomicAndReleaseExactState",
+            "testWaitingQuotaReplacementAndReleasePreserveExactSourceOwnership",
+            "testConcurrentConnectionAdmissionsCannotOvershootSourceQuota",
+            "testMetricsKeysSaturateAndNeverExposeSourceIdentity",
+            "testCounterpartReserveRejectsNonmatchThenConfirmsValidCandidate",
+            "testNormalAdmissionPreservesGlobalAndSourceCounterpartCapacity",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayMatcherTests.swift": (
+            "testSourceWaitingQuotaRejectsOnlyNewWaitersAndAllowsImmediateMatch",
+            "testCrossSourceReplacementRejectionPreservesOriginalWaiter",
+            "testWaitingQuotaReleasesOnInvalidation",
+            "testCounterpartOnlyRegistrationAllowsMatchOrSameSourceReplacement",
+            "testSourceReserveCandidateCannotDischargeAnotherSourcesWaiter",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testSourceConnectionQuotaRejectsExcessWhileActiveBridgeStillForwards",
+            "testSourceWaitingQuotaRejectsOnlyNewWaiterAndAllowsImmediateCounterpart",
+            "testWaitingDisconnectReleasesSourceQuotaBeforeConnectionPermit",
+            "testCounterpartReserveSurvivesActiveBridgeAndRejectsNonmatchingCandidate",
+            "reason=source_connection_quota_reached reason_count=1",
+            "reason=source_waiting_peer_quota_reached reason_count=1",
+            "reason=counterpart_candidate_not_matched reason_count=1",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            "AETHERLINK_RELAY_MAX_CONNECTIONS_PER_SOURCE",
+            "AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_SOURCE",
+            'case "--max-connections-per-source"',
+            'case "--max-waiting-peers-per-source"',
+            "maxWaitingPeersPerSource * 2 <= maxConnectionsPerSource",
+            "sourceQuotaConfiguration: sourceQuotas",
+            "Active bridges remain counted against the source connection quota",
+            "Shared NAT/VPN users share source quotas",
+        ),
+        "script/run_allocation_relay.sh": (
+            'MAX_CONNECTIONS_PER_SOURCE="${AETHERLINK_RELAY_MAX_CONNECTIONS_PER_SOURCE:-64}"',
+            'MAX_WAITING_PEERS_PER_SOURCE="${AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_SOURCE:-32}"',
+            '"source_peer_quotas": {',
+            '"runtime_enforcement_verified": False',
+            '"shared_nat_vpn_bucket": True',
+            '"source_identity": "accepted_socket_address"',
+            "MAX_WAITING_PEERS_PER_SOURCE * 2 > MAX_CONNECTIONS_PER_SOURCE",
+            "--max-connections-per-source",
+            "--max-waiting-peers-per-source",
+        ),
+        "script/check_no_device_quality.sh": (
+            "check_relay_source_peer_quota_configuration_guard",
+            "check_relay_binary_source_peer_quota_cli_guard",
+            '"max_concurrent_connections_per_source": 64',
+            '"max_waiting_peers_per_source": 32',
+            "RelaySourceQuotaLimiterTests|RelayMatcherTests/testSourceWaitingQuotaRejectsOnlyNewWaitersAndAllowsImmediateMatch",
+            "RelayIdentityBoundSocketTests/testCounterpartReserveSurvivesActiveBridgeAndRejectsNonmatchingCandidate",
+            "relay source peer quota addendum",
+            "AetherLinkRelay should reject source peer quotas without counterpart headroom",
+        ),
+        "README.md": (
+            "64",
+            "32",
+            "source quota",
+            "NAT/VPN",
+        ),
+    }
+    for relative_path, snippets in requirements.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"Missing relay source-peer-quota artifact: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing {snippet!r}.")
+
+    relay_server_text = (ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    waiting_close = relay_server_text.find("private func closeIfWaiting(")
+    waiting_unregister = relay_server_text.find("onClosed(false)", waiting_close)
+    connection_release = relay_server_text.find("completeClose(transition)", waiting_close)
+    if min(waiting_close, waiting_unregister, connection_release) < 0 or not (
+        waiting_close < waiting_unregister < connection_release
+    ):
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayServer.swift: waiting matcher quota "
+            "must release before the accepted source connection permit."
+        )
+
+    matcher_text = (ROOT / "apps/macos/RelayServerCore/Sources/RelayMatcher.swift").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    match_lookup = matcher_text.find("guard let other = room.peers[otherRole]")
+    waiting_release = matcher_text.find(
+        "sourceQuotaLimiter?.releaseWaitingPeer(source: other.sourceIdentity)",
+        match_lookup,
+    )
+    active_room = matcher_text.find("let activeRoom = RelayActiveRoom(", match_lookup)
+    if min(match_lookup, waiting_release, active_room) < 0 or not (
+        match_lookup < waiting_release < active_room
+    ):
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayMatcher.swift: immediate matches must "
+            "release the existing waiting quota before active-room publication."
+        )
+
+    doc_requirements = {
+        "docs/roadmap.md": "## Relay Source Peer Quotas No-Device Gate",
+        "docs/progress.md": "## 2026-07-10 Relay Source Peer Quotas No-Device Gate",
+        "docs/qa-evidence.md": "## 2026-07-10 Relay Source Peer Quotas No-Device Gate",
+        "docs/security.md": "## Development Relay Source Peer Quotas",
+        "docs/protocol.md": "## Development Relay Source Peer Quota Contract",
+        "docs/connection-overlay.md": "## Development Relay Source Peer Quotas",
+    }
+    for relative_path, heading in doc_requirements.items():
+        path = ROOT / relative_path
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if heading not in text:
+            failures.append(f"{relative_path} is missing {heading!r}.")
+        normalized_text = " ".join(text.split()).lower()
+        for snippet in (
+            "64",
+            "32",
+            "counterpart",
+            "shared NAT/VPN",
+            "active bridge",
+            "source-free",
+            "production capacity",
+            "physical Android",
+        ):
+            if " ".join(snippet.split()).lower() not in normalized_text:
+                failures.append(f"{relative_path} is missing source-peer-quota boundary {snippet!r}.")
+    return failures
+
+
+def relay_waiting_peer_policy_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift": (
+            "defaultMaximumDurationSeconds: TimeInterval = 60",
+            "defaultMaximumPeersPerAuthenticatedIdentity = 4",
+            "maximumDurationSeconds: TimeInterval = 3_600",
+            "authenticated_identity_waiting_quota_reached",
+            "waiting_peer_timed_out",
+            "identity_waiting_admission_requests_total",
+            "identity_waiting_peers_admitted_total",
+            "identity_waiting_quota_rejections_total",
+            "waiting_peer_timeouts_total",
+            "authenticated_identity_waiting_peers",
+            "authenticated_identities_with_waiters",
+            "func acquireWaitingPeer(identity:",
+            "func releaseWaitingPeer(identity:",
+            "func recordWaitingPeerTimeout()",
+            "static func saturatingIncrement",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "waitingPeerPolicyConfiguration",
+            "waitingPeerPolicyMetricsSnapshot",
+            "allocationBinding?.runtimeKeyFingerprint",
+            "allocationBinding?.pairedClientKeyFingerprint",
+            "binding.relayExpiresAtEpochMillis - epochMillis(Date())",
+            "maximumWaitingDeadlineUptime:",
+            "waitingDeadlineUptime - ProcessInfo.processInfo.systemUptime",
+            "waitingPeerLimiter.recordWaitingPeerTimeout()",
+            "reason != .authenticatedIdentityWaitingQuota",
+            "timeoutTimer.schedule(deadline: .now() + timeoutSeconds)",
+            "self?.expireIfWaiting(onClosed: onClosed)",
+            "onClosed(true)",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayMatcher.swift": (
+            "let authenticatedIdentity: RelayAuthenticatedPeerIdentity?",
+            "let deadlineUptime: TimeInterval",
+            "maximumWaitingDurationSeconds",
+            "maximumWaitingDeadlineUptime",
+            "func waitingDeadlineUptime(",
+            "replaced.authenticatedIdentity == peer.authenticatedIdentity",
+            "waitingPeerLimiter?.releaseWaitingPeer(",
+            "sourceQuotaLimiter?.releaseWaitingPeer(source: sourceIdentity)",
+            "return .authenticatedIdentityWaitingQuota",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayWaitingPeerPolicyTests.swift": (
+            "testConfigurationDefaultsAndBounds",
+            "testUnauthenticatedWaitersRemainOutsideIdentityAccounting",
+            "testIdentityQuotaIsAtomicAcrossSourcesAndRoleSeparated",
+            "testTimeoutAndQuotaLogsExposeOnlyStableAggregateReasons",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayMatcherTests.swift": (
+            "testWaitingDeadlinePersistsAcrossSameRoleReplacement",
+            "testAuthenticatedIdentityQuotaIsCrossSourceAndReleasesEveryWaitingPath",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift": (
+            "testWaitingTimeoutReleasesSourceAndIdentityCapacityAndAllowsRetry",
+            "testMatchedBridgeCancelsWaitingTimeoutAndContinuesForwarding",
+            "testAuthenticatedIdentityWaitingQuotaRejectsOnlySameIdentity",
+            "testPairedClientIdentityWaitingQuotaRequiresVerifiedClientProof",
+            "testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime",
+            "reason=waiting_peer_timed_out reason_count=1",
+            "reason=authenticated_identity_waiting_quota_reached reason_count=1",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            "AETHERLINK_RELAY_WAITING_TIMEOUT_SECONDS",
+            "AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_AUTHENTICATED_IDENTITY",
+            'case "--waiting-timeout-seconds"',
+            'case "--max-waiting-peers-per-authenticated-identity"',
+            "waitingPeerPolicyConfiguration: waitingPeerPolicy",
+            "Unauthenticated bootstrap clients remain source-only",
+        ),
+        "script/run_allocation_relay.sh": (
+            'WAITING_TIMEOUT_SECONDS="${AETHERLINK_RELAY_WAITING_TIMEOUT_SECONDS:-60}"',
+            'MAX_WAITING_PEERS_PER_AUTHENTICATED_IDENTITY="${AETHERLINK_RELAY_MAX_WAITING_PEERS_PER_AUTHENTICATED_IDENTITY:-4}"',
+            '"waiting_peer_policy": {',
+            '"post_authentication_only": True',
+            '"unauthenticated_bootstrap_clients_source_only": True',
+            "--waiting-timeout-seconds",
+            "--max-waiting-peers-per-authenticated-identity",
+        ),
+        "script/check_no_device_quality.sh": (
+            "check_relay_waiting_peer_policy_configuration_guard",
+            "check_relay_binary_waiting_peer_policy_cli_guard",
+            '"max_duration_seconds": 60',
+            '"max_waiting_peers_per_authenticated_identity": 4',
+            "RelayWaitingPeerPolicyTests|RelayMatcherTests/testWaitingDeadlinePersistsAcrossSameRoleReplacement",
+            "RelayIdentityBoundSocketTests/testPairedClientIdentityWaitingQuotaRequiresVerifiedClientProof",
+            "relay bounded waiting and authenticated identity fairness addendum",
+        ),
+    }
+    for relative_path, snippets in requirements.items():
+        path = ROOT / relative_path
+        if not path.is_file():
+            failures.append(f"Missing relay waiting-peer-policy artifact: {relative_path}")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path} is missing {snippet!r}.")
+
+    relay_server_text = (ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    runtime_auth = relay_server_text.find("try authorizeRuntimeRegistration(")
+    client_auth = relay_server_text.find("try authorizePairedClientRegistration(")
+    identity_creation = relay_server_text.find("let authenticatedIdentity =")
+    matcher_registration = relay_server_text.find("matcher.register(", identity_creation)
+    if min(runtime_auth, client_auth, identity_creation, matcher_registration) < 0 or not (
+        runtime_auth < identity_creation < matcher_registration
+        and client_auth < identity_creation < matcher_registration
+    ):
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayServer.swift: authenticated identity "
+            "must be created only after runtime/paired-client proof verification."
+        )
+
+    matcher_text = (ROOT / "apps/macos/RelayServerCore/Sources/RelayMatcher.swift").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    identity_failure = matcher_text.find("return .authenticatedIdentityWaitingQuota")
+    source_rollback = matcher_text.rfind(
+        "sourceQuotaLimiter?.releaseWaitingPeer(source: sourceIdentity)",
+        0,
+        identity_failure,
+    )
+    if min(source_rollback, identity_failure) < 0 or source_rollback > identity_failure:
+        failures.append(
+            "apps/macos/RelayServerCore/Sources/RelayMatcher.swift: identity waiting "
+            "rejection must roll back source waiting ownership before returning."
+        )
+
+    doc_requirements = {
+        "docs/roadmap.md": "## Relay Bounded Waiting And Authenticated Identity Fairness No-Device Gate",
+        "docs/progress.md": "## 2026-07-11 Relay Bounded Waiting And Authenticated Identity Fairness",
+        "docs/qa-evidence.md": "## 2026-07-11 Relay Bounded Waiting And Authenticated Identity Fairness",
+        "docs/security.md": "## Development Relay Bounded Waiting And Authenticated Identity Fairness",
+        "docs/protocol.md": "## Development Relay Waiting Peer Policy Contract",
+        "docs/connection-overlay.md": "## Development Relay Bounded Waiting And Identity Fairness",
+    }
+    for relative_path, heading in doc_requirements.items():
+        path = ROOT / relative_path
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if heading not in text:
+            failures.append(f"{relative_path} is missing {heading!r}.")
+        normalized_text = " ".join(text.split()).lower()
+        for snippet in (
+            "60",
+            "4",
+            "monotonic",
+            "lease",
+            "replacement",
+            "authenticated identity",
+            "bootstrap",
+            "source-free",
+            "active bridge",
+            "production",
+            "physical Android",
+        ):
+            if " ".join(snippet.split()).lower() not in normalized_text:
+                failures.append(
+                    f"{relative_path} is missing waiting-peer-policy boundary {snippet!r}."
+                )
+    return failures
+
+
 def main() -> int:
+    relay_abuse_controls_failures = relay_abuse_controls_guard_failures()
+    if relay_abuse_controls_failures:
+        print("Relay abuse-control foundation guard failed:", file=sys.stderr)
+        for failure in relay_abuse_controls_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_source_rate_limits_failures = relay_source_rate_limits_guard_failures()
+    if relay_source_rate_limits_failures:
+        print("Relay source-rate-limit guard failed:", file=sys.stderr)
+        for failure in relay_source_rate_limits_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_source_peer_quotas_failures = relay_source_peer_quotas_guard_failures()
+    if relay_source_peer_quotas_failures:
+        print("Relay source-peer-quota guard failed:", file=sys.stderr)
+        for failure in relay_source_peer_quotas_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_waiting_peer_policy_failures = relay_waiting_peer_policy_guard_failures()
+    if relay_waiting_peer_policy_failures:
+        print("Relay waiting-peer-policy guard failed:", file=sys.stderr)
+        for failure in relay_waiting_peer_policy_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    production_relay_security_design_failures = production_relay_security_design_guard_failures()
+    if production_relay_security_design_failures:
+        print("Production relay security design guard failed:", file=sys.stderr)
+        for failure in production_relay_security_design_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    paired_relay_failures = paired_relay_allocation_authorization_guard_failures()
+    if paired_relay_failures:
+        print("Paired relay allocation authorization guard failed:", file=sys.stderr)
+        for failure in paired_relay_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    initial_pairing_failures = initial_pairing_mutual_proof_guard_failures()
+    if initial_pairing_failures:
+        print("Initial pairing mutual proof guard failed:", file=sys.stderr)
+        for failure in initial_pairing_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
     failures: list[str] = []
 
     for path in target_files():
@@ -40656,6 +43228,20 @@ def main() -> int:
     if no_device_gate_failures:
         print("No-device quality gate guard failed:", file=sys.stderr)
         for failure in no_device_gate_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_key_bound_relay_admission_failures = runtime_key_bound_relay_admission_guard_failures()
+    if runtime_key_bound_relay_admission_failures:
+        print("Runtime-key relay admission foundation guard failed:", file=sys.stderr)
+        for failure in runtime_key_bound_relay_admission_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    strict_relay_transport_binding_failures = strict_relay_transport_binding_guard_failures()
+    if strict_relay_transport_binding_failures:
+        print("Strict relay transport-binding guard failed:", file=sys.stderr)
+        for failure in strict_relay_transport_binding_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -40756,6 +43342,15 @@ def main() -> int:
     if relay_exposed_bind_token_failures:
         print("Relay exposed-bind allocation-token guard failed:", file=sys.stderr)
         for failure in relay_exposed_bind_token_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    endpoint_owned_relay_secret_allocation_failures = (
+        endpoint_owned_relay_secret_allocation_guard_failures()
+    )
+    if endpoint_owned_relay_secret_allocation_failures:
+        print("Endpoint-owned relay secret allocation guard failed:", file=sys.stderr)
+        for failure in endpoint_owned_relay_secret_allocation_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

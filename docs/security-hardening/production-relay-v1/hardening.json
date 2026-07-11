@@ -1,0 +1,822 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "production_relay_v1_20260710",
+  "sourceEvidence": {
+    "kind": "source_tree_collection",
+    "label": "AetherLink development-relay source snapshot supporting a production security design review",
+    "collectionSha256": "ee7af3d5ecf1a90e95f731417b0901602584c094e15acb6d04f6b2db414667ee",
+    "artifactCount": 17,
+    "targetRevision": "72d5d7b740099a6c7937910dd4cb7ad378245e21",
+    "sourceDrift": "present"
+  },
+  "implementationBoundary": {
+    "selectionGatedProductionDesign": "not_implemented",
+    "implementedTacticalControls": {
+      "scope": "development_relay_only",
+      "evidenceIds": ["E010", "E011", "E012"]
+    },
+    "notImplemented": [
+      "production TLS and service authentication",
+      "service-signed lease capabilities",
+      "peer-verifiable endpoint identity KEX",
+      "pair-epoch recovery and immediate revocation"
+    ]
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "The development relay now has tactical source-aware allocation controls, source peer quotas, bounded waiting, and post-proof authenticated identity fairness, while authenticated signed allocation leases and monotonic pair-epoch recovery with immediate deny-only revocation remain selection-gated production hardening opportunities."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": ["incremental", "medium_term", "foundational"],
+    "nonNegotiables": [
+      "Android remains a client of the trusted runtime and never calls model backends directly.",
+      "Relay and allocation infrastructure never receives endpoint traffic secrets or decrypts AI frames.",
+      "QR remains the out-of-band device trust and recovery ceremony.",
+      "Production routes never downgrade automatically to development plaintext protocols."
+    ],
+    "assumptions": [
+      "No measured public-network latency or memory budget was supplied.",
+      "P2P NAT traversal and physical-device proof are separate roadmap milestones.",
+      "One-sided emergency denial is safer than unilateral trust replacement."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "authenticated-allocation-control-plane",
+      "title": "Authenticate allocation and bind service-issued leases",
+      "summary": "Protect allocation credentials with TLS and make leases independently verifiable without exposing endpoint traffic secrets.",
+      "diagnosis": "Runtime and paired-device proofs authenticate endpoints to a plain TCP allocation service, but the service has no authenticated signed lease identity toward endpoints.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E001",
+          "path": "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
+          "claim": "Allocation uses a TCP socket and accepts a shape-validated response with no service signature."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E002",
+          "path": "apps/macos/Protocol/Sources/RelaySessionCrypto.swift",
+          "claim": "Endpoint traffic keys derive from endpoint ECDH plus a runtime-local relay secret that is not sent to the allocation service."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "source",
+          "evidenceId": "E003",
+          "path": "apps/macos/Protocol/Sources/RelayIdentityAuthorization.swift",
+          "claim": "Endpoint signatures prevent unauthorized allocation ownership but do not authenticate the service or conceal bearer allocation credentials."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E010",
+          "path": "apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift",
+          "claim": "Allocation-prefixed attempts consume separate bounded accepted-source buckets before full parsing; exact strict preflight classification, shared overflow, and full-refill-before-idle validation prevent looser-bucket and reset bypasses, while source-free metrics preserve telemetry privacy. This development control does not authenticate the service."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E012",
+          "path": "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift",
+          "claim": "Unmatched rooms have a first-insertion monotonic deadline capped by lease expiry, and verified runtime or paired-client identities have role-separated cross-source waiting quotas. Bootstrap and legacy peers remain source-only. This development control does not authenticate the service or sign leases."
+        }
+      ],
+      "desiredInvariants": [
+        "Every production allocation request authenticates the intended service before disclosing allocation credentials or route tokens.",
+        "Every accepted lease is signed over exact service, endpoint ownership, pair epoch, generation, nonce, expiry, suite, and authorization digest fields.",
+        "The signed lease digest and service key id are bound into endpoint registration, key confirmation, and device authentication transcripts.",
+        "Paired endpoints directly verify each other's signatures over both identities, both ephemeral shares, both session nonces, pair epoch, generation, and signed lease digest before installing traffic keys.",
+        "The relay never receives endpoint traffic secrets or plaintext AI protocol payloads.",
+        "Service keyset versions and production protocol floors cannot roll back."
+      ],
+      "proposalPath": "proposals/authenticated-allocation-control-plane.md",
+      "options": [
+        {
+          "optionId": "signed-plain-control",
+          "title": "Signed TCP inside an authenticated private overlay",
+          "kind": "baseline",
+          "summary": "Add a pinned service signing root and signed lease while an authenticated private overlay supplies channel identity and secrecy.",
+          "diagramPaths": {
+            "before": "diagrams/authenticated-allocation-control-plane-before.mmd",
+            "after": "diagrams/authenticated-allocation-control-plane-signed-plain-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E001",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Signatures authenticate control messages, but bearer and route material remain observable without an authenticated private overlay."
+            },
+            {
+              "evidenceId": "E002",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "Endpoint-owned encryption remains necessary and unchanged."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not satisfy service authentication or lease integrity."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not satisfy service authentication or signed lease integrity."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Forged challenges and leases fail signature verification, while credential secrecy depends on correct overlay enrollment, firewall, and routing policy.",
+              "validationPlan": "Inject forged and replayed service messages, remove overlay policy, and prove production routes fail closed before exposing bearer material."
+            },
+            {
+              "dimension": "performance",
+              "direction": "neutral",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "One bounded signature verification is added without another network handshake.",
+              "validationPlan": "Benchmark allocation latency and CPU before and after service signature verification."
+            },
+            {
+              "dimension": "memory",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Only a bounded keyset and lease object are retained.",
+              "validationPlan": "Compare peak RSS during repeated allocation and keyset rotation tests."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "neutral",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Topology remains simple, but signing-key, clock, overlay routing, or firewall failures can reject or accidentally expose allocations.",
+              "validationPlan": "Inject unavailable signer, expired key, skewed clock, stale keyset, and missing-overlay failures."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "A service root, online key, rotation procedure, and signature telemetry become required.",
+              "validationPlan": "Run normal and emergency key rotation drills with overlap and rollback attempts."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The current line protocol can carry signatures with a narrow versioned extension.",
+              "validationPlan": "Run dual-version compatibility tests and prove production routes reject unsigned fallback."
+            }
+          ],
+          "residualRisks": [
+            "Overlay enrollment, firewall, or routing mistakes can expose the plain application channel.",
+            "A compromised online signer can mint leases during its validity window."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
+              "apps/macos/RelayServerCore/Sources/RelayServer.swift",
+              "packages/protocol-schema/protocol.schema.json"
+            ],
+            "workPackages": ["Define canonical signed challenge, lease, and keyset objects."],
+            "acceptanceCriteria": ["Unsigned, wrong-key, expired, and lower-keyset service messages fail closed."],
+            "migrationNotes": ["Use only inside an authenticated private overlay if production credentials remain on plain TCP."],
+            "rollback": "Disable the production route class; never silently accept unsigned messages for an enrolled route."
+          }
+        },
+        {
+          "optionId": "tls-signed-leases",
+          "title": "TLS 1.3 plus signed lease capabilities",
+          "kind": "structural",
+          "summary": "Protect allocation with TLS and bind a delegated service-signed lease into endpoint transcripts.",
+          "diagramPaths": {
+            "before": "diagrams/authenticated-allocation-control-plane-before.mmd",
+            "after": "diagrams/authenticated-allocation-control-plane-tls-signed-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E001",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "TLS protects credentials and authenticates the channel; the signed lease authenticates state after the channel closes."
+            },
+            {
+              "evidenceId": "E002",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "Endpoint-owned PSK-mixed ECDH remains the data-plane confidentiality control."
+            },
+            {
+              "evidenceId": "E009",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The shared protocol gains service key, signed lease, epoch, and digest fields."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not satisfy service authentication or lease integrity."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not satisfy service authentication or signed lease integrity."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Network observers cannot read allocation credentials, and endpoints independently verify lease integrity and service key epoch.",
+              "validationPlan": "Run MITM, pin mismatch, forged lease, stolen-token-on-another-channel, and downgrade tests."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "analogous",
+              "assessment": "Cold allocation gains a TLS handshake and signature verification; resumption can reduce repeated cost.",
+              "validationPlan": "Measure cold and resumed p50/p95/p99 allocation latency over public and private-overlay RTTs."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "TLS state, trust roots, cached keysets, and lease objects add bounded memory.",
+              "validationPlan": "Measure client, runtime, and service peak RSS under concurrent allocation load."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "analogous",
+              "assessment": "Standard TLS removes custom channel-authentication risk, while certificate, clock, and keyset failures become fail-closed dependencies.",
+              "validationPlan": "Test expiry, skew, rotation overlap, trust-store failure, keyset cache, and service failover."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Production needs root custody, delegated key rotation, certificate operations, and downgrade telemetry.",
+              "validationPlan": "Complete scheduled and emergency rotation drills and verify alert coverage."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Allocation transport, schema, endpoint transcripts, and route classes change across Swift and Kotlin.",
+              "validationPlan": "Use separate v2 development and v3 production routes with fixed cross-language vectors and no automatic fallback."
+            }
+          ],
+          "residualRisks": [
+            "The allocation service still observes allocation metadata and source IPs.",
+            "A compromised online signer can mint leases until revoked.",
+            "Endpoint compromise and service denial remain possible."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
+              "apps/macos/Protocol/Sources/RelaySessionCrypto.swift",
+              "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RelaySessionCrypto.kt",
+              "apps/macos/RelayServerCore/Sources/RelayServer.swift",
+              "packages/protocol-schema/protocol.schema.json"
+            ],
+            "workPackages": [
+              "Define service keysets and signed lease capability.",
+              "Add TLS allocation transport and explicit route trust source.",
+              "Implement a reviewed peer-verifiable endpoint identity KEX state machine.",
+              "Bind lease digest, identities, ephemeral shares, nonces, pair epoch, and generation into endpoint transcripts.",
+              "Add MITM, rotation, blindness, and performance tests."
+            ],
+            "acceptanceCriteria": [
+              "Production allocation discloses credentials only after service authentication.",
+              "Both endpoints reject mutated, expired, revoked, wrong-service, and lower-keyset leases.",
+              "Both endpoints reject peer identity or ephemeral substitution even when the relay admits and forwards the altered transcript.",
+              "Relay captures contain no endpoint traffic secret or AI plaintext."
+            ],
+            "migrationNotes": ["Run v2 development and v3 production on distinct route classes or ports."],
+            "rollback": "Disable v3 route issuance while preserving the highest accepted protocol floor on enrolled endpoints."
+          }
+        },
+        {
+          "optionId": "split-authority-relay",
+          "title": "Split allocation authority and blind relay",
+          "kind": "isolation",
+          "summary": "Separate lease minting from ciphertext forwarding and use portable opaque capabilities.",
+          "diagramPaths": {
+            "before": "diagrams/authenticated-allocation-control-plane-before.mmd",
+            "after": "diagrams/authenticated-allocation-control-plane-split-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E001",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The authenticated authority owns allocation, while relay nodes cannot mint accepted leases."
+            },
+            {
+              "evidenceId": "E002",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "Endpoint-owned data-plane encryption remains mandatory."
+            },
+            {
+              "evidenceId": "E004",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Pair co-authorization moves into a portable capability but still requires endpoint proofs."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not satisfy authority isolation or lease integrity."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not satisfy authority isolation or signed lease integrity."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Relay compromise cannot mint leases, and relay nodes receive less allocation identity metadata.",
+              "validationPlan": "Compromise a relay test node and prove it cannot mint, alter, or redeem unauthorized capabilities."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Capability redemption or cache validation adds a hop or cache lookup to admission.",
+              "validationPlan": "Benchmark offline verification and online redemption at target concurrency and RTT."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Authority, relay key caches, revocation state, and redemption caches add bounded but distributed state.",
+              "validationPlan": "Measure cache and revocation memory growth by active lease count and region."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "unknown",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Compartmentalization improves blast radius but introduces authority/cache partition behavior.",
+              "validationPlan": "Run authority outage, stale cache, region partition, replay, and failover drills."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "A second service, key distribution, revocation fanout, and multi-region incidents require ownership.",
+              "validationPlan": "Define SLOs, dashboards, on-call runbooks, and rotation/revocation drills before rollout."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Deployment topology and capability admission change while endpoints must remain compatible.",
+              "validationPlan": "First deploy Option 2's portable lease, then move verification to split relay nodes behind the same endpoint format."
+            }
+          ],
+          "residualRisks": [
+            "The authority still observes allocation metadata.",
+            "Relay nodes still observe traffic timing, volume, roles, and opaque pair identifiers.",
+            "Authority/relay partition policy can create availability or stale-revocation windows."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "apps/macos/RelayServerCore",
+              "apps/macos/CompanionCore",
+              "apps/android/core/transport",
+              "packages/protocol-schema"
+            ],
+            "workPackages": ["Separate authority and relay admission around a portable signed capability."],
+            "acceptanceCriteria": ["A compromised relay node cannot mint or extend a lease and can forward only authorized ciphertext rooms."],
+            "migrationNotes": ["Adopt only after the signed capability format is stable under Option 2."],
+            "rollback": "Route capability verification back through the combined service without changing endpoint lease verification."
+          }
+        }
+      ],
+      "recommendedOptionId": "tls-signed-leases",
+      "recommendation": "Use TLS 1.3 plus a delegated service-signed lease now, while keeping the capability portable enough for a later authority/relay split."
+    },
+    {
+      "opportunityId": "pair-epoch-recovery",
+      "title": "Add pair epoch recovery and immediate revocation",
+      "summary": "Make compromise recovery a monotonic state machine that can deny access immediately but requires fresh QR authority for key replacement.",
+      "diagnosis": "Lease generations are durable and pair-authorized, but no higher pair epoch or signed revocation counter invalidates old keys, backups, leases, and active rooms together.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E007",
+          "path": "apps/macos/RelayServerCore/Sources/RelayAllocation.swift",
+          "claim": "The allocation registry enforces generation CAS and consumed-bootstrap tombstones without a pair epoch or revocation counter."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E008",
+          "path": "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
+          "claim": "Android persists pinned runtime and route lease state but no monotonic recovery receipt."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "source",
+          "evidenceId": "E009",
+          "path": "packages/protocol-schema/protocol.schema.json",
+          "claim": "The protocol cannot express a signed recovery or immediate global revocation transition."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E010",
+          "path": "apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift",
+          "claim": "Paired claim and renewal attempts, including malformed renewal records, consume the development relay allocation-mutation source bucket before full parsing, and idle deletion cannot reset capacity before full refill. This adds no pair epoch or revocation authority."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "evidenceId": "E012",
+          "path": "apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift",
+          "claim": "Unmatched rooms have lease-capped first-insertion deadlines, and verified runtime or paired-client identities have role-separated cross-source waiting quotas after proof. Bootstrap and legacy peers remain source-only. This adds no pair epoch, recovery authority, or revocation transition."
+        }
+      ],
+      "desiredInvariants": [
+        "Every lease and session binds a monotonic pair epoch and revocation counter.",
+        "Normal renewal is dual-signed by current endpoint keys.",
+        "Either current endpoint may revoke access but may not authorize a replacement key alone.",
+        "Key replacement requires fresh QR authority, fresh endpoint secret material, and pair epoch plus one.",
+        "Relays close active and waiting rooms for revoked state and reject lower or replayed state.",
+        "Offline endpoints require a current signed state receipt before reactivation.",
+        "Every mutation is idempotent by transition id and canonical request digest: the same id and digest returns the original signed receipt, the same id with different content fails, and a competing id returns the signed winning state. A read-only authenticated status operation returns that state without changing authority state."
+      ],
+      "proposalPath": "proposals/pair-epoch-recovery.md",
+      "options": [
+        {
+          "optionId": "short-lease-manual-repair",
+          "title": "Short leases and manual re-pair",
+          "kind": "baseline",
+          "summary": "Reduce exposure using short dual-signed leases and explicit local delete/fresh QR operations.",
+          "diagramPaths": {
+            "before": "diagrams/pair-epoch-recovery-before.mmd",
+            "after": "diagrams/pair-epoch-recovery-lease-only-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E007",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Shorter generation leases narrow replay duration but do not invalidate an old long-term key family."
+            },
+            {
+              "evidenceId": "E009",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "No recovery or global revocation protocol is added."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not create recovery state or immediate revocation."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not create recovery state or immediate revocation."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "A stolen lease expires sooner, but a compromised long-term key or active room remains outside immediate revocation.",
+              "validationPlan": "Measure usable replay windows for stolen leases and active sessions."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Shorter leases increase dual-signature renewal frequency and control-plane traffic.",
+              "validationPlan": "Load-test renewal rate and endpoint battery/CPU cost across lease durations."
+            },
+            {
+              "dimension": "memory",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Existing lease state is reused without new long-lived records.",
+              "validationPlan": "Confirm allocation-store size remains proportional to current leases and tombstones."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Authority outages become user-visible sooner because leases expire more often.",
+              "validationPlan": "Run outage tests across candidate lease durations and measure disconnect rates."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Support must guide manual delete and fresh QR re-pair without a signed recovery receipt.",
+              "validationPlan": "Run recovery UX tests and incident drills for lost client and rotated runtime."
+            },
+            {
+              "dimension": "migration",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Lease duration and UX can change without a new protocol state machine.",
+              "validationPlan": "Verify current clients handle the selected lease duration and explicit re-pair path."
+            }
+          ],
+          "residualRisks": [
+            "No immediate global active-session revocation.",
+            "Old backups have no pair-epoch rollback signal.",
+            "Compromised long-term keys can remain useful."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": ["apps/macos/RelayServerCore", "apps/macos/CompanionCore", "apps/android/app"],
+            "workPackages": ["Tune lease policy and harden explicit delete/re-pair UX."],
+            "acceptanceCriteria": ["Expired leases and locally removed trust cannot reconnect."],
+            "migrationNotes": ["No wire migration is required."],
+            "rollback": "Restore the previous lease duration."
+          }
+        },
+        {
+          "optionId": "pair-epoch-state-machine",
+          "title": "Monotonic pair epoch state machine",
+          "kind": "structural",
+          "summary": "Bind leases and sessions to pair epoch, allow deny-only emergency revocation, and require fresh QR for replacement.",
+          "diagramPaths": {
+            "before": "diagrams/pair-epoch-recovery-before.mmd",
+            "after": "diagrams/pair-epoch-recovery-state-machine-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E004",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "Dual-signed renewal becomes the normal same-epoch transition."
+            },
+            {
+              "evidenceId": "E005",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "Fresh QR becomes the explicit authority for key replacement and epoch advancement."
+            },
+            {
+              "evidenceId": "E007",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "Generation is nested under a durable pair epoch and revocation counter."
+            },
+            {
+              "evidenceId": "E009",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "The protocol gains recovery, revocation, and state receipt objects."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not create pair epoch, revocation, or signed status state."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not create pair epoch, revocation, or signed status state."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Old keys, leases, sessions, and backups fail after a higher signed epoch/counter; one key can deny but cannot replace trust.",
+              "validationPlan": "Model every transition and replay old artifacts after epoch and counter advancement."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "State receipts, extra signature checks, and revocation events add small control-plane work outside frame forwarding.",
+              "validationPlan": "Measure transition throughput, reconnect latency, and revocation fanout under load."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Endpoints and authority retain bounded current pair state, receipt, transition id, and tombstones.",
+              "validationPlan": "Measure storage growth by pair count, epoch transitions, and tombstone retention policy."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Idempotent signed state supports deterministic crash recovery, but fanout and persistence failures can lock out routes.",
+              "validationPlan": "Inject crashes and response loss before and after authority commit, then require signed read-only status convergence without a second mutation."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Operations gain revocation monitoring, recovery diagnostics, state inspection, and user lockout support.",
+              "validationPlan": "Run lost-client, rotated-runtime, authority-outage, and delayed-fanout incident drills."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Schema, endpoint storage, allocation state, relay matcher, key exchange, auth, and QR recovery all gain pair state.",
+              "validationPlan": "Deploy parse-only receipts, observe comparisons, then enforce only on production-v3 routes."
+            }
+          ],
+          "residualRisks": [
+            "A compromised endpoint can issue denial-only revocation.",
+            "Both endpoint keys compromised before recovery defeat pair authorization.",
+            "Secure-storage rollback may require online receipt refresh and user re-pair."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "apps/macos/RelayServerCore",
+              "apps/macos/CompanionCore",
+              "apps/macos/Pairing",
+              "apps/android/core/pairing",
+              "apps/android/core/transport",
+              "apps/android/app",
+              "packages/protocol-schema"
+            ],
+            "workPackages": [
+              "Define canonical pair state, transitions, receipts, and read-only status lookup.",
+              "Persist highest accepted state crash-safely on all owners.",
+              "Add deny-only revocation and active-room closure.",
+              "Add fresh QR replacement ceremonies and secret rotation."
+            ],
+            "acceptanceCriteria": [
+              "Lower or replayed pair state fails everywhere even with a valid old signature.",
+              "A response lost after authority commit converges through signed status lookup without advancing state twice.",
+              "Emergency revocation closes active and waiting rooms within the selected SLO.",
+              "Replacement requires fresh QR and rotates endpoint traffic material."
+            ],
+            "migrationNotes": ["Observe signed state before enforcing on production-v3 routes."],
+            "rollback": "Stop issuing new transitions, but never lower an endpoint's highest accepted pair state."
+          }
+        },
+        {
+          "optionId": "threshold-recovery",
+          "title": "Threshold recovery",
+          "kind": "foundational",
+          "summary": "Use two-of-N devices or an offline recovery key to authorize pair-epoch replacement.",
+          "diagramPaths": {
+            "before": "diagrams/pair-epoch-recovery-before.mmd",
+            "after": "diagrams/pair-epoch-recovery-threshold-after.mmd"
+          },
+          "evidenceCoverage": [
+            {
+              "evidenceId": "E005",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "QR pairing remains enrollment input, while a quorum can later authorize replacement."
+            },
+            {
+              "evidenceId": "E009",
+              "effect": "addresses",
+              "tacticalFixRequired": true,
+              "rationale": "A new recovery membership and threshold transition protocol is required."
+            },
+            {
+              "evidenceId": "E010",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The implemented development-relay limiter remains defense in depth but does not create threshold recovery authority."
+            },
+            {
+              "evidenceId": "E012",
+              "effect": "unaffected",
+              "tacticalFixRequired": true,
+              "rationale": "The bounded-waiting and authenticated-identity fairness control remains defense in depth and does not create threshold recovery authority."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "One lost or compromised key cannot authorize replacement if the configured quorum remains honest.",
+              "validationPlan": "Model minority compromise, stale shares, conflicting quorums, and offline-key theft."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Recovery collects and verifies multiple signatures but does not affect normal frame forwarding.",
+              "validationPlan": "Measure recovery latency and signature cost across candidate quorum sizes."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "hypothetical",
+              "assessment": "Membership, share metadata, receipts, and audit state grow with trusted recovery members.",
+              "validationPlan": "Measure endpoint and authority state by member count and transition history."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "unknown",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Quorum tolerates one lost key but introduces partition and member-availability failure modes.",
+              "validationPlan": "Test member loss, partition, conflicting recovery attempts, and stale offline shares."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "hypothetical",
+              "assessment": "Recovery membership, offline key custody, share revocation, and audit become product operations.",
+              "validationPlan": "Run enrollment, backup, lost-share, compromised-member, and quorum-change drills."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The one-runtime/one-client model becomes a multi-member recovery authority plane.",
+              "validationPlan": "Deploy only after pair epoch is stable and multi-client recovery requirements are approved."
+            }
+          ],
+          "residualRisks": [
+            "Recovery membership can become an account-like authority.",
+            "Offline recovery key theft can defeat the intended quorum.",
+            "Partitions and stale shares can cause lockout or conflicting recovery attempts."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": ["pair epoch protocol", "endpoint trust stores", "allocation authority", "recovery UI"],
+            "workPackages": ["Define recovery membership and threshold policy after a product decision."],
+            "acceptanceCriteria": ["No minority below the configured quorum can replace a pair key."],
+            "migrationNotes": ["Requires Option 2 pair epoch first."],
+            "rollback": "Stop new quorum enrollment while retaining already accepted epoch history."
+          }
+        }
+      ],
+      "recommendedOptionId": "pair-epoch-state-machine",
+      "recommendation": "Use monotonic pair epoch with dual-signed normal renewal, one-sided deny-only revocation, and fresh QR replacement; defer threshold recovery."
+    }
+  ],
+  "openQuestions": [
+    "Which service trust root provisions public, enterprise, and private-overlay routes?",
+    "Is one-sided denial-of-service an acceptable emergency revocation authority?",
+    "What lease freshness and revocation-to-room-close SLOs are required?",
+    "How should Android and macOS detect local secure-storage rollback after OS backup restore?",
+    "When should allocation authority and relay data plane become separate deployments?"
+  ]
+}

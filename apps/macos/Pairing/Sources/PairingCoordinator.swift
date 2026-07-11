@@ -305,24 +305,36 @@ private extension String {
 }
 
 public struct PairingRequest: Equatable, Sendable {
+    public var requestID: String
     public var pairingNonce: String
     public var pairingCode: String
     public var deviceID: String
     public var deviceName: String
     public var publicKeyBase64: String
+    public var proofScheme: String
+    public var signatureBase64: String
+    public var transportBinding: String?
 
     public init(
+        requestID: String,
         pairingNonce: String,
         pairingCode: String,
         deviceID: String,
         deviceName: String,
-        publicKeyBase64: String
+        publicKeyBase64: String,
+        proofScheme: String,
+        signatureBase64: String,
+        transportBinding: String?
     ) {
+        self.requestID = requestID
         self.pairingNonce = pairingNonce
         self.pairingCode = pairingCode
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.publicKeyBase64 = publicKeyBase64
+        self.proofScheme = proofScheme
+        self.signatureBase64 = signatureBase64
+        self.transportBinding = transportBinding
     }
 }
 
@@ -332,6 +344,7 @@ public struct PairingValidationResult: Equatable, Sendable {
     public var macName: String
     public var runtimePublicKeyBase64: String?
     public var runtimeKeyFingerprint: String
+    public var pairingRequestDigest: String
 }
 
 public enum PairingRejectionReason: String, Equatable, Sendable {
@@ -339,6 +352,7 @@ public enum PairingRejectionReason: String, Equatable, Sendable {
     case expired = "pairing_expired"
     case invalidCredentials = "pairing_invalid"
     case invalidDeviceIdentity = "pairing_invalid_device_identity"
+    case inProgress = "pairing_in_progress"
     case attemptsExceeded = "pairing_attempts_exceeded"
 }
 
@@ -370,6 +384,7 @@ public final class PairingCoordinator: @unchecked Sendable {
     private let lock = NSLock()
     public let maxFailedAttempts: Int
     private var activeSession: PairingSession?
+    private var reservedRequestDigest: String?
     private var failedAttempts = 0
 
     public init(maxFailedAttempts: Int = PairingCoordinator.defaultMaxFailedAttempts) {
@@ -433,11 +448,15 @@ public final class PairingCoordinator: @unchecked Sendable {
             p2pProtocolVersion: p2pProtocolVersion,
             serviceType: serviceType
         )
-        lock.withLock {
+        return lock.withLock {
+            if reservedRequestDigest != nil, let activeSession {
+                return activeSession
+            }
             activeSession = session
+            reservedRequestDigest = nil
             failedAttempts = 0
+            return session
         }
-        return session
     }
 
     private static func validatedRelayScope(
@@ -470,6 +489,7 @@ public final class PairingCoordinator: @unchecked Sendable {
             }
             guard session.expiresAt > Date() else {
                 activeSession = nil
+                reservedRequestDigest = nil
                 failedAttempts = 0
                 return .rejected(rejection(
                     reason: .expired,
@@ -477,6 +497,15 @@ public final class PairingCoordinator: @unchecked Sendable {
                     retryable: false,
                     failedAttempts: 0,
                     remainingAttempts: 0
+                ))
+            }
+            guard reservedRequestDigest == nil else {
+                return .rejected(rejection(
+                    reason: .inProgress,
+                    message: "Another pairing request is being committed.",
+                    retryable: true,
+                    failedAttempts: failedAttempts,
+                    remainingAttempts: max(0, maxFailedAttempts - failedAttempts)
                 ))
             }
             guard request.pairingNonce == session.nonce, request.pairingCode == session.code else {
@@ -491,6 +520,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                         remainingAttempts: remainingAttempts
                     )
                     activeSession = nil
+                    reservedRequestDigest = nil
                     failedAttempts = 0
                     return .rejected(rejection)
                 }
@@ -502,7 +532,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                     remainingAttempts: remainingAttempts
                 ))
             }
-            guard let trustedDevice = Self.trustedDevice(from: request) else {
+            guard let validated = Self.validatedDeviceAndProof(from: request, session: session) else {
                 failedAttempts += 1
                 let remainingAttempts = max(0, maxFailedAttempts - failedAttempts)
                 guard failedAttempts < maxFailedAttempts else {
@@ -514,6 +544,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                         remainingAttempts: remainingAttempts
                     )
                     activeSession = nil
+                    reservedRequestDigest = nil
                     failedAttempts = 0
                     return .rejected(rejection)
                 }
@@ -525,15 +556,35 @@ public final class PairingCoordinator: @unchecked Sendable {
                     remainingAttempts: remainingAttempts
                 ))
             }
-            activeSession = nil
-            failedAttempts = 0
+            reservedRequestDigest = validated.requestDigest
             return .accepted(PairingValidationResult(
-                trustedDevice: trustedDevice,
+                trustedDevice: validated.trustedDevice,
                 macDeviceID: session.macDeviceID,
                 macName: session.macName,
                 runtimePublicKeyBase64: session.runtimePublicKeyBase64,
-                runtimeKeyFingerprint: session.fingerprint
+                runtimeKeyFingerprint: session.fingerprint,
+                pairingRequestDigest: validated.requestDigest
             ))
+        }
+    }
+
+    @discardableResult
+    public func commitPairing(requestDigest: String) -> Bool {
+        lock.withLock {
+            guard reservedRequestDigest == requestDigest else { return false }
+            activeSession = nil
+            reservedRequestDigest = nil
+            failedAttempts = 0
+            return true
+        }
+    }
+
+    @discardableResult
+    public func releasePairing(requestDigest: String) -> Bool {
+        lock.withLock {
+            guard reservedRequestDigest == requestDigest else { return false }
+            reservedRequestDigest = nil
+            return true
         }
     }
 
@@ -554,21 +605,49 @@ public final class PairingCoordinator: @unchecked Sendable {
         )
     }
 
-    private static func trustedDevice(from request: PairingRequest) -> TrustedDevice? {
+    private static func validatedDeviceAndProof(
+        from request: PairingRequest,
+        session: PairingSession
+    ) -> (trustedDevice: TrustedDevice, requestDigest: String)? {
         guard let deviceID = request.deviceID.opaquePairingValue(),
               deviceID.count <= 128,
               let publicKeyBase64 = request.publicKeyBase64.opaquePairingValue(),
               publicKeyBase64.count <= 4_096,
               let publicKeyData = Data(base64Encoded: publicKeyBase64),
-              (try? P256.Signing.PublicKey(derRepresentation: publicKeyData)) != nil
+              publicKeyData.base64EncodedString() == publicKeyBase64,
+              let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
+              publicKey.derRepresentation == publicKeyData,
+              let runtimePublicKeyBase64 = session.runtimePublicKeyBase64,
+              let runtimePublicKeyData = Data(base64Encoded: runtimePublicKeyBase64),
+              runtimePublicKeyData.base64EncodedString() == runtimePublicKeyBase64
         else {
             return nil
         }
-        return TrustedDevice(
+        let clientKeyFingerprint = SHA256.hash(data: publicKeyData)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard let proof = try? InitialPairingClientProof(
+            scheme: request.proofScheme,
+            requestID: request.requestID,
+            pairingNonce: request.pairingNonce,
+            pairingCode: request.pairingCode,
+            runtimeDeviceID: session.macDeviceID,
+            runtimePublicKey: runtimePublicKeyBase64,
+            runtimeKeyFingerprint: session.fingerprint,
+            clientDeviceID: request.deviceID,
+            clientDeviceName: request.deviceName,
+            clientPublicKey: publicKeyBase64,
+            clientKeyFingerprint: clientKeyFingerprint,
+            transportBinding: request.transportBinding ?? "none",
+            signatureBase64: request.signatureBase64
+        ), proof.verify() else {
+            return nil
+        }
+        return (TrustedDevice(
             id: deviceID,
             name: request.deviceName.normalizedDeviceName(),
             publicKeyBase64: publicKeyBase64
-        )
+        ), proof.requestDigest())
     }
 }
 

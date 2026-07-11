@@ -1,0 +1,8 @@
+flowchart LR
+    QR["Initial QR pairing"] --> Runtime["Runtime identity and trusted client store"]
+    QR --> Client["Pinned runtime and route store"]
+    Runtime -->|"co-signed generation renewal"| Relay["Relay lease store"]
+    Client -->|"co-sign through authenticated runtime channel"| Runtime
+    Remove["Local device removal"] --> Runtime
+    Relay -->|"lease expiry only"| Expiry["Eventual route rejection"]
+    Relay -.->|"active room remains until close or lease behavior"| Session["Active encrypted session"]

@@ -1,8 +1,20 @@
 import enum BridgeProtocol.JSONValue
 import enum BridgeProtocol.MessageType
+import enum BridgeProtocol.PairedRelayAllocationAuthorization
+import struct BridgeProtocol.PairedRelayAllocationAuthorizationChallenge
+import struct BridgeProtocol.PairedRelayAllocationClientProof
+import protocol BridgeProtocol.RelayIdentityAuthorizationSigning
+import struct BridgeProtocol.RelayAllocationIdentityChallenge
+import struct BridgeProtocol.RelayIdentityAuthorizationProof
+import struct BridgeProtocol.RelayRuntimeIdentity
+import struct BridgeProtocol.RelayRuntimeRegistrationIdentityChallenge
+import enum BridgeProtocol.RelayAllocationIdentityOperation
+import enum BridgeProtocol.RelayIdentityAuthorization
 import struct BridgeProtocol.ProtocolEnvelope
+import struct BridgeProtocol.TransportSecurityContext
 @testable import CompanionCore
 import CryptoKit
+import Darwin
 import DocumentIngestion
 import OllamaBackend
 import Pairing
@@ -7618,11 +7630,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testPairingRequestStoresTrustedDeviceAndReturnsAccepted() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator()
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
         let clientPublicKey = testClientPublicKeyBase64()
         let session = coordinator.beginPairing(
             macDeviceID: "mac-1",
-            fingerprint: "fp-1",
-            runtimePublicKeyBase64: "runtime-public-key",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
             host: "192.168.1.10",
             port: 43170
         )
@@ -7633,18 +7647,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = LocalRuntimeMessageRouter(
             backend: MockBackend(),
             pairingCoordinator: coordinator,
-            trustedDeviceStore: store
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
         )
-        let envelope = ProtocolEnvelope(
-            type: MessageType.pairingRequest,
+        let envelope = pairingEnvelope(
             requestID: "pair-1",
-            payload: [
-                "pairing_nonce": .string(session.nonce),
-                "pairing_code": .string(session.code),
-                "device_id": .string("android-1"),
-                "device_name": .string("Android Phone"),
-                "public_key": .string(clientPublicKey)
-            ]
+            session: session,
+            publicKey: clientPublicKey
         )
 
         router.handle(envelope, sink: sink)
@@ -7655,8 +7664,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["accepted"], .bool(true))
         XCTAssertEqual(message?.payload["mac_device_id"], .string("mac-1"))
         XCTAssertEqual(message?.payload["runtime_device_id"], .string("mac-1"))
-        XCTAssertEqual(message?.payload["runtime_public_key"], .string("runtime-public-key"))
-        XCTAssertEqual(message?.payload["runtime_key_fingerprint"], .string("fp-1"))
+        XCTAssertEqual(message?.payload["runtime_public_key"], .string(runtimeIdentity.publicKeyBase64))
+        XCTAssertEqual(message?.payload["runtime_key_fingerprint"], .string(runtimeIdentity.fingerprint))
+        XCTAssertEqual(message?.payload["pairing_proof_scheme"], .string(InitialPairingProof.scheme))
         XCTAssertEqual(message?.payload["trusted_device_id"], .string("android-1"))
 
         let devices = try await store.load()
@@ -7684,14 +7694,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(authenticatedMessages.last?.payload["status"], .string("ok"))
     }
 
-    func testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting() async throws {
+    func testPairingRequestRejectsMutatedProofWithoutConsumingSession() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator(maxFailedAttempts: 6)
-        let clientPublicKey = testClientPublicKeyBase64()
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
         let session = coordinator.beginPairing(
-            macDeviceID: "mac-1",
-            fingerprint: "fp-1",
-            runtimePublicKeyBase64: "runtime-public-key",
+            macDeviceID: "mac-proof-mutation",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
             host: "192.168.1.10",
             port: 43170
         )
@@ -7699,7 +7710,146 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = LocalRuntimeMessageRouter(
             backend: MockBackend(),
             pairingCoordinator: coordinator,
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
+        )
+        var mutated = pairingEnvelope(
+            requestID: "pair-proof-mutated",
+            session: session,
+            deviceID: "android-proof"
+        )
+        mutated.payload["device_name"] = .string("Mutated Android")
+
+        router.handle(mutated, sink: sink)
+
+        let rejected = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(rejected?.type, MessageType.pairingResult)
+        XCTAssertEqual(rejected?.payload["accepted"], .bool(false))
+        XCTAssertEqual(
+            rejected?.payload["code"],
+            .string(PairingRejectionReason.invalidDeviceIdentity.rawValue)
+        )
+        let devicesAfterMutation = try await store.load()
+        XCTAssertTrue(devicesAfterMutation.isEmpty)
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-proof-valid-retry",
+            session: session,
+            deviceID: "android-proof"
+        ), sink: sink)
+
+        let accepted = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
+        let devicesAfterRetry = try await store.load()
+        XCTAssertEqual(devicesAfterRetry.map(\.id), ["android-proof"])
+    }
+
+    func testPairingResultSignerFailureReleasesReservationBeforeTrust() async throws {
+        let sink = RecordingSink()
+        let coordinator = PairingCoordinator()
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-signer-retry",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let unsignedRouter = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
             trustedDeviceStore: store
+        )
+
+        unsignedRouter.handle(pairingEnvelope(
+            requestID: "pair-signer-unavailable",
+            session: session
+        ), sink: sink)
+
+        let failed = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(failed?.type, MessageType.error)
+        XCTAssertEqual(failed?.payload["code"], .string("invalid_payload"))
+        let devicesAfterSignerFailure = try await store.load()
+        XCTAssertTrue(devicesAfterSignerFailure.isEmpty)
+
+        let signedRouter = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
+        )
+        signedRouter.handle(pairingEnvelope(
+            requestID: "pair-signer-retry",
+            session: session
+        ), sink: sink)
+
+        let accepted = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
+        let devicesAfterSignerRetry = try await store.load()
+        XCTAssertEqual(devicesAfterSignerRetry.map(\.id), ["android-1"])
+    }
+
+    func testPairingRequestBindingChangeBeforeTrustLeavesTrustedStoreEmpty() async throws {
+        let initialBinding = String(repeating: "a", count: 64)
+        let changedBinding = String(repeating: "b", count: 64)
+        let sink = ChangingTransportBindingSink(
+            initialBinding: initialBinding,
+            changedBinding: changedBinding
+        )
+        let coordinator = PairingCoordinator()
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-binding-change",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
+        )
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-binding-change",
+            session: session,
+            deviceID: "android-binding-change",
+            deviceName: "Changing Binding Android",
+            transportBinding: initialBinding
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+        let trustedDevices = try await store.load()
+        XCTAssertTrue(trustedDevices.isEmpty)
+    }
+
+    func testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting() async throws {
+        let sink = RecordingSink()
+        let coordinator = PairingCoordinator(maxFailedAttempts: 6)
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
+        let clientPublicKey = testClientPublicKeyBase64()
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-1",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
         )
 
         router.handle(ProtocolEnvelope(
@@ -7757,9 +7907,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testPairingRequestRejectsBlankAllowedFieldsBeforeTrusting() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator(maxFailedAttempts: 6)
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
         let session = coordinator.beginPairing(
             macDeviceID: "mac-1",
-            fingerprint: "fp-1",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
             host: "192.168.1.10",
             port: 43170
         )
@@ -7767,7 +7920,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = LocalRuntimeMessageRouter(
             backend: MockBackend(),
             pairingCoordinator: coordinator,
-            trustedDeviceStore: store
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
         )
         let blankPayloads = [
             pairingEnvelope(requestID: "pair-blank-nonce", session: session, pairingNonce: "   \n\t"),
@@ -7822,9 +7976,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testPairingRequestRejectsWhitespaceMutatedDeviceIdentityBeforeTrusting() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator(maxFailedAttempts: 6)
+        let runtimeSigner = testInitialPairingRuntimeSigner()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
         let session = coordinator.beginPairing(
             macDeviceID: "mac-1",
-            fingerprint: "fp-1",
+            fingerprint: runtimeIdentity.fingerprint,
+            runtimePublicKeyBase64: runtimeIdentity.publicKeyBase64,
             host: "192.168.1.10",
             port: 43170
         )
@@ -7832,7 +7989,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = LocalRuntimeMessageRouter(
             backend: MockBackend(),
             pairingCoordinator: coordinator,
-            trustedDeviceStore: store
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: runtimeSigner
         )
         let invalidRequests = [
             pairingEnvelope(requestID: "pair-invalid-device-id", session: session, deviceID: " android-1"),
@@ -8033,6 +8191,325 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
     }
 
+    @MainActor
+    func testAuthenticatedRouteRefreshRejectsNilTransportBindingBeforeRefresherDispatch() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-unbound-refresh",
+            name: "Unbound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let routeRefresher = FakeRuntimeRouteRefresher(result: routeRefreshResult(
+            relayHost: "relay.example.test"
+        ))
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store,
+            routeRefresher: routeRefresher
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "android-unbound-refresh",
+            privateKey: privateKey
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.routeRefresh,
+            requestID: "route-refresh-unbound"
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "route-refresh-unbound")
+        XCTAssertEqual(response?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertNil(response?.payload["relay_secret"])
+        XCTAssertEqual(routeRefresher.refreshCount, 0)
+    }
+
+    @MainActor
+    func testAuthenticatedRouteRefreshRejectsMismatchedLiveBindingBeforeRefresherDispatch() async throws {
+        let authenticatedBinding = String(repeating: "a", count: 64)
+        let changedBinding = String(repeating: "b", count: 64)
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-changed-refresh-binding",
+            name: "Changed Binding Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let routeRefresher = FakeRuntimeRouteRefresher(result: routeRefreshResult(
+            relayHost: "relay.example.test"
+        ))
+        let sink = RecordingSink(transportBinding: authenticatedBinding)
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store,
+            routeRefresher: routeRefresher
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "android-changed-refresh-binding",
+            privateKey: privateKey,
+            transportBinding: authenticatedBinding
+        )
+        sink.setTransportBinding(changedBinding)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.routeRefresh,
+            requestID: "route-refresh-changed-binding"
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "route-refresh-changed-binding")
+        XCTAssertEqual(response?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        let payloadDescription = String(describing: response?.payload)
+        XCTAssertFalse(payloadDescription.contains(authenticatedBinding))
+        XCTAssertFalse(payloadDescription.contains(changedBinding))
+        XCTAssertFalse(payloadDescription.contains("relay-secret-1"))
+        XCTAssertEqual(routeRefresher.refreshCount, 0)
+    }
+
+    @MainActor
+    func testAuthenticatedRouteRefreshAllowsMatchingCanonicalTransportBinding() async throws {
+        let binding = String(repeating: "c", count: 64)
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-bound-refresh",
+            name: "Bound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let routeRefresher = FakeRuntimeRouteRefresher(result: routeRefreshResult(
+            relayHost: "100.64.1.10",
+            relayScope: "private_overlay"
+        ))
+        let sink = RecordingSink(transportBinding: binding)
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store,
+            routeRefresher: routeRefresher
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "android-bound-refresh",
+            privateKey: privateKey,
+            transportBinding: binding
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.routeRefresh,
+            requestID: "route-refresh-bound"
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.routeRefresh)
+        XCTAssertEqual(response?.requestID, "route-refresh-bound")
+        XCTAssertEqual(response?.payload["relay_scope"], .string("private_overlay"))
+        XCTAssertEqual(routeRefresher.refreshCount, 1)
+    }
+
+    @MainActor
+    func testAuthenticatedRouteRefreshForwardsExactRelayChallengeAndAcceptsCanonicalClientProof() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-success")
+
+        harness.router.handle(ProtocolEnvelope(
+            type: MessageType.routeRefresh,
+            requestID: harness.requestID
+        ), sink: harness.sink)
+
+        let challengeMessages = try await harness.sink.waitForMessages(count: 3)
+        let challengeEnvelope = try XCTUnwrap(challengeMessages.last)
+        XCTAssertEqual(challengeEnvelope.type, MessageType.relayAllocationChallenge)
+        XCTAssertEqual(challengeEnvelope.requestID, harness.requestID)
+        XCTAssertEqual(
+            challengeEnvelope.payload,
+            relayAllocationChallengeEnvelopePayload(harness.challenge)
+        )
+        let context = try XCTUnwrap(harness.refresher.authorizationContexts.last ?? nil)
+        XCTAssertEqual(context.requestID, harness.requestID)
+        XCTAssertEqual(context.connectionID, harness.sink.connectionID)
+        XCTAssertEqual(
+            context.trustedClientPublicKeyBase64,
+            harness.clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+        )
+        XCTAssertEqual(context.trustedClientKeyFingerprint, harness.challenge.clientKeyFingerprint)
+        XCTAssertEqual(context.transportBinding, harness.transportBinding)
+
+        let proof = try PairedRelayAllocationClientProof.sign(
+            challenge: harness.challenge,
+            using: harness.clientPrivateKey
+        )
+        harness.router.handle(
+            relayAllocationAuthorizationEnvelope(
+                requestID: harness.requestID,
+                challenge: harness.challenge,
+                signatureBase64: proof.signatureBase64
+            ),
+            sink: harness.sink
+        )
+
+        let finalResponse = try await harness.sink.waitForMessages(count: 4).last
+        XCTAssertEqual(finalResponse?.type, MessageType.routeRefresh)
+        XCTAssertEqual(finalResponse?.requestID, harness.requestID)
+        XCTAssertEqual(finalResponse?.payload["relay_secret"], .string("relay-secret-1"))
+        XCTAssertEqual(harness.refresher.clientProofs, [proof])
+        XCTAssertEqual(harness.refresher.activatedResults.count, 1)
+        XCTAssertEqual(harness.refresher.activatedResults.first?.relayID, "relay-id-1")
+    }
+
+    @MainActor
+    func testRelayAllocationAuthorizationWrongProofFailsClosedAndIsOneShot() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-wrong-proof")
+        harness.router.handle(
+            ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID),
+            sink: harness.sink
+        )
+        _ = try await harness.sink.waitForMessages(count: 3)
+        let wrongKey = P256.Signing.PrivateKey()
+        let wrongSignature = try wrongKey.signature(
+            for: SHA256.hash(data: harness.challenge.clientSignedMessageData())
+        ).derRepresentation.base64EncodedString()
+        let authorization = relayAllocationAuthorizationEnvelope(
+            requestID: harness.requestID,
+            challenge: harness.challenge,
+            signatureBase64: wrongSignature
+        )
+
+        harness.router.handle(authorization, sink: harness.sink)
+
+        let failure = try await harness.sink.waitForMessages(count: 4).last
+        XCTAssertEqual(failure?.type, MessageType.error)
+        XCTAssertEqual(failure?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertNil(failure?.payload["relay_secret"])
+
+        harness.router.handle(authorization, sink: harness.sink)
+        let duplicate = try await harness.sink.waitForMessages(count: 5).last
+        XCTAssertEqual(duplicate?.type, MessageType.error)
+        XCTAssertEqual(
+            duplicate?.payload["code"],
+            .string("relay_allocation_authorization_rejected")
+        )
+        XCTAssertEqual(harness.refresher.clientProofs, [])
+    }
+
+    @MainActor
+    func testRelayAllocationAuthorizationTimesOutAndResumesRouteRefresh() async throws {
+        let harness = try await makeRelayAuthorizationHarness(
+            requestID: "paired-refresh-timeout",
+            authorizationTimeout: 0.05
+        )
+        harness.router.handle(
+            ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID),
+            sink: harness.sink
+        )
+
+        let messages = try await harness.sink.waitForMessages(count: 4)
+        XCTAssertEqual(messages[2].type, MessageType.relayAllocationChallenge)
+        XCTAssertEqual(messages[3].type, MessageType.error)
+        XCTAssertEqual(messages[3].payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertNil(messages[3].payload["relay_secret"])
+    }
+
+    @MainActor
+    func testRelayAllocationAuthorizationDisconnectCancelsPendingContinuation() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-disconnect")
+        harness.router.handle(
+            ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID),
+            sink: harness.sink
+        )
+        _ = try await harness.sink.waitForMessages(count: 3)
+
+        harness.router.connectionDidClose(harness.sink.connectionID)
+
+        let failure = try await harness.sink.waitForMessages(count: 4).last
+        XCTAssertEqual(failure?.type, MessageType.error)
+        XCTAssertEqual(failure?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertEqual(harness.refresher.clientProofs, [])
+    }
+
+    @MainActor
+    func testRelayAllocationAuthorizationTrustReplacementCancelsPendingContinuation() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-trust-change")
+        harness.router.handle(
+            ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID),
+            sink: harness.sink
+        )
+        _ = try await harness.sink.waitForMessages(count: 3)
+
+        try await harness.trustedStore.trust(TrustedDevice(
+            id: harness.deviceID,
+            name: "Replacement Android",
+            publicKeyBase64: P256.Signing.PrivateKey().publicKey.derRepresentation.base64EncodedString()
+        ))
+
+        let failure = try await harness.sink.waitForMessages(count: 4).last
+        XCTAssertEqual(failure?.type, MessageType.error)
+        XCTAssertEqual(failure?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertNil(failure?.payload["relay_secret"])
+    }
+
+    @MainActor
+    func testRelayAllocationAuthorizationBindingMutationCancelsPendingContinuation() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-binding-change")
+        harness.router.handle(
+            ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID),
+            sink: harness.sink
+        )
+        _ = try await harness.sink.waitForMessages(count: 3)
+
+        harness.sink.setTransportBinding(String(repeating: "f", count: 64))
+
+        let failure = try await harness.sink.waitForMessages(count: 4).last
+        XCTAssertEqual(failure?.type, MessageType.error)
+        XCTAssertEqual(failure?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertNil(failure?.payload["relay_secret"])
+    }
+
+    @MainActor
+    func testConcurrentRouteRefreshWithSameConnectionAndRequestAdmitsSingleAuthorization() async throws {
+        let harness = try await makeRelayAuthorizationHarness(requestID: "paired-refresh-concurrent")
+        let refresh = ProtocolEnvelope(type: MessageType.routeRefresh, requestID: harness.requestID)
+        harness.router.handle(refresh, sink: harness.sink)
+        _ = try await harness.sink.waitForMessages(count: 3)
+
+        harness.router.handle(refresh, sink: harness.sink)
+        let concurrentMessages = try await harness.sink.waitForMessages(count: 4)
+        let concurrentFailure = concurrentMessages.last
+        XCTAssertEqual(concurrentFailure?.type, MessageType.error)
+        XCTAssertEqual(
+            concurrentFailure?.payload["code"],
+            .string("route_refresh_unavailable")
+        )
+        XCTAssertEqual(
+            concurrentMessages.filter { $0.type == MessageType.relayAllocationChallenge }.count,
+            1
+        )
+
+        let proof = try PairedRelayAllocationClientProof.sign(
+            challenge: harness.challenge,
+            using: harness.clientPrivateKey
+        )
+        harness.router.handle(
+            relayAllocationAuthorizationEnvelope(
+                requestID: harness.requestID,
+                challenge: harness.challenge,
+                signatureBase64: proof.signatureBase64
+            ),
+            sink: harness.sink
+        )
+        let finalResponse = try await harness.sink.waitForMessages(count: 5).last
+        XCTAssertEqual(finalResponse?.type, MessageType.routeRefresh)
+        XCTAssertEqual(harness.refresher.refreshCount, 1)
+    }
+
     func testUnauthenticatedRuntimeCommandsRejectBeforeProtocolPayloadHandling() async throws {
         let runtimeCommandTypes = [
             MessageType.modelsList,
@@ -8113,6 +8590,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             deviceID: "android-trusted",
             nonce: nonce
         )
+        XCTAssertEqual(
+            authMessage,
+            "AetherLink client auth response v1\nandroid-trusted\n\(nonce)"
+        )
         let authMessageData = try XCTUnwrap(authMessage.data(using: .utf8))
         let digest = SHA256.hash(data: authMessageData)
         let signature = try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
@@ -8129,11 +8610,320 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let authMessages = try await sink.waitForMessages(count: 2)
         XCTAssertEqual(authMessages.last?.type, MessageType.authResponse)
         XCTAssertEqual(authMessages.last?.payload["accepted"], .bool(true))
+        XCTAssertNil(authMessages.last?.payload["transport_binding"])
 
         router.handle(ProtocolEnvelope(type: MessageType.modelsList, requestID: "models-after-auth"), sink: sink)
 
         let runtimeMessages = try await sink.waitForMessages(count: 3)
         XCTAssertEqual(runtimeMessages.last?.type, MessageType.modelsList)
+    }
+
+    func testTransportBoundHelloAndAuthResponseUseV2SignaturesAndDispatchCommands() async throws {
+        let clientKey = P256.Signing.PrivateKey()
+        let runtimeKey = P256.Signing.PrivateKey()
+        let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeKey)
+        let binding = String(repeating: "a", count: 64)
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-bound",
+            name: "Bound Android",
+            publicKeyBase64: clientKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(status: .available)
+        let sink = RecordingSink(transportBinding: binding)
+        let router = LocalRuntimeMessageRouter(
+            backend: backend,
+            trustedDeviceStore: store,
+            runtimeChallengeSigner: TestRuntimeChallengeSigner(privateKey: runtimeKey)
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-bound",
+            payload: [
+                "device_id": .string("android-bound"),
+                "transport_binding": .string(binding)
+            ]
+        ), sink: sink)
+
+        let challenge = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(challenge?.type, MessageType.authChallenge)
+        XCTAssertEqual(challenge?.payload["transport_binding"], .string(binding))
+        guard case .string(let nonce)? = challenge?.payload["nonce"],
+              case .string(let runtimeSignature)? = challenge?.payload["runtime_signature"]
+        else {
+            XCTFail("Expected bound nonce and runtime signature")
+            return
+        }
+        XCTAssertTrue(RuntimeIdentityKeyStore.verifyAuthChallengeSignature(
+            publicKeyBase64: runtimeIdentity.publicKeyBase64,
+            deviceID: "android-bound",
+            nonce: nonce,
+            signatureBase64: runtimeSignature,
+            transportBinding: binding
+        ))
+        XCTAssertFalse(RuntimeIdentityKeyStore.verifyAuthChallengeSignature(
+            publicKeyBase64: runtimeIdentity.publicKeyBase64,
+            deviceID: "android-bound",
+            nonce: nonce,
+            signatureBase64: runtimeSignature
+        ))
+
+        let authMessage = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+            deviceID: "android-bound",
+            nonce: nonce,
+            transportBinding: binding
+        )
+        XCTAssertEqual(
+            authMessage,
+            "AetherLink client auth response v2\nandroid-bound\n\(nonce)\n\(binding)"
+        )
+        let signature = try clientKey
+            .signature(for: SHA256.hash(data: Data(authMessage.utf8)))
+            .derRepresentation
+            .base64EncodedString()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-bound",
+            payload: [
+                "device_id": .string("android-bound"),
+                "nonce": .string(nonce),
+                "signature": .string(signature),
+                "transport_binding": .string(binding)
+            ]
+        ), sink: sink)
+
+        let accepted = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(accepted?.type, MessageType.authResponse)
+        XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
+        XCTAssertEqual(accepted?.payload["transport_binding"], .string(binding))
+
+        router.handle(ProtocolEnvelope(type: MessageType.modelsList, requestID: "models-bound"), sink: sink)
+
+        let models = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(models?.type, MessageType.modelsList)
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+
+        sink.setTransportBinding(String(repeating: "9", count: 64))
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-after-bound-context-change"
+        ), sink: sink)
+
+        let rejectedCommand = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(rejectedCommand?.type, MessageType.error)
+        XCTAssertEqual(rejectedCommand?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+    }
+
+    func testTransportBoundHelloRejectsMissingMalformedAndMismatchedBindingsBeforeCommands() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let expectedBinding = String(repeating: "b", count: 64)
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-bound-invalid-hello",
+            name: "Bound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let invalidBindings: [(String, JSONValue?)] = [
+            ("missing", nil),
+            ("malformed", .string(String(repeating: "B", count: 64))),
+            ("mismatched", .string(String(repeating: "c", count: 64)))
+        ]
+
+        for (label, suppliedBinding) in invalidBindings {
+            let backend = MockBackend(status: .available)
+            let sink = RecordingSink(transportBinding: expectedBinding)
+            let router = LocalRuntimeMessageRouter(
+                backend: backend,
+                trustedDeviceStore: store
+            )
+            var payload: [String: JSONValue] = [
+                "device_id": .string("android-bound-invalid-hello")
+            ]
+            payload["transport_binding"] = suppliedBinding
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.hello,
+                requestID: "hello-bound-\(label)",
+                payload: payload
+            ), sink: sink)
+
+            let rejected = try await sink.waitForMessages(count: 1).last
+            XCTAssertEqual(rejected?.type, MessageType.error, label)
+            XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"), label)
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.modelsList,
+                requestID: "models-bound-\(label)"
+            ), sink: sink)
+
+            let command = try await sink.waitForMessages(count: 2).last
+            XCTAssertEqual(command?.payload["code"], .string("authentication_required"), label)
+            XCTAssertEqual(backend.listModelsCallCount, 0, label)
+        }
+    }
+
+    func testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let binding = String(repeating: "d", count: 64)
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-bound-downgrade",
+            name: "Bound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(status: .available)
+        let sink = RecordingSink(transportBinding: binding)
+        let router = LocalRuntimeMessageRouter(backend: backend, trustedDeviceStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-bound-downgrade",
+            payload: [
+                "device_id": .string("android-bound-downgrade"),
+                "transport_binding": .string(binding)
+            ]
+        ), sink: sink)
+        let challenge = try await sink.waitForMessages(count: 1).last
+        guard case .string(let nonce)? = challenge?.payload["nonce"] else {
+            XCTFail("Expected nonce")
+            return
+        }
+        let v1Message = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+            deviceID: "android-bound-downgrade",
+            nonce: nonce
+        )
+        let v1Signature = try privateKey
+            .signature(for: SHA256.hash(data: Data(v1Message.utf8)))
+            .derRepresentation
+            .base64EncodedString()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-bound-missing",
+            payload: [
+                "device_id": .string("android-bound-downgrade"),
+                "nonce": .string(nonce),
+                "signature": .string(v1Signature)
+            ]
+        ), sink: sink)
+        let missing = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(missing?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-bound-v1-signature",
+            payload: [
+                "device_id": .string("android-bound-downgrade"),
+                "nonce": .string(nonce),
+                "signature": .string(v1Signature),
+                "transport_binding": .string(binding)
+            ]
+        ), sink: sink)
+        let downgraded = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(downgraded?.payload["code"], .string("authentication_failed"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-bound-downgrade"
+        ), sink: sink)
+        let command = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(command?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+    }
+
+    func testTransportBoundAuthRejectsReplayedOldBindingAfterSinkBindingChanges() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let oldBinding = String(repeating: "e", count: 64)
+        let newBinding = String(repeating: "f", count: 64)
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-bound-replay",
+            name: "Bound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(status: .available)
+        let sink = RecordingSink(transportBinding: oldBinding)
+        let router = LocalRuntimeMessageRouter(backend: backend, trustedDeviceStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-bound-replay",
+            payload: [
+                "device_id": .string("android-bound-replay"),
+                "transport_binding": .string(oldBinding)
+            ]
+        ), sink: sink)
+        let challenge = try await sink.waitForMessages(count: 1).last
+        guard case .string(let nonce)? = challenge?.payload["nonce"] else {
+            XCTFail("Expected nonce")
+            return
+        }
+        let authMessage = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+            deviceID: "android-bound-replay",
+            nonce: nonce,
+            transportBinding: oldBinding
+        )
+        let signature = try privateKey
+            .signature(for: SHA256.hash(data: Data(authMessage.utf8)))
+            .derRepresentation
+            .base64EncodedString()
+        sink.setTransportBinding(newBinding)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-bound-replay",
+            payload: [
+                "device_id": .string("android-bound-replay"),
+                "nonce": .string(nonce),
+                "signature": .string(signature),
+                "transport_binding": .string(oldBinding)
+            ]
+        ), sink: sink)
+        let rejected = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-bound-replay"
+        ), sink: sink)
+        let command = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(command?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+    }
+
+    func testUnboundSinkRejectsUnexpectedTransportBindingBeforeChallengeAndCommands() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let binding = String(repeating: "0", count: 64)
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-unbound-binding",
+            name: "Unbound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(status: .available)
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(backend: backend, trustedDeviceStore: store)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-unbound-binding",
+            payload: [
+                "device_id": .string("android-unbound-binding"),
+                "transport_binding": .string(binding)
+            ]
+        ), sink: sink)
+        let rejected = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-unbound-binding"
+        ), sink: sink)
+        let command = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(command?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(backend.listModelsCallCount, 0)
     }
 
     func testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation() async throws {
@@ -8977,6 +9767,99 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(clearedSessionResponse?.payload["code"], .string("authentication_required"))
     }
 
+    func testSameIDTrustedPublicKeyReplacementInvalidatesAuthenticatedSession() async throws {
+        let authenticatedKey = P256.Signing.PrivateKey()
+        let replacementKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-key-replaced",
+            name: "Original Client",
+            publicKeyBase64: authenticatedKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(status: .available, models: [
+            ModelInfo(id: "llama3.1:8b", name: "Llama 3.1", sizeBytes: nil, modifiedAt: nil)
+        ])
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: backend,
+            trustedDeviceStore: store
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "android-key-replaced",
+            privateKey: authenticatedKey
+        )
+
+        try await store.trust(TrustedDevice(
+            id: "android-key-replaced",
+            name: "Replacement Client",
+            publicKeyBase64: replacementKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-after-key-replacement"
+        ), sink: sink)
+
+        let rejected = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(rejected?.type, MessageType.error)
+        XCTAssertEqual(rejected?.requestID, "models-after-key-replacement")
+        XCTAssertEqual(rejected?.payload["code"], .string("pairing_required"))
+        XCTAssertEqual(rejected?.payload["retryable"], .bool(false))
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-after-key-replacement-cleared"
+        ), sink: sink)
+
+        let cleared = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(cleared?.type, MessageType.error)
+        XCTAssertEqual(cleared?.requestID, "models-after-key-replacement-cleared")
+        XCTAssertEqual(cleared?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+    }
+
+    func testSameIDTrustedDeviceUpdateWithUnchangedPublicKeyKeepsAuthenticatedSession() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-key-unchanged",
+            name: "Original Name",
+            publicKeyBase64: publicKeyBase64
+        ))
+        let backend = MockBackend(status: .available, models: [
+            ModelInfo(id: "llama3.1:8b", name: "Llama 3.1", sizeBytes: nil, modifiedAt: nil)
+        ])
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: backend,
+            trustedDeviceStore: store
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "android-key-unchanged",
+            privateKey: privateKey
+        )
+
+        try await store.trust(TrustedDevice(
+            id: "android-key-unchanged",
+            name: "Updated Name",
+            publicKeyBase64: publicKeyBase64
+        ))
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-after-unchanged-key"
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.modelsList)
+        XCTAssertEqual(response?.requestID, "models-after-unchanged-key")
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+    }
+
     func testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable() async throws {
         let clientKey = P256.Signing.PrivateKey()
         let runtimeKey = P256.Signing.PrivateKey()
@@ -9561,21 +10444,20 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 host: "relay-dead.test",
                 port: 8443,
                 routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
-                relaySecret: nil,
                 allocationToken: nil
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-good.test",
                 port: 443,
                 routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
-                relaySecret: nil,
                 allocationToken: nil
             )
         ])
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay-good.test")
         XCTAssertEqual(relayClient.startedConfiguration?.port, 443)
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-good-id")
-        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "relay-good-secret")
+        let endpointRelaySecret = try XCTUnwrap(relayClient.startedConfiguration?.relaySecret)
+        XCTAssertEqual(Data(base64Encoded: endpointRelaySecret)?.count, 32)
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "relay-good-nonce")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay-good.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 443)
@@ -9588,7 +10470,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_host"], "relay-good.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
         XCTAssertEqual(qrItems["relay_id"], "relay-good-id")
-        XCTAssertEqual(qrItems["relay_secret"], "relay-good-secret")
+        XCTAssertEqual(qrItems["relay_secret"], endpointRelaySecret)
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "relay-good-nonce")
         XCTAssertNil(qrItems["host"])
@@ -9643,20 +10525,19 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 host: "relay-saved-dead.test",
                 port: 8443,
                 routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
-                relaySecret: nil,
                 allocationToken: "stored-allocation-token"
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-saved-good.test",
                 port: 443,
                 routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
-                relaySecret: nil,
                 allocationToken: "stored-allocation-token"
             )
         ])
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay-saved-good.test")
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-saved-id")
-        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "relay-saved-secret")
+        let endpointRelaySecret = try XCTUnwrap(relayClient.startedConfiguration?.relaySecret)
+        XCTAssertEqual(Data(base64Encoded: endpointRelaySecret)?.count, 32)
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "relay-saved-nonce")
 
         relayClient.emit(.waitingForPeer)
@@ -9667,7 +10548,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_host"], "relay-saved-good.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
         XCTAssertEqual(qrItems["relay_id"], "relay-saved-id")
-        XCTAssertEqual(qrItems["relay_secret"], "relay-saved-secret")
+        XCTAssertEqual(qrItems["relay_secret"], endpointRelaySecret)
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "relay-saved-nonce")
         XCTAssertEqual(qrItems["relay_scope"], "remote")
@@ -9721,9 +10602,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls.count, 1)
         XCTAssertEqual(serviceAllocator.calls.first?.host, "relay.bootstrap.test")
-        XCTAssertEqual(serviceAllocator.calls.first?.relaySecret, "stale-secret")
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-bootstrap-fresh")
-        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "secret-bootstrap-fresh")
+        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "stale-secret")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-fresh")
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
 
@@ -9734,7 +10614,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let qrItems = try queryItems(from: session.qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.bootstrap.test")
         XCTAssertEqual(qrItems["relay_id"], "relay-bootstrap-fresh")
-        XCTAssertEqual(qrItems["relay_secret"], "secret-bootstrap-fresh")
+        XCTAssertEqual(qrItems["relay_secret"], "stale-secret")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce-fresh")
         XCTAssertNil(qrItems["host"])
@@ -9822,6 +10702,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-renewed")
         XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "saved-secret")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "renewed-nonce")
+        XCTAssertNotNil(relayClient.startedConfiguration?.runtimeIdentity)
+        XCTAssertNotNil(relayClient.startedConfiguration?.identityAuthorizationSigner)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.bootstrap.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 443)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "relay-renewed")
@@ -9974,19 +10856,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(model.pairingSession)
     }
 
-    func testEnvironmentRemoteRelayRouteAllocatorRequestsBootstrapServiceAllocation() throws {
+    func testEnvironmentRemoteRelayRouteAllocatorReusesPreferredEndpointSecretWithoutPassingItToService() throws {
         let serviceAllocator = FakeRelayServiceRouteAllocator(
-            allocation: CompanionRemoteRelayRouteAllocation(
-                configuration: RelayPeerConfiguration(
-                    host: "relay.bootstrap.test",
-                    port: 443,
-                    relayID: "allocated-relay",
-                    relaySecret: "allocated-secret"
-                ),
-                lease: CompanionRemoteRouteLease(
-                    expiresAtEpochMillis: 4_102_444_800_000,
-                    nonce: "allocated-nonce"
-                )
+            serviceAllocation: RelayServiceRouteAllocation(
+                host: "relay.bootstrap.test",
+                port: 443,
+                relayID: "allocated-relay",
+                relayExpiresAtEpochMillis: 4_102_444_800_000,
+                relayNonce: "allocated-nonce",
+                runtimeKeyFingerprint: String(repeating: "0", count: 64),
+                ticketGeneration: 1
             )
         )
         let allocator = EnvironmentRemoteRelayRouteAllocator(
@@ -10006,17 +10885,230 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(allocation?.configuration.host, "relay.bootstrap.test")
         XCTAssertEqual(allocation?.configuration.port, 443)
         XCTAssertEqual(allocation?.configuration.relayID, "allocated-relay")
-        XCTAssertEqual(allocation?.configuration.relaySecret, "allocated-secret")
+        XCTAssertEqual(allocation?.configuration.relaySecret, "preferred-secret-1")
+        XCTAssertNotNil(allocation?.configuration.runtimeIdentity)
+        XCTAssertNotNil(allocation?.configuration.identityAuthorizationSigner)
         XCTAssertEqual(allocation?.lease?.nonce, "allocated-nonce")
         XCTAssertEqual(serviceAllocator.calls, [
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay.bootstrap.test",
                 port: 443,
                 routeToken: "route-token-1",
-                relaySecret: "preferred-secret-1",
                 allocationToken: nil
             )
         ])
+    }
+
+    func testEnvironmentRemoteRelayRouteAllocatorGeneratesThirtyTwoByteEndpointSecret() throws {
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            serviceAllocation: RelayServiceRouteAllocation(
+                host: "relay.bootstrap.test",
+                port: 443,
+                relayID: "allocated-relay",
+                relayExpiresAtEpochMillis: 4_102_444_800_000,
+                relayNonce: "allocated-nonce",
+                runtimeKeyFingerprint: String(repeating: "0", count: 64),
+                ticketGeneration: 1
+            )
+        )
+        let allocator = EnvironmentRemoteRelayRouteAllocator(
+            environment: ["AETHERLINK_BOOTSTRAP_RELAY_HOST": "relay.bootstrap.test"],
+            relayServiceAllocator: serviceAllocator
+        )
+
+        let allocation = try XCTUnwrap(allocator.allocateRemoteRelayRoute(
+            runtimeDeviceID: "runtime-1",
+            routeToken: "route-token-1",
+            preferredRelaySecret: nil
+        ))
+        let secret = try XCTUnwrap(allocation.configuration.relaySecret)
+
+        XCTAssertEqual(Data(base64Encoded: secret)?.count, 32)
+        XCTAssertEqual(serviceAllocator.calls.count, 1)
+    }
+
+    func testTCPRelayServiceRouteAllocatorSendsExactV2RequestAndReturnsSecretFreeMetadata() throws {
+        let authorization = try testRelayAuthorization()
+        let challenge = try testRelayAllocationChallenge(
+            routeToken: "route-token-1",
+            runtimeIdentity: authorization.identity
+        )
+        XCTAssertEqual(
+            try TCPRelayServiceRouteAllocator.allocationRequestLine(
+                routeToken: "route-token-1",
+                runtimeIdentity: authorization.identity
+            ),
+            "AETHERLINK_RELAY allocate route-token-1 crypto=2 " +
+                "allocation_auth=runtime-p256-v1 " +
+                "runtime_key_fingerprint=\(authorization.identity.fingerprint) " +
+                "runtime_public_key=\(authorization.identity.publicKeyBase64)\n"
+        )
+        let challengeJSON = String(decoding: try JSONEncoder().encode(challenge), as: UTF8.self)
+        let server = try OneShotRelayAllocationServer(responseLines: [
+            "\(RelayAllocationIdentityChallenge.responsePrefix)\(challengeJSON)\n",
+            "AETHERLINK_RELAY allocation {\"relay_id\":\"\(challenge.relayID)\"," +
+                "\"relay_expires_at\":4102444800000,\"relay_nonce\":\"nonce-v2\"," +
+                "\"runtime_key_fingerprint\":\"\(authorization.identity.fingerprint)\"," +
+                "\"ticket_generation\":1,\"crypto_version\":2}\n"
+        ])
+        defer { server.stop() }
+
+        let allocation = try TCPRelayServiceRouteAllocator().allocateRelayRoute(
+            host: "127.0.0.1",
+            port: server.port,
+            routeToken: "route-token-1",
+            allocationToken: "allocation-token-1",
+            runtimeIdentity: authorization.identity,
+            identityAuthorizationSigner: authorization.signer,
+            timeout: 2
+        )
+
+        let requests = server.waitForRequests(count: 2)
+        XCTAssertEqual(requests.first, "AETHERLINK_RELAY allocate route-token-1 crypto=2 " +
+            "allocation_auth=runtime-p256-v1 " +
+            "runtime_key_fingerprint=\(authorization.identity.fingerprint) " +
+            "runtime_public_key=\(authorization.identity.publicKeyBase64) " +
+            "allocation_token=allocation-token-1\n")
+        let proofPrefix = "AETHERLINK_RELAY allocation_proof crypto=2 challenge=\(challenge.challenge) signature="
+        XCTAssertTrue(requests.last?.hasPrefix(proofPrefix) == true)
+        XCTAssertTrue(requests.last?.hasSuffix("\n") == true)
+        let proofSignature = requests.last.map {
+            String($0.dropFirst(proofPrefix.count).dropLast())
+        }
+        XCTAssertTrue(proofSignature.map {
+            RelayIdentityAuthorization.verify(
+                signatureBase64: $0,
+                messageData: challenge.signedMessageData(),
+                runtimeIdentity: authorization.identity
+            )
+        } ?? false)
+        XCTAssertEqual(allocation.relayID, challenge.relayID)
+        XCTAssertEqual(allocation.runtimeKeyFingerprint, authorization.identity.fingerprint)
+        XCTAssertEqual(allocation.ticketGeneration, 1)
+        XCTAssertEqual(allocation.cryptoVersion, 2)
+    }
+
+    func testTCPRelayServiceRouteAllocatorRejectsSecretAndAnyExtraV2ResponseFields() throws {
+        let authorization = try testRelayAuthorization()
+        let challenge = try testRelayAllocationChallenge(
+            routeToken: "route-token-1",
+            runtimeIdentity: authorization.identity
+        )
+        let validFields = "\"relay_id\":\"\(challenge.relayID)\",\"relay_expires_at\":4102444800000," +
+            "\"relay_nonce\":\"nonce-v2\",\"runtime_key_fingerprint\":\"\(authorization.identity.fingerprint)\"," +
+            "\"ticket_generation\":1,\"crypto_version\":2"
+        let responses = [
+            "AETHERLINK_RELAY allocation {\(validFields),\"relay_secret\":\"service-secret\"}\n",
+            "AETHERLINK_RELAY allocation {\(validFields),\"future_field\":true}\n"
+        ]
+
+        for response in responses {
+            XCTAssertThrowsError(try TCPRelayServiceRouteAllocator.parseAllocationResponseLine(
+                response,
+                challenge: challenge,
+                runtimeIdentity: authorization.identity
+            )) {
+                XCTAssertEqual($0 as? RelayServiceRouteAllocationError, .invalidResponse)
+            }
+        }
+    }
+
+    func testTCPRelayServiceRouteAllocatorRequiresClosedV2ResponseShape() throws {
+        let authorization = try testRelayAuthorization()
+        let challenge = try testRelayAllocationChallenge(
+            routeToken: "route-token-1",
+            runtimeIdentity: authorization.identity
+        )
+        let valid = "AETHERLINK_RELAY allocation {\"relay_id\":\"\(challenge.relayID)\"," +
+            "\"relay_expires_at\":4102444800000,\"relay_nonce\":\"nonce-v2\"," +
+            "\"runtime_key_fingerprint\":\"\(authorization.identity.fingerprint)\"," +
+            "\"ticket_generation\":1,\"crypto_version\":2}\n"
+        let response = try TCPRelayServiceRouteAllocator.parseAllocationResponseLine(
+            valid,
+            challenge: challenge,
+            runtimeIdentity: authorization.identity
+        )
+        XCTAssertEqual(response.cryptoVersion, 2)
+
+        let invalidResponses = [
+            "AETHERLINK_RELAY allocation {\"relay_id\":\"\(challenge.relayID)\",\"relay_expires_at\":4102444800000," +
+                "\"relay_nonce\":\"nonce-v2\",\"runtime_key_fingerprint\":\"\(authorization.identity.fingerprint)\"," +
+                "\"ticket_generation\":1}\n",
+            valid.replacingOccurrences(of: "\"crypto_version\":2", with: "\"crypto_version\":1"),
+            valid.replacingOccurrences(of: "\"ticket_generation\":1", with: "\"ticket_generation\":2"),
+            valid.replacingOccurrences(of: authorization.identity.fingerprint, with: String(repeating: "f", count: 64)),
+            String(valid.dropLast()) + "\r\n"
+        ]
+        for invalidResponse in invalidResponses {
+            XCTAssertThrowsError(try TCPRelayServiceRouteAllocator.parseAllocationResponseLine(
+                invalidResponse,
+                challenge: challenge,
+                runtimeIdentity: authorization.identity
+            )) {
+                XCTAssertEqual($0 as? RelayServiceRouteAllocationError, .invalidResponse)
+            }
+        }
+    }
+
+    func testTCPRelayServiceRouteAllocatorRejectsMismatchedAndExpiredChallenges() throws {
+        let authorization = try testRelayAuthorization()
+        let challenge = try testRelayAllocationChallenge(
+            routeToken: "route-token-1",
+            runtimeIdentity: authorization.identity
+        )
+        let validPayload: [String: Any] = [
+            "operation": "create",
+            "relay_id": challenge.relayID,
+            "route_token_hash": challenge.routeTokenHash,
+            "runtime_key_fingerprint": authorization.identity.fingerprint,
+            "ticket_generation": 1,
+            "challenge": challenge.challenge,
+            "challenge_expires_at": challenge.challengeExpiresAtEpochMillis,
+            "crypto_version": 2,
+            "allocation_auth": "runtime-p256-v1"
+        ]
+        func line(_ changes: [String: Any] = [:], suffix: String = "\n") throws -> String {
+            var payload = validPayload
+            changes.forEach { payload[$0.key] = $0.value }
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+            return RelayAllocationIdentityChallenge.responsePrefix + String(decoding: data, as: UTF8.self) + suffix
+        }
+
+        let invalidLines = try [
+            line(["relay_id": "rt2-\(String(repeating: "0", count: 64))"]),
+            line(["route_token_hash": String(repeating: "0", count: 64)]),
+            line(["runtime_key_fingerprint": String(repeating: "f", count: 64)]),
+            line(["challenge_expires_at": 1]),
+            line(["operation": "preflight"]),
+            line(["future_field": true]),
+            line(suffix: "\r\n")
+        ]
+        for invalidLine in invalidLines {
+            XCTAssertThrowsError(try TCPRelayServiceRouteAllocator.parseAllocationChallengeLine(
+                invalidLine,
+                routeToken: "route-token-1",
+                runtimeIdentity: authorization.identity
+            )) {
+                XCTAssertEqual($0 as? RelayServiceRouteAllocationError, .invalidChallenge)
+            }
+        }
+    }
+
+    func testTCPRelayServiceRouteAllocatorFailsBeforeConnectForMismatchedSignerIdentity() throws {
+        let authorization = try testRelayAuthorization()
+        let differentSigner = try testRelayAuthorization().signer
+
+        XCTAssertThrowsError(try TCPRelayServiceRouteAllocator().allocateRelayRoute(
+            host: "relay.invalid",
+            port: 443,
+            routeToken: "route-token-1",
+            allocationToken: nil,
+            runtimeIdentity: authorization.identity,
+            identityAuthorizationSigner: differentSigner,
+            timeout: 1
+        )) {
+            XCTAssertEqual($0 as? RelayServiceRouteAllocationError, .signingIdentityMismatch)
+        }
     }
 
     func testEnvironmentRemoteRelayRouteAllocatorPassesBootstrapAllocationToken() throws {
@@ -10095,14 +11187,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 host: "relay-saved-dead.test",
                 port: 8443,
                 routeToken: "route-token-1",
-                relaySecret: "preferred-secret-1",
                 allocationToken: "stored-allocation-token"
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-saved-good.test",
                 port: 443,
                 routeToken: "route-token-1",
-                relaySecret: "preferred-secret-1",
                 allocationToken: "stored-allocation-token"
             )
         ])
@@ -10178,21 +11268,18 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 host: "relay-one.test",
                 port: 9443,
                 routeToken: "route-token-1",
-                relaySecret: nil,
                 allocationToken: nil
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-two.test",
                 port: 443,
                 routeToken: "route-token-1",
-                relaySecret: nil,
                 allocationToken: nil
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "2001:db8::42",
                 port: 8443,
                 routeToken: "route-token-1",
-                relaySecret: nil,
                 allocationToken: nil
             )
         ])
@@ -10232,20 +11319,19 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         XCTAssertEqual(allocation?.configuration.host, "relay-good.test")
+        XCTAssertEqual(allocation?.configuration.relaySecret, "preferred-secret-1")
         XCTAssertEqual(allocation?.lease?.nonce, "allocated-nonce")
         XCTAssertEqual(serviceAllocator.calls, [
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-bad.test",
                 port: 8443,
                 routeToken: "route-token-1",
-                relaySecret: "preferred-secret-1",
                 allocationToken: nil
             ),
             FakeRelayServiceRouteAllocator.Call(
                 host: "relay-good.test",
                 port: 443,
                 routeToken: "route-token-1",
-                relaySecret: "preferred-secret-1",
                 allocationToken: nil
             )
         ])
@@ -10354,11 +11440,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model.developmentRelaySettings.host, "relay.example.test")
         XCTAssertEqual(model.developmentRelaySettings.port, 43171)
         XCTAssertEqual(model.developmentRelaySettings.relayID, "allocated-relay")
-        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "allocated-secret")
+        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "secret-1")
         XCTAssertFalse(model.developmentRelaySettings.isEnvironmentOverride)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.example.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 43171)
-        assertStoredRelaySecret("allocated-secret", defaults: defaults, store: relaySecretStore)
+        assertStoredRelaySecret("secret-1", defaults: defaults, store: relaySecretStore)
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -10366,7 +11452,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(model.shouldIncludeDevelopmentRelayInPairingQRCode)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "43171")
-        XCTAssertEqual(qrItems["relay_secret"], "allocated-secret")
+        XCTAssertEqual(qrItems["relay_secret"], "secret-1")
         XCTAssertEqual(qrItems["relay_id"], "allocated-relay")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce")
@@ -10385,12 +11471,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
         XCTAssertTrue(restoredModel.hasDevelopmentRelayRoute)
         XCTAssertEqual(restoredModel.developmentRelayEndpoint, "relay.example.test:43171")
-        XCTAssertEqual(restoredModel.developmentRelaySettings.relaySecret, "allocated-secret")
+        XCTAssertEqual(restoredModel.developmentRelaySettings.relaySecret, "secret-1")
         XCTAssertFalse(restoredModel.developmentRelaySettings.isEnvironmentOverride)
 
         restoredModel.regenerateDevelopmentRelaySecret()
         let regeneratedSecret = try XCTUnwrap(restoredModel.developmentRelaySettings.relaySecret)
-        XCTAssertNotEqual(regeneratedSecret, "allocated-secret")
+        XCTAssertNotEqual(regeneratedSecret, "secret-1")
         assertStoredRelaySecret(regeneratedSecret, defaults: defaults, store: relaySecretStore)
         restoredModel.start(port: 43211)
         restoredRelayClient.emit(.waitingForPeer)
@@ -10475,15 +11561,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(serviceAllocator.calls.count, 1)
         XCTAssertEqual(serviceAllocator.calls.first?.host, "relay.example.test")
         XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
-        XCTAssertEqual(serviceAllocator.calls.first?.relaySecret, "preferred-secret")
         XCTAssertFalse(serviceAllocator.calls.first?.routeToken.isEmpty ?? true)
         XCTAssertEqual(model.developmentRelaySettings.host, "relay.example.test")
         XCTAssertEqual(model.developmentRelaySettings.port, 443)
         XCTAssertEqual(model.developmentRelaySettings.relayID, "allocated-relay")
-        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "allocated-secret")
+        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "preferred-secret")
         XCTAssertEqual(model.developmentRelayEndpoint, "relay.example.test:443")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "allocated-relay")
-        assertStoredRelaySecret("allocated-secret", defaults: defaults, store: relaySecretStore)
+        assertStoredRelaySecret("preferred-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), Int(lease.expiresAtEpochMillis))
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce")
     }
@@ -10534,7 +11619,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
         XCTAssertEqual(serviceAllocator.calls.first?.allocationToken, "stored-bootstrap-token")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "saved-bootstrap-relay")
-        assertStoredRelaySecret("saved-bootstrap-secret", defaults: defaults, store: relaySecretStore)
+        let endpointRelaySecret = try XCTUnwrap(model.developmentRelaySettings.relaySecret)
+        XCTAssertEqual(Data(base64Encoded: endpointRelaySecret)?.count, 32)
+        assertStoredRelaySecret(endpointRelaySecret, defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "saved-bootstrap-nonce")
     }
@@ -10618,7 +11705,6 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(model.pairingSession)
         XCTAssertEqual(serviceAllocator.calls.count, 2)
         XCTAssertEqual(serviceAllocator.calls.last?.host, "relay.example.test")
-        XCTAssertEqual(serviceAllocator.calls.last?.relaySecret, "preferred-secret")
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "allocated-relay-retry")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-retry")
 
@@ -10629,7 +11715,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "43171")
         XCTAssertEqual(qrItems["relay_id"], "allocated-relay-retry")
-        XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-retry")
+        XCTAssertEqual(qrItems["relay_secret"], "preferred-secret")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce-retry")
         XCTAssertNil(qrItems["host"])
@@ -11456,7 +12542,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
         XCTAssertEqual(qrItems["relay_id"], "allocated-relay-fresh")
-        XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-fresh")
+        XCTAssertEqual(qrItems["relay_secret"], "preferred-secret")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "fresh-nonce")
         XCTAssertNil(qrItems["host"])
@@ -11529,7 +12615,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
         XCTAssertEqual(qrItems["relay_id"], "allocated-relay-fresh")
-        XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-fresh")
+        XCTAssertEqual(qrItems["relay_secret"], "preferred-secret")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "fresh-nonce")
         XCTAssertNil(qrItems["host"])
@@ -11562,7 +12648,6 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(serviceAllocator.calls.count, 1)
         XCTAssertEqual(serviceAllocator.calls.first?.host, "relay.example.test")
         XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
-        XCTAssertEqual(serviceAllocator.calls.first?.relaySecret, "preferred-secret")
         XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshFailed)
         XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.example.test:443")
     }
@@ -11605,11 +12690,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(serviceAllocator.calls.count, 1)
         XCTAssertEqual(serviceAllocator.calls.first?.host, "relay.example.test")
         XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
-        XCTAssertEqual(serviceAllocator.calls.first?.relaySecret, "preferred-secret")
         XCTAssertEqual(refresh.relayHost, "relay.example.test")
         XCTAssertEqual(refresh.relayPort, 443)
         XCTAssertEqual(refresh.relayID, "allocated-refresh-relay")
-        XCTAssertEqual(refresh.relaySecret, "allocated-refresh-secret")
+        XCTAssertEqual(refresh.relaySecret, "preferred-secret")
         XCTAssertEqual(refresh.relayExpiresAtEpochMillis, 4_102_444_800_000)
         XCTAssertEqual(refresh.relayNonce, "allocated-refresh-nonce")
         XCTAssertEqual(refresh.relayScope, "remote")
@@ -11619,6 +12703,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     @MainActor
     func testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault() async throws {
         let privateKey = P256.Signing.PrivateKey()
+        let transportBinding = String(repeating: "d", count: 64)
         let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
         try await trustedStore.trust(TrustedDevice(
             id: "android-trusted",
@@ -11658,12 +12743,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         model.start(port: 43210)
         defer { model.stop() }
         let handler = try XCTUnwrap(transport.onMessage)
-        let sink = RecordingSink()
+        let sink = RecordingSink(transportBinding: transportBinding)
         try await authenticateTrustedDevice(
             handler: handler,
             sink: sink,
             deviceID: "android-trusted",
-            privateKey: privateKey
+            privateKey: privateKey,
+            transportBinding: transportBinding
         )
 
         handler(ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-default-off"), sink)
@@ -11679,8 +12765,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
-    func testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled() async throws {
+    func testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled() async throws {
         let privateKey = P256.Signing.PrivateKey()
+        let transportBinding = String(repeating: "e", count: 64)
         let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
         try await trustedStore.trust(TrustedDevice(
             id: "android-trusted",
@@ -11721,29 +12808,30 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         model.start(port: 43210)
         defer { model.stop() }
         let handler = try XCTUnwrap(transport.onMessage)
-        let sink = RecordingSink()
+        let sink = RecordingSink(transportBinding: transportBinding)
         try await authenticateTrustedDevice(
             handler: handler,
             sink: sink,
             deviceID: "android-trusted",
-            privateKey: privateKey
+            privateKey: privateKey,
+            transportBinding: transportBinding
         )
 
         handler(ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-opt-in"), sink)
 
         let messages = try await sink.waitForMessages(count: 3)
         let message = messages.last
-        XCTAssertEqual(message?.type, MessageType.routeRefresh)
+        XCTAssertEqual(message?.type, MessageType.error)
         XCTAssertEqual(message?.requestID, "route-refresh-opt-in")
-        XCTAssertEqual(message?.payload["relay_host"], .string("relay.example.test"))
-        XCTAssertEqual(message?.payload["relay_port"], .number(443))
-        XCTAssertEqual(message?.payload["relay_id"], .string("allocated-refresh-relay"))
-        XCTAssertEqual(message?.payload["relay_secret"], .string("allocated-refresh-secret"))
-        XCTAssertEqual(message?.payload["relay_expires_at"], .number(4_102_444_800_000))
-        XCTAssertEqual(message?.payload["relay_nonce"], .string("allocated-refresh-nonce"))
-        XCTAssertEqual(message?.payload["relay_scope"], .string("remote"))
-        XCTAssertEqual(serviceAllocator.calls.count, 1)
-        XCTAssertTrue(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertEqual(message?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(true))
+        XCTAssertNil(message?.payload["relay_host"])
+        XCTAssertNil(message?.payload["relay_id"])
+        XCTAssertNil(message?.payload["relay_secret"])
+        XCTAssertNil(message?.payload["relay_nonce"])
+        XCTAssertNil(message?.payload["ticket_generation"])
+        XCTAssertEqual(serviceAllocator.calls.count, 0)
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
     }
 
     @MainActor
@@ -11897,7 +12985,8 @@ private func makeRouter(
     memoryStore: any RuntimeMemoryStore = NullRuntimeMemoryStore(),
     documentIndexStore: any RuntimeDocumentIndexReading = RuntimeDocumentIndexStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
-    runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil
+    runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
+    pairedRelayAuthorizationTimeout: TimeInterval = 5
 ) -> LocalRuntimeMessageRouter {
     LocalRuntimeMessageRouter(
         backend: backend,
@@ -11907,7 +12996,8 @@ private func makeRouter(
         memoryStore: memoryStore,
         documentIndexStore: documentIndexStore,
         routeRefresher: routeRefresher,
-        runtimeChallengeSigner: runtimeChallengeSigner
+        runtimeChallengeSigner: runtimeChallengeSigner,
+        pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout
     )
 }
 
@@ -11984,13 +13074,15 @@ private func authenticateTrustedDevice(
     router: LocalRuntimeMessageRouter,
     sink: RecordingSink,
     deviceID: String,
-    privateKey: P256.Signing.PrivateKey
+    privateKey: P256.Signing.PrivateKey,
+    transportBinding: String? = nil
 ) async throws {
     try await authenticateTrustedDevice(
         send: { envelope, sink in router.handle(envelope, sink: sink) },
         sink: sink,
         deviceID: deviceID,
-        privateKey: privateKey
+        privateKey: privateKey,
+        transportBinding: transportBinding
     )
 }
 
@@ -11998,13 +13090,15 @@ private func authenticateTrustedDevice(
     handler: LocalPeerMessageHandler,
     sink: RecordingSink,
     deviceID: String,
-    privateKey: P256.Signing.PrivateKey
+    privateKey: P256.Signing.PrivateKey,
+    transportBinding: String? = nil
 ) async throws {
     try await authenticateTrustedDevice(
         send: handler,
         sink: sink,
         deviceID: deviceID,
-        privateKey: privateKey
+        privateKey: privateKey,
+        transportBinding: transportBinding
     )
 }
 
@@ -12012,12 +13106,17 @@ private func authenticateTrustedDevice(
     send: (ProtocolEnvelope, any RuntimeMessageSink) -> Void,
     sink: RecordingSink,
     deviceID: String,
-    privateKey: P256.Signing.PrivateKey
+    privateKey: P256.Signing.PrivateKey,
+    transportBinding: String? = nil
 ) async throws {
+    var helloPayload: [String: JSONValue] = ["device_id": .string(deviceID)]
+    if let transportBinding {
+        helloPayload["transport_binding"] = .string(transportBinding)
+    }
     send(ProtocolEnvelope(
         type: MessageType.hello,
         requestID: "hello-\(deviceID)",
-        payload: ["device_id": .string(deviceID)]
+        payload: helloPayload
     ), sink)
 
     let challenge = try await sink.waitForMessages(count: 1).last
@@ -12028,21 +13127,26 @@ private func authenticateTrustedDevice(
     }
     let authMessage = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
         deviceID: deviceID,
-        nonce: nonce
+        nonce: nonce,
+        transportBinding: transportBinding
     )
     let authMessageData = try XCTUnwrap(authMessage.data(using: .utf8))
     let signature = try privateKey
         .signature(for: SHA256.hash(data: authMessageData))
         .derRepresentation
         .base64EncodedString()
+    var authPayload: [String: JSONValue] = [
+        "device_id": .string(deviceID),
+        "nonce": .string(nonce),
+        "signature": .string(signature)
+    ]
+    if let transportBinding {
+        authPayload["transport_binding"] = .string(transportBinding)
+    }
     send(ProtocolEnvelope(
         type: MessageType.authResponse,
         requestID: "auth-\(deviceID)",
-        payload: [
-            "device_id": .string(deviceID),
-            "nonce": .string(nonce),
-            "signature": .string(signature)
-        ]
+        payload: authPayload
     ), sink)
 
     let authResponse = try await sink.waitForMessages(count: 2).last
@@ -12051,7 +13155,7 @@ private func authenticateTrustedDevice(
 }
 
 private func chatSendEnvelope(requestID: String, sessionID: String, content: String) -> ProtocolEnvelope {
-    ProtocolEnvelope(
+    return ProtocolEnvelope(
         type: MessageType.chatSend,
         requestID: requestID,
         payload: [
@@ -12117,16 +13221,25 @@ private func posixPermissions(at url: URL) throws -> Int {
 private final class FakeRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private let result: RuntimeRouteRefreshResult?
     private let error: (any Error)?
+    private let challenge: PairedRelayAllocationAuthorizationChallenge?
     private(set) var refreshCount = 0
+    private(set) var authorizationContexts: [RuntimePairedRelayAuthorizationContext?] = []
+    private(set) var clientProofs: [PairedRelayAllocationClientProof] = []
+    private(set) var activatedResults: [RuntimeRouteRefreshResult] = []
 
-    init(result: RuntimeRouteRefreshResult?) {
+    init(
+        result: RuntimeRouteRefreshResult?,
+        challenge: PairedRelayAllocationAuthorizationChallenge? = nil
+    ) {
         self.result = result
         self.error = nil
+        self.challenge = challenge
     }
 
     init(error: any Error) {
         self.result = nil
         self.error = error
+        self.challenge = nil
     }
 
     func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
@@ -12136,6 +13249,152 @@ private final class FakeRuntimeRouteRefresher: RuntimeRouteRefreshing {
         }
         return result
     }
+
+    func refreshRuntimeRoute(
+        authorizationContext: RuntimePairedRelayAuthorizationContext?
+    ) async throws -> RuntimeRouteRefreshResult? {
+        refreshCount += 1
+        authorizationContexts.append(authorizationContext)
+        if let error {
+            throw error
+        }
+        if let challenge {
+            guard let authorizationContext else {
+                throw RuntimeRouteRefreshAuthorizationError.pairedAuthorizationRequired
+            }
+            let proof = try await authorizationContext.clientAuthorizationProvider(challenge)
+            clientProofs.append(proof)
+        }
+        return result
+    }
+
+    func activateRuntimeRouteRefresh(_ result: RuntimeRouteRefreshResult) async {
+        activatedResults.append(result)
+    }
+}
+
+private struct RelayAuthorizationHarness {
+    var requestID: String
+    var deviceID: String
+    var transportBinding: String
+    var clientPrivateKey: P256.Signing.PrivateKey
+    var trustedStore: TrustedDeviceStore
+    var challenge: PairedRelayAllocationAuthorizationChallenge
+    var refresher: FakeRuntimeRouteRefresher
+    var router: LocalRuntimeMessageRouter
+    var sink: RecordingSink
+}
+
+@MainActor
+private func makeRelayAuthorizationHarness(
+    requestID: String,
+    authorizationTimeout: TimeInterval = 1
+) async throws -> RelayAuthorizationHarness {
+    let deviceID = "android-\(requestID)"
+    let transportBinding = String(repeating: "c", count: 64)
+    let clientPrivateKey = P256.Signing.PrivateKey()
+    let clientPublicKeyBase64 = clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+    let clientKeyFingerprint = try PairedRelayAllocationAuthorization.publicKeyFingerprint(
+        publicKeyBase64: clientPublicKeyBase64
+    )
+    let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+    try await trustedStore.trust(TrustedDevice(
+        id: deviceID,
+        name: "Paired Android",
+        publicKeyBase64: clientPublicKeyBase64
+    ))
+    let challenge = try PairedRelayAllocationAuthorizationChallenge(
+        operation: .renew,
+        requestID: requestID,
+        authorizationID: "authorization-\(requestID)",
+        currentRelayID: "rt2-" + String(repeating: "1", count: 64),
+        nextRelayID: "rt2-" + String(repeating: "1", count: 64),
+        routeTokenHash: String(repeating: "2", count: 64),
+        runtimeKeyFingerprint: String(repeating: "3", count: 64),
+        clientKeyFingerprint: clientKeyFingerprint,
+        currentTicketGeneration: 7,
+        nextTicketGeneration: 8,
+        currentRelayExpiresAtEpochMillis: 4_000_000_000_000,
+        currentRelayNonce: "current-relay-nonce",
+        nextRelayExpiresAtEpochMillis: 4_102_444_800_000,
+        nextRelayNonce: "next-relay-nonce",
+        challenge: String(repeating: "4", count: 64),
+        challengeExpiresAtEpochMillis: 4_102_444_700_000,
+        transportBinding: transportBinding
+    )
+    let refresher = FakeRuntimeRouteRefresher(
+        result: routeRefreshResult(relayHost: "relay.example.test"),
+        challenge: challenge
+    )
+    let router = LocalRuntimeMessageRouter(
+        backend: MockBackend(status: .available),
+        trustedDeviceStore: trustedStore,
+        routeRefresher: refresher,
+        pairedRelayAuthorizationTimeout: authorizationTimeout
+    )
+    let sink = RecordingSink(transportBinding: transportBinding)
+    try await authenticateTrustedDevice(
+        router: router,
+        sink: sink,
+        deviceID: deviceID,
+        privateKey: clientPrivateKey,
+        transportBinding: transportBinding
+    )
+    return RelayAuthorizationHarness(
+        requestID: requestID,
+        deviceID: deviceID,
+        transportBinding: transportBinding,
+        clientPrivateKey: clientPrivateKey,
+        trustedStore: trustedStore,
+        challenge: challenge,
+        refresher: refresher,
+        router: router,
+        sink: sink
+    )
+}
+
+private func relayAllocationChallengeEnvelopePayload(
+    _ challenge: PairedRelayAllocationAuthorizationChallenge
+) -> [String: JSONValue] {
+    [
+        "proof_scheme": .string(challenge.scheme),
+        "protocol_version": .number(Double(challenge.protocolVersion)),
+        "operation": .string(challenge.operation.rawValue),
+        "authorization_id": .string(challenge.authorizationID),
+        "current_relay_id": .string(challenge.currentRelayID),
+        "next_relay_id": .string(challenge.nextRelayID),
+        "route_token_hash": .string(challenge.routeTokenHash),
+        "runtime_key_fingerprint": .string(challenge.runtimeKeyFingerprint),
+        "client_key_fingerprint": .string(challenge.clientKeyFingerprint),
+        "current_ticket_generation": .number(Double(challenge.currentTicketGeneration)),
+        "next_ticket_generation": .number(Double(challenge.nextTicketGeneration)),
+        "current_relay_expires_at": .number(Double(challenge.currentRelayExpiresAtEpochMillis)),
+        "current_relay_nonce": .string(challenge.currentRelayNonce),
+        "next_relay_expires_at": .number(Double(challenge.nextRelayExpiresAtEpochMillis)),
+        "next_relay_nonce": .string(challenge.nextRelayNonce),
+        "challenge": .string(challenge.challenge),
+        "challenge_expires_at": .number(Double(challenge.challengeExpiresAtEpochMillis)),
+        "transport_binding": .string(challenge.transportBinding),
+    ]
+}
+
+private func relayAllocationAuthorizationEnvelope(
+    requestID: String,
+    challenge: PairedRelayAllocationAuthorizationChallenge,
+    signatureBase64: String
+) -> ProtocolEnvelope {
+    ProtocolEnvelope(
+        type: MessageType.relayAllocationAuthorization,
+        requestID: requestID,
+        payload: [
+            "proof_scheme": .string(PairedRelayAllocationAuthorization.scheme),
+            "authorization_id": .string(challenge.authorizationID),
+            "challenge": .string(challenge.challenge),
+            "client_key_fingerprint": .string(challenge.clientKeyFingerprint),
+            "transport_binding": .string(challenge.transportBinding),
+            "client_signature": .string(signatureBase64),
+        ]
+    )
 }
 
 private struct RuntimeRouteRefreshTestError: Error, LocalizedError {
@@ -12192,19 +13451,113 @@ private func p2pRouteRefreshResult(
     )
 }
 
-private struct TestRuntimeChallengeSigner: RuntimeChallengeSigning {
+private struct TestRuntimeChallengeSigner: RuntimeChallengeSigning, RelayIdentityAuthorizationSigning, InitialPairingRuntimeResultSigning {
     var privateKey: P256.Signing.PrivateKey
 
-    func signAuthChallenge(deviceID: String, nonce: String) throws -> RuntimeChallengeSignature {
+    func relayRuntimeIdentity() throws -> RelayRuntimeIdentity {
+        let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
+        return try RelayRuntimeIdentity(
+            publicKeyBase64: identity.publicKeyBase64,
+            fingerprint: identity.fingerprint
+        )
+    }
+
+    func signRelayAllocationChallenge(
+        _ challenge: RelayAllocationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        try relayIdentityProof(messageData: challenge.signedMessageData())
+    }
+
+    func signRelayRuntimeRegistrationChallenge(
+        _ challenge: RelayRuntimeRegistrationIdentityChallenge
+    ) throws -> RelayIdentityAuthorizationProof {
+        try relayIdentityProof(messageData: challenge.signedMessageData())
+    }
+
+    func signAuthChallenge(
+        deviceID: String,
+        nonce: String,
+        transportBinding: String?
+    ) throws -> RuntimeChallengeSignature {
         let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
         let messageData = RuntimeIdentityKeyStore.authChallengeMessageData(
             deviceID: deviceID,
-            nonce: nonce
+            nonce: nonce,
+            transportBinding: transportBinding
         )
         let signature = try privateKey.signature(for: SHA256.hash(data: messageData))
         return RuntimeChallengeSignature(
             runtimeKeyFingerprint: identity.fingerprint,
             signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+
+    func signInitialPairingResult(
+        _ result: InitialPairingRuntimeResult
+    ) throws -> InitialPairingRuntimeResultProof {
+        let identity = RuntimeIdentityKeyStore.identityKey(from: privateKey)
+        guard result.runtimePublicKey == identity.publicKeyBase64,
+              result.runtimeKeyFingerprint == identity.fingerprint else {
+            throw InitialPairingProofError.invalidPublicKey("runtime_public_key")
+        }
+        let signature = try privateKey.signature(
+            for: SHA256.hash(data: result.signedMessageData())
+        )
+        return try InitialPairingRuntimeResultProof(
+            result: result,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+
+    private func relayIdentityProof(messageData: Data) throws -> RelayIdentityAuthorizationProof {
+        let signature = try privateKey.signature(for: SHA256.hash(data: messageData))
+        return try RelayIdentityAuthorizationProof(
+            runtimeIdentity: relayRuntimeIdentity(),
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
+    }
+}
+
+private func testRelayAuthorization() throws -> (
+    identity: RelayRuntimeIdentity,
+    signer: TestRuntimeChallengeSigner
+) {
+    let signer = TestRuntimeChallengeSigner(privateKey: P256.Signing.PrivateKey())
+    return (try signer.relayRuntimeIdentity(), signer)
+}
+
+private func testRelayAllocationChallenge(
+    routeToken: String,
+    runtimeIdentity: RelayRuntimeIdentity,
+    ticketGeneration: Int64 = 1
+) throws -> RelayAllocationIdentityChallenge {
+    try RelayAllocationIdentityChallenge(
+        operation: ticketGeneration == 1 ? .create : .renew,
+        relayID: RelayAllocationIdentityChallenge.relayID(
+            routeToken: routeToken,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint
+        ),
+        routeTokenHash: RelayAllocationIdentityChallenge.routeTokenHash(routeToken),
+        runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+        ticketGeneration: ticketGeneration,
+        challenge: String(repeating: "a", count: 64),
+        challengeExpiresAtEpochMillis: 4_102_444_800_000
+    )
+}
+
+private extension EnvironmentRemoteRelayRouteAllocator {
+    func allocateRemoteRelayRoute(
+        runtimeDeviceID: String,
+        routeToken: String,
+        preferredRelaySecret: String?
+    ) throws -> CompanionRemoteRelayRouteAllocation? {
+        let authorization = try testRelayAuthorization()
+        return try allocateRemoteRelayRoute(
+            runtimeDeviceID: runtimeDeviceID,
+            routeToken: routeToken,
+            preferredRelaySecret: preferredRelaySecret,
+            runtimeIdentity: authorization.identity,
+            identityAuthorizationSigner: authorization.signer
         )
     }
 }
@@ -12467,7 +13820,9 @@ private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllo
     func allocateRemoteRelayRoute(
         runtimeDeviceID: String,
         routeToken: String,
-        preferredRelaySecret: String?
+        preferredRelaySecret: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning
     ) throws -> CompanionRemoteRelayRouteAllocation? {
         calls.append(Call(
             runtimeDeviceID: runtimeDeviceID,
@@ -12482,46 +13837,172 @@ private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllo
     }
 }
 
+private final class OneShotRelayAllocationServer: @unchecked Sendable {
+    let port: UInt16
+
+    private let listenSocket: Int32
+    private let responseLines: [String]
+    private let requestSemaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var requestLines: [String] = []
+
+    init(responseLines: [String]) throws {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else {
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+        var yes: Int32 = 1
+        setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = UInt16(0).bigEndian
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.bind(socket, sockaddrPointer, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0, Darwin.listen(socket, 1) == 0 else {
+            Darwin.close(socket)
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+
+        var boundAddress = sockaddr_in()
+        var boundAddressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                Darwin.getsockname(socket, sockaddrPointer, &boundAddressLength)
+            }
+        }
+        guard named == 0 else {
+            Darwin.close(socket)
+            throw RelayAllocationServerError.socket(String(cString: strerror(errno)))
+        }
+
+        self.listenSocket = socket
+        self.port = UInt16(bigEndian: boundAddress.sin_port)
+        self.responseLines = responseLines.map { $0.hasSuffix("\n") ? $0 : $0 + "\n" }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.serveOnce()
+        }
+    }
+
+    func waitForRequests(count: Int, timeout: DispatchTime = .now() + 2) -> [String] {
+        for _ in 0..<count {
+            guard requestSemaphore.wait(timeout: timeout) == .success else { break }
+        }
+        return lock.withLock { requestLines }
+    }
+
+    func stop() {
+        Darwin.close(listenSocket)
+    }
+
+    private func serveOnce() {
+        let socket = Darwin.accept(listenSocket, nil, nil)
+        guard socket >= 0 else { return }
+        defer { Darwin.close(socket) }
+        for responseLine in responseLines {
+            var bytes = [UInt8]()
+            while bytes.count < 4096 {
+                var byte: UInt8 = 0
+                guard Darwin.recv(socket, &byte, 1, 0) == 1 else { return }
+                bytes.append(byte)
+                if byte == UInt8(ascii: "\n") { break }
+            }
+            guard let requestLine = String(bytes: bytes, encoding: .utf8) else { return }
+            lock.withLock {
+                requestLines.append(requestLine)
+            }
+            requestSemaphore.signal()
+            let response = Array(responseLine.utf8)
+            _ = response.withUnsafeBytes { rawBuffer in
+                Darwin.send(socket, rawBuffer.baseAddress, rawBuffer.count, 0)
+            }
+        }
+    }
+}
+
+private enum RelayAllocationServerError: Error {
+    case socket(String)
+}
+
 private final class FakeRelayServiceRouteAllocator: RelayServiceRouteAllocating, @unchecked Sendable {
     struct Call: Equatable {
         var host: String
         var port: UInt16
         var routeToken: String
-        var relaySecret: String?
         var allocationToken: String?
     }
 
-    private var allocations: [CompanionRemoteRelayRouteAllocation?]
+    private var allocations: [RelayServiceRouteAllocation?]
     private(set) var calls: [Call] = []
 
     init(allocation: CompanionRemoteRelayRouteAllocation?) {
-        self.allocations = [allocation]
+        self.allocations = [Self.serviceAllocation(from: allocation)]
     }
 
     init(allocations: [CompanionRemoteRelayRouteAllocation?]) {
-        self.allocations = allocations
+        self.allocations = allocations.map(Self.serviceAllocation(from:))
+    }
+
+    init(serviceAllocation: RelayServiceRouteAllocation?) {
+        self.allocations = [serviceAllocation]
+    }
+
+    init(serviceAllocations: [RelayServiceRouteAllocation?]) {
+        self.allocations = serviceAllocations
     }
 
     func allocateRelayRoute(
         host: String,
         port: UInt16,
         routeToken: String,
-        relaySecret: String?,
         allocationToken: String?,
+        runtimeIdentity: RelayRuntimeIdentity,
+        identityAuthorizationSigner: any RelayIdentityAuthorizationSigning,
         timeout: TimeInterval
-    ) throws -> CompanionRemoteRelayRouteAllocation {
+    ) throws -> RelayServiceRouteAllocation {
         calls.append(Call(
             host: host,
             port: port,
             routeToken: routeToken,
-            relaySecret: relaySecret,
             allocationToken: allocationToken
         ))
         let allocation = allocations.isEmpty ? nil : allocations.removeFirst()
         guard let allocation else {
             throw RelayServiceRouteAllocationError.invalidResponse
         }
-        return allocation
+        return RelayServiceRouteAllocation(
+            host: allocation.host,
+            port: allocation.port,
+            relayID: allocation.relayID,
+            relayExpiresAtEpochMillis: allocation.relayExpiresAtEpochMillis,
+            relayNonce: allocation.relayNonce,
+            runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+            ticketGeneration: allocation.ticketGeneration,
+            cryptoVersion: allocation.cryptoVersion
+        )
+    }
+
+    private static func serviceAllocation(
+        from allocation: CompanionRemoteRelayRouteAllocation?
+    ) -> RelayServiceRouteAllocation? {
+        guard let allocation else { return nil }
+        let lease = allocation.lease
+        return RelayServiceRouteAllocation(
+            host: allocation.configuration.host,
+            port: allocation.configuration.port,
+            relayID: allocation.configuration.relayID,
+            relayExpiresAtEpochMillis: lease?.expiresAtEpochMillis ?? 4_102_444_800_000,
+            relayNonce: lease?.nonce ?? allocation.configuration.relayNonce ?? "fake-relay-nonce",
+            runtimeKeyFingerprint: allocation.configuration.runtimeIdentity?.fingerprint
+                ?? String(repeating: "0", count: 64),
+            ticketGeneration: 1
+        )
     }
 }
 
@@ -12764,23 +14245,81 @@ private func pairingEnvelope(
     pairingCode: String? = nil,
     deviceID: String = "android-1",
     deviceName: String = "Android Phone",
-    publicKey: String? = nil
+    publicKey: String? = nil,
+    transportBinding: String? = nil
 ) -> ProtocolEnvelope {
-    ProtocolEnvelope(
+    let clientPrivateKey = testClientPrivateKey()
+    let clientPublicKey = clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+    let clientFingerprint = SHA256.hash(data: clientPrivateKey.publicKey.derRepresentation)
+        .map { String(format: "%02x", $0) }
+        .joined()
+    let runtimeSigner = testInitialPairingRuntimeSigner()
+    let runtimeIdentity = RuntimeIdentityKeyStore.identityKey(from: runtimeSigner.privateKey)
+    let runtimePublicKey = session.runtimePublicKeyBase64 ?? runtimeIdentity.publicKeyBase64
+    let runtimeFingerprint = session.runtimePublicKeyBase64 == nil
+        ? runtimeIdentity.fingerprint
+        : session.fingerprint
+    let signingData = (try? InitialPairingClientProof.signingMessageData(
+        requestID: requestID,
+        pairingNonce: pairingNonce ?? session.nonce,
+        pairingCode: pairingCode ?? session.code,
+        runtimeDeviceID: session.macDeviceID,
+        runtimePublicKey: runtimePublicKey,
+        runtimeKeyFingerprint: runtimeFingerprint,
+        clientDeviceID: deviceID,
+        clientDeviceName: deviceName,
+        clientPublicKey: clientPublicKey,
+        clientKeyFingerprint: clientFingerprint,
+        transportBinding: transportBinding ?? "none"
+    )) ?? (try! InitialPairingClientProof.signingMessageData(
+        requestID: requestID,
+        pairingNonce: pairingNonce ?? session.nonce,
+        pairingCode: pairingCode ?? session.code,
+        runtimeDeviceID: session.macDeviceID,
+        runtimePublicKey: runtimeIdentity.publicKeyBase64,
+        runtimeKeyFingerprint: runtimeIdentity.fingerprint,
+        clientDeviceID: deviceID,
+        clientDeviceName: deviceName,
+        clientPublicKey: clientPublicKey,
+        clientKeyFingerprint: clientFingerprint,
+        transportBinding: transportBinding ?? "none"
+    ))
+    let signature = try! clientPrivateKey.signature(for: SHA256.hash(data: signingData))
+    var payload: [String: JSONValue] = [
+        "pairing_nonce": .string(pairingNonce ?? session.nonce),
+        "pairing_code": .string(pairingCode ?? session.code),
+        "device_id": .string(deviceID),
+        "device_name": .string(deviceName),
+        "public_key": .string(publicKey ?? clientPublicKey),
+        "pairing_proof_scheme": .string(InitialPairingProof.scheme),
+        "pairing_signature": .string(signature.derRepresentation.base64EncodedString())
+    ]
+    if let transportBinding {
+        payload["transport_binding"] = .string(transportBinding)
+    }
+    return ProtocolEnvelope(
         type: MessageType.pairingRequest,
         requestID: requestID,
-        payload: [
-            "pairing_nonce": .string(pairingNonce ?? session.nonce),
-            "pairing_code": .string(pairingCode ?? session.code),
-            "device_id": .string(deviceID),
-            "device_name": .string(deviceName),
-            "public_key": .string(publicKey ?? testClientPublicKeyBase64())
-        ]
+        payload: payload
     )
 }
 
 private func testClientPublicKeyBase64() -> String {
-    P256.Signing.PrivateKey().publicKey.derRepresentation.base64EncodedString()
+    testClientPrivateKey().publicKey.derRepresentation.base64EncodedString()
+}
+
+private func testClientPrivateKey() -> P256.Signing.PrivateKey {
+    var raw = Data(repeating: 0, count: 32)
+    raw[31] = 2
+    return try! P256.Signing.PrivateKey(rawRepresentation: raw)
+}
+
+private func testInitialPairingRuntimeSigner() -> TestRuntimeChallengeSigner {
+    var raw = Data(repeating: 0, count: 32)
+    raw[31] = 1
+    return TestRuntimeChallengeSigner(
+        privateKey: try! P256.Signing.PrivateKey(rawRepresentation: raw)
+    )
 }
 
 private final class MockBackend: LlmBackend, @unchecked Sendable {
@@ -13249,7 +14788,24 @@ private extension ChatMessage {
 private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
     let connectionID = UUID()
     private let lock = NSLock()
+    private var transportBinding: String?
     private var messages: [ProtocolEnvelope] = []
+
+    init(transportBinding: String? = nil) {
+        self.transportBinding = transportBinding
+    }
+
+    var transportSecurityContext: TransportSecurityContext? {
+        lock.withLock {
+            transportBinding.map { TransportSecurityContext(bindingID: $0) }
+        }
+    }
+
+    func setTransportBinding(_ transportBinding: String?) {
+        lock.withLock {
+            self.transportBinding = transportBinding
+        }
+    }
 
     func send(_ envelope: ProtocolEnvelope) {
         lock.withLock {
@@ -13260,6 +14816,49 @@ private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
     func close() {}
 
     func waitForMessages(count: Int, timeout: TimeInterval = 1.0) async throws -> [ProtocolEnvelope] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let snapshot = lock.withLock { messages }
+            if snapshot.count >= count {
+                return snapshot
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return lock.withLock { messages }
+    }
+}
+
+private final class ChangingTransportBindingSink: RuntimeMessageSink, @unchecked Sendable {
+    let connectionID = UUID()
+
+    private let lock = NSLock()
+    private let initialBinding: String
+    private let changedBinding: String
+    private var bindingReadCount = 0
+    private var messages: [ProtocolEnvelope] = []
+
+    init(initialBinding: String, changedBinding: String) {
+        self.initialBinding = initialBinding
+        self.changedBinding = changedBinding
+    }
+
+    var transportSecurityContext: TransportSecurityContext? {
+        lock.withLock {
+            bindingReadCount += 1
+            let binding = bindingReadCount == 1 ? initialBinding : changedBinding
+            return TransportSecurityContext(bindingID: binding)
+        }
+    }
+
+    func send(_ envelope: ProtocolEnvelope) {
+        lock.withLock {
+            messages.append(envelope)
+        }
+    }
+
+    func close() {}
+
+    func waitForMessages(count: Int, timeout: TimeInterval = 2) async throws -> [ProtocolEnvelope] {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             let snapshot = lock.withLock { messages }

@@ -2412,7 +2412,13 @@ fi
 
 if [[ "$MODE" == "relay" && -z "$EXTERNAL_RELAY_HOST" ]]; then
   echo "Starting local allocation-required diagnostic relay on loopback port $RELAY_PORT"
-  RELAY_ARGS=("$RELAY_BIN" --host 127.0.0.1 --port "$RELAY_PORT" --require-allocation)
+  RELAY_ARGS=(
+    "$RELAY_BIN"
+    --host 127.0.0.1
+    --port "$RELAY_PORT"
+    --require-allocation
+    --allocation-store "$WORK_DIR/relay-allocations.json"
+  )
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
     export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi

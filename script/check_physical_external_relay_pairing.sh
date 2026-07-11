@@ -377,6 +377,27 @@ raise SystemExit(0 if value is True else 1)
 PY
 }
 
+json_false_at() {
+  local file="$1"
+  local dotted_key="$2"
+  python3 - "$file" "$dotted_key" <<'PY'
+import json
+import sys
+
+path, dotted_key = sys.argv[1:]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        value = json.load(handle)
+except Exception:
+    raise SystemExit(1)
+for key in dotted_key.split("."):
+    if not isinstance(value, dict) or key not in value:
+        raise SystemExit(1)
+    value = value[key]
+raise SystemExit(0 if value is False else 1)
+PY
+}
+
 write_json_summary() {
   local status="$1"
   local started_at="$2"
@@ -641,6 +662,10 @@ device_route_probe = load_json_artifact(device_route_probe_json)
 android_pairing_summary = load_json_artifact(android_pairing_summary_json)
 endpoint_reachable = probe_bool(device_endpoint_probe, "reachable")
 route_ready = probe_bool(device_route_probe, "route_ready")
+route_probe = device_route_probe.get("probe") if isinstance(device_route_probe, dict) else None
+route_probe_supported = isinstance(route_probe, dict) and route_probe.get("supported") is True
+route_probe_unsupported = isinstance(route_probe, dict) and route_probe.get("supported") is False
+route_probe_acceptable = (route_probe_supported and route_ready) or route_probe_unsupported
 runtime_log_artifact_present = os.path.exists(runtime_log)
 wrapper_log_artifact_present = os.path.exists(log_path)
 
@@ -816,7 +841,9 @@ runtime_log_contains_temporary_route_material = any(
 )
 if not endpoint_reachable:
     caveats.append("device_endpoint_probe_not_reachable_or_missing")
-if not route_ready:
+if route_probe_unsupported:
+    caveats.append("device_route_probe_unsupported_authenticated_pairing_used")
+elif not route_probe_supported or not route_ready:
     caveats.append("device_route_probe_not_ready_or_missing")
 if runtime_log_contains_temporary_pairing_material or runtime_log_contains_temporary_route_material:
     caveats.append("runtime_log_contains_temporary_pairing_or_route_material")
@@ -840,12 +867,14 @@ live_android_device_probe_verified = (
     and route_ready
 )
 physical_external_relay_verified = (
-    exit_status == 0
+    not self_test_redaction_only
+    and exit_status == 0
     and no_adb_reverse == "1"
     and android_pairing_summary_success
     and android_pairing_summary_external_relay_mode
     and android_pairing_summary_no_relay_adb_reverse
-    and live_android_device_probe_verified
+    and endpoint_reachable
+    and route_probe_acceptable
     and pairing_count > 0
     and health_count > 0
 )
@@ -884,6 +913,7 @@ summary = {
         "external_relay_probe_from_device": bool(device_probe_json),
         "external_relay_route_probe_from_device": bool(device_route_probe_json),
         "external_relay_probe_reachable": endpoint_reachable,
+        "external_relay_probe_supported": route_probe_supported,
         "external_relay_route_ready": route_ready,
         "probe_summary_redaction_self_test": self_test_redaction_only,
         "live_android_device_probe_verified": live_android_device_probe_verified,
@@ -995,6 +1025,7 @@ JSON
 {
   "probe": {
     "reachable": true,
+    "supported": true,
     "route_ready": true,
     "output": "AETHERLINK_RELAY probe known=1 runtime_waiting=1 relay_id=relay-id-sensitive relay_secret=relay-secret-sensitive route_token=route-token-sensitive"
   },
@@ -1154,7 +1185,10 @@ if [[ "$STATUS" -eq 0 ]]; then
   if [[ -z "$DEVICE_PROBE_JSON" ]] || ! json_bool_at "$DEVICE_PROBE_JSON" "probe.reachable"; then
     echo "Physical external relay smoke completed but Android endpoint relay reachability was not proven." >&2
     STATUS=25
-  elif [[ -z "$DEVICE_ROUTE_PROBE_JSON" ]] || ! json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready"; then
+  elif [[ -z "$DEVICE_ROUTE_PROBE_JSON" ]]; then
+    echo "Physical external relay smoke completed but Android route probe evidence was not produced." >&2
+    STATUS=26
+  elif ! json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready" && ! json_false_at "$DEVICE_ROUTE_PROBE_JSON" "probe.supported"; then
     echo "Physical external relay smoke completed but Android route-level relay readiness was not proven." >&2
     STATUS=26
   elif [[ -z "$ANDROID_PAIRING_SUMMARY_JSON" || ! -f "$ANDROID_PAIRING_SUMMARY_JSON" ]] || ! json_bool_at "$ANDROID_PAIRING_SUMMARY_JSON" "success"; then

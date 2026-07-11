@@ -15,6 +15,7 @@ let package = Package(
     targets: [
         .target(
             name: "RelayServerCore",
+            dependencies: ["BridgeProtocol"],
             path: "apps/macos/RelayServerCore/Sources"
         ),
         .target(
@@ -27,7 +28,7 @@ let package = Package(
         ),
         .target(
             name: "Pairing",
-            dependencies: ["TrustedDevices"],
+            dependencies: ["BridgeProtocol", "TrustedDevices"],
             path: "apps/macos/Pairing/Sources"
         ),
         .target(

@@ -8,6 +8,7 @@ data class RuntimeRelayRoutePreparation(
     val expiresAtEpochMillis: Long? = null,
     val antiReplayNonce: String? = null,
     val relayScope: String? = null,
+    val ticketGeneration: Long? = null,
 )
 
 class RuntimeRelayRoutePreparer(
@@ -34,12 +35,15 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
     val frameSecret = relayFrameSecret.opaqueRelayRouteValueOrNull() ?: return null
     val expiresAt = expiresAtEpochMillis?.takeIf { it > nowEpochMillis } ?: return null
     val nonce = antiReplayNonce.opaqueRelayRouteValueOrNull() ?: return null
+    val generation = ticketGeneration?.takeIf { it > 0L }
+    if (ticketGeneration != null && generation == null) return null
     return PreparedRemoteRuntimeRoute.Relay(
         identity = identity,
         relayId = routeRelayId,
         host = routeHost,
         port = routePort,
         relayFrameSecret = frameSecret,
+        ticketGeneration = generation,
         security = RemoteRouteSecurityContext(
             rendezvousToken = routeRelayId,
             expiresAtEpochMillis = expiresAt,

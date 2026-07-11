@@ -269,6 +269,7 @@ private fun RuntimePairingPayload.toRelayRoutePreparation(nowEpochMillis: Long):
         expiresAtEpochMillis = relayExpiresAtEpochMillis,
         antiReplayNonce = relayNonce,
         relayScope = relayScope,
+        ticketGeneration = null,
     )
 }
 
@@ -306,6 +307,7 @@ private fun RuntimeTrustedRuntime.toRelayRoutePreparation(nowEpochMillis: Long):
         expiresAtEpochMillis = relayExpiresAtEpochMillis,
         antiReplayNonce = relayNonce,
         relayScope = relayScope,
+        ticketGeneration = relayTicketGeneration,
     )
 }
 

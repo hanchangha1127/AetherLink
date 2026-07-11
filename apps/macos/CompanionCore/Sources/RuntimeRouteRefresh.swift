@@ -1,4 +1,61 @@
+import BridgeProtocol
 import Foundation
+
+public typealias RuntimePairedRelayAuthorizationProvider = @Sendable (
+    PairedRelayAllocationAuthorizationChallenge
+) async throws -> PairedRelayAllocationClientProof
+
+public struct RuntimePairedRelayAuthorizationContext: Sendable {
+    public let requestID: String
+    public let connectionID: UUID
+    public let trustedClientPublicKeyBase64: String
+    public let trustedClientKeyFingerprint: String
+    public let transportBinding: String
+    public let clientAuthorizationProvider: RuntimePairedRelayAuthorizationProvider
+
+    public init(
+        requestID: String,
+        connectionID: UUID,
+        trustedClientPublicKeyBase64: String,
+        trustedClientKeyFingerprint: String,
+        transportBinding: String,
+        clientAuthorizationProvider: @escaping RuntimePairedRelayAuthorizationProvider
+    ) throws {
+        guard PairedRelayAllocationAuthorization.isCanonicalOpaqueIdentifier(requestID),
+              PairedRelayAllocationAuthorization.isCanonicalDigest(transportBinding)
+        else {
+            throw RuntimeRouteRefreshAuthorizationError.invalidContext
+        }
+        do {
+            _ = try PairedRelayAllocationAuthorization.validatedClientPublicKey(
+                base64: trustedClientPublicKeyBase64,
+                fingerprint: trustedClientKeyFingerprint
+            )
+        } catch {
+            throw RuntimeRouteRefreshAuthorizationError.invalidContext
+        }
+        self.requestID = requestID
+        self.connectionID = connectionID
+        self.trustedClientPublicKeyBase64 = trustedClientPublicKeyBase64
+        self.trustedClientKeyFingerprint = trustedClientKeyFingerprint
+        self.transportBinding = transportBinding
+        self.clientAuthorizationProvider = clientAuthorizationProvider
+    }
+}
+
+public enum RuntimeRouteRefreshAuthorizationError: Error, Equatable, LocalizedError, Sendable {
+    case invalidContext
+    case pairedAuthorizationRequired
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidContext:
+            return "The paired relay authorization context is invalid."
+        case .pairedAuthorizationRequired:
+            return "Authenticated route refresh requires paired client authorization."
+        }
+    }
+}
 
 public struct RuntimeRouteRefreshResult: Equatable, Sendable {
     public var runtimeDeviceID: String
@@ -9,6 +66,7 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
     public var relaySecret: String?
     public var relayExpiresAtEpochMillis: Int64?
     public var relayNonce: String?
+    public var relayTicketGeneration: Int64?
     public var relayScope: String?
     public var p2pRouteClass: String?
     public var p2pRecordID: String?
@@ -26,6 +84,7 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
         relaySecret: String? = nil,
         relayExpiresAtEpochMillis: Int64? = nil,
         relayNonce: String? = nil,
+        relayTicketGeneration: Int64? = nil,
         relayScope: String? = nil,
         p2pRouteClass: String? = nil,
         p2pRecordID: String? = nil,
@@ -42,6 +101,7 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
         self.relaySecret = relaySecret
         self.relayExpiresAtEpochMillis = relayExpiresAtEpochMillis
         self.relayNonce = relayNonce
+        self.relayTicketGeneration = relayTicketGeneration
         self.relayScope = relayScope
         self.p2pRouteClass = p2pRouteClass
         self.p2pRecordID = p2pRecordID
@@ -55,4 +115,21 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
 @MainActor
 public protocol RuntimeRouteRefreshing: AnyObject {
     func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult?
+    func refreshRuntimeRoute(
+        authorizationContext: RuntimePairedRelayAuthorizationContext?
+    ) async throws -> RuntimeRouteRefreshResult?
+    func activateRuntimeRouteRefresh(_ result: RuntimeRouteRefreshResult) async
+}
+
+public extension RuntimeRouteRefreshing {
+    func refreshRuntimeRoute(
+        authorizationContext: RuntimePairedRelayAuthorizationContext?
+    ) async throws -> RuntimeRouteRefreshResult? {
+        guard authorizationContext == nil else {
+            throw RuntimeRouteRefreshAuthorizationError.pairedAuthorizationRequired
+        }
+        return try await refreshRuntimeRoute()
+    }
+
+    func activateRuntimeRouteRefresh(_ result: RuntimeRouteRefreshResult) async {}
 }

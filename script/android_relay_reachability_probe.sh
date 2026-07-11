@@ -217,67 +217,126 @@ print("'" + value.replace("'", "'\\''") + "'")
 PY
 }
 
-parse_relay_probe_ready() {
-  python3 - "$1" <<'PY'
+classify_relay_probe_response() {
+  python3 -c '
 import sys
 
-lines = sys.argv[1].strip().splitlines()
-line = lines[-1] if lines else ""
-parts = line.split()
-if len(parts) < 3 or parts[0] != "AETHERLINK_RELAY" or parts[1] != "probe":
-    raise SystemExit(1)
+tokens = sys.stdin.read().strip().split()
+if len(tokens) != 4 or tokens[:2] != ["AETHERLINK_RELAY", "probe"]:
+    print("unsupported", "unset", "unset", "none", sep="\t")
+    raise SystemExit(0)
+
 values = {}
-for token in parts[2:]:
-    if "=" in token:
-        key, value = token.split("=", 1)
+allowed_keys = {"known", "allocated", "runtime_waiting"}
+for token in tokens[2:]:
+    if token.count("=") != 1:
+        print("unsupported", "unset", "unset", "none", sep="\t")
+        raise SystemExit(0)
+    key, raw_value = token.split("=", 1)
+    if key not in allowed_keys or key in values:
+        print("unsupported", "unset", "unset", "none", sep="\t")
+        raise SystemExit(0)
+    normalized_value = raw_value.lower()
+    if normalized_value in {"1", "true", "yes"}:
+        values[key] = True
+    elif normalized_value in {"0", "false", "no"}:
+        values[key] = False
     else:
-        key, value = token, "true"
-    values[key] = value.lower()
-truthy = {"1", "true", "yes"}
-known = values.get("known") in truthy or values.get("allocated") in truthy
-runtime_waiting = values.get("runtime_waiting") in truthy
-raise SystemExit(0 if known and runtime_waiting else 1)
-PY
+        print("unsupported", "unset", "unset", "none", sep="\t")
+        raise SystemExit(0)
+
+route_status_keys = set(values).intersection({"known", "allocated"})
+if len(route_status_keys) != 1 or "runtime_waiting" not in values:
+    print("unsupported", "unset", "unset", "none", sep="\t")
+    raise SystemExit(0)
+
+route_known = values[route_status_keys.pop()]
+runtime_waiting = values["runtime_waiting"]
+result = "ready" if route_known and runtime_waiting else "unavailable"
+canonical_output = (
+    "AETHERLINK_RELAY probe "
+    f"known={str(route_known).lower()} "
+    f"runtime_waiting={str(runtime_waiting).lower()}"
+)
+print(
+    result,
+    "1" if route_known else "0",
+    "1" if runtime_waiting else "0",
+    canonical_output,
+    sep="\t",
+)
+'
 }
 
 PROBE_MODE="tcp_connect"
 RAW_PROBE_STATUS=0
 PROBE_READY=0
+PROBE_SUPPORTED=1
+PROBE_RESULT="unavailable"
+PROBE_ROUTE_KNOWN="unset"
+PROBE_RUNTIME_WAITING="unset"
 PROBE_OUTPUT=""
+PROBE_RESPONSE_STATUS="unset"
+CANONICAL_PROBE_OUTPUT=""
 
 set +e
 if [[ -n "$RELAY_ID" ]]; then
   PROBE_MODE="aetherlink_relay_probe"
   REMOTE_REQUEST="$(shell_quote "AETHERLINK_RELAY probe $RELAY_ID")"
   REMOTE_HOST="$(shell_quote "$HOST")"
-  PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell "printf '%s\n' $REMOTE_REQUEST | nc -w $TIMEOUT_SECONDS $REMOTE_HOST $PORT" 2>&1 </dev/null)"
+  TCP_PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell nc -z -w "$TIMEOUT_SECONDS" "$HOST" "$PORT" 2>&1 </dev/null)"
   RAW_PROBE_STATUS=$?
-  if parse_relay_probe_ready "$PROBE_OUTPUT"; then
-    PROBE_READY=1
-    PROBE_STATUS=0
-  else
+  if [[ "$RAW_PROBE_STATUS" -ne 0 ]]; then
+    PROBE_SUPPORTED=0
     PROBE_STATUS=1
+  else
+    PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell "printf '%s\n' $REMOTE_REQUEST | nc -w $TIMEOUT_SECONDS $REMOTE_HOST $PORT" 2>&1 </dev/null)"
+    PROBE_RESPONSE_STATUS=$?
+    if [[ "$PROBE_RESPONSE_STATUS" -ne 0 ]]; then
+      PROBE_RESULT="unsupported"
+      PROBE_ROUTE_KNOWN="unset"
+      PROBE_RUNTIME_WAITING="unset"
+      CANONICAL_PROBE_OUTPUT=""
+      PROBE_SUPPORTED=0
+      PROBE_STATUS=0
+    else
+      PROBE_PARSE_RESULT="$(printf '%s' "$PROBE_OUTPUT" | classify_relay_probe_response)"
+      IFS=$'\t' read -r PROBE_RESULT PROBE_ROUTE_KNOWN PROBE_RUNTIME_WAITING CANONICAL_PROBE_OUTPUT <<<"$PROBE_PARSE_RESULT"
+      if [[ "$CANONICAL_PROBE_OUTPUT" == "none" ]]; then
+        CANONICAL_PROBE_OUTPUT=""
+      fi
+      case "$PROBE_RESULT" in
+        ready)
+          PROBE_READY=1
+          PROBE_STATUS=0
+          ;;
+        unavailable)
+          PROBE_STATUS=1
+          ;;
+        unsupported)
+          PROBE_SUPPORTED=0
+          PROBE_STATUS=0
+          ;;
+        *)
+          PROBE_RESULT="unsupported"
+          PROBE_ROUTE_KNOWN="unset"
+          PROBE_RUNTIME_WAITING="unset"
+          CANONICAL_PROBE_OUTPUT=""
+          PROBE_SUPPORTED=0
+          PROBE_STATUS=0
+          ;;
+      esac
+    fi
   fi
 else
   PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell nc -z -w "$TIMEOUT_SECONDS" "$HOST" "$PORT" 2>&1 </dev/null)"
   RAW_PROBE_STATUS=$?
   PROBE_STATUS=$RAW_PROBE_STATUS
+  if [[ "$RAW_PROBE_STATUS" -eq 0 ]]; then
+    PROBE_RESULT="tcp_reachable"
+  fi
 fi
 set -e
-
-sanitize_probe_output() {
-  python3 - "$RELAY_ID" "$PROBE_OUTPUT" <<'PY'
-import sys
-
-relay_id = sys.argv[1]
-output = sys.argv[2]
-if relay_id:
-    output = output.replace(relay_id, "<relay-id>")
-print(output, end="")
-PY
-}
-
-SAFE_PROBE_OUTPUT="$(sanitize_probe_output)"
 
 END_NS="$(python3 - <<'PY'
 import time
@@ -308,10 +367,15 @@ write_json() {
     "$PROBE_MODE" \
     "$RELAY_ID" \
     "$PROBE_READY" \
-	    "$DURATION_MS" \
-	    "$SAFE_PROBE_OUTPUT" \
-	    "$NETWORK_SUMMARY" \
-	    "$RELAY_PROBE_SELF_TEST" <<'PY'
+    "$PROBE_SUPPORTED" \
+    "$PROBE_RESULT" \
+    "$PROBE_ROUTE_KNOWN" \
+    "$PROBE_RUNTIME_WAITING" \
+    "$PROBE_RESPONSE_STATUS" \
+    "$DURATION_MS" \
+    "$CANONICAL_PROBE_OUTPUT" \
+    "$NETWORK_SUMMARY" \
+    "$RELAY_PROBE_SELF_TEST" <<'PY'
 import json
 import os
 import sys
@@ -329,8 +393,13 @@ import sys
     probe_mode,
     relay_id,
     probe_ready,
+    probe_supported,
+    probe_result,
+    probe_route_known,
+    probe_runtime_waiting,
+    probe_response_status,
     duration_ms,
-    probe_output,
+    canonical_probe_output,
     network_summary,
     relay_probe_self_test,
 ) = sys.argv[1:]
@@ -346,6 +415,8 @@ if redaction_self_test:
     caveats.append("android_relay_probe_redaction_self_test_not_phone_reachability_proof")
 if not relay_id:
     caveats.append("tcp_connect_only_not_relay_room_readiness")
+if relay_id and probe_result == "unsupported":
+    caveats.append("relay_route_probe_unsupported_authenticated_connection_required")
 if host_class in {"local", "link_local", "private_or_cgnat"}:
     caveats.append("endpoint_class_may_not_cross_unrelated_networks")
 if int(probe_status) != 0:
@@ -372,15 +443,24 @@ summary = {
         "duration_ms": int(duration_ms),
         "exit_status": int(probe_status),
         "raw_exit_status": int(raw_probe_status),
+        "response_exit_status": None if probe_response_status == "unset" else int(probe_response_status),
         "tcp_reachable": int(raw_probe_status) == 0,
         "route_ready": probe_ready == "1",
+        "supported": probe_supported == "1",
+        "result": probe_result,
+        "route_known": None if probe_route_known == "unset" else probe_route_known == "1",
+        "runtime_waiting": None if probe_runtime_waiting == "unset" else probe_runtime_waiting == "1",
         "reachable": int(probe_status) == 0,
-        "output": probe_output.strip() or None,
+        "output": canonical_probe_output or None,
     },
     "network_summary": network_summary.strip() or None,
     "coverage": {
         "android_relay_probe_redaction_self_test": redaction_self_test,
-        "live_android_relay_probe_verified": (not redaction_self_test) and int(probe_status) == 0,
+        "live_android_relay_probe_verified": (
+            (not redaction_self_test)
+            and int(probe_status) == 0
+            and probe_supported == "1"
+        ),
         "live_android_route_probe_verified": (not redaction_self_test) and bool(relay_id) and probe_ready == "1",
         "production_relay": False,
         "production_session_key_exchange": False,
@@ -402,9 +482,17 @@ write_json
 
 if [[ "$PROBE_STATUS" -eq 0 ]]; then
   if [[ "$RELAY_PROBE_SELF_TEST" == "1" ]]; then
-    echo "OK: Android relay reachability probe redaction self-test generated seeded route-ready evidence; not phone reachability proof."
+    if [[ "$PROBE_SUPPORTED" -eq 1 ]]; then
+      echo "OK: Android relay reachability probe redaction self-test generated seeded route-ready evidence; not phone reachability proof."
+    else
+      echo "OK: Android relay reachability probe redaction self-test generated seeded TCP-reachable evidence; the route probe response is unsupported, so authenticated pairing must verify the route; not phone reachability proof."
+    fi
   elif [[ -n "$RELAY_ID" ]]; then
-    echo "OK: Android device $SERIAL sees relay route ready at $HOST:$PORT."
+    if [[ "$PROBE_SUPPORTED" -eq 1 ]]; then
+      echo "OK: Android device $SERIAL sees relay route ready at $HOST:$PORT."
+    else
+      echo "OK: Android device $SERIAL can reach relay TCP at $HOST:$PORT; the route probe response is unsupported, so authenticated pairing must verify the route."
+    fi
   else
     echo "OK: Android device $SERIAL can open TCP to $HOST:$PORT."
   fi
@@ -418,9 +506,6 @@ if [[ -n "$RELAY_ID" ]]; then
   echo "Android device $SERIAL could not verify relay route at $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
 else
   echo "Android device $SERIAL could not open TCP to $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
-fi
-if [[ -n "$SAFE_PROBE_OUTPUT" ]]; then
-  echo "$SAFE_PROBE_OUTPUT" >&2
 fi
 if [[ "$HOST_CLASS" == "private_or_cgnat" || "$HOST_CLASS" == "link_local" || "$HOST_CLASS" == "local" ]]; then
   echo "Endpoint class '$HOST_CLASS' is usually not reachable from an unrelated network unless a VPN, tunnel, or private overlay makes it reachable." >&2

@@ -1,0 +1,6 @@
+flowchart LR
+    Runtime["Runtime trust store"] -->|"short co-signed lease"| Relay["Relay lease store"]
+    Client["Android trust store"] -->|"manual forget and fresh QR"| Runtime
+    Relay -->|"short expiry"| Session["Active or waiting session"]
+    RePair["Fresh QR re-pair"] --> Runtime
+    RePair --> Client

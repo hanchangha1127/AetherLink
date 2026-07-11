@@ -1,8 +1,75 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-10 KST.
+Last updated: 2026-07-11 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
+
+## 2026-07-11 Relay Bounded Waiting And Authenticated Identity Fairness
+
+- Added `RelayWaitingPeerPolicyConfiguration` and matcher-owned authenticated identity accounting. Defaults are a `60`-second unmatched room duration and `4` unmatched waits per role-separated verified identity, with canonical positive CLI/environment bounds and no disable values.
+- The first waiting registration fixes one monotonic deadline capped by the allocation lease. Same-role replacement preserves it, stale peer UUID callbacks cannot remove a replacement/new generation, and match activation cancels both read and timeout sources before active forwarding.
+- Runtime identity is created from the revalidated allocation binding only after runtime proof. Paired-client identity is created from the pinned binding only after client proof. Failed proofs never charge a bucket; bootstrap clients without paired-client proof and legacy peers remain identity-untracked, source/global limited, and duration limited.
+- Preserved the pre-auth boundary: accepted sockets still acquire global/source permits immediately after `accept`; identity admission occurs only after cryptographic verification and cannot grant or refund descriptor capacity. Shared NAT/VPN users still share source limits, while a verified identity cannot evade its waiting quota by changing source address.
+- Added source-free stable reasons and saturating aggregate metrics for identity waiting requests/admissions/rejections, waiting timeouts, current authenticated waiters, and current authenticated identities. No source, fingerprint, role, relay ID, route/allocation token, lease, or proof value enters policy logs.
+- Added operator propagation through `AetherLinkRelay`, `run_allocation_relay.sh`, dry-run JSON, canonical invalid-value guards, focused no-device tests, and copy-hygiene contract checks.
+- Focused verification passes four policy tests, two matcher deadline/lifecycle tests, and five socket tests as an exact 11-test slice. All 165 `RelayServerCoreTests` pass and `AetherLinkRelay` builds. Runtime and paired-client fairness, invalid-proof isolation, lease-capped replacement deadlines, timeout retry, active-bridge timer cancellation, and source/identity release are covered. Aggregate no-device verification is pending final gate execution for this slice.
+- Remaining boundary: multiple valid identities remain a Sybil path. This is process-local no-device development fairness, not per-user isolation, production identity service, carrier-NAT/VPN measurement, production capacity/load/latency, public-relay/live-network proof, production TLS/KEX/pair-epoch implementation, or physical Android proof. The phone is disconnected.
+- Subagents: GPT-5.6 Sol only; GPT-5.3-Codex-Spark was not used.
+
+## 2026-07-10 Relay Source Peer Quotas No-Device Gate
+
+- Added source lifetime quotas beside the global accepted-connection limit. Canonical accepted IPv4/IPv6 sources default to `64` concurrent sockets and `32` unmatched waiting peers, with no disable value and `2 * waiting <= connections` counterpart headroom.
+- Normal admission now keeps one global and one per-source slot available before the first waiter, and each waiting insertion atomically rechecks both connection-plus-reservation bounds before consuming another normal slot. Reserve provenance remains attached to the accepted connection: a per-source reserve candidate can discharge only a waiter owned by that source, while global-only reserve may match across sources. Reserved candidates can otherwise be confirmed only by an immediate opposite-role match or authenticated same-source waiting replacement; they cannot run probe/allocation, replace across sources, or create another waiter. Nonmatching candidates close silently, while active bridge sockets retain their source permit and established encrypted frame forwarding is not throttled or evicted.
+- Moved waiting quota ownership into the matcher lock. Immediate counterparts match at the waiting cap, same-source replacement is net-zero, cross-source replacement preserves the original waiter when the new source is full, and all match/replacement/disconnect/generation-invalidation paths return exact capacity.
+- Added stable source-free reasons and saturating aggregate metrics for admission requests, admitted totals, global/source rejection totals, active connections/waiters, and current source counts. No source addresses, relay IDs, route/allocation tokens, or proof fields enter quota rejection logs.
+- `AetherLinkRelay` and `run_allocation_relay.sh` expose canonical positive `--max-connections-per-source` and `--max-waiting-peers-per-source` settings, matching environment variables, redacted dry-run JSON, and explicit shared NAT/VPN fairness wording.
+- Focused verification passes seven limiter tests, five matcher lifecycle/provenance tests, and four loopback socket tests as an exact 16-test slice; all 155 `RelayServerCoreTests` pass and `AetherLinkRelay` builds. The default no-device and copy-hygiene gates now pin the implementation and operator contract, and `build/qa/check-no-device-quality-relay-source-peer-quotas-20260710.log` records the aggregate gate completing with exit `0`.
+- Remaining boundary: shared NAT/VPN users necessarily share quotas. This is no-device synthetic and loopback development-relay evidence, not production capacity/load/latency or fairness measurement, public-relay/live-network proof, selection-gated production TLS/KEX/pair-epoch implementation, or physical Android proof. The phone is disconnected.
+- Next: bounded waiting duration and post-authenticated identity fairness are implemented in the section above.
+- Subagents: GPT-5.6 Sol only; GPT-5.3-Codex-Spark was not used.
+
+## 2026-07-10 Relay Source-Aware Allocation Control No-Device Gate
+
+- Added `RelaySourceRateLimiter` to the development relay. Allocation preflight and allocation/paired-renewal mutation records use separate monotonic token buckets keyed only by the accepted socket source.
+- Defaults are `120/minute` with burst `30` for preflight and `30/minute` with burst `10` for mutations. Tracking defaults to `4096` canonical sources with `15 minutes` idle retention; validated CLI/environment overrides cannot disable the limits.
+- IPv4-mapped IPv6 canonicalizes to IPv4, native IPv6 includes its scope ID, and unsupported address families share a conservative unknown-source bucket. One shared overflow bucket absorbs high-cardinality sources without evicting and resetting exhausted individual buckets; periodic idle sweeps avoid a full-map scan on every request.
+- Allocation- and renewal-prefixed malformed records now consume their classified source budget before full parsing, so invalid control attempts cannot bypass the limiter. Only the exact cheap strict preflight envelope selects preflight; duplicate or mutation-like preflight markers and all renewals select mutation.
+- Added stable source-free reasons and counters for preflight and mutation rejection, request totals, overflow requests, idle eviction totals, and current tracked-bucket count. Rejection logs contain only `reason` and global `reason_count`, not source addresses, route tokens, allocation tokens, or relay IDs.
+- Rate-limited requests close without response. Probes, peer admission, waiting rooms, active bridges, and encrypted forwarding remain outside this control, and the separate buckets prevent preflight traffic from consuming mutation capacity.
+- `AetherLinkRelay` and `run_allocation_relay.sh` expose the five bounded settings, require each burst to fully refill within the fixed 900-second retention, document that shared NAT/VPN users share a source bucket, and emit redacted dry-run JSON with defaults `120/30`, `30/10`, and `4096`.
+- Focused verification passed six limiter unit tests and five socket tests; all 139 `RelayServerCoreTests` passed and `AetherLinkRelay` built. The durable no-device gate now pins those tests plus default/custom/invalid operator configuration.
+- Remaining boundary: this is not production capacity/load/latency validation, public-relay or live-network proof, or implementation of the selection-gated TLS/KEX/pair-epoch design. Connection and waiting admission are covered separately by the source peer quota milestone above. The phone is disconnected, so there is no physical Android proof.
+- Final aggregate verification exited 0 and recorded `No-device quality checks passed.` in `build/qa/check-no-device-quality-relay-source-rate-limits-20260710.log`; the run includes the exact 11-test source-rate-limit slice and all 139 `RelayServerCoreTests`.
+- Next: source peer quotas and bounded waiting/authenticated identity fairness are complete in the sections above.
+- Subagents: GPT-5.6 Sol only; GPT-5.3-Codex-Spark was not used.
+
+## 2026-07-10 Relay Abuse-Control Foundation No-Device Gate
+
+- Added global accepted-connection accounting to `RelayServerCore`. A permit now follows each accepted descriptor through control parsing, waiting registration, replacement, active bridging, and close; disconnected waiting peers are monitored and release capacity.
+- Made the socket registry server-owned and store-before-match so a concurrent counterpart cannot observe a matcher registration before the corresponding socket is retrievable.
+- Replaced unbounded byte-at-a-time control reads with an absolute monotonic deadline per control record while retaining the exact 4096-byte newline-inclusive limit. Payload forwarding deliberately does not inherit this deadline.
+- Added `disabled`, `loopback-only`, and explicit `legacy-unauthenticated` probe policy. Exposed binds default to no response, and exposed unallocated legacy mode now fails configuration even when a token exists.
+- Added `--probe-policy`, `--control-timeout-seconds`, and `--max-connections` plus matching environment variables and wrapper dry-run JSON. README strict startup/wire examples now match the allocation-token, durable-store, crypto-v2 path.
+- Android relay preflight now has `Ready`, `Unavailable`, and `Unsupported` outcomes. A canonical unknown route still fails early; a TCP-reachable relay that closes the disabled probe proceeds to the authenticated relay connector. Probe response parsing rejects duplicates, unknown fields, incomplete values, and malformed booleans.
+- Physical QA wrappers record disabled probe as unsupported rather than route-ready proof and require subsequent pairing/runtime evidence. No unsupported probe is counted as live route-probe proof.
+- Final verification: 128 focused Swift relay tests, the exact ten-test Swift abuse-control slice, and the focused Android relay-probe tests pass. The complete no-device aggregate finished with exit status 0 and `No-device quality checks passed.`; artifact: `build/qa/check-no-device-quality-relay-abuse-controls-20260710.log`.
+- The aggregate exposed and closed two QA proof-boundary regressions: disabled fake-probe output no longer calls unsupported evidence route-ready, and physical-wrapper redaction self-tests now require explicit probe support while always keeping `physical_external_relay_success=false`.
+- GPT-5.6 Sol independent review then found two P1 and four P2 gaps. The implementation now sets `SO_NOSIGPIPE` on every accepted socket, tears down both bridge directions after the first side closes, recomputes control deadlines across `EINTR`, strictly classifies and redacts physical probe responses, and removes raw allocation tokens from dry-run Python argv. New Swift reset/one-sided-close/EINTR tests and shell malformed/secret-bearing/nonzero-response tests cover those findings.
+- Final focused GPT-5.6 Sol re-review reported no actionable findings after both canonical-ready and canonical-unavailable nonzero probe bodies were pinned to unsupported fallback.
+- Remaining boundary: allocation rate and source peer quotas are now covered separately above. This is not a waiting-duration cap, production TLS/KEX, public relay deployment, or physical Android proof. The phone is disconnected.
+- Subagents: GPT-5.6 Sol only; GPT-5.3-Codex-Spark was not used.
+
+## 2026-07-10 Production Relay Security Design Review (Selection Pending)
+
+- Added the reviewed [production relay security hardening portfolio](security-hardening/production-relay-v1/hardening.md), machine-readable `hardening.json`, two decision proposals, eight Mermaid diagrams, and a 16-artifact SHA-256 evidence manifest tied to the current dirty source tree. `E010` and `E011` capture implemented development-relay source controls while preserving the selection-gated production boundary.
+- The allocation recommendation is `tls-signed-leases`: TLS 1.3 protects allocation credentials, delegated service signatures make leases independently verifiable, and a reviewed endpoint identity KEX must bind both identities, both ephemeral shares, both nonces, pair epoch, generation, and lease digest before traffic-key activation.
+- The recovery recommendation is `pair-epoch-state-machine`: normal renewal stays dual-signed, either current endpoint may revoke access but not replace trust, replacement requires fresh QR, active and waiting rooms close, transition IDs are idempotent, and a read-only signed status operation reconciles commit/response-loss divergence.
+- Added `script/check_production_relay_security_design.py` and wired it into `script/check_no_device_quality.sh` plus `script/check_copy_hygiene.py`. It validates source hashes, portfolio shape, all six tradeoff dimensions per option, proposal/diagram references, required recommendation IDs, and absence of an implementation directory.
+- GPT-5.6 Sol independent review found two P2 documentation-gate issues: reused transition IDs were described as both rejected and idempotent, and global substring checks could miss a section-local contradiction. The contract now uses transition id plus canonical request digest, the validator checks the complete KEX/recovery invariant set in named sections, the copy guard scopes current-document assertions to named milestone sections, and the focused re-review reported no actionable findings.
+- Status boundary: the selected recommendations are not implemented. No production TLS allocation, service lease signer, endpoint identity KEX replacement, pair epoch state machine, global revocation fanout, or signed status endpoint exists yet.
+- Evidence boundary: the physical Android phone is disconnected. Current evidence is static design and no-device gate coverage only; it does not prove optical QR, public-network behavior, production relay deployment, live provider behavior, real different-network operation, or physical Android behavior.
+- Decision required before implementation: select or refine the two recommendations, the service trust bootstrap, the maintained crypto construction/library, and the revocation freshness target.
+- Agent use: GPT-5.6 Sol only; GPT-5.3-Codex-Spark was not used.
 
 ## Product Boundary
 
@@ -18,7 +85,7 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The connection manager should work across different networks with a QR-only user flow: the QR bootstraps paired identity plus private overlay/rendezvous/relay material, local direct is an opportunistic fast path when available, remote peer-to-peer NAT traversal uses STUN-like address discovery and authenticated hole punching, and an end-to-end encrypted blind relay/TURN-style path handles networks where direct peer-to-peer fails. The client user should not enter hostnames, ports, Ollama URLs, LM Studio URLs, or backend URLs.
 - Optional DHT/bootstrap-peer discovery can provide short-lived rendezvous records for paired devices where practical, but it must not become a public runtime directory, account system, backend URL registry, model-logic backend, or trust authority.
 - Relay/signaling infrastructure must not see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs in production.
-- Current code has local-direct route-candidate plumbing, development endpoint hints, Android opaque P2P rendezvous route preparation plus pending/trusted restore planning, an app-level connector seam that can try saved opaque P2P before falling back to relay, and a temporary outbound TCP relay path keyed by stable paired-route material for different-Wi-Fi development testing. Normal QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`; the client and runtime host encrypt relay frame bodies before the relay forwards them and reject stale QR route material. The allocation relay now issues opaque stable `relay_id` values derived from route tokens and can reuse a runtime-supplied stable frame secret, so stored trusted routes are less brittle across app restarts than one-off random relay IDs without echoing the raw route token as the relay room id. A QR that only contains runtime identity can establish trust and resolve local routes, but it cannot cross unrelated networks by itself. For QR-only remote linking, the QR must carry complete remote-route material such as relay or future P2P rendezvous tokens. Remote P2P NAT traversal, DHT/bootstrap rendezvous, production signaling, hardened relay allocation renewal, replay-resistant session setup, and complete production end-to-end transport encryption remain future milestones.
+- Current code has local-direct route-candidate plumbing, development endpoint hints, Android opaque P2P rendezvous route preparation plus pending/trusted restore planning, an app-level connector seam that can try saved opaque P2P before falling back to relay, and a temporary outbound TCP relay path keyed by paired-route material for different-Wi-Fi development testing. Normal QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`; the client and runtime host encrypt relay frame bodies before the relay forwards them and reject stale QR route material. In strict allocation v2, the relay issues opaque `relay_id`, expiry, nonce, and `crypto_version=2` metadata only. The runtime host generates or reuses the 32-byte frame secret locally and places it only in endpoint route material such as QR and diagnostic `route.refresh`; the allocation service does not receive, return, log, or persist it. Pair-scoped allocation now co-signs `current_relay_id` and `next_relay_id`, rotates consumed bootstrap IDs into deterministic pair rooms, authenticates the client before matching, and isolates active pair rooms/generations; focused E2E covers two simultaneous rooms without cross-talk. Durable schema-v4 allocation transactions and relay lifetime ownership now use separate byte ranges of one stable mode-`0600`, inode-keyed transaction marker whose 64-hex coordination token is bound into the store; retained descriptors preserve the process's `F_SETLK` locks. This remains a no-device development foundation without allocation TLS/server authentication, server-side immediate revocation, production P2P/NAT traversal, or physical different-network proof. A QR that only contains runtime identity can establish trust and resolve local routes, but it cannot cross unrelated networks by itself. For QR-only remote linking, the QR must carry complete remote-route material such as relay or future P2P rendezvous tokens. DHT/bootstrap rendezvous, production signaling/allocation hardening, post-compromise recovery, and full roadmap completion remain future work.
 - The runtime app can display compact QR aliases for camera scanning while retaining canonical QR field names for docs/debugging. Clients accept both forms. Compact aliases reduce QR density for route-bearing relay QR payloads, but they do not remove the requirement for a mutually reachable relay/P2P route.
 - Next remote-connection increment: keep the normal user flow QR-only while making the QR production route bootstrap explicit. The QR should carry runtime identity, runtime public key or certificate fingerprint, a pairing/route token, and overlay/rendezvous/relay material for different-network routes; fixed host/port remains optional development diagnostics only.
 - Current first targets are the mobile client and desktop runtime host.
@@ -26,11 +93,295 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 ## Current Workstream Coordination Notes
 
-- Do not use GPT-5.3-Codex-Spark for this workstream. Use GPT-5.5/inherited-model subagents only when delegation is useful.
+- Do not use GPT-5.3-Codex-Spark for this workstream. Use GPT-5.6 Sol subagents when delegation is useful.
 - During the latest no-device relay allocation opacity, Android route-token remote material isolation, prepared relay route ordering, private-overlay QR artifact, relay-client retirement, Android remote route direct transport boundary gate pass, Android relay concurrent encrypted send serialization gate pass, pending route-less QR no saved relay fallback, diagnostic identity-only discovery wait, macOS untrusted-client rejection, macOS P2P QR canonical generation, macOS pairing-abuse structured rejection, Android opaque route material size-bound gate pass, shared route-material schema size-bound gate pass, Android trusted P2P restore discovery-suppression gate pass, macOS runtime identity fallback signing gate pass, macOS unknown unqualified model routing gate pass, Android chat-history confirmation compact dialog layout gate pass, Android trusted relay reconnect scope eligibility gate pass, Android pending relay QR planning eligibility gate pass, Android pairing relay QR direct-endpoint suppression gate pass, Android pairing P2P QR direct-endpoint suppression gate pass, Android accepted-pairing relay secret restore boundary gate pass, Android initial pairing QR expired P2P record rejection gate pass, Android initial pairing QR expired relay lease rejection gate pass, Android saved relay reconnect pinned-identity rejection gate pass, Android saved relay lease reconnect eligibility gate pass, Android trusted remote-route target endpoint-hint suppression gate pass, Android route-refresh QR relay add-route gate pass, Android route-refresh QR P2P add-route gate pass, Android route-refresh QR optional-public-key relay update gate pass, Android route-refresh QR optional-public-key P2P update gate pass, Android route-refresh QR active-connection reuse gate pass, physical external-relay summary gate pass, physical external-relay requested serial evidence binding gate pass, physical external-relay different-network confirmation gate pass, Android route-refresh QR fixed-endpoint fallback removal gate pass, Android route-refresh QR direct-only rejection gate pass, Android route-refresh QR route-token rotation gate pass, Android route-refresh QR pinned-identity rejection gate pass, Android route-refresh QR expired-or-incomplete relay rejection gate pass, Android route-refresh QR expired-or-incomplete P2P rejection gate pass, Android authenticated relay route.refresh scheduling/retry gate pass, Android route.refresh relay payload acceptance/incomplete rejection gate pass, Android route.refresh rejected-payload retry gate pass, and Android route.refresh P2P noncanonical rejection gate pass, GPT-5.5 read-only explorers were used for candidate selection where agent capacity was available; the trusted relay reconnect scope eligibility pass attempted GPT-5.5 delegation but hit the current agent thread limit. No GPT-5.3-Codex-Spark subagent was used.
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
+
+### 2026-07-10 Current Relay Allocation Cross-Process Ownership Slice
+
+#### Relay Allocation Cross-Process Ownership No-Device Gate
+
+- Durable registry transaction: one stable mode-`0600` transaction marker has fixed-format `U`/`A`/`E` state and a 64-character lowercase hexadecimal coordination token bound into schema v4. POSIX `F_SETLK` byte range 0 serializes every reload, compare-and-swap, and persist; byte range 1 is relay lifetime ownership.
+- Descriptor lifetime: the process pool keys by marker inode, reuses its pooled descriptor, and retains only duplicates that cannot safely be closed because closing any descriptor for an `F_SETLK` file can release all of that process's locks on the file. Blocking acquisition has a five-second monotonic deadline.
+- Persistence boundary: descriptor-relative `openat`, `fstatat`, `renameat`, and `unlinkat` use `O_NOFOLLOW` and require current-user-owned regular files with `nlink == 1` under a parent that is not group- or world-writable. Reconciliation uses an owner-only temporary file, file `fsync`, atomic rename, and directory `fsync`.
+- Fail-closed boundary: a missing established store, dangling symlink, hard link, case/path alias, marker replacement, or marker/store token mismatch is rejected. A valid unversioned `rt1` store is recognized, but its identity cannot be migrated, so all leases are revoked into an empty token-bound schema-v4 store.
+- Stale-state behavior: stale disjoint commits merge instead of overwriting one another. Competing stale creates for the same relay ID and competing stale paired claims each produce one success and one `allocationConflict`; a stale create cannot restore a consumed bootstrap ID, while pair binding and its consumed-bootstrap tombstone remain one atomic schema-v4 commit. A token-matched schema-v4 store recovers after interruption between the first durable write and the `U` to `E` transition.
+- Relay lifetime ownership: a second process sharing the store fails before independent matcher or active-room state; same-instance concurrent `run()` calls fail without releasing the live listener, and bind failure releases byte range 1. Simultaneous first startup converges to one owner, and process exit permits successor startup against the same marker/store.
+- Verification: all 64 `RelayAllocationTests`, 21 relay socket tests, 100 related relay tests, and 797 full Swift tests passed. The actual-process smoke rechecked process liveness and TCP acceptance, and the authenticated runtime smoke passed with 41 connections and 688 encrypted frame bodies.
+- Gate status: `build/qa/check-no-device-quality-relay-cross-process-ownership-20260710.log` contains `No-device quality checks passed.` after Android, Swift, protocol, schema, copy, docs, render, shell, runtime-relay, and ownership-smoke coverage. Local diagnostic wrapper checks now use per-run allocation stores instead of the user's default durable store.
+- Caveat: the physical Android phone is disconnected. This cooperative single-host advisory locking does not provide distributed consensus, allocation-channel TLS/server authentication, immediate revocation, production P2P/NAT traversal, or full roadmap completion.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol only was used for this slice.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests` (64 tests)
+- `swift test --filter RelayIdentityBoundSocketTests` (21 tests)
+- `swift test --filter 'RelayAllocationTests|RelayIdentityBoundSocketTests|RelayClientRegistrationAdmissionTests|RelayMatcherTests'` (100 tests)
+- `swift test` (797 tests)
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` (41 connections, 688 encrypted frame bodies)
+- `./script/relay_allocation_store_ownership_smoke.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- docs/protocol.md docs/security.md docs/connection-overlay.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-10 Pair-Scoped Relay Room Slice (Previous Milestone)
+
+#### Pair-Scoped Relay Room Isolation No-Device Gate
+
+- Current contract: Swift and Android use `runtime-client-p256-v2`, protocol version 2, and role-separated P-256 signatures whose canonical transcript includes `current_relay_id` and `next_relay_id`. A claim must rotate from the runtime-only bootstrap ID to the deterministic route-token/runtime-key/client-key pair ID; renewal remains on that pair ID.
+- Schema v4 lifecycle: a successful claim replaces the bootstrap allocation with the pair-scoped allocation and persists a closed `consumed_bootstrap_allocations` tombstone. Bootstrap reuse fails closed, and a schema-v3 paired binding rotates to the deterministic pair ID on renewal.
+- Pre-match client admission: `paired-client-p256-v1` challenges the persistent Android client key before matcher insertion and binds the proof to the relay lease, both identity fingerprints, generation, session nonce, ephemeral key, and challenge expiry. Missing, wrong, mutated, replayed, or expired proofs fail without consuming a waiting runtime.
+- Active-room isolation: the matcher tracks waiting and active rooms with exact owner/generation/nonce bindings, rejects a duplicate pair while active, releases the room after bridge close, and closes stale waiting generations on renewal. `testTwoPairScopedRoomsBridgeConcurrentlyWithoutCrossTalk` proves two pair-scoped rooms bridge simultaneously without cross-room frame delivery.
+- macOS route lifecycle: `PairScopedRelayRouteStore` persists strict per-client route records while secrets remain in the secret store. `CompanionAppModel` maintains per-client pair routes/transports, and `LocalRuntimeMessageRouter` waits for the successful response to complete before activating the pair transport and rotating the consumed bootstrap route/token.
+- Android route lifecycle: Android derives and validates the expected deterministic pair ID before co-signing, persists the returned pair ID and `ticket_generation`, renews from that saved route, and requires `paired-client-p256-v1` admission before strict relay readiness during reconnect.
+- Current evidence: focused cross-language contract, schema-v4 persistence/migration, admission, matcher/socket, per-client route-store, response-ordering, Android ViewModel, transport, and real-relay fixture tests cover this no-device slice. The two-room socket E2E is loopback test evidence, not a production relay deployment.
+- Caveat: the physical Android phone is disconnected. No live-device reconnect, optical QR scan, live-provider run, or real different-network proof was produced.
+- Remaining limits: there is no cross-process compare-and-swap or allocation-store ownership guarantee, allocation-channel TLS/server authentication, service-signed final response, server-side immediate active-session revocation, production P2P/NAT traversal, or full roadmap completion.
+- Verified after this change: the targeted Android paired-allocation/admission suite passed 8 tests; full `swift test` passed 774 tests; `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` passed with 41 fresh relay sessions and 688 encrypted frame bodies; and the full no-device gate passed with `No-device quality checks passed.` plus the pair-scoped relay room authorization addendum. `python3 script/check_protocol_schema.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `python3 -m py_compile`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` also passed. Aggregate evidence is stored in `build/qa/check-no-device-quality-pair-scoped-relay-room-20260710.log`.
+- Agent state: GPT-5.3-Codex-Spark was not used. All delegated implementation, documentation, and audit work in this slice used GPT-5.6 Sol only.
+
+### 2026-07-10 Paired-Device Relay Allocation Authorization Historical Gate
+
+- Historical status: the earlier `runtime-client-p256-v1`/schema-v3 claim-and-renew evidence remains valid for that milestone, but it did not provide deterministic pair-room rotation or authenticated client admission before matching. The current v2/schema-v4 section above supersedes those limitations.
+- Historical artifacts: `build/qa/runtime-authenticated-paired-allocation-smoke-20260710.log` and `build/qa/check-no-device-quality-paired-allocation-authorization-20260710.log` record the earlier wrong-key/replay, claim/renew, encrypted-frame, and aggregate no-device results; they are not evidence of the current pair-room isolation additions.
+
+### 2026-07-10 Initial Pairing Mutual P-256 Proof (Historical Milestone)
+
+- Historical compatibility note: the guard-pinned historical heading `### 2026-07-10 Initial Pairing Mutual P-256 Proof (Current)` records an earlier milestone; the pair-scoped v2/schema-v4 section above is the current relay-allocation implementation entry.
+- Cross-language contract: Android and Swift implement the same `p256-sha256-der-v1` length-framed client/result transcripts and fixed SHA-256 digest vectors.
+- Client proof: Android signs request id, QR nonce/code, runtime id/key/fingerprint, client id/name/key/fingerprint, and the current transport binding with its persistent device key. Missing QR runtime keys, wrong keys, transcript mutation, replay/request-id changes, downgrade, and noncanonical Base64/DER fail closed.
+- Runtime proof and persistence order: macOS verifies client key possession before reserving the pairing session, signs accepted results with its persistent runtime key before trusted-device persistence, rechecks the transport binding, commits after storage, and releases the reservation on signing or storage failure.
+- Android trust order: accepted results must match the outstanding request id/digest, QR-pinned runtime identity, trusted client id, message, signature, and current transport binding before `PairingStore` persistence. Unsigned rejections keep pending route/secret recovery state.
+- Focused evidence: Android core pairing passed 108 tests; `RuntimeClientViewModelTest` passed 387 tests; `RuntimeClientViewModelRelayIntegrationTest` passed 5 tests; `InitialPairingProofTests` passed 7 tests; focused macOS pairing router tests passed 10 tests; protocol schema and copy-hygiene checks passed.
+- Smoke evidence: `runtime_authenticated_mock_smoke.swift` passed direct and relay modes, verifies the accepted runtime signature and a mutated-result failure, reports 40 fresh relay session nonce/key/binding sets, and checks 670 encrypted frame bodies.
+- Historical caveat for this earlier milestone: no Android device was attached, so it did not prove optical QR scanning, physical pairing/reconnect, live-provider behavior, a public different-network route, paired-device allocation authorization, post-compromise recovery, or production end-to-end deployment. The current paired-allocation section above supersedes only the no-device allocation-authorization gap.
+- Full gate: `build/qa/check-no-device-quality-initial-pairing-mutual-proof-20260710.log` records `No-device quality checks passed.` and `Covered initial pairing mutual P-256 proof addendum`; the log also retains the 40-session freshness and 670 encrypted-frame smoke evidence.
+- Verified after this change: `./gradlew :core:pairing:testDebugUnitTest :core:protocol:testDebugUnitTest :app:testDebugUnitTest --no-daemon`, `swift test --filter 'InitialPairingProofTests|RuntimeIdentityKeyStoreTests|LocalRuntimeMessageRouterTests'`, `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`, `python3 script/check_protocol_schema.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `git diff --check`, and `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh` passed.
+- Agent state: GPT-5.3-Codex-Spark was not used. Delegated implementation and audit used GPT-5.6 Sol only.
+
+### 2026-07-10 Runtime-Key-Bound Relay Allocation And Runtime-Role Admission Foundation (Previous Milestone)
+
+- Allocation foundation: the runtime's persistent P-256 identity signs a same-socket allocation challenge. Successful `rt2` allocation IDs are bound to the verified runtime-key fingerprint, and allocation ticket schema v2 persists that fingerprint plus a generation. Required ticket persistence fails closed.
+- Admission foundation: runtime registration signs a canonical transcript bound to the allocated lease, relay nonce, runtime session nonce, and runtime ephemeral P-256 key before the matcher admits the runtime role. Allocation preflight returns exactly `preflight`, `crypto_version`, and `allocation_auth`; it returns no relay ID, lease, nonce, secret, or other route material.
+- Runtime trust boundary: `LocalRuntimeMessageRouter` validates a stable transport binding before pairing can persist trust.
+- Historical security boundary at this milestone: the allocation bearer token was a plaintext service gate unless the outer connection used TLS, and runtime-key proof alone was not paired-device authorization because Android did not yet co-sign allocation. The guard-pinned conclusion was `not a complete mutual identity-first key exchange`. The current gate above supersedes the co-signing gap, not the missing TLS/server-authentication or production-isolation gaps.
+- Caveat: the phone is disconnected, so physical-device proof is unavailable. This does not prove optical QR, Android initial-pairing proof of possession, or real different-network behavior.
+- Focused evidence: `RelayServerCoreTests` passed 68 tests, `LocalRuntimeMessageRouterTests` passed 250 tests, `RelayPeerClientTests` passed 17 tests, `RuntimeIdentityKeyStoreTests` passed 13 tests, and `RelayIdentityAuthorizationTests` passed 4 tests.
+- Relay smoke: `build/qa/runtime-authenticated-mock-relay-runtime-key-admission-20260710.log` records successful signed allocation and runtime admission, 40 fresh session nonce/ephemeral-key/transport-binding sets, and 670 encrypted frame bodies.
+- Smoke isolation: loopback authenticated smoke uses an explicit ephemeral registry and no-ADB local-relay smoke uses a work-directory schema-v2 store, so fail-closed user-home legacy state cannot contaminate disposable QA runs.
+- Full gate: `build/qa/check-no-device-quality-runtime-key-admission-20260710.log` records `No-device quality checks passed.` and the runtime-key allocation/admission coverage summaries.
+- Verified after this change: `swift test --filter RelayServerCoreTests`, `swift test --filter LocalRuntimeMessageRouterTests`, `swift test --filter RelayPeerClientTests`, `swift test --filter RuntimeIdentityKeyStoreTests`, `swift test --filter RelayIdentityAuthorizationTests`, `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed.
+
+### 2026-07-10 Endpoint-Owned Relay Secret Allocation V2 No-Device Gate
+
+- Wire contract: allocation-required relays accept only `AETHERLINK_RELAY allocate <route_token> crypto=2 [allocation_token=<token>] [preflight=1]`. The exact response fields are `relay_id`, `relay_expires_at`, `relay_nonce`, and `crypto_version=2`; `relay_secret`, missing fields, extra fields, non-v2 versions, versionless requests, and requested-secret requests fail closed.
+- Secret ownership: macOS GUI allocation, endpoint fallback, lease renewal, bootstrap allocation, and RuntimeDevServer generate or reuse one 32-byte base64 secret locally, attach it after service allocation, keep it in the existing secret-store boundary, and expose it to Android only through QR or explicitly enabled authenticated route refresh. The relay allocation request, response, ticket store, and logs do not contain that secret.
+- Strict bypass closure: an allocation-required relay rejects legacy versionless or secret-bearing allocation before issuing a ticket, and socket tests prove the deterministically derived legacy ID cannot then register as crypto v2. Legacy requested-secret allocation remains isolated to explicit non-allocation-required local diagnostics.
+- Focused evidence: RelayServerCore strict parser/socket/store tests passed 71 tests; macOS endpoint allocator/app paths passed 63 focused tests; the exact five service-client allocation tests and the RuntimeDevServer target build passed again after removing the compatibility secret-taking API.
+- Durable gate: `script/relay_allocation_preflight.py`, `script/check_no_device_quality.sh`, and `script/check_copy_hygiene.py` now pin the secret-free request/response shape, endpoint-owned summary booleans, forbidden service-returned secrets, strict-server bypass rejection, runtime-local attachment, and no secret-bearing preflight CLI path.
+- Relay smoke: `build/qa/runtime-authenticated-mock-relay-endpoint-owned-allocation-v2-20260710.log` records a successful authenticated RuntimeDevServer relay flow, fresh session nonces/ephemeral keys/bindings across 40 connections, and 670 encrypted frame bodies.
+- Full gate: `build/qa/check-no-device-quality-endpoint-owned-relay-secret-v2-20260710-125039.log` records `No-device quality checks passed.`, the endpoint-owned allocation v2 summary, the 40-connection freshness marker, and the 670-frame ciphertext marker.
+- Verified after this change: `swift test --filter RelayServerCoreTests`, the focused `swift test --filter 'LocalRuntimeMessageRouterTests/(testEnvironmentRemoteRelayRouteAllocatorReusesPreferredEndpointSecretWithoutPassingItToService|testEnvironmentRemoteRelayRouteAllocatorGeneratesThirtyTwoByteEndpointSecret|testTCPRelayServiceRouteAllocatorSendsExactV2RequestAndReturnsSecretFreeMetadata|testTCPRelayServiceRouteAllocatorRejectsSecretAndAnyExtraV2ResponseFields|testTCPRelayServiceRouteAllocatorRequiresClosedV2ResponseShape)'`, `swift build --target RuntimeDevServer`, `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed.
+- Caveat: this is no-device source/unit/socket/preflight/authenticated-smoke evidence. It does not prove physical Android pairing, optical QR, a real different-network path, production allocation authorization, identity-first initial pairing, P2P NAT traversal, post-compromise security, or production end-to-end deployment.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol subagents performed scoped server/client implementation and an independent allocation-path audit.
+
+### 2026-07-10 Strict Allocated Relay Crypto V2 No-Device Gate
+
+- Scope: replace strict relay crypto v1 with per-connection ephemeral P-256 ECDH while preserving local direct transport, legacy unallocated/plaintext relay diagnostics, and paired-identity authorization boundaries.
+- Handshake: Android and macOS generate fresh canonical session nonces and X9.63 P-256 public keys, require exact `crypto=2` registered/ready lines, validate peer points on-curve, derive a shared canonical transcript binding, and mix `ECDH_shared_secret || relay_secret` through HKDF-SHA256 into separate confirmation/client/runtime traffic secrets.
+- Frame policy: directional AES-GCM epoch keys rotate every 65,536 frames. The authenticated frame context includes binding, direction, epoch, and sequence; failed authentication or ordered replay does not advance receive state, and `Int64.max` counter exhaustion is rejected before cryptography.
+- Identity and downgrade policy: mutual confirmation must succeed before frame encryption and before the binding reaches paired-identity v2 signatures. Strict peers reject crypto v1/plain ready lines, wrong proofs, malformed/off-curve keys, replayed frames, and authentication failures by closing the transport. Legacy plaintext remains explicitly separate.
+- Cross-language evidence: Android and Swift share fixed P-256 scalar, transcript binding, HKDF, confirmation, directional frame-zero, and epoch-boundary vectors. Focused Android transport plus real relay-client ViewModel integration tests passed; focused Swift protocol, relay client, handshake, matcher, and loopback relay-server tests passed.
+- Relay smoke: `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` exited 0 and wrote `build/qa/runtime-authenticated-mock-relay-crypto-v2-20260710.log`. It verified fresh session nonces, ephemeral keys, and bindings across 40 connections plus 670 encrypted frame bodies.
+- Full gate: `build/qa/check-no-device-quality-relay-crypto-v2-20260710-121417.log` contains `No-device quality checks passed.`, the 40-connection nonce/ephemeral-key/binding freshness marker, the 670-body ciphertext marker, and the strict allocated relay crypto v2 coverage summary.
+- Verified after this change: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest -Pkotlin.incremental=false --console=plain`, `swift test --filter 'ProtocolCodecTests|RelayPeerClientTests|RelayHandshakeTests|RelayMatcherTests|RelayServerSocketTests'`, `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`, `python3 script/check_copy_hygiene.py`, and `./script/check_no_device_quality.sh`.
+- Caveat: this supplies forward secrecy against later compromise of only the relay secret when ephemeral private keys were not retained. Endpoint-owned allocation v2 now keeps that secret out of the default allocation-required relay, but this does not protect a leaked endpoint/QR secret, provide post-compromise security or an unordered replay window, authenticate allocation as a paired-device action, prove production end-to-end deployment, or prove physical Android/optical QR/different-network behavior.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol subagents performed the protocol review and scoped Android, Swift transport, and relay-server implementation work.
+
+### 2026-07-10 Strict Relay Paired-Identity Transport Binding No-Device Gate
+
+- Scope: authenticate the strict encrypted relay's public per-connection transcript before either endpoint activates frame encryption, then bind the existing paired-device challenge-response exchange to that exact transport.
+- Transport result: Android and macOS compute the same canonical SHA-256 binding from `relay_id`, `relay_nonce`, client session nonce, and runtime session nonce. They derive a confirmation key from the QR-provisioned `relay_secret` plus that binding and exchange role-separated HMAC-SHA256 proofs. Encrypted peers fail closed on missing, malformed, wrong-role, wrong-binding, or wrong-proof confirmation lines; the confirmed `TransportSecurityContext` is exposed only after mutual relay-secret key confirmation succeeds.
+- Identity result: strict relay `hello`, `auth.challenge`, and `auth.response` carry the exact 64-character lowercase hexadecimal `transport_binding`. Runtime and client P-256 signatures use domain-separated v2 messages containing that binding. Missing or mismatched bindings, v1-signature downgrade attempts, and signatures replayed from an old binding are rejected before runtime commands become authenticated.
+- Compatibility: local direct connections and legacy unallocated/plaintext relay diagnostics have no transport binding and retain the exact v1 authentication bytes and old ready-line behavior.
+- Cross-language evidence: Android and Swift share the same fixed binding and client/runtime proof vectors. Focused Android transport, pairing, protocol, ViewModel, and real relay-client integration tests passed. Focused Swift protocol, transport, identity-store, and runtime-router tests passed.
+- Relay smoke: `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` passed, verified fresh session nonces and transport bindings across 40 relay connections, rejected runtime-signature replay against a different binding, and checked 670 encrypted frame bodies for plaintext leakage.
+- Agent state: GPT-5.3-Codex-Spark was not used. The delegated review and implementation work used GPT-5.6 Sol only.
+- Caveat: this is a no-device development-relay foundation. It does not add ECDH, forward secrecy, key rotation, a complete replay window, hardened production allocation, production P2P traversal, production end-to-end transport encryption, or physical Android proof.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifierTest --tests com.localagentbridge.android.core.pairing.DeviceIdentityStoreTest :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest -Pkotlin.incremental=false --console=plain`
+- `swift test --filter 'BridgeProtocolTests|TransportTests|RuntimeIdentityKeyStoreTests|LocalRuntimeMessageRouterTests'`
+- `swift test --filter 'ProtocolCodecTests|RelayPeerClientTests'`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-relay-transport-binding-20260710-111607.log 2>&1` (`No-device quality checks passed.`; 40 fresh relay transport bindings; 670 encrypted frame bodies)
+- `$HOME/Library/Android/sdk/platform-tools/adb devices` (no attached devices)
+
+### 2026-07-10 Strict Allocated Relay Per-Connection Session Nonce No-Device Foundation
+
+- Scope: prevent AES-GCM frame-key and counter-space reuse when an encrypted allocated relay reconnects with unchanged `relay_secret` and `relay_nonce`.
+- Result: Android and macOS generate a fresh 128-bit canonical lowercase hexadecimal `session_nonce` per encrypted relay connection. Strict allocated `RelayServerCore` rejects a missing or noncanonical nonce, preserves each nonce through matching, and sends each peer `AETHERLINK_RELAY ready peer_session_nonce=<opposite-peer-nonce>`.
+- Key derivation: Android and macOS derive the relay frame key from the existing secret and route nonce plus the ordered client and runtime session nonces. A reconnect therefore starts with a different key before either directional frame counter returns to zero; cross-language session-bound vectors and wrong-session decryption rejection pin the input order.
+- Compatibility: legacy unallocated/plaintext diagnostics keep `AETHERLINK_RELAY <runtime|client> <relay_id>` and plain `AETHERLINK_RELAY ready`. Encrypted peers fail closed on a legacy or malformed ready line, plaintext peers reject nonce-bearing ready lines, and four loopback socket tests pin strict missing-nonce, mixed-peer rejection, legacy-pair, and opposite-peer nonce exchange behavior.
+- Evidence: 79 Swift tests passed across `ProtocolCodecTests`, `RelayServerCoreTests`, and `RelayPeerClientTests`; Android `RuntimeRelayTcpClientTest` plus `RuntimeClientViewModelRelayIntegrationTest` passed; the authenticated relay mock smoke passed, proved unique client/runtime session nonces across 40 relay connections, and reported 670 encrypted frame bodies.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol workers `Wegener` and `Gibbs` handled documentation and RelayServer socket tests, while GPT-5.6 Sol explorer `Erdos` found the plaintext ready-line boundary that was fixed before the final gate.
+- Caveat: this is a no-device development-relay foundation. It is not production authenticated key exchange, forward secrecy, complete replay defense, physical-device production proof, hardened allocation infrastructure, production P2P traversal, or a production relay.
+
+Verified after this change:
+
+- `swift test --filter 'ProtocolCodecTests|RelayServerCoreTests|RelayPeerClientTests'` (79 tests)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest -Pkotlin.incremental=false --console=plain`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` (relay pass; unique session nonces across 40 connections and 670 encrypted frame bodies)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-relay-session-key-20260710-103152.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Non-Retryable Route-Refresh Contract No-Device Gate
+
+- Scope: enforce the protocol `ErrorPayload.retryable` contract on Android's authenticated diagnostic `route.refresh` path.
+- Result: `RuntimeClientViewModel.handleError` now gives pairing/authentication errors first priority, stops automatic refresh scheduling when a matched route-refresh error explicitly sets `retryable=false`, and keeps the existing lease-bounded retry path for retryable or undecodable failures.
+- State guard: `RuntimeClientViewModelTest.authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError` proves the pending request and lease job clear, no second request appears after `ROUTE_REFRESH_RETRY_DELAY_MS`, the connected/authenticated relay session remains active, and trusted relay host/id/secret material is unchanged.
+- Recovery guard: Android normalizes the non-retryable failure to `remote_routes_unavailable` without retaining the runtime-supplied message, reusing the localized latest-QR recovery UI while avoiding false immediate expiry or connection loss.
+- Default-gate summary: `Android non-retryable route-refresh contract addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel/coroutine evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Avicenna` independently confirmed the protocol, macOS error production, Android state, and minimal test semantics.
+- Caveat: authenticated `route.refresh` remains diagnostic opt-in. This is not physical Android proof and does not implement production route-refresh enablement, production P2P traversal, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, live-provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-route-refresh-nonretryable-contract-20260710-040450.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Mixed-Route Relay-Fallback Retry No-Device Gate
+
+- Scope: prove the mixed-route lease lifecycle remains route-family independent when P2P is attempted first but relay becomes the active transport.
+- Result: `RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease` stores a P2P lease at `ROUTE_REFRESH_LEASE_MIN_DELAY_MS` and a relay lease with 30 seconds remaining. Connection attempts stay `[p2p, relay]`: P2P fails, relay succeeds, and accepted authentication immediately sends the first `route.refresh` without scheduler-time advance.
+- Retry result: a retryable `route_refresh_unavailable` excludes the P2P lease with no retry headroom, selects the relay lease, sends no request before `ROUTE_REFRESH_RETRY_DELAY_MS`, and sends one distinct second request at the boundary without redialing either connector.
+- State guard: both stored route ids, connected/authenticated state, null error, and `RuntimeActiveRouteKind.Relay` remain intact across retry.
+- Default-gate summary: `Android mixed-route relay-fallback retry addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel/coroutine evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Boole` reviewed the fallback ordering and symmetric lease retry semantics.
+- Caveat: authenticated `route.refresh` remains diagnostic opt-in. This is not physical Android proof and does not implement production route-refresh enablement, production P2P traversal, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, live-provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-mixed-route-relay-fallback-retry-20260710-035124.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Mixed-Route Lease Retry Fallback No-Device Gate
+
+- Scope: prove mixed trusted P2P/relay material drives the ViewModel renewal and retry lifecycle as one route set instead of behaving like isolated helper values.
+- Result: `RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease` connects over P2P while a complete relay lease is at `ROUTE_REFRESH_LEASE_MIN_DELAY_MS` and the P2P record remains active for 30 seconds. Accepted authentication sends the first `route.refresh` without scheduler-time advance.
+- Retry result: a retryable `route_refresh_unavailable` response keeps the connection and both stored routes, ignores the relay lease that lacks retry headroom, and uses the P2P lease to send a distinct second request exactly at `ROUTE_REFRESH_RETRY_DELAY_MS`. The relay connector is never invoked.
+- Default-gate summary: `Android mixed-route lease retry fallback addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel/coroutine evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Pasteur` reviewed the mixed-route timing and retry semantics.
+- Caveat: authenticated `route.refresh` remains diagnostic opt-in. This is not physical Android proof and does not implement production route-refresh enablement, production P2P traversal, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, live-provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-mixed-route-lease-retry-fallback-20260710-033814.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Near-Expiry Route-Refresh Immediate Dispatch No-Device Gate
+
+- Scope: prove the urgent near-expiry lease policy reaches the authenticated ViewModel send path for both relay and P2P instead of remaining helper-only evidence.
+- Result: the existing relay and P2P terminal lease tests now capture `schedulerTimeBeforeAuthResponse = testScheduler.currentTime`, process accepted authentication with `runCurrent()` only, and assert the scheduler time is unchanged while exactly one `MessageType.RouteRefresh` request has already been sent.
+- Guardrail: `RuntimeClientViewModelTest.authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry` covers relay, and `authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry` covers P2P. Both retain their existing proof that a later retryable refresh failure becomes terminal when no retry window remains.
+- Default-gate summary: `Android near-expiry route-refresh immediate dispatch addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM ViewModel/coroutine evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Copernicus` reviewed the coroutine ordering and durable gate anchors.
+- Caveat: authenticated `route.refresh` remains diagnostic opt-in. This is not physical Android proof and does not implement production route-refresh enablement, production P2P traversal, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, live-provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-near-expiry-route-refresh-immediate-dispatch-20260710-032432.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Mixed Remote-Route Lease Boundary No-Device Gate
+
+- Scope: keep authenticated route-refresh scheduling strictly inside the active remote-route lease and directly pin mixed P2P/relay lease selection semantics.
+- Result: `runtimeRouteRefreshLeaseDelayMillis` now returns `0L` when an active lease has no room for the normal minimum delay, so urgent refresh runs immediately instead of at or after expiry. The normal renewal-window and minimum-delay behavior remains unchanged when the delay fits.
+- Guardrail: `RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease` covers equal/shorter minimum-delay boundaries and a zero-lead custom boundary. `remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease` covers earliest active selection, retry headroom filtering, alternate-route retry selection, one/both expired routes, incomplete route material, and a null trusted runtime.
+- Default-gate summary: `Android mixed remote-route lease boundary addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM timing/helper evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Einstein` independently confirmed the at/after-expiry scheduling bug, immediate-refresh policy, and mixed helper semantics.
+- Caveat: authenticated `route.refresh` remains diagnostic opt-in. This is not physical Android proof and does not implement production P2P signaling, STUN/hole punching, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, live-provider behavior, direct Android backend access, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-mixed-remote-route-lease-boundary-20260710-030904.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
+
+### 2026-07-10 Android Pending Dual-Route QR Authority No-Device Gate
+
+- Scope: harden the QR-only remote-route bootstrap contract when a new pending pairing QR carries both opaque P2P rendezvous material and complete relay fallback material while older trusted routes are still stored.
+- Result: `RuntimeRemoteRoutePlanner` already treats a matching pending payload as authoritative for each remote route family. This pass adds focused coverage proving the planner emits `[PeerToPeer, Relay]` from the new QR, binds both routes to the matching QR runtime identity, ignores superseded saved P2P/relay material, and does not reinterpret `routeToken` as a P2P record id or relay rendezvous id.
+- Guardrail: `RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial` uses distinct QR and saved route material, asserts the exact prepared fields and ordering, and proves a fingerprint-mismatched identity receives no routes.
+- Default-gate summary: `Android pending dual-route QR authority addendum`.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device Android JVM route-planner evidence only. `$HOME/Library/Android/sdk/platform-tools/adb devices` reports no attached devices.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.6 Sol explorer `Parfit` reviewed the nonduplicative route-planner gap and gate/doc anchors.
+- Caveat: this is not physical Android proof and does not implement production P2P signaling, STUN/hole punching, hardened relay/session infrastructure, optical/camera QR scanning, live phone pairing, direct Android backend access, live-provider behavior, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh > build/qa/check-no-device-quality-pending-dual-route-qr-authority-20260710-025001.log 2>&1`
+- `$HOME/Library/Android/sdk/platform-tools/adb devices`
 
 ### 2026-07-10 Android Private-Overlay QR Scanner Acceptance No-Device Gate
 
@@ -3556,9 +3907,9 @@ Verified after this change:
 
 - Scope: harden macOS app runtime `route.refresh` exposure while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the app-runtime default exposure as the next no-device-verifiable gap.
 - Result: `CompanionAppModel` no longer wires authenticated `RuntimeRouteRefreshing` into the normal app runtime by default, so authenticated `route.refresh` returns retryable `route_refresh_unavailable` unless diagnostic route refresh is explicitly enabled.
-- Result: explicit diagnostic opt-in still emits fresh relay route material for no-device regression coverage without changing the normal latest-QR recovery product path.
+- Result: the historical diagnostic opt-in remains explicit, but it now rejects runtime-only relay renewal rather than emitting refreshed route material without paired authorization; the normal latest-QR recovery product path remains unchanged.
 - Guardrail: `LocalRuntimeMessageRouterTests.testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault` proves the default app runtime returns `route_refresh_unavailable` without allocating route material.
-- Guardrail: `LocalRuntimeMessageRouterTests.testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled` proves `allowsAuthenticatedRouteRefresh: true` can allocate and emit fresh relay host/id/secret/lease/nonce material.
+- Guardrail: `LocalRuntimeMessageRouterTests.testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled` proves `allowsAuthenticatedRouteRefresh: true` cannot fall back to runtime-only allocation and emits no relay host/id/secret/lease/nonce/generation material.
 - Guardrail: `script/check_no_device_quality.sh` runs both focused SwiftPM regressions and prints the macOS authenticated route.refresh diagnostic opt-in addendum.
 - Static evidence: `script/check_copy_hygiene.py` pins the source default, explicit opt-in wiring, focused regressions, no-device selector, protocol docs, progress evidence, QA evidence, and roadmap coverage.
 - Full gate evidence: `script/check_no_device_quality.sh` passed after adding the macOS authenticated route.refresh diagnostic opt-in regression and summary addendum; the captured log was `build/qa/check-no-device-quality-macos-route-refresh-opt-in-20260708-002948.log`.
@@ -3567,7 +3918,7 @@ Verified after this change:
 
 Verified after this change:
 
-- `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault|LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled'`
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRuntimeOnlyRouteRefreshWhenDiagnosticOptInIsEnabled'`
 - `python3 -m py_compile script/check_copy_hygiene.py`
 - `bash -n script/check_no_device_quality.sh` (syntax only)
 - `python3 script/check_copy_hygiene.py`

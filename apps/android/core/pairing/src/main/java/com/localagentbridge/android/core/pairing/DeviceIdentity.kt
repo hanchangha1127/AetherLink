@@ -1,5 +1,7 @@
 package com.localagentbridge.android.core.pairing
 
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorization
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyFactory
@@ -17,8 +19,49 @@ data class DeviceIdentity(
     val publicKeyBase64: String,
     private val keyPair: KeyPair,
 ) {
-    fun signAuthenticationResponse(nonce: String): String {
-        return sign(authenticationResponseMessage(deviceId, nonce))
+    fun signInitialPairingRequest(request: InitialPairingClientRequest): String {
+        require(request.clientDeviceId == deviceId) { "client device id does not match identity" }
+        require(request.clientDeviceName == deviceName) { "client device name does not match identity" }
+        require(request.clientPublicKey == publicKeyBase64) { "client public key does not match identity" }
+        InitialPairingProof.requireCanonicalPublicKey(
+            publicKeyBase64 = request.clientPublicKey,
+            fingerprint = request.clientKeyFingerprint,
+        )
+        return sign(request.transcript())
+    }
+
+    fun signPairedRelayAllocationAuthorization(
+        authorization: PairedRelayAllocationAuthorization,
+    ): String {
+        val encodedIdentityPublicKey = Base64.getDecoder().decode(publicKeyBase64)
+        require(keyPair.public.encoded.contentEquals(encodedIdentityPublicKey)) {
+            "client identity public key does not match signing key"
+        }
+        PairedRelayAllocationAuthorizationProof.requireCanonicalPublicKey(
+            publicKeyBase64 = publicKeyBase64,
+            fingerprint = authorization.clientKeyFingerprint,
+        )
+        return sign(authorization.clientTranscript())
+    }
+
+    fun signPairedClientRelayRegistrationAuthorization(
+        challenge: PairedClientRelayRegistrationChallenge,
+    ): String {
+        challenge.validate()
+        val encodedIdentityPublicKey = Base64.getDecoder().decode(publicKeyBase64)
+        require(keyPair.public.encoded.contentEquals(encodedIdentityPublicKey)) {
+            "client identity public key does not match signing key"
+        }
+        val actualFingerprint = PairedClientRelayRegistrationAuthorization
+            .clientKeyFingerprint(publicKeyBase64)
+        require(challenge.clientKeyFingerprint == actualFingerprint) {
+            "challenge client key fingerprint does not match identity"
+        }
+        return sign(challenge.transcript())
+    }
+
+    fun signAuthenticationResponse(nonce: String, transportBinding: String? = null): String {
+        return sign(authenticationResponseMessage(deviceId, nonce, transportBinding))
     }
 
     private fun sign(message: ByteArray): String {
@@ -29,11 +72,34 @@ data class DeviceIdentity(
     }
 
     companion object {
-        fun authenticationResponseMessage(deviceId: String, nonce: String): ByteArray {
-            return "$AUTHENTICATION_RESPONSE_CONTEXT\n$deviceId\n$nonce".toByteArray(Charsets.UTF_8)
+        fun authenticationResponseMessage(
+            deviceId: String,
+            nonce: String,
+            transportBinding: String? = null,
+        ): ByteArray {
+            val message = if (transportBinding == null) {
+                "$AUTHENTICATION_RESPONSE_CONTEXT_V1\n$deviceId\n$nonce"
+            } else {
+                requireCanonicalTransportBinding(transportBinding)
+                "$AUTHENTICATION_RESPONSE_CONTEXT_V2\n$deviceId\n$nonce\n$transportBinding"
+            }
+            return message.toByteArray(Charsets.UTF_8)
         }
 
-        private const val AUTHENTICATION_RESPONSE_CONTEXT = "AetherLink client auth response v1"
+        fun isCanonicalTransportBinding(transportBinding: String): Boolean {
+            return transportBinding.length == 64 && transportBinding.all { character ->
+                character in '0'..'9' || character in 'a'..'f'
+            }
+        }
+
+        internal fun requireCanonicalTransportBinding(transportBinding: String) {
+            require(isCanonicalTransportBinding(transportBinding)) {
+                "transport binding must be 64 lowercase ASCII hex characters"
+            }
+        }
+
+        private const val AUTHENTICATION_RESPONSE_CONTEXT_V1 = "AetherLink client auth response v1"
+        private const val AUTHENTICATION_RESPONSE_CONTEXT_V2 = "AetherLink client auth response v2"
     }
 }
 
@@ -59,6 +125,7 @@ object RuntimeIdentityProofVerifier {
         deviceId: String,
         nonce: String,
         signatureBase64: String,
+        transportBinding: String? = null,
     ): Boolean {
         return runCatching {
             val publicKeyBytes = java.util.Base64.getDecoder().decode(runtimePublicKeyBase64)
@@ -70,13 +137,23 @@ object RuntimeIdentityProofVerifier {
                 .generatePublic(X509EncodedKeySpec(publicKeyBytes))
             val verifier = Signature.getInstance("SHA256withECDSA")
             verifier.initVerify(publicKey)
-            verifier.update(authenticationChallengeMessage(deviceId, nonce))
+            verifier.update(authenticationChallengeMessage(deviceId, nonce, transportBinding))
             verifier.verify(java.util.Base64.getDecoder().decode(signatureBase64))
         }.getOrDefault(false)
     }
 
-    fun authenticationChallengeMessage(deviceId: String, nonce: String): ByteArray {
-        return "$AUTHENTICATION_CHALLENGE_CONTEXT\n$deviceId\n$nonce".toByteArray(Charsets.UTF_8)
+    fun authenticationChallengeMessage(
+        deviceId: String,
+        nonce: String,
+        transportBinding: String? = null,
+    ): ByteArray {
+        val message = if (transportBinding == null) {
+            "$AUTHENTICATION_CHALLENGE_CONTEXT_V1\n$deviceId\n$nonce"
+        } else {
+            DeviceIdentity.requireCanonicalTransportBinding(transportBinding)
+            "$AUTHENTICATION_CHALLENGE_CONTEXT_V2\n$deviceId\n$nonce\n$transportBinding"
+        }
+        return message.toByteArray(Charsets.UTF_8)
     }
 
     private fun fingerprint(publicKeyBytes: ByteArray): String {
@@ -85,7 +162,8 @@ object RuntimeIdentityProofVerifier {
             .joinToString("") { "%02x".format(it) }
     }
 
-    private const val AUTHENTICATION_CHALLENGE_CONTEXT = "AetherLink runtime auth challenge v1"
+    private const val AUTHENTICATION_CHALLENGE_CONTEXT_V1 = "AetherLink runtime auth challenge v1"
+    private const val AUTHENTICATION_CHALLENGE_CONTEXT_V2 = "AetherLink runtime auth challenge v2"
 }
 
 data class TrustedRuntime(
@@ -103,6 +181,7 @@ data class TrustedRuntime(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val relayTicketGeneration: Long? = null,
     val p2pRouteClass: String? = null,
     val p2pRecordId: String? = null,
     val p2pEncryptedBody: String? = null,

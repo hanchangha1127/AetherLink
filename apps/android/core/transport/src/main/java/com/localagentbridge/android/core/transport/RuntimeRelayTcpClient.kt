@@ -2,79 +2,187 @@ package com.localagentbridge.android.core.transport
 
 import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.PAIRED_CLIENT_RELAY_REGISTRATION_CHALLENGE_PREFIX
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorization
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationChallenge
+import com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationProof
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.ByteBuffer
 import java.security.MessageDigest
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
+import java.security.SecureRandom
 
 class RuntimeRelayTcpClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
     private val socketFactory: RuntimeRelaySocketFactory = RuntimeRelaySocketFactory.default,
+    private val clientRegistrationAuthorizer: RelayClientRegistrationAuthorizer? = null,
 ) : RuntimeRelayConnector {
     override suspend fun connect(
         route: PreparedRemoteRuntimeRoute.Relay,
         timeoutMillis: Int,
     ): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
+        val relayFrameSecret = route.relayFrameSecret?.takeIf { it.isNotBlank() }
+        val clientSessionNonce = relayFrameSecret?.let { generateSessionNonce() }
+        val clientEphemeralKeyPair = relayFrameSecret?.let { RelayEphemeralKeyPair.generate() }
         val socket = socketFactory.connect(route, timeoutMillis)
-        val channel = RelayProtocolChannel(
-            socket = socket,
-            codec = codec,
-            frameCryptor = route.relayFrameSecret
-                ?.takeIf { it.isNotBlank() }
-                ?.let { RelayFrameBodyCryptor(it, route.security.antiReplayNonce) },
-        )
         runCatching {
+            val channel = RelayProtocolChannel(
+                socket = socket,
+                codec = codec,
+                relayFrameSecret = relayFrameSecret,
+                routeNonce = route.security.antiReplayNonce,
+                clientSessionNonce = clientSessionNonce,
+                clientEphemeralKeyPair = clientEphemeralKeyPair,
+                clientRegistrationAuthorizer = clientRegistrationAuthorizer,
+            )
             channel.sendHandshake(route.relayId)
-            channel.awaitReady()
+            channel.awaitReady(route)
             socket.soTimeout = 0
+            channel
         }.onFailure {
-            channel.close()
+            socket.close()
         }.getOrThrow()
-        channel
     }
 
     private class RelayProtocolChannel(
         private val socket: Socket,
         private val codec: ProtocolCodec,
-        private val frameCryptor: RelayFrameBodyCryptor?,
+        private val relayFrameSecret: String?,
+        private val routeNonce: String?,
+        private val clientSessionNonce: String?,
+        private val clientEphemeralKeyPair: RelayEphemeralKeyPair?,
+        private val clientRegistrationAuthorizer: RelayClientRegistrationAuthorizer?,
     ) : RuntimeProtocolChannel {
         private val sendMutex = Mutex()
+        private val receiveMutex = Mutex()
+        private var frameCryptor: RelayFrameBodyCryptor? = null
+        private var confirmedTransportSecurityContext: TransportSecurityContext? = null
 
         override val isConnected: Boolean
             get() = socket.isConnected && !socket.isClosed
 
+        override val transportSecurityContext: TransportSecurityContext?
+            get() = confirmedTransportSecurityContext
+
         suspend fun sendHandshake(relayId: String) = withContext(Dispatchers.IO) {
-            val handshake = "AETHERLINK_RELAY client ${relayId.sanitizeRelayToken()}\n"
+            val handshake = buildString {
+                append("AETHERLINK_RELAY client ${relayId.requireRelayToken()}")
+                if (relayFrameSecret != null) {
+                    append(" crypto=2")
+                    append(" session_nonce=${requireNotNull(clientSessionNonce).requireSessionNonce()}")
+                    append(" ephemeral_key=${requireNotNull(clientEphemeralKeyPair).publicKeyHex}")
+                }
+                append('\n')
+            }
             socket.outputStream.write(handshake.toByteArray(Charsets.UTF_8))
             socket.outputStream.flush()
         }
 
-        suspend fun awaitReady() = withContext(Dispatchers.IO) {
-            val line = socket.inputStream.readAsciiLine(maxBytes = 256)
-            require(line == RELAY_READY_LINE) { "Relay did not accept route" }
+        suspend fun awaitReady(route: PreparedRemoteRuntimeRoute.Relay) = withContext(Dispatchers.IO) {
+            var line = if (relayFrameSecret == null) {
+                socket.inputStream.readAsciiLine(maxBytes = 256)
+            } else {
+                socket.inputStream.readExactAsciiLine(maxBytes = 4_096)
+            }
+            if (line.startsWith(PAIRED_CLIENT_RELAY_REGISTRATION_CHALLENGE_PREFIX)) {
+                require(relayFrameSecret != null) {
+                    "Paired relay client registration requires strict relay crypto"
+                }
+                val challenge = PairedClientRelayRegistrationAuthorization
+                    .parseChallengeControlLine(line)
+                val expectedRuntimeFingerprint = requireNotNull(route.identity.fingerprint) {
+                    "Paired relay client registration requires a pinned runtime fingerprint"
+                }
+                val expectedGeneration = requireNotNull(route.ticketGeneration) {
+                    "Paired relay client registration was not expected for this route"
+                }
+                require(
+                    challenge.relayId == route.relayId &&
+                        challenge.relayExpiresAtEpochMillis == route.security.expiresAtEpochMillis &&
+                        challenge.relayNonce == route.security.antiReplayNonce &&
+                        challenge.runtimeKeyFingerprint == expectedRuntimeFingerprint &&
+                        challenge.ticketGeneration == expectedGeneration &&
+                        challenge.sessionNonce == clientSessionNonce &&
+                        challenge.ephemeralKey == clientEphemeralKeyPair?.publicKeyHex &&
+                        challenge.isFresh(System.currentTimeMillis()),
+                ) { "Relay client registration challenge did not match the prepared route" }
+                val proof = requireNotNull(clientRegistrationAuthorizer) {
+                    "Paired relay client registration authorizer is unavailable"
+                }.authorize(challenge)
+                socket.outputStream.write(
+                    PairedClientRelayRegistrationAuthorization
+                        .proofControlLine(challenge, proof)
+                        .toByteArray(Charsets.UTF_8),
+                )
+                socket.outputStream.flush()
+                line = socket.inputStream.readExactAsciiLine(maxBytes = 256)
+            } else {
+                require(route.ticketGeneration == null) {
+                    "Paired relay client registration challenge was missing"
+                }
+            }
+            val runtimeSession = parseRuntimeSession(
+                line = line,
+                requiresStrictCrypto = relayFrameSecret != null,
+            )
+            relayFrameSecret?.let { secret ->
+                val sessionCrypto = RelaySessionCrypto.establish(
+                        relaySecret = secret,
+                        relayId = route.relayId,
+                    routeNonce = routeNonce,
+                    clientSessionNonce = requireNotNull(clientSessionNonce),
+                    runtimeSessionNonce = requireNotNull(runtimeSession).sessionNonce,
+                    clientEphemeralKey = requireNotNull(clientEphemeralKeyPair).publicKeyHex,
+                    runtimeEphemeralKey = runtimeSession.ephemeralKey,
+                    localEphemeralKeyPair = clientEphemeralKeyPair,
+                )
+                val clientConfirmation = sessionCrypto.controlLine(role = RelaySessionCrypto.CLIENT_ROLE) + '\n'
+                socket.outputStream.write(clientConfirmation.toByteArray(Charsets.UTF_8))
+                socket.outputStream.flush()
+
+                val runtimeConfirmation = socket.inputStream.readExactAsciiLine(maxBytes = 256)
+                val expectedRuntimeConfirmation = sessionCrypto.controlLine(role = RelaySessionCrypto.RUNTIME_ROLE)
+                require(
+                    MessageDigest.isEqual(
+                        expectedRuntimeConfirmation.toByteArray(Charsets.UTF_8),
+                        runtimeConfirmation.toByteArray(Charsets.UTF_8),
+                    ),
+                ) { "Relay key confirmation failed" }
+
+                frameCryptor = sessionCrypto.frameCryptor()
+                confirmedTransportSecurityContext = TransportSecurityContext(sessionCrypto.bindingId)
+            }
         }
 
         override suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
             val body = codec.encodeBody(envelope)
             sendMutex.withLock {
-                val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
-                val frame = codec.encodeFrameBody(framedBody)
-                socket.outputStream.write(frame)
-                socket.outputStream.flush()
+                try {
+                    val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
+                    val frame = codec.encodeFrameBody(framedBody)
+                    socket.outputStream.write(frame)
+                    socket.outputStream.flush()
+                } catch (failure: Throwable) {
+                    close()
+                    throw failure
+                }
             }
         }
 
         override suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
-            val framedBody = codec.readFrameBody(socket.inputStream)
-            val body = frameCryptor?.decryptRuntimeFrameBody(framedBody) ?: framedBody
-            codec.decode(body)
+            receiveMutex.withLock {
+                val body = try {
+                    val framedBody = codec.readFrameBody(socket.inputStream)
+                    frameCryptor?.decryptRuntimeFrameBody(framedBody) ?: framedBody
+                } catch (failure: Throwable) {
+                    close()
+                    throw failure
+                }
+                codec.decode(body)
+            }
         }
 
         override fun close() {
@@ -84,7 +192,56 @@ class RuntimeRelayTcpClient(
 
     private companion object {
         const val RELAY_READY_LINE = "AETHERLINK_RELAY ready"
+        val SECURE_RANDOM = SecureRandom()
+        val STRICT_READY_PATTERN = Regex(
+            "AETHERLINK_RELAY ready crypto=2 " +
+                "peer_session_nonce=([0-9a-f]{32}) " +
+                "peer_ephemeral_key=([0-9a-f]{130})",
+        )
+        val LOWERCASE_HEX = "0123456789abcdef".toCharArray()
+
+        fun generateSessionNonce(): String {
+            val bytes = ByteArray(16)
+            SECURE_RANDOM.nextBytes(bytes)
+            val hex = CharArray(bytes.size * 2)
+            bytes.forEachIndexed { index, byte ->
+                val value = byte.toInt() and 0xff
+                hex[index * 2] = LOWERCASE_HEX[value ushr 4]
+                hex[index * 2 + 1] = LOWERCASE_HEX[value and 0x0f]
+            }
+            return String(hex)
+        }
+
+        fun parseRuntimeSession(
+            line: String,
+            requiresStrictCrypto: Boolean,
+        ): StrictRuntimeSession? {
+            val strictReady = STRICT_READY_PATTERN.matchEntire(line)
+            if (requiresStrictCrypto) {
+                require(strictReady != null) { "Relay did not accept route" }
+                val ephemeralKey = strictReady.groupValues[2].requireEphemeralKey()
+                return StrictRuntimeSession(
+                    sessionNonce = strictReady.groupValues[1],
+                    ephemeralKey = ephemeralKey,
+                )
+            }
+            require(line == RELAY_READY_LINE) {
+                "Relay did not accept route"
+            }
+            return null
+        }
+
+        data class StrictRuntimeSession(
+            val sessionNonce: String,
+            val ephemeralKey: String,
+        )
     }
+}
+
+fun interface RelayClientRegistrationAuthorizer {
+    suspend fun authorize(
+        challenge: PairedClientRelayRegistrationChallenge,
+    ): PairedClientRelayRegistrationProof
 }
 
 fun interface RuntimeRelaySocketFactory {
@@ -101,106 +258,6 @@ fun interface RuntimeRelaySocketFactory {
     }
 }
 
-internal class RelayFrameBodyCryptor(secret: String, routeNonce: String? = null) {
-    private val key = SecretKeySpec(deriveKey(secret, routeNonce), "AES")
-    private var clientCounter = 0L
-    private var runtimeCounter = 0L
-
-    init {
-        require(secret.isNotBlank()) { "Relay frame secret must not be blank" }
-        require(routeNonce?.isNotBlank() != false) { "Relay frame route nonce must not be blank" }
-    }
-
-    fun encryptClientFrameBody(plaintext: ByteArray): ByteArray {
-        val ciphertext = crypt(
-            mode = Cipher.ENCRYPT_MODE,
-            direction = CLIENT_DIRECTION,
-            counter = clientCounter,
-            input = plaintext,
-        )
-        clientCounter += 1
-        return ciphertext
-    }
-
-    fun decryptRuntimeFrameBody(ciphertext: ByteArray): ByteArray {
-        val plaintext = crypt(
-            mode = Cipher.DECRYPT_MODE,
-            direction = RUNTIME_DIRECTION,
-            counter = runtimeCounter,
-            input = ciphertext,
-        )
-        runtimeCounter += 1
-        return plaintext
-    }
-
-    internal fun encryptRuntimeFrameBodyForTest(plaintext: ByteArray): ByteArray {
-        val ciphertext = crypt(
-            mode = Cipher.ENCRYPT_MODE,
-            direction = RUNTIME_DIRECTION,
-            counter = runtimeCounter,
-            input = plaintext,
-        )
-        runtimeCounter += 1
-        return ciphertext
-    }
-
-    internal fun decryptClientFrameBodyForTest(ciphertext: ByteArray): ByteArray {
-        val plaintext = crypt(
-            mode = Cipher.DECRYPT_MODE,
-            direction = CLIENT_DIRECTION,
-            counter = clientCounter,
-            input = ciphertext,
-        )
-        clientCounter += 1
-        return plaintext
-    }
-
-    private fun crypt(
-        mode: Int,
-        direction: ByteArray,
-        counter: Long,
-        input: ByteArray,
-    ): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(mode, key, GCMParameterSpec(GCM_TAG_BITS, nonce(direction, counter)))
-        cipher.updateAAD(AAD)
-        return cipher.doFinal(input)
-    }
-
-    private companion object {
-        private val KEY_PREFIX = "AetherLink relay frame v1\n".toByteArray(Charsets.UTF_8)
-        private val ROUTE_NONCE_CONTEXT = "\nroute_nonce\n".toByteArray(Charsets.UTF_8)
-        private val AAD = "AETHERLINK_RELAY_FRAME_V1".toByteArray(Charsets.UTF_8)
-        private val CLIENT_DIRECTION = "CLNT".toByteArray(Charsets.US_ASCII)
-        private val RUNTIME_DIRECTION = "RUNT".toByteArray(Charsets.US_ASCII)
-        private const val GCM_TAG_BITS = 128
-
-        private fun deriveKey(secret: String, routeNonce: String?): ByteArray {
-            val digest = MessageDigest.getInstance("SHA-256")
-            digest.update(KEY_PREFIX)
-            digest.update(secret.toByteArray(Charsets.UTF_8))
-            if (routeNonce != null) {
-                digest.update(ROUTE_NONCE_CONTEXT)
-                digest.update(routeNonce.toByteArray(Charsets.UTF_8))
-            }
-            return digest.digest()
-        }
-
-        private fun nonce(direction: ByteArray, counter: Long): ByteArray {
-            require(direction.size == 4) { "Relay frame direction must be 4 bytes" }
-            require(counter >= 0L) { "Relay frame counter must not be negative" }
-            val counterBytes = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(counter).array()
-            return direction + counterBytes
-        }
-    }
-}
-
-private fun String.sanitizeRelayToken(): String {
-    require(isNotBlank()) { "Relay token must not be blank" }
-    require(none { it <= ' ' }) { "Relay token must not contain whitespace" }
-    return this
-}
-
 private fun java.io.InputStream.readAsciiLine(maxBytes: Int): String {
     val buffer = StringBuilder()
     while (buffer.length < maxBytes) {
@@ -210,4 +267,15 @@ private fun java.io.InputStream.readAsciiLine(maxBytes: Int): String {
         buffer.append(next.toChar())
     }
     error("Relay handshake response was not a complete line")
+}
+
+private fun java.io.InputStream.readExactAsciiLine(maxBytes: Int): String {
+    val buffer = StringBuilder()
+    while (buffer.length < maxBytes) {
+        val next = read()
+        if (next == -1) break
+        if (next == '\n'.code) return buffer.toString()
+        buffer.append(next.toChar())
+    }
+    error("Relay strict response was not a complete line")
 }

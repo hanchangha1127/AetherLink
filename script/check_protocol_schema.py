@@ -3149,11 +3149,15 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
             "device_id",
             "device_name",
             "public_key",
+            "pairing_proof_scheme",
+            "pairing_signature",
+            "transport_binding",
         },
         "helloPayload": {
             "device_id",
             "device_name",
             "client_capabilities",
+            "transport_binding",
         },
     }
     for payload_name, expected_keys in closed_object_payloads.items():
@@ -3175,17 +3179,24 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
                 "device_id",
                 "device_name",
                 "public_key",
+                "pairing_proof_scheme",
+                "pairing_signature",
             ]:
-                failures.append("$defs.pairingRequestPayload request must require only pairing_nonce, pairing_code, device_id, device_name, and public_key")
+                failures.append("$defs.pairingRequestPayload request must require identity fields and pairing proof fields")
             for field in [
                 "pairing_nonce",
                 "pairing_code",
                 "device_id",
                 "device_name",
                 "public_key",
+                "pairing_signature",
             ]:
                 if properties.get(field, {}).get("$ref") != "#/$defs/nonBlankString":
                     failures.append(f"$defs.pairingRequestPayload request {field} must use nonBlankString")
+            if properties.get("pairing_proof_scheme", {}).get("$ref") != "#/$defs/pairingProofScheme":
+                failures.append("$defs.pairingRequestPayload pairing_proof_scheme must use pairingProofScheme")
+            if properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+                failures.append("$defs.pairingRequestPayload transport_binding must use transportBinding")
         if payload_name == "helloPayload" and isinstance(properties, dict):
             if payload_schema.get("required") != ["device_id"]:
                 failures.append("$defs.helloPayload request must require only device_id")
@@ -3203,6 +3214,119 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
                     failures.append("$defs.helloPayload client_capabilities items must use nonBlankString")
                 if client_capabilities.get("uniqueItems") is not True:
                     failures.append("$defs.helloPayload client_capabilities must keep uniqueItems true")
+            if properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+                failures.append("$defs.helloPayload transport_binding must use transportBinding")
+
+    transport_binding = defs.get("transportBinding")
+    if transport_binding != {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+    }:
+        failures.append("$defs.transportBinding must require exactly 64 lowercase hexadecimal characters")
+
+    if defs.get("pairingProofScheme") != {"const": "p256-sha256-der-v1"}:
+        failures.append("$defs.pairingProofScheme must use p256-sha256-der-v1")
+    if defs.get("sha256HexDigest") != {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+    }:
+        failures.append("$defs.sha256HexDigest must require exactly 64 lowercase hexadecimal characters")
+
+    pairing_result = defs.get("pairingResultPayload")
+    if not isinstance(pairing_result, dict) or not isinstance(pairing_result.get("oneOf"), list):
+        failures.append("$defs.pairingResultPayload must separate accepted and rejected results")
+    else:
+        result_options = pairing_result["oneOf"]
+        accepted_result = next(
+            (
+                option for option in result_options
+                if isinstance(option, dict)
+                and isinstance(option.get("properties"), dict)
+                and option["properties"].get("accepted") == {"const": True}
+            ),
+            None,
+        )
+        rejected_result = next(
+            (
+                option for option in result_options
+                if isinstance(option, dict)
+                and isinstance(option.get("properties"), dict)
+                and option["properties"].get("accepted") == {"const": False}
+            ),
+            None,
+        )
+        proof_fields = {
+            "pairing_proof_scheme",
+            "pairing_request_digest",
+            "runtime_pairing_signature",
+        }
+        if not isinstance(accepted_result, dict):
+            failures.append("$defs.pairingResultPayload accepted=true branch is missing")
+        else:
+            accepted_properties = accepted_result.get("properties", {})
+            accepted_required_fields = {
+                "accepted",
+                "runtime_device_id",
+                "runtime_public_key",
+                "runtime_key_fingerprint",
+                "trusted_device_id",
+                "message",
+                *proof_fields,
+            }
+            if set(accepted_result.get("required", [])) != accepted_required_fields:
+                failures.append(
+                    "$defs.pairingResultPayload accepted=true must require runtime identity, "
+                    "trusted device, message, and all pairing proof fields"
+                )
+            if accepted_result.get("additionalProperties") is not False:
+                failures.append("$defs.pairingResultPayload accepted=true additionalProperties must be false")
+            if accepted_properties.get("pairing_proof_scheme", {}).get("$ref") != "#/$defs/pairingProofScheme":
+                failures.append("$defs.pairingResultPayload accepted pairing_proof_scheme must use pairingProofScheme")
+            if accepted_properties.get("pairing_request_digest", {}).get("$ref") != "#/$defs/sha256HexDigest":
+                failures.append("$defs.pairingResultPayload accepted pairing_request_digest must use sha256HexDigest")
+            if accepted_properties.get("runtime_pairing_signature", {}).get("$ref") != "#/$defs/nonBlankString":
+                failures.append("$defs.pairingResultPayload accepted runtime_pairing_signature must use nonBlankString")
+            if accepted_properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+                failures.append("$defs.pairingResultPayload accepted transport_binding must use transportBinding")
+        if not isinstance(rejected_result, dict):
+            failures.append("$defs.pairingResultPayload accepted=false branch is missing")
+        else:
+            rejected_properties = rejected_result.get("properties", {})
+            if proof_fields & set(rejected_properties):
+                failures.append("$defs.pairingResultPayload rejected results must not allow pairing proof fields")
+            if "transport_binding" in rejected_properties:
+                failures.append("$defs.pairingResultPayload rejected results must not allow transport_binding")
+            if rejected_result.get("required") != ["accepted"]:
+                failures.append("$defs.pairingResultPayload rejected results must require only accepted")
+            if rejected_result.get("additionalProperties") is not False:
+                failures.append("$defs.pairingResultPayload rejected additionalProperties must be false")
+
+    auth_challenge_payload = defs.get("authChallengePayload")
+    if not isinstance(auth_challenge_payload, dict):
+        failures.append("$defs.authChallengePayload schema is missing")
+    else:
+        properties = auth_challenge_payload.get("properties")
+        expected_keys = {
+            "device_id",
+            "nonce",
+            "runtime_key_fingerprint",
+            "runtime_signature",
+            "transport_binding",
+        }
+        if not isinstance(properties, dict) or set(properties.keys()) != expected_keys:
+            failures.append(
+                "$defs.authChallengePayload properties must stay limited to device identity, nonce, runtime proof, and transport binding"
+            )
+        elif properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+            failures.append("$defs.authChallengePayload transport_binding must use transportBinding")
+        if auth_challenge_payload.get("required") != ["device_id", "nonce"]:
+            failures.append("$defs.authChallengePayload must require only device_id and nonce")
+        if auth_challenge_payload.get("additionalProperties") is not False:
+            failures.append("$defs.authChallengePayload additionalProperties must be false")
 
     auth_response_payload = defs.get("authResponsePayload")
     if not isinstance(auth_response_payload, dict):
@@ -3227,14 +3351,44 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
     properties = request_option.get("properties")
     if not isinstance(properties, dict):
         failures.append("$defs.authResponsePayload request properties must be an object")
-    elif set(properties.keys()) != {"device_id", "nonce", "signature"}:
-        failures.append("$defs.authResponsePayload request properties must stay limited to device_id, nonce, and signature")
+    elif set(properties.keys()) != {"device_id", "nonce", "signature", "transport_binding"}:
+        failures.append(
+            "$defs.authResponsePayload request properties must stay limited to device_id, nonce, signature, and transport_binding"
+        )
     else:
         for field in ["device_id", "nonce", "signature"]:
             if properties.get(field, {}).get("$ref") != "#/$defs/nonBlankString":
                 failures.append(f"$defs.authResponsePayload request {field} must use nonBlankString")
+        if properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+            failures.append("$defs.authResponsePayload request transport_binding must use transportBinding")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.authResponsePayload request additionalProperties must be false")
+
+    accepted_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["accepted", "device_id"]
+        ),
+        None,
+    )
+    if not isinstance(accepted_option, dict):
+        failures.append("$defs.authResponsePayload must include an accepted device response payload option")
+    else:
+        properties = accepted_option.get("properties")
+        if not isinstance(properties, dict) or set(properties.keys()) != {
+            "accepted",
+            "device_id",
+            "transport_binding",
+        }:
+            failures.append(
+                "$defs.authResponsePayload accepted response properties must stay limited to accepted, device_id, and transport_binding"
+            )
+        elif properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
+            failures.append("$defs.authResponsePayload accepted transport_binding must use transportBinding")
+        if accepted_option.get("additionalProperties") is not False:
+            failures.append("$defs.authResponsePayload accepted additionalProperties must be false")
 
     return failures
 
@@ -3957,6 +4111,354 @@ def check_memory_delete_payload_schema_contract(schema: dict[str, object]) -> li
     return failures
 
 
+def simple_schema_sample_failures(
+    value: object,
+    schema_fragment: object,
+    defs: dict[str, object],
+    *,
+    path: str,
+) -> list[str]:
+    if not isinstance(schema_fragment, dict):
+        return [f"{path} schema must be an object"]
+
+    ref = schema_fragment.get("$ref")
+    if isinstance(ref, str):
+        prefix = "#/$defs/"
+        if not ref.startswith(prefix):
+            return [f"{path} uses unsupported ref {ref}"]
+        target = defs.get(ref.removeprefix(prefix))
+        if target is None:
+            return [f"{path} ref {ref} is missing"]
+        return simple_schema_sample_failures(value, target, defs, path=path)
+
+    failures: list[str] = []
+    if "const" in schema_fragment and value != schema_fragment["const"]:
+        failures.append(f"{path} must equal {schema_fragment['const']!r}")
+    enum_values = schema_fragment.get("enum")
+    if isinstance(enum_values, list) and value not in enum_values:
+        failures.append(f"{path} must be one of {enum_values!r}")
+
+    value_type = schema_fragment.get("type")
+    if value_type == "object":
+        if not isinstance(value, dict):
+            return failures + [f"{path} must be an object"]
+        properties = schema_fragment.get("properties")
+        required = schema_fragment.get("required")
+        if not isinstance(properties, dict) or not isinstance(required, list):
+            return failures + [f"{path} object schema must define properties and required"]
+        for field in required:
+            if isinstance(field, str) and field not in value:
+                failures.append(f"{path} missing {field}")
+        if schema_fragment.get("additionalProperties") is False:
+            for field in sorted(set(value) - set(properties)):
+                failures.append(f"{path} contains unknown field {field}")
+        for field, field_value in value.items():
+            if field in properties:
+                failures.extend(
+                    simple_schema_sample_failures(
+                        field_value,
+                        properties[field],
+                        defs,
+                        path=f"{path}.{field}",
+                    )
+                )
+        return failures
+
+    if value_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            return failures + [f"{path} must be an integer"]
+        minimum = schema_fragment.get("minimum")
+        if isinstance(minimum, int) and value < minimum:
+            failures.append(f"{path} must be at least {minimum}")
+        maximum = schema_fragment.get("maximum")
+        if isinstance(maximum, int) and value > maximum:
+            failures.append(f"{path} must be at most {maximum}")
+        return failures
+
+    if value_type == "string" or any(
+        key in schema_fragment for key in ("minLength", "maxLength", "pattern")
+    ):
+        if not isinstance(value, str):
+            return failures + [f"{path} must be a string"]
+        minimum_length = schema_fragment.get("minLength")
+        if isinstance(minimum_length, int) and len(value) < minimum_length:
+            failures.append(f"{path} is shorter than {minimum_length}")
+        maximum_length = schema_fragment.get("maxLength")
+        if isinstance(maximum_length, int) and len(value) > maximum_length:
+            failures.append(f"{path} is longer than {maximum_length}")
+        pattern = schema_fragment.get("pattern")
+        if isinstance(pattern, str) and re.search(pattern, value) is None:
+            failures.append(f"{path} does not match {pattern}")
+    return failures
+
+
+def check_relay_allocation_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include relay allocation payload schemas"]
+
+    challenge_schema = defs.get("relayAllocationChallengePayload")
+    authorization_schema = defs.get("relayAllocationAuthorizationPayload")
+    challenge_fields = {
+        "proof_scheme",
+        "protocol_version",
+        "operation",
+        "authorization_id",
+        "current_relay_id",
+        "next_relay_id",
+        "route_token_hash",
+        "runtime_key_fingerprint",
+        "client_key_fingerprint",
+        "current_ticket_generation",
+        "next_ticket_generation",
+        "current_relay_expires_at",
+        "current_relay_nonce",
+        "next_relay_expires_at",
+        "next_relay_nonce",
+        "challenge",
+        "challenge_expires_at",
+        "transport_binding",
+    }
+    authorization_fields = {
+        "proof_scheme",
+        "authorization_id",
+        "challenge",
+        "client_key_fingerprint",
+        "transport_binding",
+        "client_signature",
+    }
+    expected_challenge_properties = {
+        "proof_scheme": {"$ref": "#/$defs/relayAllocationProofScheme"},
+        "protocol_version": {"const": 2},
+        "operation": {"$ref": "#/$defs/relayAllocationOperation"},
+        "authorization_id": {"$ref": "#/$defs/boundedNonBlankString"},
+        "current_relay_id": {"$ref": "#/$defs/runtimeKeyBoundRelayID"},
+        "next_relay_id": {"$ref": "#/$defs/runtimeKeyBoundRelayID"},
+        "route_token_hash": {"$ref": "#/$defs/sha256HexDigest"},
+        "runtime_key_fingerprint": {"$ref": "#/$defs/sha256HexDigest"},
+        "client_key_fingerprint": {"$ref": "#/$defs/sha256HexDigest"},
+        "current_ticket_generation": {"type": "integer", "minimum": 1},
+        "next_ticket_generation": {"type": "integer", "minimum": 1},
+        "current_relay_expires_at": {"type": "integer", "minimum": 1},
+        "current_relay_nonce": {"$ref": "#/$defs/opaqueRouteValue"},
+        "next_relay_expires_at": {"type": "integer", "minimum": 1},
+        "next_relay_nonce": {"$ref": "#/$defs/opaqueRouteValue"},
+        "challenge": {"$ref": "#/$defs/sha256HexDigest"},
+        "challenge_expires_at": {"type": "integer", "minimum": 1},
+        "transport_binding": {"$ref": "#/$defs/transportBinding"},
+    }
+    expected_authorization_properties = {
+        "proof_scheme": {"$ref": "#/$defs/relayAllocationProofScheme"},
+        "authorization_id": {"$ref": "#/$defs/boundedNonBlankString"},
+        "challenge": {"$ref": "#/$defs/sha256HexDigest"},
+        "client_key_fingerprint": {"$ref": "#/$defs/sha256HexDigest"},
+        "transport_binding": {"$ref": "#/$defs/transportBinding"},
+        "client_signature": {"$ref": "#/$defs/canonicalBase64"},
+    }
+
+    for label, payload_schema, expected_fields, expected_properties in (
+        (
+            "relay.allocation.challenge",
+            challenge_schema,
+            challenge_fields,
+            expected_challenge_properties,
+        ),
+        (
+            "relay.allocation.authorization",
+            authorization_schema,
+            authorization_fields,
+            expected_authorization_properties,
+        ),
+    ):
+        if not isinstance(payload_schema, dict):
+            failures.append(f"$defs {label} payload schema is missing")
+            continue
+        if payload_schema.get("type") != "object":
+            failures.append(f"$defs {label} payload must be an object")
+        if set(payload_schema.get("required", [])) != expected_fields:
+            failures.append(f"$defs {label} payload must require exactly {sorted(expected_fields)}")
+        if payload_schema.get("properties") != expected_properties:
+            failures.append(f"$defs {label} payload properties must preserve the exact wire contract")
+        if payload_schema.get("additionalProperties") is not False:
+            failures.append(f"$defs {label} payload must reject additional properties")
+
+    if defs.get("relayAllocationProofScheme") != {"const": "runtime-client-p256-v2"}:
+        failures.append("relay allocation proof scheme must be runtime-client-p256-v2")
+    if defs.get("relayAllocationOperation") != {"enum": ["claim", "renew"]}:
+        failures.append("relay allocation operation must stay limited to claim and renew")
+    if defs.get("runtimeKeyBoundRelayID") != {
+        "type": "string",
+        "minLength": 68,
+        "maxLength": 68,
+        "pattern": "^rt2-[0-9a-f]{64}$",
+    }:
+        failures.append("relay allocation relay_id must match rt2-[64 lowercase hex]")
+    if defs.get("boundedNonBlankString") != {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": OPAQUE_ROUTE_VALUE_MAX_CHARS,
+        "pattern": "\\S",
+    }:
+        failures.append("relay allocation authorization_id must be nonblank and bounded")
+    if defs.get("canonicalBase64") != {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": OPAQUE_ROUTE_VALUE_MAX_CHARS,
+        "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])",
+    }:
+        failures.append("relay allocation client_signature must use bounded canonical Base64 shape")
+
+    if not isinstance(challenge_schema, dict) or not isinstance(authorization_schema, dict):
+        return failures
+
+    hex_a = "0123456789abcdef" * 4
+    hex_b = "fedcba9876543210" * 4
+    challenge_sample: dict[str, object] = {
+        "proof_scheme": "runtime-client-p256-v2",
+        "protocol_version": 2,
+        "operation": "claim",
+        "authorization_id": "authorization-1",
+        "current_relay_id": f"rt2-{hex_a}",
+        "next_relay_id": f"rt2-{hex_b}",
+        "route_token_hash": hex_b,
+        "runtime_key_fingerprint": hex_a,
+        "client_key_fingerprint": hex_b,
+        "current_ticket_generation": 1,
+        "next_ticket_generation": 2,
+        "current_relay_expires_at": 1,
+        "current_relay_nonce": "current-nonce",
+        "next_relay_expires_at": 9_223_372_036_854_775_807,
+        "next_relay_nonce": "next-nonce",
+        "challenge": hex_a,
+        "challenge_expires_at": 1,
+        "transport_binding": hex_b,
+    }
+    authorization_sample: dict[str, object] = {
+        "proof_scheme": "runtime-client-p256-v2",
+        "authorization_id": "authorization-1",
+        "challenge": hex_a,
+        "client_key_fingerprint": hex_b,
+        "transport_binding": hex_a,
+        "client_signature": "MEUCIQ==",
+    }
+    for label, sample, payload_schema in (
+        ("claim challenge", challenge_sample, challenge_schema),
+        ("renew challenge", {**challenge_sample, "operation": "renew"}, challenge_schema),
+        ("authorization", authorization_sample, authorization_schema),
+    ):
+        sample_failures = simple_schema_sample_failures(
+            sample,
+            payload_schema,
+            defs,
+            path=label,
+        )
+        if sample_failures:
+            failures.append(f"relay allocation valid {label} sample rejected: {sample_failures}")
+
+    invalid_challenges: list[tuple[str, dict[str, object]]] = [
+        ("missing field", {key: value for key, value in challenge_sample.items() if key != "authorization_id"}),
+        ("unknown field", {**challenge_sample, "unknown": "metadata"}),
+        ("route token secret", {**challenge_sample, "route_token": "secret"}),
+        ("relay secret", {**challenge_sample, "relay_secret": "secret"}),
+        ("wrong scheme", {**challenge_sample, "proof_scheme": "runtime-p256-v1"}),
+        ("wrong version", {**challenge_sample, "protocol_version": 1}),
+        ("wrong operation", {**challenge_sample, "operation": "create"}),
+        ("blank authorization id", {**challenge_sample, "authorization_id": "   "}),
+        ("oversized authorization id", {**challenge_sample, "authorization_id": "a" * 513}),
+        ("malformed current relay id", {**challenge_sample, "current_relay_id": hex_a}),
+        ("malformed next relay id", {**challenge_sample, "next_relay_id": hex_b}),
+        ("malformed route token hash", {**challenge_sample, "route_token_hash": hex_a.upper()}),
+        ("malformed runtime fingerprint", {**challenge_sample, "runtime_key_fingerprint": hex_a[:-1]}),
+        ("malformed client fingerprint", {**challenge_sample, "client_key_fingerprint": hex_b.upper()}),
+        ("malformed binding", {**challenge_sample, "transport_binding": hex_b[:-1]}),
+        ("malformed challenge", {**challenge_sample, "challenge": hex_a.upper()}),
+        ("newline challenge", {**challenge_sample, "challenge": f"{hex_a}\n"}),
+        ("whitespace current nonce", {**challenge_sample, "current_relay_nonce": "current nonce"}),
+        ("oversized next nonce", {**challenge_sample, "next_relay_nonce": "n" * 513}),
+        ("noninteger generation", {**challenge_sample, "current_ticket_generation": 1.5}),
+    ]
+    for field in (
+        "current_ticket_generation",
+        "next_ticket_generation",
+        "current_relay_expires_at",
+        "next_relay_expires_at",
+        "challenge_expires_at",
+    ):
+        invalid_challenges.append((f"nonpositive {field}", {**challenge_sample, field: 0}))
+
+    invalid_authorizations: list[tuple[str, dict[str, object]]] = [
+        ("missing field", {key: value for key, value in authorization_sample.items() if key != "client_signature"}),
+        ("unknown field", {**authorization_sample, "unknown": "metadata"}),
+        ("route token secret", {**authorization_sample, "route_token": "secret"}),
+        ("relay secret", {**authorization_sample, "relay_secret": "secret"}),
+        ("wrong scheme", {**authorization_sample, "proof_scheme": "runtime-p256-v1"}),
+        ("blank authorization id", {**authorization_sample, "authorization_id": "\t"}),
+        ("oversized authorization id", {**authorization_sample, "authorization_id": "a" * 513}),
+        ("malformed challenge", {**authorization_sample, "challenge": hex_a[:-1]}),
+        ("malformed client fingerprint", {**authorization_sample, "client_key_fingerprint": hex_b.upper()}),
+        ("malformed binding", {**authorization_sample, "transport_binding": hex_a.upper()}),
+        ("blank signature", {**authorization_sample, "client_signature": ""}),
+        ("malformed signature", {**authorization_sample, "client_signature": "not-base64"}),
+        ("newline signature", {**authorization_sample, "client_signature": "MEUCIQ==\n"}),
+        ("oversized signature", {**authorization_sample, "client_signature": "A" * 516}),
+    ]
+    for payload_label, samples, payload_schema in (
+        ("challenge", invalid_challenges, challenge_schema),
+        ("authorization", invalid_authorizations, authorization_schema),
+    ):
+        for sample_label, sample in samples:
+            if not simple_schema_sample_failures(
+                sample,
+                payload_schema,
+                defs,
+                path=f"invalid {payload_label} {sample_label}",
+            ):
+                failures.append(
+                    f"relay allocation {payload_label} schema unexpectedly accepts {sample_label} sample"
+                )
+
+    route_refresh = defs.get("routeRefreshPayload", {})
+    route_options = route_refresh.get("oneOf", []) if isinstance(route_refresh, dict) else []
+    route_result = next(
+        (
+            option
+            for option in route_options
+            if isinstance(option, dict) and isinstance(option.get("properties"), dict)
+        ),
+        None,
+    )
+    if not isinstance(route_result, dict):
+        failures.append("route.refresh relay result schema is missing")
+    else:
+        ticket_schema = route_result.get("properties", {}).get("ticket_generation")
+        if ticket_schema != {"type": "integer", "minimum": 1}:
+            failures.append("route.refresh ticket_generation must be an optional positive integer")
+        if "ticket_generation" in route_result.get("required", []):
+            failures.append("route.refresh ticket_generation must not be required yet")
+        dependent_required = route_result.get("dependentRequired", {})
+        expected_relay_dependencies = {
+            "relay_host",
+            "relay_port",
+            "relay_id",
+            "relay_secret",
+            "relay_expires_at",
+            "relay_nonce",
+        }
+        if set(dependent_required.get("ticket_generation", [])) != expected_relay_dependencies:
+            failures.append("route.refresh ticket_generation must be limited to complete relay results")
+        for field, dependencies in dependent_required.items():
+            if field != "ticket_generation" and "ticket_generation" in dependencies:
+                failures.append("route.refresh existing relay results must not require ticket_generation")
+                break
+        if simple_schema_sample_failures(1, ticket_schema, defs, path="ticket_generation"):
+            failures.append("route.refresh ticket_generation must accept 1")
+        if not simple_schema_sample_failures(0, ticket_schema, defs, path="ticket_generation"):
+            failures.append("route.refresh ticket_generation must reject 0")
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -4050,6 +4552,7 @@ def main() -> int:
         failures.extend(check_chat_title_request_payload_schema_contract(schema))
         failures.extend(check_chat_message_schema_contract(schema))
         failures.extend(check_chat_attachment_schema_contract(schema))
+        failures.extend(check_relay_allocation_payload_schema_contract(schema))
 
         payload_contract_types = set()
         for rule in schema.get("allOf", []):

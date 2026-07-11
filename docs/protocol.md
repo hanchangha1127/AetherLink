@@ -1,8 +1,76 @@
 # AetherLink Client-Runtime JSON Protocol
 
+## Development Relay Waiting Peer Policy Contract
+
+This policy adds no wire message. After successful matcher admission, the first unmatched peer creates one monotonic room deadline. The default is `60` seconds, configuration accepts canonical positive values through `3600`, there is no disable value, and an allocated room's deadline is capped by its remaining lease. Same-role replacement inherits the existing deadline. Timeout closes silently. Match, disconnect, invalidation, replacement cleanup, timeout, and close release exact waiting ownership; active bridge activation cancels the waiting deadline and encrypted forwarding remains timeout-free.
+
+Post-authenticated identity fairness uses only verified allocation-binding identity. Runtime proof admits `(runtime, runtime_key_fingerprint)` and paired-client proof admits `(client, paired_client_key_fingerprint)`; the role domains are distinct. The default quota is `4` unmatched waits per authenticated identity across source addresses, configurable through `65536` with no disable value. Immediate matches and active bridges consume no identity waiting quota. Bootstrap clients without paired-client proof and legacy peers remain identity-untracked and source-limited. Failed proofs never reach identity accounting.
+
+Stable source-free reasons are `waiting_peer_timed_out` and `authenticated_identity_waiting_quota_reached`; aggregate saturating metrics omit source addresses, fingerprints, roles, relay IDs, route/allocation tokens, lease material, and proof fields. Source/global admission still occurs at TCP accept before parsing and authentication. This is development fairness rather than per-user isolation, Sybil resistance, production identity service, public-network capacity proof, production TLS/KEX/pair-epoch implementation, or physical Android proof; the phone is disconnected.
+
+## Development Relay Source Peer Quota Contract
+
+Source peer quotas do not add or change any wire message. At TCP accept, the relay canonicalizes the peer socket address using the same identity contract as allocation rate limiting: IPv4-mapped IPv6 becomes IPv4, native IPv6 includes scope ID, exact IPv6 addresses remain distinct, and unsupported families share the unknown identity. Source ports are excluded.
+
+The default limits are `64` concurrent accepted sockets and `32` unmatched waiting peers per source. Normal admission leaves one global and one per-source slot available before the first waiter exists. Every waiting insertion atomically requires `connections + waiting + 1 <= limit` for both scopes, and each waiter then removes one additional slot from normal admission. A socket admitted from that reserve is counterpart-only until an immediate opposite-role match or authenticated same-source waiting replacement confirms it; probe/allocation, cross-source replacement, and new-room use close it. Reserve provenance is retained: a candidate consuming per-source reserve can discharge only a waiter owned by that source, while a global-only reserve candidate may match across sources. Active bridge sockets retain source connection capacity until close. The `2 * waiting <= connections` validation preserves counterpart headroom, and there is no disable value. A matching counterpart never consumes a new waiting permit, same-source replacement is net-zero, and cross-source replacement either atomically transfers ownership or leaves the original waiter intact when normal admission applies; reserve candidates cannot transfer waiting ownership across sources.
+
+Quota rejection closes silently without a new response frame. Stable source-free reasons and saturating metrics expose aggregate counts only. Established active bridge frame forwarding is not throttled or evicted. Shared NAT/VPN users share quotas, so this is a configurable development fairness contract rather than per-user isolation, production capacity validation, public-relay/live-network proof, or physical Android proof. The production TLS/KEX/pair-epoch design remains selection-gated.
+
+## Development Relay Source Rate-Limit Contract
+
+After a control line is recognized by its allocation or renewal prefix, the development relay classifies and charges it before full request parsing. Only the exact strict envelope `AETHERLINK_RELAY allocate <route_token> crypto=2 [allocation_token=<token>] preflight=1\n` selects `preflight`. Duplicate markers, extra or mutation-like fields, malformed spacing/line endings, legacy `preflight=true`, every other allocation attempt, and every paired claim/renew attempt select `allocationMutation`. A rejected request closes silently before parsing, allocation-token comparison, or cryptographic challenge generation.
+
+The default contract is `120/minute`, burst `30` for preflight and `30/minute`, burst `10` for mutations. The source is derived from the accepted socket, IPv4-mapped IPv6 canonicalizes to IPv4, native IPv6 includes its scope ID, and unknown families share one bucket. Refill is monotonic; one shared overflow bucket and periodic idle cleanup enforce the state cap without capacity-reset or per-request full-map-scan behavior. Both bursts must fully refill within idle retention before a configuration is accepted.
+
+Stable reasons are `allocation_preflight_source_rate_limited` and `allocation_mutation_source_rate_limited`. Metrics expose the two request totals, two rejection totals, overflow request total, idle sweep total, idle source eviction total, and current tracked-bucket count without source or route labels. Logs carry only a reason and global reason count.
+
+Probe, runtime/client registration, waiting rooms, active bridges, and encrypted frame forwarding are not part of this rate-limit contract; connection and waiting admission are governed separately by the source peer quota contract above. Shared NAT/VPN users share a bucket. This is not production capacity validation, a wire-format change, production TLS/KEX/pair-epoch implementation, or physical Android proof; the phone is disconnected.
+
+## Development Relay Abuse-Control Contract
+
+Every accepted development-relay TCP descriptor consumes one global connection permit until close. This includes allocation/probe requests, incomplete control records, waiting runtime/client registrations, and both sockets in an active bridge. A waiting peer is monitored for EOF or protocol-early bytes; either condition removes the matcher registration and releases the permit before a later counterpart can match it.
+
+Each control record must complete within one configured absolute monotonic deadline. The deadline restarts only for the next protocol record, not for each byte, so trickled input cannot hold a worker indefinitely. The newline remains part of the 4096-byte maximum. Once a pair is matched and ready metadata is sent, frame forwarding has no control-line timeout.
+
+`probe_policy=loopback-only` is the default. `disabled` closes every probe, while `legacy-unauthenticated` is an explicit diagnostic route-state oracle. Exposed default probe closure is `Unsupported` to Android and must fall through to actual authenticated registration; a canonical `known=0` response is `Unavailable` and may fail early. Unallocated legacy relay mode is loopback-only.
+
+This contract is complemented by the waiting-peer, allocation-rate, and source-peer quota contracts above. It is not production TLS/KEX or physical Android proof. It does not change strict crypto-v2 registration, allocation authorization, peer key confirmation, or encrypted frame formats.
+
+## Production Relay V3 Design Boundary
+
+The reviewed [production relay security hardening portfolio](security-hardening/production-relay-v1/hardening.md) is the decision record for the next transport protocol milestone. It recommends TLS 1.3 for allocation, a delegated service-signed canonical lease, and a peer-verifiable endpoint identity KEX that binds both long-term identities, both ephemeral shares, both session nonces, `pair_epoch`, lease generation, and the signed lease digest. The endpoint traffic secret remains endpoint-owned and never enters allocation or relay infrastructure.
+
+The companion recovery contract recommends monotonic `pair_epoch` and `revocation_counter`, dual-signed same-epoch renewal, one-sided deny-only revocation, fresh-QR replacement, active/waiting room closure, idempotent `transition_id`, and a read-only authenticated status response carrying the signed winning state. The status operation must not renew a lease, extend expiry, authorize a key, or create another epoch.
+
+These are reviewed design requirements, not current wire behavior. Current crypto v2, paired allocation v2, schema v4, local direct transport, and explicit development relay compatibility remain unchanged until the recommendations are selected and a versioned implementation is approved. No automatic production downgrade to the current plain control protocol is allowed.
+
 v0.1 uses length-prefixed JSON messages between a client app and AetherLink Runtime on a runtime host. The current implementation has mobile-client and desktop-runtime targets, but the protocol boundary is OS-neutral: the client must never call Ollama or LM Studio directly, and all model access goes through the trusted runtime.
 
 Each JSON envelope is UTF-8 encoded and prefixed by a 4-byte big-endian unsigned length. This framing is for v0.1 development transport and can be reused inside, or replaced by, an end-to-end encrypted channel over local direct, remote P2P, or encrypted blind relay/TURN-style connectivity later.
+
+## Relay Allocation Cross-Process Ownership No-Device Gate
+
+- A durable schema-v4 allocation registry is coordinated by one stable mode-`0600` transaction marker file with a fixed-format `U`/`A`/`E` state and a 64-character lowercase hexadecimal coordination token. The schema-v4 store carries the same token, binding the store to that marker.
+- POSIX `F_SETLK` byte range 0 serializes every reload, binding lookup, proposal revalidation, compare-and-swap, commit, paired claim or renewal, and tombstone lookup. Blocking acquisition uses a five-second monotonic retry deadline. Byte range 1 is the `RelayServer` lifetime owner lock. The process-local pool keys entries by marker inode, reuses the pooled descriptor, and retains only duplicate descriptors that cannot safely be closed while process locks may exist.
+- Compare-and-swap remains binding-aware after reload. Disjoint relay-ID commits are merged, while competing creates for one relay ID and competing paired claims from one bootstrap produce one commit and one `allocationConflict`. A stale create cannot restore a consumed bootstrap ID. The winning pair binding and consumed-bootstrap tombstone persist in one atomic envelope.
+- Store operations are descriptor-relative through `openat`, `fstatat`, `renameat`, and `unlinkat`, use `O_NOFOLLOW`, and require a current-user-owned regular file with `nlink == 1` beneath a secure parent that is not group- or world-writable. Persistence reconciles with an owner-only temporary file, file `fsync`, atomic rename, and directory `fsync`.
+- A missing established store, dangling symlink, hard link, case/path alias, marker replacement, or store/marker token mismatch fails closed. A valid unversioned `rt1` store is recognized, but because its identity cannot be migrated, all leases are revoked and persisted as an empty token-bound schema-v4 store.
+- A token-matched schema-v4 store left beside a `U` marker after interrupted first initialization is recovered and advanced to `E`; other unexpected marker/store combinations fail closed. A second relay process using the same store fails before an independent matcher or active-room state can form. A concurrent `run()` on the same server instance fails without releasing the original listener. Bind failure releases byte range 1. Simultaneous first startup converges on one owner, process exit releases ownership, and a successor can acquire the same marker and store.
+- Ephemeral loopback allocation registries remain intentionally process-local and do not claim durable ownership.
+- Final evidence covers 64 `RelayAllocationTests`, 21 relay socket tests, 100 related relay tests, 797 full Swift tests, the actual-process ownership smoke, and `build/qa/check-no-device-quality-relay-cross-process-ownership-20260710.log`. The aggregate gate passed with 41 authenticated relay connections and 688 encrypted frame bodies. This is cooperative single-host advisory locking, not distributed consensus, allocation-channel TLS/server authentication, immediate revocation, production P2P/NAT traversal, or physical Android proof. The phone is disconnected.
+
+## Pair-Scoped Relay Room Isolation No-Device Gate
+
+- Paired allocation authorization uses `runtime-client-p256-v2` and protocol version 2. Runtime and client signatures bind both `current_relay_id` and `next_relay_id` under role-separated v2 contexts.
+- A first `claim` must rotate from the runtime-only QR bootstrap ID to the deterministic pair ID derived from route token, runtime fingerprint, and client fingerprint. A later `renew` stays on that pair ID; schema-v3 paired records rotate once during schema-v4 migration.
+- Relay allocation schema v4 atomically replaces the consumed bootstrap record with the pair record and persists a closed `consumed_bootstrap_allocations` tombstone. Reallocating a consumed bootstrap ID fails closed.
+- Paired client socket admission uses `paired-client-p256-v1`. The relay challenges the QR-pinned client key before matcher insertion and binds the proof to relay ID, lease, nonce, both fingerprints, generation, session nonce, ephemeral key, and challenge expiry.
+- `RelayMatcher` retains explicit waiting and active room state. A room accepts only an exact generation/nonce/owner binding, rejects duplicate pairs while active, releases on bridge close, and closes stale waiting peers after renewal.
+- macOS stores pair routes by client fingerprint in a strict schema-v1 envelope and keeps each relay secret in the secret store, not UserDefaults. It keeps separate relay transports for pair rooms and rotates the global bootstrap token after a successful first claim so future QR pairing does not reuse a consumed room.
+- Android derives and validates the expected pair ID before signing, persists the returned pair ID and generation, authenticates with its persistent P-256 key before relay `ready`, and rejects missing admission challenges as downgrade.
+- Focused no-device tests cover shared digests, schema-v4 migration/tombstones, client admission, two simultaneous pair rooms with no frame cross-talk, pair-route persistence, response-before-activation ordering, Android route switching, and strict reconnect admission.
+- Remaining limits: allocation transport has no TLS/server authentication or service-signed response; relay-side allocation revocation is lease-based; production P2P/NAT traversal and physical optical/different-network proof remain incomplete.
+- No physical Android was connected for this slice.
 
 ## Message Envelope
 
@@ -37,9 +105,9 @@ Rules:
 
 1. AetherLink Runtime starts the runtime connection manager.
 2. The runtime host shows QR pairing data generated by AetherLink Runtime.
-3. The client app scans the QR code and submits `pairing.request` with its persistent device identity and public key.
-4. AetherLink Runtime accepts pairing only inside an active pairing window, then stores the trusted client identity/key.
-5. The client app stores the trusted runtime identity/key only after accepted `pairing.result`.
+3. The client app scans the QR code and signs `pairing.request` with its persistent device key, binding the request id, QR credentials, both identities, and current transport binding.
+4. AetherLink Runtime verifies the client proof inside an active pairing window before reserving the request and storing the trusted client identity/key.
+5. The runtime signs the accepted `pairing.result`; the client stores the trusted runtime identity/key only after the request digest, QR-pinned runtime key, and transport binding verify.
 6. For later sessions, the connection manager resolves ordered route candidates from the paired runtime identity.
 7. The connection manager targets the paired runtime identity, not a raw endpoint. Product builds use QR-bootstrapped overlay material to resolve local, P2P, or relay routes without user-entered endpoints.
 8. The v0.1 direct endpoint hint, when present, is one developer/local diagnostic candidate only. It is not required for product pairing and must not become the normal reconnect model.
@@ -73,7 +141,90 @@ Runtime commands are gated after pairing. `runtime.health`, `models.list`, `mode
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
-Fixed IP/manual host entry, raw local host/port from QR data, USB reverse/dev-server localhost forwarding, mDNS/Bonjour service records, and `relay_host` development relay metadata are v0.1 development reachability hints. They are route candidates only, not the final product connection model. Current code implements a temporary outbound TCP relay path. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so the client and runtime encrypt relay frame bodies with AES-GCM while the relay still only matches peers by `relay_id`, and stale QR route material is rejected before relay socket setup. The code still does not implement the production private per-user encrypted overlay, real NAT traversal, decentralized signaling, hardened relay allocation, replay-resistant production session setup, or complete production end-to-end transport encryption. Pure mDNS/local IP discovery and raw local sockets cannot guarantee connectivity when the client device and runtime host are on different networks.
+## Strict Relay Crypto V2 And Authentication Binding
+
+Strict allocated encrypted relay connections use crypto v2. Each endpoint generates a fresh P-256 ephemeral key and 128-bit session nonce before opening the TCP connection. Its registration is exactly:
+
+```text
+AETHERLINK_RELAY <client|runtime> <relay_id> crypto=2 session_nonce=<32-lowercase-hex> ephemeral_key=<130-lowercase-hex>
+```
+
+The ephemeral key is the canonical 65-byte ANSI X9.63 uncompressed point `04 || X || Y`. Endpoints validate that the peer point is on P-256. The relay validates only canonical field shape, returns `AETHERLINK_RELAY registered crypto=2`, and then sends the opposite peer metadata as `AETHERLINK_RELAY ready crypto=2 peer_session_nonce=<32-lowercase-hex> peer_ephemeral_key=<130-lowercase-hex>`.
+
+Both endpoints perform P-256 ECDH and build this exact UTF-8 transcript without a final newline:
+
+```text
+AetherLink relay session binding v2
+crypto_version
+2
+relay_id
+<relay-id>
+route_nonce
+<route-nonce-or-empty>
+client_session_nonce
+<client-session-nonce>
+runtime_session_nonce
+<runtime-session-nonce>
+client_ephemeral_key
+<client-key>
+runtime_ephemeral_key
+<runtime-key>
+```
+
+`transport_binding` is the lowercase hexadecimal SHA-256 digest of those bytes. HKDF-SHA256 uses the raw binding digest as salt and `ECDH_shared_secret || UTF8(relay_secret)` as input key material. Separate expansion labels derive the confirmation key, client traffic secret, and runtime traffic secret: `AetherLink relay confirmation v2`, `AetherLink relay client traffic v2`, and `AetherLink relay runtime traffic v2`.
+
+The confirmation proof is HMAC-SHA256 over `AetherLink relay key confirmation v2\nrole\n<role>\ntransport_binding\n<binding>`. Peers exchange the existing control-line shape before frame ciphers become active:
+
+```text
+AETHERLINK_RELAY confirm <role> binding=<transport_binding> proof=<lowercase-hmac-sha256>
+```
+
+The client sends role `client`; the runtime validates it and replies with role `runtime`. Strict peers reject missing, malformed, wrong-role, wrong-binding, or wrong-proof lines and do not fall back to crypto v1. Only after both proofs succeed does the transport expose `TransportSecurityContext(bindingID: transport_binding)` and install the directional AES-GCM frame ciphers.
+
+Each direction maintains an implicit ordered frame index. Epoch keys rotate every 65,536 frames by applying HMAC-SHA256 to the direction's traffic secret with `AetherLink relay frame epoch v2\n || direction || UInt64BE(epoch)`. AES-GCM nonces use `direction || UInt64BE(sequence)`, where `sequence = frame_index & 0xffff`; authenticated data binds the v2 frame label, binding digest, direction, epoch, and sequence. A failed authentication does not advance the receive index, replay or reordering fails against the next expected index, and both implementations reject `Int64.max` before cryptography rather than wrapping a counter.
+
+On that bound transport, `hello`, `auth.challenge`, the client `auth.response`, and the accepted authentication result carry the exact `transport_binding`. Runtime and client signatures use these v2 domain-separated bytes:
+
+```text
+AetherLink runtime auth challenge v2
+<device-id>
+<auth-nonce>
+<transport-binding>
+
+AetherLink client auth response v2
+<device-id>
+<auth-nonce>
+<transport-binding>
+```
+
+Missing or mismatched bindings, a v1 signature on a bound strict relay, and a valid signature replayed from an old binding fail before runtime command authorization. Local direct connections and legacy unallocated/plaintext relay diagnostics do not expose a binding and preserve the exact v1 authentication messages.
+
+This is PSK-mixed ephemeral P-256 ECDH plus paired-identity transport binding for the strict development relay. Assuming ephemeral private keys are not retained, recorded traffic remains protected from later compromise of only the QR relay secret. Endpoint-owned allocation v2 keeps that secret out of the default allocation-required relay, but it does not protect a leaked endpoint/QR secret, provide post-compromise security, implement an unordered replay window, authenticate allocation as a paired-device action, or establish complete production end-to-end transport deployment. Local direct connections and legacy unallocated/plaintext relay diagnostics keep their existing plaintext framing and v1 paired-identity authentication.
+
+## Endpoint-Owned Relay Secret Allocation V2
+
+An allocation-required relay accepts this exact request family:
+
+```text
+AETHERLINK_RELAY allocate <route_token> crypto=2 [allocation_token=<token>] [preflight=1]
+```
+
+When both optional fields are present, `allocation_token` precedes `preflight=1`. Unknown, duplicated, reordered, versionless, auth-alias, requested-secret, or non-v2 forms fail closed before an allocation ticket is issued. `preflight=1` validates the endpoint and response contract without persisting the ticket.
+
+The response begins with `AETHERLINK_RELAY allocation ` followed by one JSON object containing exactly these fields:
+
+```json
+{
+  "relay_id": "<opaque-relay-id>",
+  "relay_expires_at": 4102444800000,
+  "relay_nonce": "<fresh-route-nonce>",
+  "crypto_version": 2
+}
+```
+
+The allocation service does not accept or return `relay_secret`. The runtime host generates or reuses a cryptographically random 32-byte base64 traffic secret locally, stores it through the existing secret-store boundary, and attaches it to the allocated relay metadata only when building endpoint route material such as the pairing QR or explicitly enabled authenticated `route.refresh`. Persisted relay tickets contain only the opaque relay id, expiry, and nonce. Legacy secret-bearing allocation is isolated to explicit non-allocation-required diagnostics and cannot issue a ticket usable by the strict allocation-required server.
+
+Fixed IP/manual host entry, raw local host/port from QR data, USB reverse/dev-server localhost forwarding, mDNS/Bonjour service records, and `relay_host` development relay metadata are v0.1 development reachability hints. They are route candidates only, not the final product connection model. Current code implements a temporary outbound TCP relay path. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so the client and runtime encrypt relay frame bodies with AES-GCM while the relay still only matches peers by `relay_id`, and stale QR route material is rejected before relay socket setup. Strict allocated encrypted connections also require fresh client/runtime 128-bit canonical lowercase hexadecimal session nonces; both peers bind the ordered nonce pair into frame-key derivation so reconnect counters do not restart under the prior key. The no-device paired allocation gate now authorizes claim and renewal for one pinned runtime/client key pair, but the code still does not implement the production private per-user encrypted overlay, real NAT traversal, decentralized signaling, global room or multi-client isolation, immediate revocation, post-compromise recovery, complete replay defense, or complete production end-to-end transport deployment. Pure mDNS/local IP discovery and raw local sockets cannot guarantee connectivity when the client device and runtime host are on different networks.
 
 A future DHT-like or bootstrap-peer discovery layer may help paired devices exchange short-lived rendezvous records. Those records should be derived from paired-device secrets or rotating route tokens, not stable public device ids. Bootstrap peers are optional connectivity infrastructure; they are not accounts, not cloud backend state, not trust authorities, and not a place where AI protocol payloads or backend URLs appear.
 
@@ -128,6 +279,8 @@ aetherlink://pair?v=1&n=<nonce>&c=<6-digit-code>&rid=<stable-runtime-id>&rn=Aeth
 ```
 
 `relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` are required route material for the current QR relay path. `relay_id` must be explicit route material; `route_token` is a paired-runtime routing token and is not accepted as a fallback relay id. The shared pairing QR schema caps opaque route values, ids, tokens, nonces, and secrets at 512 characters before client-specific parser handling. macOS QR generation omits malformed optional opaque route material before emission: whitespace-mutated or oversized runtime public keys, route tokens, relay ids/secrets/nonces, P2P record ids, P2P bodies, and P2P anti-replay nonces are not serialized into the camera QR, and invalid relay or P2P material prevents that complete route family from being emitted. macOS QR generation also omits relay/P2P route families with invalid relay ports or non-positive route expiries before camera QR emission. macOS QR generation also omits relay route families when `relay_host` and `relay_scope` do not match the shared schema policy: public or DNS hosts use no scope or `remote`, private/CGNAT/ULA hosts require `private_overlay`, and loopback hosts require `usb_reverse`. When relay route material is emitted, macOS QR generation emits the normalized relay host value used for the eligibility decision instead of the raw configured host: DNS names are lowercased without a trailing dot, and bracketed IPv6 literals are serialized without brackets. `relay_scope`, when present on a relay route, must exactly match one of `remote`, `private_overlay`, or `usb_reverse`. `route_scope` is a relay-scope alias for `route_*` relay material, and compact `rsc` is a relay-scope alias for compact relay material; `route_scope=local_diagnostic` remains only for explicit local-direct diagnostic QR payloads. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. `relay_expires_at` is an epoch-millisecond expiration, and `relay_nonce` is pairwise anti-replay material for the fresh QR route attempt. After pairing succeeds, the client persists the trusted runtime identity plus the current relay host/id/secret/lease/nonce route material. The trusted-device relationship is long-lived, but the saved relay lease is not; if it expires or is incomplete, normal Android product builds guide the user to scan a fresh QR. Authenticated relay refresh remains available only when explicitly enabled for diagnostic or test coverage; when enabled, it may preserve a stable relay id or frame secret, but the client rejects a refresh that reuses the current relay nonce or does not advance `relay_expires_at`. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. AetherLink frame bodies over QR-provisioned relay routes are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). The frame key is derived from the QR-provisioned `relay_secret` and `relay_nonce`, so a route lease with the same secret but a different nonce cannot decrypt frames from another lease. This supports QR-only different-network development testing when a mutually reachable, QR-eligible relay is configured because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
+
+For a strict allocated encrypted connection, runtime and client use the crypto v2 registration, ECDH, transcript confirmation, and directional epoch framing defined above. Legacy unallocated/plaintext `--allow-legacy` diagnostics alone retain the 3-token registration and plain `AETHERLINK_RELAY ready`; strict and legacy peers reject cross-mode handshakes rather than downgrading.
 
 P2P rendezvous QR payloads use a separate route namespace:
 
@@ -230,7 +383,7 @@ After scanning the QR code, the client app connects to the AetherLink Runtime an
 
 QR trust and routing identifiers are opaque canonical values. Clients must reject `pairing_nonce`, `runtime_device_id`, `runtime_key_fingerprint`, `runtime_public_key`, `route_token`, `relay_id`, `relay_nonce`, and `relay_scope` values that are blank, leading/trailing-space mutated, or contain whitespace before they are used for trust storage, discovery matching, or relay routing. Clients must also reject unknown or case-mutated relay scope values instead of normalizing them. Human-facing runtime names may be normalized for display; relay frame secrets remain opaque secret material.
 
-The runtime applies the same fail-closed policy to the client identity submitted in `pairing.request`. `device_id` is an opaque canonical identifier, `device_name` is normalized only for display, and `public_key` must be a Base64-encoded P-256 DER public key that can later verify `auth.response` signatures. A malformed device id or public key returns `pairing.result` with `accepted: false` and `code: "pairing_invalid_device_identity"`; it must not create or update a trusted-device record.
+The runtime applies the same fail-closed policy to the client identity submitted in `pairing.request`. `device_id` is an opaque canonical identifier, `device_name` is normalized only for display, and `public_key` must be a canonical Base64-encoded P-256 DER public key that can later verify `auth.response` signatures. `pairing_signature` proves possession of that key. A malformed identity, wrong proof key, transcript mutation, noncanonical key/signature, or unsupported proof scheme returns `pairing.result` with `accepted: false` and `code: "pairing_invalid_device_identity"`; it must not create or update a trusted-device record.
 
 Blank required `pairing.request` fields return `invalid_payload` before failed-attempt accounting or trust mutation. Nonblank but canonicality-mutated `device_id` or `public_key` values still return the structured non-trusting `pairing.result` rejection described above.
 
@@ -245,12 +398,17 @@ Blank required `pairing.request` fields return `invalid_payload` before failed-a
     "pairing_code": "123456",
     "device_id": "client-device-id",
     "device_name": "Client Device",
-    "public_key": "base64-encoded-client-public-key"
+    "public_key": "base64-encoded-client-public-key",
+    "pairing_proof_scheme": "p256-sha256-der-v1",
+    "pairing_signature": "base64-canonical-DER-signature",
+    "transport_binding": "64-lowercase-hex-when-present"
   }
 }
 ```
 
-`pairing.request.payload` accepts only `pairing_nonce`, `pairing_code`, `device_id`, `device_name`, and `public_key`. Clients must not send response-only pairing result fields, runtime identity fields, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
+`pairing.request.payload` accepts only `pairing_nonce`, `pairing_code`, `device_id`, `device_name`, `public_key`, `pairing_proof_scheme`, `pairing_signature`, and optional `transport_binding`. A bound relay requires the exact current 64-character lowercase hexadecimal binding; an unbound local diagnostic transport omits the wire field and signs the literal `none`. Clients must not send response-only pairing result fields, runtime identity fields, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
+
+The client proof transcript starts with `AetherLink initial pairing client proof v1`. It then length-frames, in order, `scheme`, `protocol_version`, `request_id`, `pairing_nonce`, `pairing_code`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `client_device_id`, `client_device_name`, `client_public_key`, `client_key_fingerprint`, and `transport_binding`. Each field is encoded as field name, canonical decimal UTF-8 byte length, and exact value on separate lines, with no trailing newline. The signature is canonical DER ECDSA P-256 over SHA-256 of those bytes.
 
 ## `pairing.result`
 
@@ -269,14 +427,20 @@ Direction: Runtime -> Client.
     "runtime_public_key": "base64-encoded-runtime-public-key",
     "runtime_key_fingerprint": "runtime-key-fingerprint",
     "trusted_device_id": "android-device-id",
-    "message": "Client Device is now trusted by AetherLink Runtime."
+    "message": "Client Device is now trusted by AetherLink Runtime.",
+    "pairing_proof_scheme": "p256-sha256-der-v1",
+    "pairing_request_digest": "64-lowercase-hex-sha256",
+    "runtime_pairing_signature": "base64-canonical-DER-signature",
+    "transport_binding": "64-lowercase-hex-when-present"
   }
 }
 ```
 
-If rejected, `accepted` is `false` and `message` explains whether the code expired, credentials were invalid, identity material was malformed, or the active attempt limit was exceeded. The client app must persist the trusted runtime only after an accepted result. When `runtime_public_key` or `runtime_key_fingerprint` are present, the client must verify they match the scanned QR identity before writing the trusted runtime record.
+If rejected, `accepted` is `false` and `message` explains whether the code expired, credentials were invalid, identity material was malformed, or the active attempt limit was exceeded. Rejections are not trust-creating proof. Android may display a matching unsigned rejection, but it keeps pending QR route material so an unauthenticated rejection cannot erase recovery state. The client persists the trusted runtime only after an accepted result whose request id/digest, trusted client id, runtime id/key/fingerprint, message, signature, and transport binding all verify against the pending request and scanned QR.
 
-`pairing.result` payloads accept only `accepted`, `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, and `message`. Pairing results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material. Android clients reject unsupported pairing.result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout; canonical pairing results on the same request path can still complete trust creation.
+Accepted `pairing.result` payloads accept only `accepted`, optional legacy `mac_device_id`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, `message`, `pairing_proof_scheme`, `pairing_request_digest`, `runtime_pairing_signature`, and optional `transport_binding`. Rejected results use only the rejection/status field family and never carry accepted-result proof fields. Pairing results must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source approval handles, citations, trusted-source review data, audit handles, direct-store metadata, or direct-provider route material. Android clients reject unsupported or unsigned accepted result metadata before trusted-runtime persistence, pending route cleanup, authenticated session state, or runtime refresh fanout.
+
+The runtime result transcript starts with `AetherLink initial pairing runtime result proof v1` and length-frames, in order, `scheme`, `protocol_version`, `request_id`, `pairing_request_digest`, `accepted`, `runtime_device_id`, `runtime_public_key`, `runtime_key_fingerprint`, `trusted_device_id`, `message`, and `transport_binding`. Only `accepted=true` is signed. The runtime signs before trusted-device persistence; the pairing coordinator reserves the verified request and releases the reservation on signing or storage failure before a later retry.
 
 ## `hello`
 

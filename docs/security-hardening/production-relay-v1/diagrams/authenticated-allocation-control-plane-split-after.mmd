@@ -1,0 +1,10 @@
+flowchart LR
+    Offline["Offline authority root"] --> Authority["Allocation authority"]
+    Runtime["Runtime host"] -->|"authenticated capability request"| Authority
+    Client["Android client"] -->|"pair authorization through runtime channel"| Runtime
+    Authority -->|"opaque pair capability"| Runtime
+    Runtime -->|"QR or authenticated refresh: endpoint secret plus capability"| Client
+    Runtime <-->|"identity-bound endpoint key exchange"| Client
+    Runtime -->|"opaque capability and ciphertext"| Relay["Blind relay data plane"]
+    Client -->|"opaque capability and ciphertext"| Relay
+    Relay -->|"minimal redemption or signed-key cache"| Authority

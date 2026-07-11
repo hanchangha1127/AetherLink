@@ -19,6 +19,8 @@
         "models.pull",
         "models.result",
         "route.refresh",
+        "relay.allocation.challenge",
+        "relay.allocation.authorization",
         "chat.send",
         "chat.delta",
         "chat.done",
@@ -87,6 +89,14 @@
     {
       "if": { "properties": { "type": { "const": "route.refresh" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/routeRefreshPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "relay.allocation.challenge" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/relayAllocationChallengePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "relay.allocation.authorization" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/relayAllocationAuthorizationPayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "chat.send" } }, "required": ["type"] },
@@ -191,6 +201,45 @@
       "minLength": 1,
       "pattern": "\\S"
     },
+    "transportBinding": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pairingProofScheme": {
+      "const": "p256-sha256-der-v1"
+    },
+    "sha256HexDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relayAllocationProofScheme": {
+      "const": "runtime-client-p256-v2"
+    },
+    "relayAllocationOperation": {
+      "enum": ["claim", "renew"]
+    },
+    "runtimeKeyBoundRelayID": {
+      "type": "string",
+      "minLength": 68,
+      "maxLength": 68,
+      "pattern": "^rt2-[0-9a-f]{64}$"
+    },
+    "boundedNonBlankString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "\\S"
+    },
+    "canonicalBase64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?(?![\\s\\S])"
+    },
     "sourceAnchorID": {
       "type": "string",
       "pattern": "^source_anchor_[0-9a-f]{16}$"
@@ -264,7 +313,8 @@
           "type": "array",
           "items": { "$ref": "#/$defs/nonBlankString" },
           "uniqueItems": true
-        }
+        },
+        "transport_binding": { "$ref": "#/$defs/transportBinding" }
       },
       "additionalProperties": false
     },
@@ -275,7 +325,8 @@
         "device_id": { "$ref": "#/$defs/nonEmptyString" },
         "nonce": { "$ref": "#/$defs/nonEmptyString" },
         "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
-        "runtime_signature": { "$ref": "#/$defs/nonEmptyString" }
+        "runtime_signature": { "$ref": "#/$defs/nonEmptyString" },
+        "transport_binding": { "$ref": "#/$defs/transportBinding" }
       },
       "additionalProperties": false
     },
@@ -287,7 +338,8 @@
           "properties": {
             "device_id": { "$ref": "#/$defs/nonBlankString" },
             "nonce": { "$ref": "#/$defs/nonBlankString" },
-            "signature": { "$ref": "#/$defs/nonBlankString" }
+            "signature": { "$ref": "#/$defs/nonBlankString" },
+            "transport_binding": { "$ref": "#/$defs/transportBinding" }
           },
           "additionalProperties": false
         },
@@ -296,7 +348,8 @@
           "required": ["accepted", "device_id"],
           "properties": {
             "accepted": { "type": "boolean" },
-            "device_id": { "$ref": "#/$defs/nonEmptyString" }
+            "device_id": { "$ref": "#/$defs/nonEmptyString" },
+            "transport_binding": { "$ref": "#/$defs/transportBinding" }
           },
           "additionalProperties": false
         }
@@ -304,34 +357,69 @@
     },
     "pairingRequestPayload": {
       "type": "object",
-      "required": ["pairing_nonce", "pairing_code", "device_id", "device_name", "public_key"],
+      "required": ["pairing_nonce", "pairing_code", "device_id", "device_name", "public_key", "pairing_proof_scheme", "pairing_signature"],
       "properties": {
         "pairing_nonce": { "$ref": "#/$defs/nonBlankString" },
         "pairing_code": { "$ref": "#/$defs/nonBlankString" },
         "device_id": { "$ref": "#/$defs/nonBlankString" },
         "device_name": { "$ref": "#/$defs/nonBlankString" },
-        "public_key": { "$ref": "#/$defs/nonBlankString" }
+        "public_key": { "$ref": "#/$defs/nonBlankString" },
+        "pairing_proof_scheme": { "$ref": "#/$defs/pairingProofScheme" },
+        "pairing_signature": { "$ref": "#/$defs/nonBlankString" },
+        "transport_binding": { "$ref": "#/$defs/transportBinding" }
       },
       "additionalProperties": false
     },
     "pairingResultPayload": {
-      "type": "object",
-      "required": ["accepted"],
-      "properties": {
-        "accepted": { "type": "boolean" },
-        "mac_device_id": { "type": "string" },
-        "runtime_device_id": { "type": "string" },
-        "runtime_public_key": { "type": "string" },
-        "runtime_key_fingerprint": { "type": "string" },
-        "trusted_device_id": { "type": "string" },
-        "message": { "type": "string" },
-        "code": { "type": "string" },
-        "retryable": { "type": "boolean" },
-        "failed_attempts": { "type": "number", "minimum": 0 },
-        "max_failed_attempts": { "type": "number", "minimum": 0 },
-        "remaining_attempts": { "type": "number", "minimum": 0 }
-      },
-      "additionalProperties": false
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "accepted",
+            "runtime_device_id",
+            "runtime_public_key",
+            "runtime_key_fingerprint",
+            "trusted_device_id",
+            "message",
+            "pairing_proof_scheme",
+            "pairing_request_digest",
+            "runtime_pairing_signature"
+          ],
+          "properties": {
+            "accepted": { "const": true },
+            "mac_device_id": { "type": "string" },
+            "runtime_device_id": { "type": "string" },
+            "runtime_public_key": { "type": "string" },
+            "runtime_key_fingerprint": { "type": "string" },
+            "trusted_device_id": { "type": "string" },
+            "message": { "type": "string" },
+            "pairing_proof_scheme": { "$ref": "#/$defs/pairingProofScheme" },
+            "pairing_request_digest": { "$ref": "#/$defs/sha256HexDigest" },
+            "runtime_pairing_signature": { "$ref": "#/$defs/nonBlankString" },
+            "transport_binding": { "$ref": "#/$defs/transportBinding" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["accepted"],
+          "properties": {
+            "accepted": { "const": false },
+            "mac_device_id": { "type": "string" },
+            "runtime_device_id": { "type": "string" },
+            "runtime_public_key": { "type": "string" },
+            "runtime_key_fingerprint": { "type": "string" },
+            "trusted_device_id": { "type": "string" },
+            "message": { "type": "string" },
+            "code": { "type": "string" },
+            "retryable": { "type": "boolean" },
+            "failed_attempts": { "type": "number", "minimum": 0 },
+            "max_failed_attempts": { "type": "number", "minimum": 0 },
+            "remaining_attempts": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "backendHealth": {
       "type": "object",
@@ -547,6 +635,7 @@
             "relay_expires_at": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_nonce"],
             "relay_nonce": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at"],
             "relay_scope": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+            "ticket_generation": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
             "p2p_class": ["p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
             "p2p_record_id": ["p2p_class", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
             "p2p_encrypted_body": ["p2p_class", "p2p_record_id", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
@@ -564,6 +653,7 @@
             "relay_expires_at": { "type": "integer", "minimum": 1 },
             "relay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
             "relay_scope": { "enum": ["remote", "private_overlay", "usb_reverse"] },
+            "ticket_generation": { "type": "integer", "minimum": 1 },
             "p2p_class": { "const": "p2p_rendezvous" },
             "p2p_record_id": { "$ref": "#/$defs/opaqueRouteValue" },
             "p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" },
@@ -574,6 +664,70 @@
           "additionalProperties": false
         }
       ]
+    },
+    "relayAllocationChallengePayload": {
+      "type": "object",
+      "required": [
+        "proof_scheme",
+        "protocol_version",
+        "operation",
+        "authorization_id",
+        "current_relay_id",
+        "next_relay_id",
+        "route_token_hash",
+        "runtime_key_fingerprint",
+        "client_key_fingerprint",
+        "current_ticket_generation",
+        "next_ticket_generation",
+        "current_relay_expires_at",
+        "current_relay_nonce",
+        "next_relay_expires_at",
+        "next_relay_nonce",
+        "challenge",
+        "challenge_expires_at",
+        "transport_binding"
+      ],
+      "properties": {
+        "proof_scheme": { "$ref": "#/$defs/relayAllocationProofScheme" },
+        "protocol_version": { "const": 2 },
+        "operation": { "$ref": "#/$defs/relayAllocationOperation" },
+        "authorization_id": { "$ref": "#/$defs/boundedNonBlankString" },
+        "current_relay_id": { "$ref": "#/$defs/runtimeKeyBoundRelayID" },
+        "next_relay_id": { "$ref": "#/$defs/runtimeKeyBoundRelayID" },
+        "route_token_hash": { "$ref": "#/$defs/sha256HexDigest" },
+        "runtime_key_fingerprint": { "$ref": "#/$defs/sha256HexDigest" },
+        "client_key_fingerprint": { "$ref": "#/$defs/sha256HexDigest" },
+        "current_ticket_generation": { "type": "integer", "minimum": 1 },
+        "next_ticket_generation": { "type": "integer", "minimum": 1 },
+        "current_relay_expires_at": { "type": "integer", "minimum": 1 },
+        "current_relay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+        "next_relay_expires_at": { "type": "integer", "minimum": 1 },
+        "next_relay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+        "challenge": { "$ref": "#/$defs/sha256HexDigest" },
+        "challenge_expires_at": { "type": "integer", "minimum": 1 },
+        "transport_binding": { "$ref": "#/$defs/transportBinding" }
+      },
+      "additionalProperties": false
+    },
+    "relayAllocationAuthorizationPayload": {
+      "type": "object",
+      "required": [
+        "proof_scheme",
+        "authorization_id",
+        "challenge",
+        "client_key_fingerprint",
+        "transport_binding",
+        "client_signature"
+      ],
+      "properties": {
+        "proof_scheme": { "$ref": "#/$defs/relayAllocationProofScheme" },
+        "authorization_id": { "$ref": "#/$defs/boundedNonBlankString" },
+        "challenge": { "$ref": "#/$defs/sha256HexDigest" },
+        "client_key_fingerprint": { "$ref": "#/$defs/sha256HexDigest" },
+        "transport_binding": { "$ref": "#/$defs/transportBinding" },
+        "client_signature": { "$ref": "#/$defs/canonicalBase64" }
+      },
+      "additionalProperties": false
     },
     "chatMessage": {
       "type": "object",

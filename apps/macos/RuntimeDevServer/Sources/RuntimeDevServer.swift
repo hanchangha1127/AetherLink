@@ -1,4 +1,10 @@
 import struct BridgeProtocol.ProtocolEnvelope
+import enum BridgeProtocol.PairedRelayAllocationAuthorization
+import protocol BridgeProtocol.PairedRelayAllocationRuntimeSigning
+import struct BridgeProtocol.RelayAllocationIdentityChallenge
+import protocol BridgeProtocol.RelayIdentityAuthorizationSigning
+import struct BridgeProtocol.RelayRuntimeIdentity
+import struct BridgeProtocol.TransportSecurityContext
 import CompanionCore
 import Darwin
 import Dispatch
@@ -42,11 +48,17 @@ struct RuntimeDevServer {
         let runtimeDocumentIndexStore = Self.runtimeDocumentIndexStore(environment: environment)
         let runtimeMemorySummaryPolicy = Self.runtimeMemorySummaryPolicy(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
+        let relayServiceRouteAllocator = TCPRelayServiceRouteAllocator()
+        let pairedRelayAuthorization = try? relayAllocationAuthorization(identity)
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
         let shouldAdvertiseBonjour = environment["AETHERLINK_DEV_DISABLE_BONJOUR"] != "1"
         let relayRouteRequested = Self.relayRouteRequested(environment: environment)
-        let relayRouteAllocation = Self.relayRouteAllocation(environment: environment, identity: identity)
+        let relayRouteAllocation = Self.relayRouteAllocation(
+            environment: environment,
+            identity: identity,
+            relayServiceRouteAllocator: relayServiceRouteAllocator
+        )
         let relayConfiguration = relayRouteAllocation?.configuration
         let devPairingDirectHost = Self.developmentPairingDirectHost(
             environment: environment,
@@ -67,12 +79,22 @@ struct RuntimeDevServer {
         let routeRefresher = DevelopmentRuntimeRouteRefresher(
             runtimeDeviceID: identity.deviceID,
             runtimeKeyFingerprint: identity.fingerprint,
+            currentRouteToken: identity.routeToken,
+            runtimeIdentity: pairedRelayAuthorization?.identity,
+            authorizationSigner: pairedRelayAuthorization?.signer,
+            relayServiceRouteAllocator: relayServiceRouteAllocator,
+            allocationToken: environment["AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty
+                ?? environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty,
             initialAllocation: relayRouteAllocation,
             activeRelayClientRetirer: relayClient.map { client in
                 { client.retireAfterCurrentConnection() }
             },
             allocationProvider: {
-                Self.relayRouteAllocation(environment: environment, identity: identity)
+                Self.relayRouteAllocation(
+                    environment: environment,
+                    identity: identity,
+                    relayServiceRouteAllocator: relayServiceRouteAllocator
+                )
             },
             p2pRouteProvider: {
                 Self.developmentP2PRouteMaterial(environment: environment)
@@ -117,11 +139,16 @@ struct RuntimeDevServer {
             advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
         }
         if let relayConfiguration, let relayClient {
-            relayClient.start(
-                configuration: relayConfiguration,
-                onStatusChange: relayStatusHandler,
-                onMessage: relayMessageHandler
-            )
+            if relayConfiguration.runtimeIdentity != nil,
+               relayConfiguration.identityAuthorizationSigner != nil {
+                relayClient.start(
+                    configuration: relayConfiguration,
+                    onStatusChange: relayStatusHandler,
+                    onMessage: relayMessageHandler
+                )
+            } else {
+                print("[runtime] Relay route not started: runtime signing identity is unavailable.")
+            }
         }
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
@@ -339,8 +366,21 @@ struct RuntimeDevServer {
 
     private static func relayRouteAllocation(
         environment: [String: String],
-        identity: DevRuntimeIdentity
+        identity: DevRuntimeIdentity,
+        relayServiceRouteAllocator: any RelayServiceRouteAllocating
     ) -> CompanionRemoteRelayRouteAllocation? {
+        let authorization: (
+            identity: RelayRuntimeIdentity,
+            signer: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+        )
+        do {
+            authorization = try relayAllocationAuthorization(identity)
+        } catch {
+            if relayRouteRequested(environment: environment) {
+                print("[runtime] relay allocation failed: \(error.localizedDescription)")
+            }
+            return nil
+        }
         if let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty {
             let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
             let explicitRelayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty
@@ -357,7 +397,9 @@ struct RuntimeDevServer {
                         port: port,
                         relayID: explicitRelayID,
                         relaySecret: explicitRelaySecret,
-                        relayNonce: lease.nonce
+                        relayNonce: lease.nonce,
+                        runtimeIdentity: authorization.identity,
+                        identityAuthorizationSigner: authorization.signer
                     ),
                     lease: CompanionRemoteRouteLease(
                         expiresAtEpochMillis: lease.expiresAtEpochMillis,
@@ -366,14 +408,21 @@ struct RuntimeDevServer {
                 )
             }
             do {
-                return try TCPRelayServiceRouteAllocator().allocateRelayRoute(
+                let endpointRelaySecret = Self.preferredDevelopmentRelaySecret(environment: environment)
+                let serviceAllocation = try relayServiceRouteAllocator.allocateRelayRoute(
                     host: host,
                     port: port,
                     routeToken: identity.routeToken,
-                    relaySecret: Self.preferredDevelopmentRelaySecret(environment: environment),
                     allocationToken: environment["AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty
                         ?? environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer,
                     timeout: 5
+                )
+                return try serviceAllocation.attachingEndpointSecret(
+                    endpointRelaySecret,
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer
                 )
             } catch {
                 print("[runtime] relay allocation failed: \(error.localizedDescription)")
@@ -384,11 +433,16 @@ struct RuntimeDevServer {
             return nil
         }
         do {
-            return try EnvironmentRemoteRelayRouteAllocator(environment: environment)
+            return try EnvironmentRemoteRelayRouteAllocator(
+                environment: environment,
+                relayServiceAllocator: relayServiceRouteAllocator
+            )
                 .allocateRemoteRelayRoute(
                     runtimeDeviceID: identity.deviceID,
                     routeToken: identity.routeToken,
-                    preferredRelaySecret: Self.preferredDevelopmentRelaySecret(environment: environment)
+                    preferredRelaySecret: Self.preferredDevelopmentRelaySecret(environment: environment),
+                    runtimeIdentity: authorization.identity,
+                    identityAuthorizationSigner: authorization.signer
                 )
         } catch {
             print("[runtime] relay allocation failed: \(error.localizedDescription)")
@@ -699,7 +753,15 @@ struct RuntimeDevServer {
     private static func loadDevelopmentRuntimeIdentityKey(
         deviceID: String,
         environment: [String: String]
-    ) -> (key: RuntimeIdentityKey, signer: (any RuntimeChallengeSigning)?) {
+    ) -> (
+        key: RuntimeIdentityKey,
+        signer: (
+            any RuntimeChallengeSigning
+                & RelayIdentityAuthorizationSigning
+                & InitialPairingRuntimeResultSigning
+                & PairedRelayAllocationRuntimeSigning
+        )?
+    ) {
         if let filePath = environment["AETHERLINK_DEV_RUNTIME_IDENTITY_FILE"], !filePath.isEmpty {
             let store = FileRuntimeIdentityKeyStore(fileURL: URL(fileURLWithPath: filePath))
             do {
@@ -740,13 +802,36 @@ struct RuntimeDevServer {
     }
 }
 
+private func relayAllocationAuthorization(
+    _ identity: DevRuntimeIdentity
+) throws -> (
+    identity: RelayRuntimeIdentity,
+    signer: any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+) {
+    guard let signer = identity.signer else {
+        throw RelayServiceRouteAllocationError.signingIdentityUnavailable
+    }
+    let relayIdentity = try signer.relayRuntimeIdentity()
+    guard relayIdentity.publicKeyBase64 == identity.publicKeyBase64,
+          relayIdentity.fingerprint == identity.fingerprint
+    else {
+        throw RelayServiceRouteAllocationError.signingIdentityMismatch
+    }
+    return (relayIdentity, signer)
+}
+
 private struct DevRuntimeIdentity {
     var deviceID: String
     var name: String
     var publicKeyBase64: String
     var fingerprint: String
     var routeToken: String
-    var signer: (any RuntimeChallengeSigning)?
+    var signer: (
+        any RuntimeChallengeSigning
+            & RelayIdentityAuthorizationSigning
+            & InitialPairingRuntimeResultSigning
+            & PairedRelayAllocationRuntimeSigning
+    )?
 
     var advertisementMetadata: RuntimeAdvertisementMetadata {
         RuntimeAdvertisementMetadata(
@@ -795,8 +880,20 @@ private final class RuntimeRouterBox: @unchecked Sendable {
 
 @MainActor
 private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
+    private struct PendingRelayActivation {
+        let result: RuntimeRouteRefreshResult
+        let allocation: CompanionRemoteRelayRouteAllocation
+    }
+
     private let runtimeDeviceID: String
     private let runtimeKeyFingerprint: String
+    private let currentRouteToken: String
+    private let runtimeIdentity: RelayRuntimeIdentity?
+    private let authorizationSigner: (
+        any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+    )?
+    private let relayServiceRouteAllocator: any RelayServiceRouteAllocating
+    private let allocationToken: String?
     private let allocationProvider: () -> CompanionRemoteRelayRouteAllocation?
     private let p2pRouteProvider: () -> DevelopmentP2PRouteMaterial?
     private let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void
@@ -806,10 +903,18 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private var activeAllocation: CompanionRemoteRelayRouteAllocation?
     private var activeRelayClientRetirer: (() -> Void)?
     private var refreshedRelayClients: [ObjectIdentifier: RelayPeerClient] = [:]
+    private var pendingRelayActivation: PendingRelayActivation?
 
     init(
         runtimeDeviceID: String,
         runtimeKeyFingerprint: String,
+        currentRouteToken: String,
+        runtimeIdentity: RelayRuntimeIdentity?,
+        authorizationSigner: (
+            any RelayIdentityAuthorizationSigning & PairedRelayAllocationRuntimeSigning
+        )?,
+        relayServiceRouteAllocator: any RelayServiceRouteAllocating,
+        allocationToken: String?,
         initialAllocation: CompanionRemoteRelayRouteAllocation?,
         activeRelayClientRetirer: (() -> Void)?,
         allocationProvider: @escaping () -> CompanionRemoteRelayRouteAllocation?,
@@ -821,6 +926,11 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     ) {
         self.runtimeDeviceID = runtimeDeviceID
         self.runtimeKeyFingerprint = runtimeKeyFingerprint
+        self.currentRouteToken = currentRouteToken
+        self.runtimeIdentity = runtimeIdentity
+        self.authorizationSigner = authorizationSigner
+        self.relayServiceRouteAllocator = relayServiceRouteAllocator
+        self.allocationToken = allocationToken
         self.activeAllocation = initialAllocation
         self.activeRelayClientRetirer = activeRelayClientRetirer
         self.allocationProvider = allocationProvider
@@ -838,7 +948,102 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         guard let result = routeRefreshResult(for: allocation) else {
             return nil
         }
-        activeAllocation = allocation
+        pendingRelayActivation = PendingRelayActivation(
+            result: result,
+            allocation: allocation
+        )
+        return result
+    }
+
+    func refreshRuntimeRoute(
+        authorizationContext: RuntimePairedRelayAuthorizationContext?
+    ) async throws -> RuntimeRouteRefreshResult? {
+        guard let authorizationContext else {
+            throw RuntimeRouteRefreshAuthorizationError.pairedAuthorizationRequired
+        }
+        let bootstrapRelayID = RelayAllocationIdentityChallenge.relayID(
+            routeToken: currentRouteToken,
+            runtimeKeyFingerprint: runtimeKeyFingerprint
+        )
+        let pairedRelayID = RelayAllocationIdentityChallenge.pairedRelayID(
+            routeToken: currentRouteToken,
+            runtimeKeyFingerprint: runtimeKeyFingerprint,
+            clientKeyFingerprint: authorizationContext.trustedClientKeyFingerprint
+        )
+        guard let currentAllocation = activeAllocation,
+              let currentLease = currentAllocation.lease,
+              let currentTicketGeneration = currentLease.ticketGeneration,
+              currentTicketGeneration > 0,
+              currentTicketGeneration < Int64.max,
+              let endpointRelaySecret = currentAllocation.configuration.relaySecret?.takeIfNotEmpty,
+              currentAllocation.configuration.relayNonce == currentLease.nonce,
+              !currentLease.isExpired(),
+              let runtimeIdentity,
+              let authorizationSigner,
+              PairedRelayAllocationAuthorization.isCanonicalRelayID(
+                  currentAllocation.configuration.relayID
+              ),
+              currentAllocation.configuration.relayID == bootstrapRelayID ||
+                currentAllocation.configuration.relayID == pairedRelayID
+        else {
+            throw RelayServiceRouteAllocationError.invalidPairedRenewalRequest
+        }
+
+        let serviceAllocation = try await relayServiceRouteAllocator.renewPairedRelayRoute(
+            currentRouteToken: currentRouteToken,
+            currentConfiguration: currentAllocation.configuration,
+            currentLease: currentLease,
+            runtimeIdentity: runtimeIdentity,
+            authorizationSigner: authorizationSigner,
+            authorizationContext: authorizationContext,
+            allocationToken: allocationToken,
+            timeout: 5
+        )
+        guard serviceAllocation.host == currentAllocation.configuration.host,
+              serviceAllocation.port == currentAllocation.configuration.port,
+              serviceAllocation.relayID == pairedRelayID,
+              serviceAllocation.runtimeKeyFingerprint == runtimeIdentity.fingerprint,
+              serviceAllocation.ticketGeneration == currentTicketGeneration + 1,
+              serviceAllocation.relayExpiresAtEpochMillis > currentLease.expiresAtEpochMillis,
+              serviceAllocation.relayNonce != currentLease.nonce,
+              !serviceAllocation.relayNonce.isEmpty
+        else {
+            throw RelayServiceRouteAllocationError.invalidResponse
+        }
+        let renewedAllocation = try serviceAllocation.attachingEndpointSecret(
+            endpointRelaySecret,
+            runtimeIdentity: runtimeIdentity,
+            identityAuthorizationSigner: authorizationSigner
+        )
+        guard let renewedLease = renewedAllocation.lease,
+              renewedLease.isAdvancingReplacement(of: currentLease),
+              renewedAllocation.configuration.host == currentAllocation.configuration.host,
+              renewedAllocation.configuration.port == currentAllocation.configuration.port,
+              renewedAllocation.configuration.relayID == pairedRelayID,
+              renewedAllocation.configuration.relaySecret == endpointRelaySecret,
+              let result = routeRefreshResult(for: renewedAllocation)
+        else {
+            throw RelayServiceRouteAllocationError.invalidResponse
+        }
+
+        pendingRelayActivation = PendingRelayActivation(
+            result: result,
+            allocation: renewedAllocation
+        )
+        return result
+    }
+
+    func activateRuntimeRouteRefresh(_ result: RuntimeRouteRefreshResult) async {
+        guard let pendingRelayActivation,
+              pendingRelayActivation.result == result
+        else {
+            return
+        }
+        self.pendingRelayActivation = nil
+        installRefreshedRelayClient(for: pendingRelayActivation.allocation)
+    }
+
+    private func installRefreshedRelayClient(for allocation: CompanionRemoteRelayRouteAllocation) {
         let configuration = allocation.configuration
         let refreshedRelayClient = RelayPeerClient()
         let clientID = ObjectIdentifier(refreshedRelayClient)
@@ -852,11 +1057,11 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
             onMessage: relayMessageHandler
         )
         let previousRelayClientRetirer = activeRelayClientRetirer
+        activeAllocation = allocation
         activeRelayClientRetirer = { [weak refreshedRelayClient] in
             refreshedRelayClient?.retireAfterCurrentConnection()
         }
         previousRelayClientRetirer?()
-        return result
     }
 
     private func routeRefreshResult(for allocation: CompanionRemoteRelayRouteAllocation) -> RuntimeRouteRefreshResult? {
@@ -876,6 +1081,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
             relaySecret: relaySecret,
             relayExpiresAtEpochMillis: lease.expiresAtEpochMillis,
             relayNonce: lease.nonce,
+            relayTicketGeneration: lease.ticketGeneration,
             relayScope: relayScopeProvider(configuration.host),
             p2pRouteClass: p2pRoute?.routeClass,
             p2pRecordID: p2pRoute?.recordID,
@@ -1207,6 +1413,7 @@ private extension NSLock {
 private final class LoggingSink: RuntimeMessageSink, @unchecked Sendable {
     private let wrapped: any RuntimeMessageSink
     var connectionID: UUID { wrapped.connectionID }
+    var transportSecurityContext: TransportSecurityContext? { wrapped.transportSecurityContext }
 
     init(wrapped: any RuntimeMessageSink) {
         self.wrapped = wrapped

@@ -1,0 +1,8 @@
+flowchart LR
+    Runtime["Runtime host"] -->|"plain TCP: route token, allocation token, runtime proof"| Relay["Development relay and allocation service"]
+    Relay -->|"unsigned challenge and lease"| Runtime
+    Runtime -->|"QR: endpoint-owned traffic secret and lease"| Client["Android client"]
+    Runtime <-->|"PSK-mixed ephemeral ECDH and encrypted frames"| Client
+    Relay --> Store["Durable allocation store"]
+    Relay -.->|"forwards ciphertext"| Runtime
+    Relay -.->|"forwards ciphertext"| Client

@@ -299,6 +299,10 @@ struct RelayConfiguration {
     var relayNonce: String?
     var host: String
     var port: UInt16
+    var relayExpiresAt: Int64? = nil
+    var ticketGeneration: Int64? = nil
+    var runtimeKeyFingerprint: String? = nil
+    var clientKeyFingerprint: String? = nil
 }
 
 struct RelayEndpoint {
@@ -312,6 +316,7 @@ struct ParsedPairingURI {
     var runtimeDeviceID: String
     var runtimeKeyFingerprint: String
     var runtimePublicKeyBase64: String
+    var routeToken: String
     var relayConfiguration: RelayConfiguration?
     var relayExpiresAt: Int64?
     var hasDirectHost: Bool
@@ -354,9 +359,40 @@ final class RelayCiphertextBoundaryRecorder {
     }
 }
 
+final class RelaySessionNonceRecorder {
+    private let lock = NSLock()
+    private var sessions: [(client: String, runtime: String, clientKey: String, runtimeKey: String, binding: String)] = []
+
+    func record(client: String, runtime: String, clientKey: String, runtimeKey: String, binding: String) {
+        lock.lock()
+        sessions.append((client: client, runtime: runtime, clientKey: clientKey, runtimeKey: runtimeKey, binding: binding))
+        lock.unlock()
+    }
+
+    func requireFreshReconnectNonces() throws {
+        lock.lock()
+        let pairs = sessions
+        lock.unlock()
+
+        guard pairs.count >= 2 else {
+            throw SmokeFailure.message("relay session nonce smoke did not observe a reconnect")
+        }
+        guard Set(pairs.map(\.client)).count == pairs.count,
+              Set(pairs.map(\.runtime)).count == pairs.count,
+              Set(pairs.map(\.clientKey)).count == pairs.count,
+              Set(pairs.map(\.runtimeKey)).count == pairs.count,
+              Set(pairs.map(\.binding)).count == pairs.count
+        else {
+            throw SmokeFailure.message("relay reconnect reused a peer session nonce, ephemeral key, or transport binding")
+        }
+        print("Relay session nonce, ephemeral key, and transport binding freshness verified across \(pairs.count) connections.")
+    }
+}
+
 enum RelayCiphertextBoundary {
     static var enabled = false
     static let recorder = RelayCiphertextBoundaryRecorder()
+    static let sessionNonceRecorder = RelaySessionNonceRecorder()
 
     static func recordClientFrameBody(_ body: Data) {
         guard enabled else { return }
@@ -372,10 +408,33 @@ enum RelayCiphertextBoundary {
         guard enabled else { return }
         try recorder.requireNoPlaintextMarkers(markers)
     }
+
+    static func recordSession(
+        client: String,
+        runtime: String,
+        clientKey: String,
+        runtimeKey: String,
+        binding: String
+    ) {
+        guard enabled else { return }
+        sessionNonceRecorder.record(
+            client: client,
+            runtime: runtime,
+            clientKey: clientKey,
+            runtimeKey: runtimeKey,
+            binding: binding
+        )
+    }
+
+    static func requireFreshReconnectNonces() throws {
+        guard enabled else { return }
+        try sessionNonceRecorder.requireFreshReconnectNonces()
+    }
 }
 
 final class TCPClient {
     let fd: Int32
+    private(set) var transportBindingID: String?
     private var relayCipher: RelayFrameBodyCipher?
 
     init(host: String, port: UInt16, relayCipher: RelayFrameBodyCipher? = nil) throws {
@@ -410,23 +469,94 @@ final class TCPClient {
     }
 
     static func relay(
-        host: String,
-        port: UInt16,
-        relayID: String,
-        relaySecret: String,
-        relayNonce: String
+        configuration relay: RelayConfiguration,
+        clientRegistrationPrivateKey: P256.Signing.PrivateKey? = nil
     ) throws -> TCPClient {
-        let client = try TCPClient(
-            host: host,
-            port: port,
-            relayCipher: RelayFrameBodyCipher(secret: relaySecret, routeNonce: relayNonce)
-        )
+        let client = try TCPClient(host: relay.host, port: relay.port)
         do {
-            try client.writeAll(Data("AETHERLINK_RELAY client \(relayID)\n".utf8))
-            let ready = try client.readExactly(Data("AETHERLINK_RELAY ready\n".utf8).count)
-            guard ready == Data("AETHERLINK_RELAY ready\n".utf8) else {
+            var sessionNonceGenerator = SystemRandomNumberGenerator()
+            let clientSessionNonce = (0..<16).map { _ in
+                String(
+                    format: "%02x",
+                    UInt8.random(in: .min ... .max, using: &sessionNonceGenerator)
+                )
+            }.joined()
+            let clientEphemeralKey = P256.KeyAgreement.PrivateKey()
+            let clientEphemeralKeyHex = clientEphemeralKey.publicKey.x963Representation.lowercaseHex
+            try client.writeAll(
+                Data(
+                        (
+                        "AETHERLINK_RELAY client \(relay.relayID) crypto=2 " +
+                            "session_nonce=\(clientSessionNonce) " +
+                            "ephemeral_key=\(clientEphemeralKeyHex)\n"
+                        ).utf8
+                )
+            )
+            var ready = try client.readAsciiLine(maxBytes: 4_096)
+            if ready.hasPrefix(pairedClientRelayRegistrationChallengePrefix) {
+                guard let clientRegistrationPrivateKey else {
+                    throw SmokeFailure.message("Paired relay client registration key is unavailable")
+                }
+                let proofLine = try pairedClientRelayRegistrationProofLine(
+                    challengeLine: ready,
+                    relay: relay,
+                    privateKey: clientRegistrationPrivateKey,
+                    sessionNonce: clientSessionNonce,
+                    ephemeralKey: clientEphemeralKeyHex
+                )
+                try client.writeAll(Data(proofLine.utf8))
+                ready = try client.readAsciiLine(maxBytes: 512)
+            } else if relay.ticketGeneration != nil {
+                throw SmokeFailure.message("Paired relay omitted client registration challenge")
+            }
+            let readyParts = ready.split(separator: " ", omittingEmptySubsequences: false)
+            guard readyParts.count == 5,
+                  readyParts[0] == "AETHERLINK_RELAY",
+                  readyParts[1] == "ready",
+                  readyParts[2] == "crypto=2",
+                  readyParts[3].hasPrefix("peer_session_nonce="),
+                  readyParts[4].hasPrefix("peer_ephemeral_key=")
+            else {
                 throw SmokeFailure.message("Relay did not return ready line")
             }
+            let runtimeSessionNonce = String(readyParts[3].dropFirst("peer_session_nonce=".count))
+            let runtimeEphemeralKeyHex = String(readyParts[4].dropFirst("peer_ephemeral_key=".count))
+            guard runtimeSessionNonce.utf8.count == 32,
+                  runtimeSessionNonce.utf8.allSatisfy({ byte in
+                      (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) ||
+                          (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+                  }),
+                  runtimeEphemeralKeyHex.utf8.count == 130,
+                  let runtimeEphemeralKeyData = Data(canonicalLowercaseHex: runtimeEphemeralKeyHex),
+                  runtimeEphemeralKeyData.count == 65,
+                  runtimeEphemeralKeyData.first == 0x04,
+                  (try? P256.KeyAgreement.PublicKey(x963Representation: runtimeEphemeralKeyData)) != nil
+            else {
+                throw SmokeFailure.message("Relay returned invalid strict crypto peer material")
+            }
+            let confirmation = try RelaySessionConfirmation(
+                secret: relay.relaySecret,
+                relayID: relay.relayID,
+                routeNonce: relay.relayNonce ?? "",
+                clientSessionNonce: clientSessionNonce,
+                runtimeSessionNonce: runtimeSessionNonce,
+                clientEphemeralKey: clientEphemeralKey,
+                runtimeEphemeralKeyHex: runtimeEphemeralKeyHex
+            )
+            try client.writeAll(Data(confirmation.line(role: "client").utf8))
+            let runtimeConfirmation = try client.readAsciiLine(maxBytes: 256)
+            guard confirmation.validates(line: runtimeConfirmation, expectedRole: "runtime") else {
+                throw SmokeFailure.message("Relay runtime key confirmation failed")
+            }
+            client.transportBindingID = confirmation.bindingID
+            RelayCiphertextBoundary.recordSession(
+                client: clientSessionNonce,
+                runtime: runtimeSessionNonce,
+                clientKey: clientEphemeralKeyHex,
+                runtimeKey: runtimeEphemeralKeyHex,
+                binding: confirmation.bindingID
+            )
+            client.relayCipher = RelayFrameBodyCipher(session: confirmation)
             return client
         } catch {
             client.close()
@@ -511,66 +641,306 @@ final class TCPClient {
         }
         return data
     }
+
+    private func readAsciiLine(maxBytes: Int) throws -> String {
+        var bytes: [UInt8] = []
+        while bytes.count < maxBytes {
+            let data = try readExactly(1)
+            guard let byte = data.first else { break }
+            if byte == UInt8(ascii: "\n") {
+                guard let line = String(bytes: bytes, encoding: .utf8) else {
+                    throw SmokeFailure.message("Relay returned a non-UTF-8 control line")
+                }
+                return line
+            }
+            bytes.append(byte)
+        }
+        throw SmokeFailure.message("Relay did not return a complete control line")
+    }
+}
+
+struct RelaySessionConfirmation {
+    private static let bindingContext = "AetherLink relay session binding v2"
+    private static let proofContext = "AetherLink relay key confirmation v2"
+
+    let bindingID: String
+    let bindingDigest: Data
+    let clientTrafficSecret: Data
+    let runtimeTrafficSecret: Data
+    private let confirmationKey: SymmetricKey
+
+    init(
+        secret: String,
+        relayID: String,
+        routeNonce: String,
+        clientSessionNonce: String,
+        runtimeSessionNonce: String,
+        clientEphemeralKey: P256.KeyAgreement.PrivateKey,
+        runtimeEphemeralKeyHex: String
+    ) throws {
+        let clientEphemeralKeyHex = clientEphemeralKey.publicKey.x963Representation.lowercaseHex
+        let transcript = """
+        \(Self.bindingContext)
+        crypto_version
+        2
+        relay_id
+        \(relayID)
+        route_nonce
+        \(routeNonce)
+        client_session_nonce
+        \(clientSessionNonce)
+        runtime_session_nonce
+        \(runtimeSessionNonce)
+        client_ephemeral_key
+        \(clientEphemeralKeyHex)
+        runtime_ephemeral_key
+        \(runtimeEphemeralKeyHex)
+        """
+        bindingDigest = Data(SHA256.hash(data: Data(transcript.utf8)))
+        bindingID = bindingDigest.lowercaseHex
+        guard let runtimeEphemeralData = Data(canonicalLowercaseHex: runtimeEphemeralKeyHex) else {
+            throw SmokeFailure.message("Relay runtime ephemeral key was not canonical")
+        }
+        let runtimePublicKey = try P256.KeyAgreement.PublicKey(x963Representation: runtimeEphemeralData)
+        let sharedSecret = try clientEphemeralKey.sharedSecretFromKeyAgreement(with: runtimePublicKey)
+        var inputKeyMaterial = sharedSecret.withUnsafeBytes { Data($0) }
+        inputKeyMaterial.append(Data(secret.utf8))
+        confirmationKey = Self.deriveKey(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: bindingDigest,
+            label: "AetherLink relay confirmation v2"
+        )
+        clientTrafficSecret = Self.deriveKeyData(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: bindingDigest,
+            label: "AetherLink relay client traffic v2"
+        )
+        runtimeTrafficSecret = Self.deriveKeyData(
+            inputKeyMaterial: inputKeyMaterial,
+            salt: bindingDigest,
+            label: "AetherLink relay runtime traffic v2"
+        )
+    }
+
+    func line(role: String) -> String {
+        "AETHERLINK_RELAY confirm \(role) binding=\(bindingID) proof=\(proofHex(role: role))\n"
+    }
+
+    func validates(line: String, expectedRole: String) -> Bool {
+        let parts = line.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 5,
+              parts[0] == "AETHERLINK_RELAY",
+              parts[1] == "confirm",
+              parts[2] == Substring(expectedRole),
+              parts[3] == Substring("binding=\(bindingID)"),
+              parts[4].hasPrefix("proof=")
+        else { return false }
+        let proofHex = String(parts[4].dropFirst("proof=".count))
+        guard proofHex.count == 64,
+              let proofData = Data(canonicalLowercaseHex: proofHex)
+        else { return false }
+        return HMAC<SHA256>.isValidAuthenticationCode(
+            proofData,
+            authenticating: proofMessage(role: expectedRole),
+            using: confirmationKey
+        )
+    }
+
+    func proofHex(role: String) -> String {
+        Data(HMAC<SHA256>.authenticationCode(
+            for: proofMessage(role: role),
+            using: confirmationKey
+        )).lowercaseHex
+    }
+
+    private func proofMessage(role: String) -> Data {
+        Data("\(Self.proofContext)\nrole\n\(role)\ntransport_binding\n\(bindingID)".utf8)
+    }
+
+    private static func deriveKey(
+        inputKeyMaterial: Data,
+        salt: Data,
+        label: String
+    ) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: inputKeyMaterial),
+            salt: salt,
+            info: Data(label.utf8),
+            outputByteCount: 32
+        )
+    }
+
+    private static func deriveKeyData(
+        inputKeyMaterial: Data,
+        salt: Data,
+        label: String
+    ) -> Data {
+        deriveKey(inputKeyMaterial: inputKeyMaterial, salt: salt, label: label)
+            .withUnsafeBytes { Data($0) }
+    }
+}
+
+func verifyRelaySessionConfirmationVector() throws {
+    var clientScalar = Data(repeating: 0, count: 32)
+    clientScalar[31] = 1
+    var runtimeScalar = Data(repeating: 0, count: 32)
+    runtimeScalar[31] = 2
+    let clientKey = try P256.KeyAgreement.PrivateKey(rawRepresentation: clientScalar)
+    let runtimeKey = try P256.KeyAgreement.PrivateKey(rawRepresentation: runtimeScalar)
+    let confirmation = try RelaySessionConfirmation(
+        secret: "relay-secret-vector",
+        relayID: "relay-vector",
+        routeNonce: "relay-nonce-vector",
+        clientSessionNonce: "00112233445566778899aabbccddeeff",
+        runtimeSessionNonce: "ffeeddccbbaa99887766554433221100",
+        clientEphemeralKey: clientKey,
+        runtimeEphemeralKeyHex: runtimeKey.publicKey.x963Representation.lowercaseHex
+    )
+    var clientCipher = RelayFrameBodyCipher(session: confirmation)
+    var runtimeCipher = RelayFrameBodyCipher(session: confirmation)
+    guard clientKey.publicKey.x963Representation.lowercaseHex ==
+            "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+          runtimeKey.publicKey.x963Representation.lowercaseHex ==
+            "047cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc4766997807775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1",
+          confirmation.bindingID == "44ed84bb0519061c52e320518660a2d0fbc0a29fdc3b7a62a14e151a2c4e6219",
+          confirmation.proofHex(role: "client") == "dc22099339654d46ec3a06d23183311c7d9e503200bdbeeb969179b02a5e498a",
+          confirmation.proofHex(role: "runtime") == "b5742c284b726d42f692e2cbc2bbb0ceb7c7f2183d2c24aebedb48fd102d346c",
+          try clientCipher.encryptClientFrameBody(Data("frame-zero".utf8)).lowercaseHex ==
+            "c0a6cad42dc9c28451e990b566a3dbbf845435e12640ae5e89d7",
+          try runtimeCipher.encryptRuntimeFrameBodyForVector(Data("frame-zero".utf8)).lowercaseHex ==
+            "48e80b6d79586ee44b567e7b7d00fa246e656c181fe492ebb6a8"
+    else {
+        throw SmokeFailure.message("Relay session confirmation vector mismatch")
+    }
+}
+
+private extension Data {
+    init?(canonicalLowercaseHex: String) {
+        guard canonicalLowercaseHex.count.isMultiple(of: 2),
+              canonicalLowercaseHex.allSatisfy({ $0.isASCII && ($0.isNumber || ("a"..."f").contains($0)) })
+        else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(canonicalLowercaseHex.count / 2)
+        var index = canonicalLowercaseHex.startIndex
+        while index < canonicalLowercaseHex.endIndex {
+            let next = canonicalLowercaseHex.index(index, offsetBy: 2)
+            guard let byte = UInt8(canonicalLowercaseHex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        self = Data(bytes)
+    }
+
+    var lowercaseHex: String {
+        map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 struct RelayFrameBodyCipher {
-    private static let aad = Data("AETHERLINK_RELAY_FRAME_V1".utf8)
-    private static let keyPrefix = Data("AetherLink relay frame v1\n".utf8)
-    private static let routeNonceContext = Data("\nroute_nonce\n".utf8)
+    private static let aadPrefix = Data("AETHERLINK_RELAY_FRAME_V2".utf8)
+    private static let epochPrefix = Data("AetherLink relay frame epoch v2\n".utf8)
     private static let tagBytes = 16
 
-    private let key: SymmetricKey
-    private var clientSendCounter: UInt64 = 0
-    private var runtimeReceiveCounter: UInt64 = 0
+    private let bindingDigest: Data
+    private let clientTrafficSecret: Data
+    private let runtimeTrafficSecret: Data
+    private var clientSendCounter: Int64 = 0
+    private var runtimeReceiveCounter: Int64 = 0
 
-    init(secret: String, routeNonce: String) {
-        var material = Self.keyPrefix
-        material.append(Data(secret.utf8))
-        material.append(Self.routeNonceContext)
-        material.append(Data(routeNonce.utf8))
-        key = SymmetricKey(data: Data(SHA256.hash(data: material)))
+    init(session: RelaySessionConfirmation) {
+        bindingDigest = session.bindingDigest
+        clientTrafficSecret = session.clientTrafficSecret
+        runtimeTrafficSecret = session.runtimeTrafficSecret
     }
 
     mutating func encryptClientFrameBody(_ body: Data) throws -> Data {
-        let encrypted = try encrypt(body, direction: "CLNT", counter: clientSendCounter)
+        let encrypted = try crypt(
+            body,
+            encrypting: true,
+            direction: "CLNT",
+            trafficSecret: clientTrafficSecret,
+            frameIndex: clientSendCounter
+        )
         clientSendCounter += 1
         return encrypted
     }
 
     mutating func decryptRuntimeFrameBody(_ body: Data) throws -> Data {
-        defer { runtimeReceiveCounter += 1 }
-        return try decrypt(body, direction: "RUNT", counter: runtimeReceiveCounter)
-    }
-
-    private func encrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
-        let sealed = try AES.GCM.seal(
+        let decrypted = try crypt(
             body,
-            using: key,
-            nonce: nonce(direction: direction, counter: counter),
-            authenticating: Self.aad
+            encrypting: false,
+            direction: "RUNT",
+            trafficSecret: runtimeTrafficSecret,
+            frameIndex: runtimeReceiveCounter
         )
-        var encryptedBody = sealed.ciphertext
-        encryptedBody.append(sealed.tag)
-        return encryptedBody
+        runtimeReceiveCounter += 1
+        return decrypted
     }
 
-    private func decrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
+    mutating func encryptRuntimeFrameBodyForVector(_ body: Data) throws -> Data {
+        let encrypted = try crypt(
+            body,
+            encrypting: true,
+            direction: "RUNT",
+            trafficSecret: runtimeTrafficSecret,
+            frameIndex: runtimeReceiveCounter
+        )
+        runtimeReceiveCounter += 1
+        return encrypted
+    }
+
+    private func crypt(
+        _ body: Data,
+        encrypting: Bool,
+        direction: String,
+        trafficSecret: Data,
+        frameIndex: Int64
+    ) throws -> Data {
+        guard frameIndex >= 0 && frameIndex < Int64.max else {
+            throw SmokeFailure.message("Relay frame index exhausted")
+        }
+        let epoch = UInt64(frameIndex) >> 16
+        let sequence = UInt64(frameIndex) & 0xffff
+        let directionData = Data(direction.utf8)
+        let epochData = epoch.bigEndianData
+        let sequenceData = sequence.bigEndianData
+        var epochMaterial = Self.epochPrefix
+        epochMaterial.append(directionData)
+        epochMaterial.append(epochData)
+        let epochKey = SymmetricKey(data: Data(HMAC<SHA256>.authenticationCode(
+            for: epochMaterial,
+            using: SymmetricKey(data: trafficSecret)
+        )))
+        var nonceData = directionData
+        nonceData.append(sequenceData)
+        var aad = Self.aadPrefix
+        aad.append(bindingDigest)
+        aad.append(directionData)
+        aad.append(epochData)
+        aad.append(sequenceData)
+        let nonce = try AES.GCM.Nonce(data: nonceData)
+        if encrypting {
+            let sealed = try AES.GCM.seal(body, using: epochKey, nonce: nonce, authenticating: aad)
+            var encryptedBody = sealed.ciphertext
+            encryptedBody.append(sealed.tag)
+            return encryptedBody
+        }
         guard body.count >= Self.tagBytes else {
             throw SmokeFailure.message("Relay ciphertext was too short: \(body.count)")
         }
         let sealed = try AES.GCM.SealedBox(
-            nonce: nonce(direction: direction, counter: counter),
+            nonce: nonce,
             ciphertext: body.prefix(body.count - Self.tagBytes),
             tag: body.suffix(Self.tagBytes)
         )
-        return try AES.GCM.open(sealed, using: key, authenticating: Self.aad)
+        return try AES.GCM.open(sealed, using: epochKey, authenticating: aad)
     }
+}
 
-    private func nonce(direction: String, counter: UInt64) throws -> AES.GCM.Nonce {
-        var data = Data(direction.utf8)
-        var bigEndianCounter = counter.bigEndian
-        data.append(Data(bytes: &bigEndianCounter, count: MemoryLayout<UInt64>.size))
-        return try AES.GCM.Nonce(data: data)
+private extension UInt64 {
+    var bigEndianData: Data {
+        var value = bigEndian
+        return Data(bytes: &value, count: MemoryLayout<UInt64>.size)
     }
 }
 
@@ -687,21 +1057,23 @@ func freePort() throws -> UInt16 {
     return UInt16(bigEndian: resolved.sin_port)
 }
 
-func connectWithRetry(host: String, port: UInt16, relay: RelayConfiguration? = nil) throws -> TCPClient {
+func connectWithRetry(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration? = nil,
+    clientRegistrationPrivateKey: P256.Signing.PrivateKey? = nil
+) throws -> TCPClient {
     let deadline = Date().addingTimeInterval(10)
     var lastError: Error?
     while Date() < deadline {
         do {
             if let relay {
-                guard let relayNonce = relay.relayNonce, !relayNonce.isEmpty else {
+                guard relay.relayNonce?.isEmpty == false else {
                     throw SmokeFailure.message("Relay route is missing nonce-bound frame material")
                 }
                 return try TCPClient.relay(
-                    host: relay.host,
-                    port: relay.port,
-                    relayID: relay.relayID,
-                    relaySecret: relay.relaySecret,
-                    relayNonce: relayNonce
+                    configuration: relay,
+                    clientRegistrationPrivateKey: clientRegistrationPrivateKey
                 )
             }
             return try TCPClient(host: host, port: port)
@@ -807,6 +1179,450 @@ func requireInt(_ object: [String: Any], _ key: String, context: String) throws 
     throw SmokeFailure.message("\(context) expected integer for \(key), got \(String(describing: object[key]))")
 }
 
+let initialPairingProofScheme = "p256-sha256-der-v1"
+
+func sha256Hex(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+func initialPairingTranscript(context: String, fields: [(String, String)]) -> Data {
+    let lines = [context] + fields.flatMap { name, value in
+        [name, String(value.utf8.count), value]
+    }
+    return Data(lines.joined(separator: "\n").utf8)
+}
+
+func publicKeyFingerprint(_ publicKeyBase64: String) throws -> String {
+    guard let data = Data(base64Encoded: publicKeyBase64), data.base64EncodedString() == publicKeyBase64 else {
+        throw SmokeFailure.message("Initial pairing public key was not canonical base64")
+    }
+    return sha256Hex(data)
+}
+
+let pairedRelayAllocationProofScheme = "runtime-client-p256-v2"
+let pairedRelayAllocationClientContext =
+    "AetherLink paired relay allocation client authorization v2"
+let pairedClientRelayRegistrationChallengePrefix =
+    "AETHERLINK_RELAY client_registration_challenge "
+let pairedClientRelayRegistrationContext =
+    "AetherLink relay client registration authorization v1"
+
+struct SmokePairedClientRelayRegistrationChallenge: Decodable {
+    var scheme: String
+    var protocolVersion: Int
+    var role: String
+    var relayID: String
+    var relayExpiresAt: Int64
+    var relayNonce: String
+    var runtimeKeyFingerprint: String
+    var clientKeyFingerprint: String
+    var ticketGeneration: Int64
+    var sessionNonce: String
+    var ephemeralKey: String
+    var challenge: String
+    var challengeExpiresAt: Int64
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case scheme
+        case protocolVersion = "protocol_version"
+        case role
+        case relayID = "relay_id"
+        case relayExpiresAt = "relay_expires_at"
+        case relayNonce = "relay_nonce"
+        case runtimeKeyFingerprint = "runtime_key_fingerprint"
+        case clientKeyFingerprint = "client_key_fingerprint"
+        case ticketGeneration = "ticket_generation"
+        case sessionNonce = "session_nonce"
+        case ephemeralKey = "ephemeral_key"
+        case challenge
+        case challengeExpiresAt = "challenge_expires_at"
+    }
+
+    func transcript() -> Data {
+        initialPairingTranscript(
+            context: pairedClientRelayRegistrationContext,
+            fields: [
+                ("scheme", scheme),
+                ("protocol_version", String(protocolVersion)),
+                ("role", role),
+                ("relay_id", relayID),
+                ("relay_expires_at", String(relayExpiresAt)),
+                ("relay_nonce", relayNonce),
+                ("runtime_key_fingerprint", runtimeKeyFingerprint),
+                ("client_key_fingerprint", clientKeyFingerprint),
+                ("ticket_generation", String(ticketGeneration)),
+                ("session_nonce", sessionNonce),
+                ("ephemeral_key", ephemeralKey),
+                ("challenge", challenge),
+                ("challenge_expires_at", String(challengeExpiresAt)),
+            ]
+        )
+    }
+}
+
+func pairedClientRelayRegistrationProofLine(
+    challengeLine: String,
+    relay: RelayConfiguration,
+    privateKey: P256.Signing.PrivateKey,
+    sessionNonce: String,
+    ephemeralKey: String
+) throws -> String {
+    guard challengeLine.hasPrefix(pairedClientRelayRegistrationChallengePrefix) else {
+        throw SmokeFailure.message("Paired relay client registration challenge prefix was invalid")
+    }
+    let body = String(challengeLine.dropFirst(pairedClientRelayRegistrationChallengePrefix.count))
+    guard let bodyData = body.data(using: .utf8),
+          let object = try JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+          Set(object.keys) == Set(SmokePairedClientRelayRegistrationChallenge.CodingKeys.allCases.map(\.rawValue))
+    else {
+        throw SmokeFailure.message("Paired relay client registration challenge fields were invalid")
+    }
+    let challenge = try JSONDecoder().decode(
+        SmokePairedClientRelayRegistrationChallenge.self,
+        from: bodyData
+    )
+    let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
+    let clientFingerprint = try publicKeyFingerprint(publicKeyBase64)
+    let nowEpochMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+    guard challenge.scheme == "paired-client-p256-v1",
+          challenge.protocolVersion == 1,
+          challenge.role == "client",
+          challenge.relayID == relay.relayID,
+          challenge.relayExpiresAt == relay.relayExpiresAt,
+          challenge.relayNonce == relay.relayNonce,
+          challenge.runtimeKeyFingerprint == relay.runtimeKeyFingerprint,
+          challenge.clientKeyFingerprint == relay.clientKeyFingerprint,
+          challenge.clientKeyFingerprint == clientFingerprint,
+          challenge.ticketGeneration == relay.ticketGeneration,
+          challenge.sessionNonce == sessionNonce,
+          challenge.ephemeralKey == ephemeralKey,
+          isCanonicalLowercaseHex(challenge.runtimeKeyFingerprint),
+          isCanonicalLowercaseHex(challenge.clientKeyFingerprint),
+          isCanonicalLowercaseHex(challenge.challenge),
+          challenge.relayExpiresAt > nowEpochMillis,
+          challenge.challengeExpiresAt > nowEpochMillis
+    else {
+        throw SmokeFailure.message("Paired relay client registration challenge did not match the saved route")
+    }
+    let signature = try privateKey.signature(for: challenge.transcript())
+        .derRepresentation
+        .base64EncodedString()
+    return "AETHERLINK_RELAY client_registration_proof crypto=2 " +
+        "challenge=\(challenge.challenge) client_public_key=\(publicKeyBase64) " +
+        "client_signature=\(signature)\n"
+}
+
+func pairScopedRelayID(
+    routeToken: String,
+    runtimeKeyFingerprint: String,
+    clientKeyFingerprint: String
+) -> String {
+    let material = [
+        "AetherLink paired relay id v1",
+        runtimeKeyFingerprint,
+        clientKeyFingerprint,
+        routeToken,
+    ].joined(separator: "\n")
+    return "rt2-\(sha256Hex(Data(material.utf8)))"
+}
+
+struct SmokePairedRelayAllocationChallenge {
+    var operation: String
+    var requestID: String
+    var authorizationID: String
+    var currentRelayID: String
+    var nextRelayID: String
+    var routeTokenHash: String
+    var runtimeKeyFingerprint: String
+    var clientKeyFingerprint: String
+    var currentTicketGeneration: Int64
+    var nextTicketGeneration: Int64
+    var currentRelayExpiresAt: Int64
+    var currentRelayNonce: String
+    var nextRelayExpiresAt: Int64
+    var nextRelayNonce: String
+    var challenge: String
+    var challengeExpiresAt: Int64
+    var transportBinding: String
+
+    func clientTranscript() -> Data {
+        initialPairingTranscript(
+            context: pairedRelayAllocationClientContext,
+            fields: [
+                ("scheme", pairedRelayAllocationProofScheme),
+                ("protocol_version", "2"),
+                ("operation", operation),
+                ("request_id", requestID),
+                ("authorization_id", authorizationID),
+                ("current_relay_id", currentRelayID),
+                ("next_relay_id", nextRelayID),
+                ("route_token_hash", routeTokenHash),
+                ("runtime_key_fingerprint", runtimeKeyFingerprint),
+                ("client_key_fingerprint", clientKeyFingerprint),
+                ("current_ticket_generation", String(currentTicketGeneration)),
+                ("next_ticket_generation", String(nextTicketGeneration)),
+                ("current_relay_expires_at", String(currentRelayExpiresAt)),
+                ("current_relay_nonce", currentRelayNonce),
+                ("next_relay_expires_at", String(nextRelayExpiresAt)),
+                ("next_relay_nonce", nextRelayNonce),
+                ("challenge", challenge),
+                ("challenge_expires_at", String(challengeExpiresAt)),
+                ("transport_binding", transportBinding),
+            ]
+        )
+    }
+}
+
+func isCanonicalLowercaseHex(_ value: String, count: Int = 64) -> Bool {
+    value.utf8.count == count && value.utf8.allSatisfy { byte in
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) ||
+            (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+    }
+}
+
+func parsePairedRelayAllocationChallenge(
+    _ response: [String: Any],
+    requestID: String,
+    currentConfiguration: RelayConfiguration,
+    currentRelayExpiresAt: Int64,
+    routeToken: String,
+    runtimeKeyFingerprint: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
+    transportBinding: String,
+    expectedOperation: String,
+    expectedCurrentTicketGeneration: Int64?
+) throws -> SmokePairedRelayAllocationChallenge {
+    let context = "paired relay allocation challenge"
+    try requireType(response, "relay.allocation.challenge", context: context)
+    try requireRequestID(response, requestID, context: context)
+    let challengePayload = try payload(response, context: context)
+    let expectedKeys: Set<String> = [
+        "proof_scheme", "protocol_version", "operation", "authorization_id",
+        "current_relay_id", "next_relay_id", "route_token_hash", "runtime_key_fingerprint",
+        "client_key_fingerprint", "current_ticket_generation",
+        "next_ticket_generation", "current_relay_expires_at", "current_relay_nonce",
+        "next_relay_expires_at", "next_relay_nonce", "challenge",
+        "challenge_expires_at", "transport_binding",
+    ]
+    guard Set(challengePayload.keys) == expectedKeys else {
+        throw SmokeFailure.message("\(context) contained unexpected fields: \(challengePayload.keys.sorted())")
+    }
+
+    let proofScheme = try requireString(challengePayload, "proof_scheme", context: context)
+    let protocolVersion = try requireInt(challengePayload, "protocol_version", context: context)
+    let operation = try requireString(challengePayload, "operation", context: context)
+    let authorizationID = try requireString(challengePayload, "authorization_id", context: context)
+    let currentRelayID = try requireString(challengePayload, "current_relay_id", context: context)
+    let nextRelayID = try requireString(challengePayload, "next_relay_id", context: context)
+    let routeTokenHash = try requireString(challengePayload, "route_token_hash", context: context)
+    let challengeRuntimeFingerprint = try requireString(
+        challengePayload,
+        "runtime_key_fingerprint",
+        context: context
+    )
+    let clientKeyFingerprint = try requireString(
+        challengePayload,
+        "client_key_fingerprint",
+        context: context
+    )
+    let currentTicketGeneration = try requireInt64(
+        challengePayload,
+        "current_ticket_generation",
+        context: context
+    )
+    let nextTicketGeneration = try requireInt64(
+        challengePayload,
+        "next_ticket_generation",
+        context: context
+    )
+    let challengeCurrentExpiresAt = try requireInt64(
+        challengePayload,
+        "current_relay_expires_at",
+        context: context
+    )
+    let currentRelayNonce = try requireString(
+        challengePayload,
+        "current_relay_nonce",
+        context: context
+    )
+    let nextRelayExpiresAt = try requireInt64(
+        challengePayload,
+        "next_relay_expires_at",
+        context: context
+    )
+    let nextRelayNonce = try requireString(challengePayload, "next_relay_nonce", context: context)
+    let challenge = try requireString(challengePayload, "challenge", context: context)
+    let challengeExpiresAt = try requireInt64(
+        challengePayload,
+        "challenge_expires_at",
+        context: context
+    )
+    let challengeTransportBinding = try requireString(
+        challengePayload,
+        "transport_binding",
+        context: context
+    )
+    let expectedClientFingerprint = try publicKeyFingerprint(
+        clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+    )
+    let now = Int64(Date().timeIntervalSince1970 * 1_000)
+
+    guard proofScheme == pairedRelayAllocationProofScheme,
+          protocolVersion == 2,
+          operation == expectedOperation,
+          !authorizationID.isEmpty,
+          !authorizationID.contains(where: { $0.isWhitespace }),
+          currentRelayID == currentConfiguration.relayID,
+          currentRelayID.hasPrefix("rt2-"),
+          isCanonicalLowercaseHex(String(currentRelayID.dropFirst(4))),
+          nextRelayID == pairScopedRelayID(
+            routeToken: routeToken,
+            runtimeKeyFingerprint: runtimeKeyFingerprint,
+            clientKeyFingerprint: expectedClientFingerprint
+          ),
+          nextRelayID.hasPrefix("rt2-"),
+          isCanonicalLowercaseHex(String(nextRelayID.dropFirst(4))),
+          expectedOperation != "claim" || currentRelayID != nextRelayID,
+          routeTokenHash == sha256Hex(Data(routeToken.utf8)),
+          challengeRuntimeFingerprint == runtimeKeyFingerprint,
+          clientKeyFingerprint == expectedClientFingerprint,
+          currentTicketGeneration > 0,
+          expectedCurrentTicketGeneration.map({ $0 == currentTicketGeneration }) ?? true,
+          currentTicketGeneration < Int64.max,
+          nextTicketGeneration == currentTicketGeneration + 1,
+          challengeCurrentExpiresAt == currentRelayExpiresAt,
+          currentRelayNonce == currentConfiguration.relayNonce,
+          nextRelayExpiresAt > challengeCurrentExpiresAt,
+          nextRelayExpiresAt > now,
+          nextRelayNonce != currentRelayNonce,
+          !nextRelayNonce.isEmpty,
+          isCanonicalLowercaseHex(challenge),
+          challengeExpiresAt > now,
+          challengeTransportBinding == transportBinding,
+          isCanonicalLowercaseHex(challengeTransportBinding)
+    else {
+        throw SmokeFailure.message("\(context) did not match the authenticated route snapshot")
+    }
+
+    return SmokePairedRelayAllocationChallenge(
+        operation: operation,
+        requestID: requestID,
+        authorizationID: authorizationID,
+        currentRelayID: currentRelayID,
+        nextRelayID: nextRelayID,
+        routeTokenHash: routeTokenHash,
+        runtimeKeyFingerprint: challengeRuntimeFingerprint,
+        clientKeyFingerprint: clientKeyFingerprint,
+        currentTicketGeneration: currentTicketGeneration,
+        nextTicketGeneration: nextTicketGeneration,
+        currentRelayExpiresAt: challengeCurrentExpiresAt,
+        currentRelayNonce: currentRelayNonce,
+        nextRelayExpiresAt: nextRelayExpiresAt,
+        nextRelayNonce: nextRelayNonce,
+        challenge: challenge,
+        challengeExpiresAt: challengeExpiresAt,
+        transportBinding: challengeTransportBinding
+    )
+}
+
+func pairedRelayAllocationAuthorizationPayload(
+    challenge: SmokePairedRelayAllocationChallenge,
+    clientPrivateKey: P256.Signing.PrivateKey
+) throws -> [String: Any] {
+    let signature = try clientPrivateKey.signature(
+        for: SHA256.hash(data: challenge.clientTranscript())
+    )
+    return [
+        "proof_scheme": pairedRelayAllocationProofScheme,
+        "authorization_id": challenge.authorizationID,
+        "challenge": challenge.challenge,
+        "client_key_fingerprint": challenge.clientKeyFingerprint,
+        "transport_binding": challenge.transportBinding,
+        "client_signature": signature.derRepresentation.base64EncodedString(),
+    ]
+}
+
+func initialPairingRequestPayload(
+    client: TCPClient,
+    requestID: String,
+    pairingNonce: String,
+    pairingCode: String,
+    runtimeDeviceID: String,
+    runtimeProof: RuntimeProofExpectation,
+    clientDeviceID: String,
+    clientDeviceName: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
+    publicKeyOverride: String? = nil
+) throws -> (payload: [String: Any], digest: String) {
+    let clientPublicKey = clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+    let transportBinding = client.transportBindingID ?? "none"
+    let transcript = initialPairingTranscript(
+        context: "AetherLink initial pairing client proof v1",
+        fields: [
+            ("scheme", initialPairingProofScheme), ("protocol_version", "1"),
+            ("request_id", requestID), ("pairing_nonce", pairingNonce),
+            ("pairing_code", pairingCode), ("runtime_device_id", runtimeDeviceID),
+            ("runtime_public_key", runtimeProof.publicKeyBase64),
+            ("runtime_key_fingerprint", runtimeProof.keyFingerprint),
+            ("client_device_id", clientDeviceID), ("client_device_name", clientDeviceName),
+            ("client_public_key", clientPublicKey),
+            ("client_key_fingerprint", try publicKeyFingerprint(clientPublicKey)),
+            ("transport_binding", transportBinding)
+        ]
+    )
+    let signature = try clientPrivateKey.signature(for: SHA256.hash(data: transcript))
+    var payload: [String: Any] = [
+        "pairing_nonce": pairingNonce,
+        "pairing_code": pairingCode,
+        "device_id": clientDeviceID,
+        "device_name": clientDeviceName,
+        "public_key": publicKeyOverride ?? clientPublicKey,
+        "pairing_proof_scheme": initialPairingProofScheme,
+        "pairing_signature": signature.derRepresentation.base64EncodedString()
+    ]
+    if let binding = client.transportBindingID { payload["transport_binding"] = binding }
+    return (payload, sha256Hex(transcript))
+}
+
+func verifyAcceptedInitialPairingResult(
+    _ pairingPayload: [String: Any],
+    requestID: String,
+    requestDigest: String,
+    trustedDeviceID: String,
+    runtimeProof: RuntimeProofExpectation,
+    transportBinding: String?
+) -> Bool {
+    guard pairingPayload["accepted"] as? Bool == true,
+          pairingPayload["pairing_proof_scheme"] as? String == initialPairingProofScheme,
+          pairingPayload["pairing_request_digest"] as? String == requestDigest,
+          pairingPayload["runtime_device_id"] as? String != nil,
+          pairingPayload["runtime_public_key"] as? String == runtimeProof.publicKeyBase64,
+          pairingPayload["runtime_key_fingerprint"] as? String == runtimeProof.keyFingerprint,
+          pairingPayload["trusted_device_id"] as? String == trustedDeviceID,
+          pairingPayload["transport_binding"] as? String == transportBinding,
+          let runtimeDeviceID = pairingPayload["runtime_device_id"] as? String,
+          let message = pairingPayload["message"] as? String,
+          let signatureBase64 = pairingPayload["runtime_pairing_signature"] as? String,
+          let publicKeyData = Data(base64Encoded: runtimeProof.publicKeyBase64),
+          let signatureData = Data(base64Encoded: signatureBase64),
+          let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
+          let signature = try? P256.Signing.ECDSASignature(derRepresentation: signatureData)
+    else { return false }
+    let transcript = initialPairingTranscript(
+        context: "AetherLink initial pairing runtime result proof v1",
+        fields: [
+            ("scheme", initialPairingProofScheme), ("protocol_version", "1"),
+            ("request_id", requestID), ("pairing_request_digest", requestDigest),
+            ("accepted", "true"), ("runtime_device_id", runtimeDeviceID),
+            ("runtime_public_key", runtimeProof.publicKeyBase64),
+            ("runtime_key_fingerprint", runtimeProof.keyFingerprint),
+            ("trusted_device_id", trustedDeviceID), ("message", message),
+            ("transport_binding", transportBinding ?? "none")
+        ]
+    )
+    return publicKey.isValidSignature(signature, for: SHA256.hash(data: transcript))
+}
+
 func requireInt64(_ object: [String: Any], _ key: String, context: String) throws -> Int64 {
     if let value = object[key] as? Int64 {
         return value
@@ -860,6 +1676,11 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
         names: ["runtime_public_key", "mac_public_key", "public_key", "rk"],
         context: "pairing URI"
     )
+    let routeToken = try requireQueryValue(
+        query,
+        names: ["route_token", "discovery_token", "rt"],
+        context: "pairing URI"
+    )
     let hasDirectHost = queryValue(query, names: ["host", "runtime_host", "h"]) != nil
     let hasDirectPort = queryValue(query, names: ["port", "runtime_port", "p"]) != nil
 
@@ -870,7 +1691,7 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
     let relayNonce = queryValue(query, names: ["relay_nonce", "remote_nonce", "route_nonce", "rendezvous_nonce", "rrn"])
     let relayExpiresAtValue = queryValue(query, names: ["relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx"])
 
-    let relayConfiguration: RelayConfiguration?
+    var relayConfiguration: RelayConfiguration?
     if relayHost != nil ||
         relayPortValue != nil ||
         relayID != nil ||
@@ -907,6 +1728,7 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
     } else {
         relayExpiresAt = nil
     }
+    relayConfiguration?.relayExpiresAt = relayExpiresAt
 
     return ParsedPairingURI(
         pairingCode: pairingCode,
@@ -914,6 +1736,7 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
         runtimeDeviceID: runtimeDeviceID,
         runtimeKeyFingerprint: runtimeKeyFingerprint,
         runtimePublicKeyBase64: runtimePublicKeyBase64,
+        routeToken: routeToken,
         relayConfiguration: relayConfiguration,
         relayExpiresAt: relayExpiresAt,
         hasDirectHost: hasDirectHost,
@@ -1059,39 +1882,79 @@ func refreshRelayRoute(
     client: TCPClient,
     runtimeDeviceID: String,
     runtimeKeyFingerprint: String,
+    routeToken: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
     expectedEndpoint: RelayEndpoint,
     initialRelayConfiguration: RelayConfiguration?,
     initialRelayExpiresAt: Int64?,
-    expectP2PRouteRefresh: Bool
+    expectP2PRouteRefresh: Bool,
+    expectedOperation: String,
+    expectedCurrentTicketGeneration: Int64?,
+    requestID: String,
+    checkMalformedRequest: Bool = false
 ) throws -> RelayConfiguration {
-    print("Checking route.refresh relay renewal...")
-    let malformedRouteRefresh = try sendAndRead(
-        client,
-        type: "route.refresh",
-        requestID: "smoke-route-refresh-unknown-metadata",
-        payload: [
-            "relay_secret": "future-relay-secret",
-            "relay_nonce": "future-relay-nonce",
-            "p2p_record_id": "future-p2p-record",
-            "backend_url": smokeBackendURLCanary,
-            "provider_url": "https://provider.example.invalid/v1",
-            "route_token": "future-route-token",
-            "requested_route_token": "future-requested-route-token",
-            "workspace_id": "workspace-1",
-            "permission_grant": "future permission grant",
-            "source_path": "/Users/example/project/notes.md",
-            "source_control_status": "modified"
-        ]
+    print("Checking paired route.refresh relay \(expectedOperation)...")
+    if checkMalformedRequest {
+        let malformedRequestID = "\(requestID)-unknown-metadata"
+        let malformedRouteRefresh = try sendAndRead(
+            client,
+            type: "route.refresh",
+            requestID: malformedRequestID,
+            payload: [
+                "relay_secret": "future-relay-secret",
+                "relay_nonce": "future-relay-nonce",
+                "p2p_record_id": "future-p2p-record",
+                "backend_url": smokeBackendURLCanary,
+                "provider_url": "https://provider.example.invalid/v1",
+                "route_token": "future-route-token",
+                "requested_route_token": "future-requested-route-token",
+                "workspace_id": "workspace-1",
+                "permission_grant": "future permission grant",
+                "source_path": "/Users/example/project/notes.md",
+                "source_control_status": "modified"
+            ]
+        )
+        try requireErrorCode(
+            malformedRouteRefresh,
+            "invalid_payload",
+            requestID: malformedRequestID,
+            context: "route.refresh unknown metadata"
+        )
+    }
+
+    guard let currentConfiguration = initialRelayConfiguration,
+          let currentRelayExpiresAt = initialRelayExpiresAt,
+          let transportBinding = client.transportBindingID
+    else {
+        throw SmokeFailure.message("paired route.refresh requires a bound current relay lease")
+    }
+    try client.send(envelope("route.refresh", requestID: requestID))
+    let challengeEnvelope = try client.readEnvelope()
+    try assertNoBackendLeak(challengeEnvelope, context: "\(requestID) challenge")
+    let challenge = try parsePairedRelayAllocationChallenge(
+        challengeEnvelope,
+        requestID: requestID,
+        currentConfiguration: currentConfiguration,
+        currentRelayExpiresAt: currentRelayExpiresAt,
+        routeToken: routeToken,
+        runtimeKeyFingerprint: runtimeKeyFingerprint,
+        clientPrivateKey: clientPrivateKey,
+        transportBinding: transportBinding,
+        expectedOperation: expectedOperation,
+        expectedCurrentTicketGeneration: expectedCurrentTicketGeneration
     )
-    try requireErrorCode(
-        malformedRouteRefresh,
-        "invalid_payload",
-        requestID: "smoke-route-refresh-unknown-metadata",
-        context: "route.refresh unknown metadata"
-    )
-    let response = try sendAndRead(client, type: "route.refresh", requestID: "smoke-route-refresh")
+    try client.send(envelope(
+        "relay.allocation.authorization",
+        requestID: requestID,
+        payload: try pairedRelayAllocationAuthorizationPayload(
+            challenge: challenge,
+            clientPrivateKey: clientPrivateKey
+        )
+    ))
+    let response = try client.readEnvelope()
+    try assertNoBackendLeak(response, context: requestID)
     try requireType(response, "route.refresh", context: "route.refresh")
-    try requireRequestID(response, "smoke-route-refresh", context: "route.refresh")
+    try requireRequestID(response, requestID, context: "route.refresh")
     let routePayload = try payload(response, context: "route.refresh")
     guard try requireString(routePayload, "runtime_device_id", context: "route.refresh") == runtimeDeviceID,
           try requireString(routePayload, "runtime_key_fingerprint", context: "route.refresh") == runtimeKeyFingerprint
@@ -1115,6 +1978,14 @@ func refreshRelayRoute(
     let relayID = try requireString(routePayload, "relay_id", context: "route.refresh")
     let relaySecret = try requireString(routePayload, "relay_secret", context: "route.refresh")
     let relayNonce = try requireString(routePayload, "relay_nonce", context: "route.refresh")
+    let ticketGeneration = try requireInt64(routePayload, "ticket_generation", context: "route.refresh")
+    guard relayID == challenge.nextRelayID,
+          relayExpiresAt == challenge.nextRelayExpiresAt,
+          relayNonce == challenge.nextRelayNonce,
+          ticketGeneration == challenge.nextTicketGeneration
+    else {
+        throw SmokeFailure.message("route.refresh final route did not match the signed next lease")
+    }
     if let initialRelayConfiguration, let initialRelayExpiresAt {
         guard relayExpiresAt > initialRelayExpiresAt else {
             throw SmokeFailure.message("route.refresh did not advance the QR relay lease expiry: initial=\(initialRelayExpiresAt) refreshed=\(relayExpiresAt)")
@@ -1134,7 +2005,72 @@ func refreshRelayRoute(
         relaySecret: relaySecret,
         relayNonce: relayNonce,
         host: relayHost,
-        port: relayPortValue
+        port: relayPortValue,
+        relayExpiresAt: relayExpiresAt,
+        ticketGeneration: ticketGeneration,
+        runtimeKeyFingerprint: runtimeKeyFingerprint,
+        clientKeyFingerprint: try publicKeyFingerprint(
+            clientPrivateKey.publicKey.derRepresentation.base64EncodedString()
+        )
+    )
+}
+
+func runPairedRelayAllocationProofRejectionChecks(
+    client: TCPClient,
+    runtimeKeyFingerprint: String,
+    routeToken: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
+    currentConfiguration: RelayConfiguration,
+    currentRelayExpiresAt: Int64
+) throws {
+    print("Checking paired relay allocation wrong-key proof and replay rejection...")
+    let requestID = "smoke-route-refresh-wrong-client-proof"
+    guard let transportBinding = client.transportBindingID else {
+        throw SmokeFailure.message("paired relay proof rejection smoke requires a transport binding")
+    }
+    try client.send(envelope("route.refresh", requestID: requestID))
+    let challengeEnvelope = try client.readEnvelope()
+    try assertNoBackendLeak(challengeEnvelope, context: "paired relay wrong-key challenge")
+    let challenge = try parsePairedRelayAllocationChallenge(
+        challengeEnvelope,
+        requestID: requestID,
+        currentConfiguration: currentConfiguration,
+        currentRelayExpiresAt: currentRelayExpiresAt,
+        routeToken: routeToken,
+        runtimeKeyFingerprint: runtimeKeyFingerprint,
+        clientPrivateKey: clientPrivateKey,
+        transportBinding: transportBinding,
+        expectedOperation: "claim",
+        expectedCurrentTicketGeneration: nil
+    )
+    let wrongKey = P256.Signing.PrivateKey()
+    let rejectedAuthorization = envelope(
+        "relay.allocation.authorization",
+        requestID: requestID,
+        payload: try pairedRelayAllocationAuthorizationPayload(
+            challenge: challenge,
+            clientPrivateKey: wrongKey
+        )
+    )
+    try client.send(rejectedAuthorization)
+    let rejection = try client.readEnvelope()
+    try assertNoBackendLeak(rejection, context: "paired relay wrong-key rejection")
+    try requireErrorCode(
+        rejection,
+        "route_refresh_unavailable",
+        requestID: requestID,
+        context: "paired relay wrong-key rejection",
+        retryable: true
+    )
+
+    try client.send(rejectedAuthorization)
+    let replayRejection = try client.readEnvelope()
+    try assertNoBackendLeak(replayRejection, context: "paired relay proof replay rejection")
+    try requireErrorCode(
+        replayRejection,
+        "relay_allocation_authorization_rejected",
+        requestID: requestID,
+        context: "paired relay proof replay rejection"
     )
 }
 
@@ -1156,11 +2092,24 @@ func requireP2PRouteRefreshMaterial(_ routePayload: [String: Any], context: Stri
 func clientAuthSignature(
     privateKey: P256.Signing.PrivateKey,
     deviceID: String,
-    nonce: String
+    nonce: String,
+    transportBinding: String? = nil
 ) throws -> String {
-    let authMessage = "AetherLink client auth response v1\n\(deviceID)\n\(nonce)"
+    let authMessage: String
+    if let transportBinding {
+        authMessage = "AetherLink client auth response v2\n\(deviceID)\n\(nonce)\n\(transportBinding)"
+    } else {
+        authMessage = "AetherLink client auth response v1\n\(deviceID)\n\(nonce)"
+    }
     let digest = SHA256.hash(data: Data(authMessage.utf8))
     return try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
+}
+
+func addingTransportBinding(_ payload: [String: Any], from client: TCPClient) -> [String: Any] {
+    guard let transportBinding = client.transportBindingID else { return payload }
+    var bound = payload
+    bound["transport_binding"] = transportBinding
+    return bound
 }
 
 func rawNonceSignature(privateKey: P256.Signing.PrivateKey, nonce: String) throws -> String {
@@ -1196,7 +2145,8 @@ func verifyRuntimeAuthChallengeSignature(
     publicKeyBase64: String,
     deviceID: String,
     nonce: String,
-    signatureBase64: String
+    signatureBase64: String,
+    transportBinding: String? = nil
 ) -> Bool {
     guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
           let signatureData = Data(base64Encoded: signatureBase64),
@@ -1205,7 +2155,12 @@ func verifyRuntimeAuthChallengeSignature(
     else {
         return false
     }
-    let message = "AetherLink runtime auth challenge v1\n\(deviceID)\n\(nonce)"
+    let message: String
+    if let transportBinding {
+        message = "AetherLink runtime auth challenge v2\n\(deviceID)\n\(nonce)\n\(transportBinding)"
+    } else {
+        message = "AetherLink runtime auth challenge v1\n\(deviceID)\n\(nonce)"
+    }
     return publicKey.isValidSignature(
         signature,
         for: SHA256.hash(data: Data(message.utf8))
@@ -1217,6 +2172,7 @@ func requireRuntimeAuthChallengeProof(
     deviceID: String,
     nonce: String,
     expected: RuntimeProofExpectation,
+    transportBinding: String?,
     context: String
 ) throws {
     let runtimeKeyFingerprint = try requireString(challengePayload, "runtime_key_fingerprint", context: context)
@@ -1230,7 +2186,8 @@ func requireRuntimeAuthChallengeProof(
         publicKeyBase64: expected.publicKeyBase64,
         deviceID: deviceID,
         nonce: nonce,
-        signatureBase64: runtimeSignature
+        signatureBase64: runtimeSignature,
+        transportBinding: transportBinding
     ) else {
         throw SmokeFailure.message("\(context) runtime_signature was not valid for device_id and nonce")
     }
@@ -1238,9 +2195,23 @@ func requireRuntimeAuthChallengeProof(
         publicKeyBase64: expected.publicKeyBase64,
         deviceID: deviceID,
         nonce: "different-nonce",
-        signatureBase64: runtimeSignature
+        signatureBase64: runtimeSignature,
+        transportBinding: transportBinding
     ) else {
         throw SmokeFailure.message("\(context) runtime_signature replayed against a different nonce")
+    }
+    if let transportBinding {
+        let replacement = transportBinding.first == "0" ? "1" : "0"
+        let differentBinding = replacement + transportBinding.dropFirst()
+        guard !verifyRuntimeAuthChallengeSignature(
+            publicKeyBase64: expected.publicKeyBase64,
+            deviceID: deviceID,
+            nonce: nonce,
+            signatureBase64: runtimeSignature,
+            transportBinding: differentBinding
+        ) else {
+            throw SmokeFailure.message("\(context) runtime_signature replayed against a different transport binding")
+        }
     }
 }
 
@@ -1254,21 +2225,26 @@ func trustedHelloNonce(
         client,
         type: "hello",
         requestID: requestID,
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "device_name": "Smoke Test Client",
             "client_capabilities": ["chat", "streaming", "attachments"]
-        ]
+        ], from: client)
     )
     try requireType(challenge, "auth.challenge", context: requestID)
     let challengePayload = try payload(challenge, context: requestID)
     let nonce = try requireString(challengePayload, "nonce", context: requestID)
+    let transportBinding = challengePayload["transport_binding"] as? String
+    guard transportBinding == client.transportBindingID else {
+        throw SmokeFailure.message("\(requestID) auth challenge transport binding mismatch")
+    }
     if let runtimeProof {
         try requireRuntimeAuthChallengeProof(
             challengePayload,
             deviceID: deviceID,
             nonce: nonce,
             expected: runtimeProof,
+            transportBinding: transportBinding,
             context: requestID
         )
     }
@@ -1279,7 +2255,8 @@ func requireAcceptedAuthResponse(
     _ response: [String: Any],
     requestID: String,
     context: String,
-    deviceID: String? = nil
+    deviceID: String? = nil,
+    transportBinding: String? = nil
 ) throws {
     try requireType(response, "auth.response", context: context)
     try requireRequestID(response, requestID, context: context)
@@ -1287,6 +2264,9 @@ func requireAcceptedAuthResponse(
     try requireBool(authPayload, "accepted", true, context: context)
     if let deviceID, authPayload["device_id"] as? String != deviceID {
         throw SmokeFailure.message("\(context) returned a different device_id: \(response)")
+    }
+    guard authPayload["transport_binding"] as? String == transportBinding else {
+        throw SmokeFailure.message("\(context) returned a different transport_binding")
     }
 }
 
@@ -1331,7 +2311,12 @@ func authenticateFreshClient(
     requestPrefix: String,
     runtimeProof: RuntimeProofExpectation? = nil
 ) throws -> TCPClient {
-    let client = try connectWithRetry(host: host, port: port, relay: relay)
+    let client = try connectWithRetry(
+        host: host,
+        port: port,
+        relay: relay,
+        clientRegistrationPrivateKey: privateKey
+    )
     do {
         let nonce = try trustedHelloNonce(
             client: client,
@@ -1339,22 +2324,28 @@ func authenticateFreshClient(
             requestID: "\(requestPrefix)-hello",
             runtimeProof: runtimeProof
         )
-        let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
+        let signature = try clientAuthSignature(
+            privateKey: privateKey,
+            deviceID: deviceID,
+            nonce: nonce,
+            transportBinding: client.transportBindingID
+        )
         let authResponse = try sendAndRead(
             client,
             type: "auth.response",
             requestID: "\(requestPrefix)-auth",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "nonce": nonce,
                 "signature": signature
-            ]
+            ], from: client)
         )
         try requireAcceptedAuthResponse(
             authResponse,
             requestID: "\(requestPrefix)-auth",
             context: "\(requestPrefix) auth.response",
-            deviceID: deviceID
+            deviceID: deviceID,
+            transportBinding: client.transportBindingID
         )
         return client
     } catch {
@@ -1370,38 +2361,43 @@ func runRejectedPairingChecks(
     pairingNonce: String,
     pairingCode: String,
     deviceID: String,
-    publicKeyBase64: String
+    clientPrivateKey: P256.Signing.PrivateKey,
+    runtimeDeviceID: String,
+    runtimeProof: RuntimeProofExpectation
 ) throws {
     print("Checking rejected pairing request does not trust the device...")
     let invalidCode = pairingCode == "000000" ? "999999" : "000000"
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
+        var request = try initialPairingRequestPayload(
+            client: client, requestID: "smoke-pair-unknown-metadata",
+            pairingNonce: pairingNonce, pairingCode: pairingCode,
+            runtimeDeviceID: runtimeDeviceID, runtimeProof: runtimeProof,
+            clientDeviceID: deviceID, clientDeviceName: "AetherLink Pairing Unknown Metadata Smoke",
+            clientPrivateKey: clientPrivateKey
+        ).payload
+        request.merge([
+            "accepted": true,
+            "runtime_device_id": "forged-runtime",
+            "runtime_key_fingerprint": "forged-runtime-fingerprint",
+            "trusted_device_id": "forged-trusted-device",
+            "backend_url": smokeBackendURLCanary,
+            "backend_credentials": "future-backend-token",
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "requested_route_token": "future-requested-route-token",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant",
+            "source_path": "/Users/example/project/notes.md",
+            "source_control_status": "modified"
+        ]) { _, new in new }
         let response = try sendAndRead(
             client,
             type: "pairing.request",
             requestID: "smoke-pair-unknown-metadata",
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Pairing Unknown Metadata Smoke",
-                "public_key": publicKeyBase64,
-                "accepted": true,
-                "runtime_device_id": "forged-runtime",
-                "runtime_key_fingerprint": "forged-runtime-fingerprint",
-                "trusted_device_id": "forged-trusted-device",
-                "backend_url": smokeBackendURLCanary,
-                "backend_credentials": "future-backend-token",
-                "provider_url": "https://provider.example.invalid/v1",
-                "route_token": "future-route-token",
-                "relay_secret": "future-relay-secret",
-                "requested_route_token": "future-requested-route-token",
-                "workspace_id": "workspace-1",
-                "permission_grant": "future permission grant",
-                "source_path": "/Users/example/project/notes.md",
-                "source_control_status": "modified"
-            ]
+            payload: request
         )
         try requireErrorCode(
             response,
@@ -1425,17 +2421,19 @@ func runRejectedPairingChecks(
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
+        var request = try initialPairingRequestPayload(
+            client: client, requestID: "smoke-pair-blank-allowed-fields",
+            pairingNonce: pairingNonce, pairingCode: pairingCode,
+            runtimeDeviceID: runtimeDeviceID, runtimeProof: runtimeProof,
+            clientDeviceID: deviceID, clientDeviceName: "AetherLink Blank Pairing Field Smoke",
+            clientPrivateKey: clientPrivateKey
+        ).payload
+        request["pairing_nonce"] = "   \n\t"
         let response = try sendAndRead(
             client,
             type: "pairing.request",
             requestID: "smoke-pair-blank-allowed-fields",
-            payload: [
-                "pairing_nonce": "   \n\t",
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Blank Pairing Field Smoke",
-                "public_key": publicKeyBase64
-            ]
+            payload: request
         )
         try requireErrorCode(
             response,
@@ -1448,17 +2446,18 @@ func runRejectedPairingChecks(
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
+        let request = try initialPairingRequestPayload(
+            client: client, requestID: "smoke-pair-invalid-code",
+            pairingNonce: pairingNonce, pairingCode: invalidCode,
+            runtimeDeviceID: runtimeDeviceID, runtimeProof: runtimeProof,
+            clientDeviceID: deviceID, clientDeviceName: "AetherLink Invalid Pairing Smoke",
+            clientPrivateKey: clientPrivateKey
+        )
         let response = try sendAndRead(
             client,
             type: "pairing.request",
             requestID: "smoke-pair-invalid-code",
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": invalidCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Invalid Pairing Smoke",
-                "public_key": publicKeyBase64
-            ]
+            payload: request.payload
         )
         try requireRejectedPairingResult(
             response,
@@ -1493,11 +2492,11 @@ func runRejectedPairingChecks(
             client,
             type: "hello",
             requestID: "smoke-invalid-pairing-hello",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "device_name": "AetherLink Invalid Pairing Smoke",
                 "client_capabilities": ["chat", "streaming"]
-            ]
+            ], from: client)
         )
         try requireErrorCode(
             response,
@@ -1802,11 +2801,11 @@ func runPreAuthUnknownMetadataChecks(
         client,
         type: "hello",
         requestID: "smoke-hello-invalid-allowed-types",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "device_name": "Smoke Test Client",
             "client_capabilities": ["chat", 1] as [Any]
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         invalidHelloAllowedFields,
@@ -1819,7 +2818,7 @@ func runPreAuthUnknownMetadataChecks(
         client,
         type: "hello",
         requestID: "smoke-hello-unknown-metadata",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "device_name": "Smoke Test Client",
             "client_capabilities": ["chat", "streaming", "attachments"],
@@ -1832,7 +2831,7 @@ func runPreAuthUnknownMetadataChecks(
             "relay_secret": "future-relay-secret",
             "workspace_id": "workspace-1",
             "permission_grant": "future permission grant"
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         malformedHello,
@@ -1858,16 +2857,21 @@ func runPreAuthUnknownMetadataChecks(
         deviceID: deviceID,
         requestID: "smoke-auth-unknown-metadata-hello"
     )
-    let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
+    let signature = try clientAuthSignature(
+        privateKey: privateKey,
+        deviceID: deviceID,
+        nonce: nonce,
+        transportBinding: client.transportBindingID
+    )
     let invalidAuthAllowedFields = try sendAndRead(
         client,
         type: "auth.response",
         requestID: "smoke-auth-invalid-allowed-types",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "nonce": "   \n\t",
             "signature": signature
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         invalidAuthAllowedFields,
@@ -1880,7 +2884,7 @@ func runPreAuthUnknownMetadataChecks(
         client,
         type: "auth.response",
         requestID: "smoke-auth-unknown-metadata",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "nonce": nonce,
             "signature": signature,
@@ -1892,7 +2896,7 @@ func runPreAuthUnknownMetadataChecks(
             "relay_secret": "future-relay-secret",
             "workspace_id": "workspace-1",
             "permission_grant": "future permission grant"
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         malformedAuth,
@@ -1920,23 +2924,27 @@ func runInvalidPairingIdentityCheck(
     relay: RelayConfiguration?,
     pairingNonce: String,
     pairingCode: String,
-    deviceID: String
+    deviceID: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
+    runtimeDeviceID: String,
+    runtimeProof: RuntimeProofExpectation
 ) throws {
     print("Checking malformed pairing identity does not trust the device...")
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
+        let request = try initialPairingRequestPayload(
+            client: client, requestID: "smoke-pair-invalid-identity",
+            pairingNonce: pairingNonce, pairingCode: pairingCode,
+            runtimeDeviceID: runtimeDeviceID, runtimeProof: runtimeProof,
+            clientDeviceID: deviceID, clientDeviceName: "AetherLink Invalid Identity Smoke",
+            clientPrivateKey: clientPrivateKey, publicKeyOverride: "not-a-p256-public-key"
+        )
         let response = try sendAndRead(
             client,
             type: "pairing.request",
             requestID: "smoke-pair-invalid-identity",
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Invalid Identity Smoke",
-                "public_key": "not-a-p256-public-key"
-            ]
+            payload: request.payload
         )
         try requireRejectedPairingResult(
             response,
@@ -1971,11 +2979,11 @@ func runInvalidPairingIdentityCheck(
             client,
             type: "hello",
             requestID: "smoke-invalid-identity-hello",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "device_name": "AetherLink Invalid Identity Smoke",
                 "client_capabilities": ["chat", "streaming"]
-            ]
+            ], from: client)
         )
         try requireErrorCode(
             response,
@@ -1994,37 +3002,58 @@ func pairTrustedDevice(
     pairingCode: String,
     deviceID: String,
     deviceName: String,
-    publicKeyBase64: String,
+    clientPrivateKey: P256.Signing.PrivateKey,
     requestID: String,
-    expectedRuntimeDeviceID: String? = nil,
-    expectedRuntimeProof: RuntimeProofExpectation? = nil
+    expectedRuntimeDeviceID: String,
+    expectedRuntimeProof: RuntimeProofExpectation
 ) throws {
     let pairingClient = try connectWithRetry(host: host, port: port, relay: relay)
     do {
+        let request = try initialPairingRequestPayload(
+            client: pairingClient, requestID: requestID,
+            pairingNonce: pairingNonce, pairingCode: pairingCode,
+            runtimeDeviceID: expectedRuntimeDeviceID, runtimeProof: expectedRuntimeProof,
+            clientDeviceID: deviceID, clientDeviceName: deviceName,
+            clientPrivateKey: clientPrivateKey
+        )
         let pairResponse = try sendAndRead(
             pairingClient,
             type: "pairing.request",
             requestID: requestID,
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": deviceName,
-                "public_key": publicKeyBase64
-            ]
+            payload: request.payload
         )
         try requireType(pairResponse, "pairing.result", context: "pairing.request")
         try requireRequestID(pairResponse, requestID, context: "pairing.request")
         let pairPayload = try payload(pairResponse, context: "pairing.request")
         try requireBool(pairPayload, "accepted", true, context: "pairing.request")
-        if let expectedRuntimeDeviceID, let expectedRuntimeProof {
-            try requireAcceptedPairingRuntimeIdentity(
-                pairResponse,
-                expectedRuntimeDeviceID: expectedRuntimeDeviceID,
-                expectedRuntimeProof: expectedRuntimeProof,
+        try requireAcceptedPairingRuntimeIdentity(
+            pairResponse,
+            expectedRuntimeDeviceID: expectedRuntimeDeviceID,
+            expectedRuntimeProof: expectedRuntimeProof,
+            requestID: requestID,
+            context: "accepted pairing.result runtime identity"
+        )
+        guard verifyAcceptedInitialPairingResult(
+                pairPayload,
                 requestID: requestID,
-                context: "accepted pairing.result runtime identity"
-            )
+                requestDigest: request.digest,
+                trustedDeviceID: deviceID,
+                runtimeProof: expectedRuntimeProof,
+                transportBinding: pairingClient.transportBindingID
+        ) else {
+            throw SmokeFailure.message("accepted pairing.result proof verification failed")
+        }
+        var tampered = pairPayload
+        tampered["message"] = "tampered accepted result"
+        guard !verifyAcceptedInitialPairingResult(
+                tampered,
+                requestID: requestID,
+                requestDigest: request.digest,
+                trustedDeviceID: deviceID,
+                runtimeProof: expectedRuntimeProof,
+                transportBinding: pairingClient.transportBindingID
+        ) else {
+            throw SmokeFailure.message("accepted pairing.result proof accepted a tampered message")
         }
         pairingClient.close()
     } catch {
@@ -2040,23 +3069,26 @@ func runConsumedPairingReuseCheck(
     pairingNonce: String,
     pairingCode: String,
     deviceID: String,
-    publicKeyBase64: String
+    clientPrivateKey: P256.Signing.PrivateKey,
+    runtimeDeviceID: String,
+    runtimeProof: RuntimeProofExpectation
 ) throws {
     print("Checking consumed pairing QR cannot be reused...")
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
+        let request = try initialPairingRequestPayload(
+            client: client, requestID: "smoke-pair-consumed-reuse",
+            pairingNonce: pairingNonce, pairingCode: pairingCode,
+            runtimeDeviceID: runtimeDeviceID, runtimeProof: runtimeProof,
+            clientDeviceID: deviceID, clientDeviceName: "AetherLink Consumed Pairing Smoke",
+            clientPrivateKey: clientPrivateKey
+        )
         let response = try sendAndRead(
             client,
             type: "pairing.request",
             requestID: "smoke-pair-consumed-reuse",
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Consumed Pairing Smoke",
-                "public_key": publicKeyBase64
-            ]
+            payload: request.payload
         )
         try requireRejectedPairingResult(
             response,
@@ -2085,11 +3117,11 @@ func runConsumedPairingReuseCheck(
             client,
             type: "hello",
             requestID: "smoke-pair-consumed-hello",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "device_name": "AetherLink Consumed Pairing Smoke",
                 "client_capabilities": ["chat", "streaming"]
-            ]
+            ], from: client)
         )
         try requireErrorCode(
             response,
@@ -2122,11 +3154,11 @@ func runRawNonceAuthRejectionCheck(
         client,
         type: "auth.response",
         requestID: "smoke-auth-raw-nonce-response",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": deviceID,
             "nonce": nonce,
             "signature": signature
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         response,
@@ -2166,12 +3198,17 @@ func runAuthReplayAndSupersededChallengeChecks(
             requestID: "smoke-auth-replay-hello",
             runtimeProof: runtimeProof
         )
-        let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
-        let authPayload: [String: Any] = [
+        let signature = try clientAuthSignature(
+            privateKey: privateKey,
+            deviceID: deviceID,
+            nonce: nonce,
+            transportBinding: client.transportBindingID
+        )
+        let authPayload = addingTransportBinding([
             "device_id": deviceID,
             "nonce": nonce,
             "signature": signature
-        ]
+        ], from: client)
         let firstAuthResponse = try sendAndRead(
             client,
             type: "auth.response",
@@ -2182,7 +3219,8 @@ func runAuthReplayAndSupersededChallengeChecks(
             firstAuthResponse,
             requestID: "smoke-auth-replay-first",
             context: "auth replay first auth.response",
-            deviceID: deviceID
+            deviceID: deviceID,
+            transportBinding: client.transportBindingID
         )
 
         let replayResponse = try sendAndRead(
@@ -2225,16 +3263,21 @@ func runAuthReplayAndSupersededChallengeChecks(
             throw SmokeFailure.message("superseded auth smoke expected distinct challenge nonces")
         }
 
-        let staleSignature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: staleNonce)
+        let staleSignature = try clientAuthSignature(
+            privateKey: privateKey,
+            deviceID: deviceID,
+            nonce: staleNonce,
+            transportBinding: client.transportBindingID
+        )
         let staleAuthResponse = try sendAndRead(
             client,
             type: "auth.response",
             requestID: "smoke-auth-superseded-stale",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "nonce": staleNonce,
                 "signature": staleSignature
-            ]
+            ], from: client)
         )
         try requireErrorCode(
             staleAuthResponse,
@@ -2243,22 +3286,28 @@ func runAuthReplayAndSupersededChallengeChecks(
             context: "superseded stale auth.response"
         )
 
-        let freshSignature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: freshNonce)
+        let freshSignature = try clientAuthSignature(
+            privateKey: privateKey,
+            deviceID: deviceID,
+            nonce: freshNonce,
+            transportBinding: client.transportBindingID
+        )
         let freshAuthResponse = try sendAndRead(
             client,
             type: "auth.response",
             requestID: "smoke-auth-superseded-fresh",
-            payload: [
+            payload: addingTransportBinding([
                 "device_id": deviceID,
                 "nonce": freshNonce,
                 "signature": freshSignature
-            ]
+            ], from: client)
         )
         try requireAcceptedAuthResponse(
             freshAuthResponse,
             requestID: "smoke-auth-superseded-fresh",
             context: "superseded fresh auth.response",
-            deviceID: deviceID
+            deviceID: deviceID,
+            transportBinding: client.transportBindingID
         )
 
         let healthAfterSuperseded = try sendAndRead(
@@ -2333,11 +3382,11 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         client,
         type: "hello",
         requestID: "smoke-untrusted-hello",
-        payload: [
+        payload: addingTransportBinding([
             "device_id": "aetherlink-auth-smoke-untrusted-device",
             "device_name": "Untrusted Smoke Client",
             "client_capabilities": ["chat", "streaming"]
-        ]
+        ], from: client)
     )
     try requireErrorCode(
         response,
@@ -3330,6 +4379,7 @@ func uniqueNonEmptyMarkers(_ markers: [String]) -> [String] {
 func verifyRelayCiphertextBoundaryIfNeeded(extraPlaintextMarkers: [String] = []) throws {
     guard RelayCiphertextBoundary.enabled else { return }
     print("Checking relay ciphertext boundary...")
+    try RelayCiphertextBoundary.requireFreshReconnectNonces()
     try RelayCiphertextBoundary.requireNoPlaintextMarkers(
         uniqueNonEmptyMarkers(relayPlaintextBoundaryMarkers() + extraPlaintextMarkers)
     )
@@ -7216,6 +8266,9 @@ func runRealOllamaChecks(
 func main() throws {
     let options = try SmokeOptions.parse(CommandLine.arguments)
     RelayCiphertextBoundary.enabled = options.transportMode == .relay
+    if RelayCiphertextBoundary.enabled {
+        try verifyRelaySessionConfirmationVector()
+    }
 
     guard FileManager.default.fileExists(atPath: "Package.swift") else {
         throw SmokeFailure.message("Run this script from the repository root.")
@@ -7260,6 +8313,7 @@ func main() throws {
         ]
         if bootstrapRelayEndpoint != nil {
             process.arguments?.append("--require-allocation")
+            process.arguments?.append("--ephemeral-allocations")
         }
         let output = RelayProcessOutput()
         let pipe = Pipe()
@@ -7454,7 +8508,9 @@ func main() throws {
         pairingNonce: pairingNonce,
         pairingCode: pairingCode,
         deviceID: deviceID,
-        publicKeyBase64: publicKeyBase64
+        clientPrivateKey: privateKey,
+        runtimeDeviceID: runtimeDeviceID,
+        runtimeProof: runtimeProof
     )
 
     try runInvalidPairingIdentityCheck(
@@ -7463,7 +8519,10 @@ func main() throws {
         relay: clientRelayConfiguration,
         pairingNonce: pairingNonce,
         pairingCode: pairingCode,
-        deviceID: deviceID
+        deviceID: deviceID,
+        clientPrivateKey: privateKey,
+        runtimeDeviceID: runtimeDeviceID,
+        runtimeProof: runtimeProof
     )
 
     print("Pairing with dev session runtime_device_id=\(runtimeDeviceID) over \(options.transportMode.name)...")
@@ -7475,7 +8534,7 @@ func main() throws {
         pairingCode: pairingCode,
         deviceID: deviceID,
         deviceName: "AetherLink Auth Smoke",
-        publicKeyBase64: publicKeyBase64,
+        clientPrivateKey: privateKey,
         requestID: "smoke-pair",
         expectedRuntimeDeviceID: runtimeDeviceID,
         expectedRuntimeProof: runtimeProof
@@ -7496,7 +8555,9 @@ func main() throws {
         pairingNonce: pairingNonce,
         pairingCode: pairingCode,
         deviceID: consumedPairingDeviceID,
-        publicKeyBase64: consumedPairingDevicePublicKeyBase64
+        clientPrivateKey: consumedPairingDevicePrivateKey,
+        runtimeDeviceID: runtimeDeviceID,
+        runtimeProof: runtimeProof
     )
 
     try runRawNonceAuthRejectionCheck(
@@ -7538,25 +8599,6 @@ func main() throws {
 
         try runAuthenticatedNonObjectPayloadChecks(client: client)
 
-        if options.transportMode == .relay {
-            let expectedEndpoint = bootstrapRelayEndpoint
-                ?? relayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
-                ?? clientRelayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
-                ?? RelayEndpoint(host: "127.0.0.1", port: 0)
-            guard expectedEndpoint.port != 0 else {
-                throw SmokeFailure.message("route.refresh smoke could not resolve expected relay endpoint")
-            }
-            clientRelayConfiguration = try refreshRelayRoute(
-                client: client,
-                runtimeDeviceID: runtimeDeviceID,
-                runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
-                expectedEndpoint: expectedEndpoint,
-                initialRelayConfiguration: parsedPairingURI.relayConfiguration,
-                initialRelayExpiresAt: parsedPairingURI.relayExpiresAt,
-                expectP2PRouteRefresh: options.expectP2PRouteRefresh
-            )
-        }
-
         try runAuthenticatedResponseOnlyMessageDirectionChecks(client: client)
         try runAuthenticatedFutureNamespaceRejectionChecks(client: client)
         try runAuthenticatedFutureMemoryNamespaceRejectionChecks(client: client)
@@ -7595,6 +8637,73 @@ func main() throws {
             deviceBID: ownerDeviceBID,
             privateKeyB: ownerDeviceBPrivateKey,
             runtimeProof: runtimeProof
+        )
+    }
+
+    if options.transportMode == .relay {
+        let expectedEndpoint = bootstrapRelayEndpoint
+            ?? relayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
+            ?? clientRelayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
+            ?? RelayEndpoint(host: "127.0.0.1", port: 0)
+        guard expectedEndpoint.port != 0 else {
+            throw SmokeFailure.message("route.refresh smoke could not resolve expected relay endpoint")
+        }
+        guard let initialRelayConfiguration = parsedPairingURI.relayConfiguration,
+              let initialRelayExpiresAt = parsedPairingURI.relayExpiresAt
+        else {
+            throw SmokeFailure.message("paired route.refresh smoke requires the QR relay lease")
+        }
+        let refreshClient = try authenticateFreshClient(
+            host: "127.0.0.1",
+            port: port,
+            relay: clientRelayConfiguration,
+            deviceID: deviceID,
+            privateKey: privateKey,
+            requestPrefix: "smoke-route-refresh",
+            runtimeProof: runtimeProof
+        )
+        defer { refreshClient.close() }
+        try runPairedRelayAllocationProofRejectionChecks(
+            client: refreshClient,
+            runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
+            routeToken: parsedPairingURI.routeToken,
+            clientPrivateKey: privateKey,
+            currentConfiguration: initialRelayConfiguration,
+            currentRelayExpiresAt: initialRelayExpiresAt
+        )
+        let claimedRelayConfiguration = try refreshRelayRoute(
+            client: refreshClient,
+            runtimeDeviceID: runtimeDeviceID,
+            runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
+            routeToken: parsedPairingURI.routeToken,
+            clientPrivateKey: privateKey,
+            expectedEndpoint: expectedEndpoint,
+            initialRelayConfiguration: initialRelayConfiguration,
+            initialRelayExpiresAt: initialRelayExpiresAt,
+            expectP2PRouteRefresh: options.expectP2PRouteRefresh,
+            expectedOperation: "claim",
+            expectedCurrentTicketGeneration: nil,
+            requestID: "smoke-route-refresh-claim",
+            checkMalformedRequest: true
+        )
+        guard let claimedRelayExpiresAt = claimedRelayConfiguration.relayExpiresAt,
+              let claimedTicketGeneration = claimedRelayConfiguration.ticketGeneration
+        else {
+            throw SmokeFailure.message("paired route.refresh claim did not preserve lease generation")
+        }
+        clientRelayConfiguration = try refreshRelayRoute(
+            client: refreshClient,
+            runtimeDeviceID: runtimeDeviceID,
+            runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
+            routeToken: parsedPairingURI.routeToken,
+            clientPrivateKey: privateKey,
+            expectedEndpoint: expectedEndpoint,
+            initialRelayConfiguration: claimedRelayConfiguration,
+            initialRelayExpiresAt: claimedRelayExpiresAt,
+            expectP2PRouteRefresh: options.expectP2PRouteRefresh,
+            expectedOperation: "renew",
+            expectedCurrentTicketGeneration: claimedTicketGeneration,
+            requestID: "smoke-route-refresh-renew"
         )
     }
 
