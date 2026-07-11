@@ -2196,6 +2196,24 @@ final class SQLiteRuntimeDocumentIndexStoreTests: XCTestCase {
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw NSError(domain: "SQLiteRuntimeDocumentIndexStoreTests", code: 4)
         }
+
+        let approval = try prepareRaw(
+            database,
+            """
+            INSERT INTO runtime_document_source_approvals(
+                document_id,
+                approval_id,
+                source_revision,
+                approval_scope,
+                approved_by,
+                approved_at
+            ) VALUES ('corrupt', 'raw-test-approval', 'raw-test-revision', 'runtime_shared', 'test-host', 0)
+            """
+        )
+        defer { sqlite3_finalize(approval) }
+        guard sqlite3_step(approval) == SQLITE_DONE else {
+            throw NSError(domain: "SQLiteRuntimeDocumentIndexStoreTests", code: 8)
+        }
     }
 
     private func openRawDatabase(_ databaseURL: URL) throws -> OpaquePointer {

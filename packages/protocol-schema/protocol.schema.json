@@ -35,7 +35,12 @@
         "chat.session.delete",
         "index.documents.list",
         "retrieval.query",
+        "citation.resolve",
         "source_anchor.resolve",
+        "trusted_source.approve",
+        "trusted_source.dismiss",
+        "trusted_source.list",
+        "trusted_source.revoke",
         "memory.list",
         "memory.upsert",
         "memory.delete",
@@ -160,6 +165,26 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/sourceAnchorResolvePayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "citation.resolve" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/citationResolvePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "trusted_source.approve" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/trustedSourceApprovePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "trusted_source.dismiss" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/trustedSourceDismissPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "trusted_source.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/trustedSourceListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "trusted_source.revoke" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/trustedSourceRevokePayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "memory.list" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memoryListPayload" } } }
     },
@@ -248,6 +273,27 @@
     "sourceAnchorID": {
       "type": "string",
       "pattern": "^source_anchor_[0-9a-f]{16}$"
+    },
+    "citationID": {
+      "type": "string",
+      "pattern": "^citation_[0-9a-f]{32}$"
+    },
+    "sourceReviewID": {
+      "type": "string",
+      "pattern": "^source_review_[0-9a-f]{32}$"
+    },
+    "sourceConfirmationToken": {
+      "type": "string",
+      "pattern": "^source_confirmation_[0-9a-f]{64}$"
+    },
+    "trustedSourceGrantID": {
+      "type": "string",
+      "pattern": "^trusted_source_[0-9a-f]{32}$"
+    },
+    "iso8601DateTime": {
+      "type": "string",
+      "minLength": 1,
+      "format": "date-time"
     },
     "opaqueRouteValue": {
       "type": "string",
@@ -770,6 +816,13 @@
           "type": "array",
           "items": { "$ref": "#/$defs/chatMessage" },
           "minItems": 1
+        },
+        "trusted_source_grant_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trustedSourceGrantID" },
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true
         }
       },
       "additionalProperties": false
@@ -1224,14 +1277,17 @@
         "rank": { "type": "integer", "minimum": 1 },
         "matched_terms": {
           "type": "array",
-          "minItems": 1,
           "maxItems": 16,
           "items": {
             "allOf": [
-              { "$ref": "#/$defs/nonEmptyString" },
+              { "$ref": "#/$defs/nonBlankString" },
               { "maxLength": 64 }
             ]
           }
+        },
+        "match_kind": {
+          "type": "string",
+          "enum": ["lexical", "semantic"]
         },
         "snippet": {
           "allOf": [
@@ -1240,6 +1296,17 @@
           ]
         }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "match_kind": { "const": "semantic" } },
+            "required": ["match_kind"]
+          },
+          "else": {
+            "properties": { "matched_terms": { "minItems": 1 } }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "retrievalQueryPayload": {
@@ -1255,7 +1322,8 @@
               ]
             },
             "limit": { "type": "integer", "minimum": 0, "maximum": 100 },
-            "max_snippet_characters": { "type": "integer", "minimum": 0, "maximum": 500 }
+            "max_snippet_characters": { "type": "integer", "minimum": 0, "maximum": 500 },
+            "embedding_model_id": { "$ref": "#/$defs/nonBlankString" }
           },
           "additionalProperties": false
         },
@@ -1306,6 +1374,153 @@
             "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" },
             "document": { "$ref": "#/$defs/indexDocument" },
             "chunk_summary": { "$ref": "#/$defs/sourceAnchorChunkSummary" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "citation": {
+      "type": "object",
+      "required": ["schema_version", "citation_id", "source_anchor_id", "document", "chunk_summary"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "citation_id": { "$ref": "#/$defs/citationID" },
+        "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" },
+        "document": { "$ref": "#/$defs/indexDocument" },
+        "chunk_summary": { "$ref": "#/$defs/sourceAnchorChunkSummary" }
+      },
+      "additionalProperties": false
+    },
+    "sourceReview": {
+      "type": "object",
+      "required": ["review_id", "confirmation_token", "disclosure_version", "usage_scope", "expires_at"],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/sourceReviewID" },
+        "confirmation_token": { "$ref": "#/$defs/sourceConfirmationToken" },
+        "disclosure_version": { "const": "runtime-trusted-source-v1" },
+        "usage_scope": { "const": "chat_context" },
+        "expires_at": { "$ref": "#/$defs/iso8601DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "trustedSource": {
+      "type": "object",
+      "required": ["grant_id", "citation_id", "source_anchor_id", "document", "usage_scope", "approved_at"],
+      "properties": {
+        "grant_id": { "$ref": "#/$defs/trustedSourceGrantID" },
+        "citation_id": { "$ref": "#/$defs/citationID" },
+        "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" },
+        "document": { "$ref": "#/$defs/indexDocument" },
+        "usage_scope": { "const": "chat_context" },
+        "approved_at": { "$ref": "#/$defs/iso8601DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "citationResolvePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["source_anchor_id"],
+          "properties": {
+            "source_anchor_id": { "$ref": "#/$defs/sourceAnchorID" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["citation", "review"],
+          "properties": {
+            "citation": { "$ref": "#/$defs/citation" },
+            "review": { "$ref": "#/$defs/sourceReview" },
+            "trusted_source": { "$ref": "#/$defs/trustedSource" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trustedSourceApprovePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["review_id", "confirmation_token", "disclosure_version", "usage_scope"],
+          "properties": {
+            "review_id": { "$ref": "#/$defs/sourceReviewID" },
+            "confirmation_token": { "$ref": "#/$defs/sourceConfirmationToken" },
+            "disclosure_version": { "const": "runtime-trusted-source-v1" },
+            "usage_scope": { "const": "chat_context" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["trusted_source"],
+          "properties": {
+            "trusted_source": { "$ref": "#/$defs/trustedSource" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trustedSourceDismissPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["review_id"],
+          "properties": {
+            "review_id": { "$ref": "#/$defs/sourceReviewID" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["review_id", "dismissed"],
+          "properties": {
+            "review_id": { "$ref": "#/$defs/sourceReviewID" },
+            "dismissed": { "const": true }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trustedSourceListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "limit": { "type": "integer", "minimum": 0, "maximum": 100 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["trusted_sources"],
+          "properties": {
+            "trusted_sources": {
+              "type": "array",
+              "maxItems": 100,
+              "items": { "$ref": "#/$defs/trustedSource" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "trustedSourceRevokePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["grant_id"],
+          "properties": {
+            "grant_id": { "$ref": "#/$defs/trustedSourceGrantID" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["grant_id", "revoked"],
+          "properties": {
+            "grant_id": { "$ref": "#/$defs/trustedSourceGrantID" },
+            "revoked": { "const": true }
           },
           "additionalProperties": false
         }
@@ -1562,6 +1777,11 @@
             "chat_context_window_exceeded",
             "document_index_unavailable",
             "source_anchor_not_found",
+            "citation_not_found",
+            "trusted_source_review_not_found",
+            "trusted_source_review_expired",
+            "trusted_source_review_stale",
+            "trusted_source_not_found",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",

@@ -1,10 +1,12 @@
 package com.localagentbridge.android.runtime
 
+import com.localagentbridge.android.core.protocol.RetrievalMatchKind
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import java.util.UUID
 
 internal const val MAX_PENDING_ATTACHMENTS = 4
+internal const val MAX_SELECTED_TRUSTED_SOURCES = 8
 
 data class RuntimeUiState(
     val runtimeHost: String = "",
@@ -52,6 +54,15 @@ data class RuntimeUiState(
     val documentSearchResults: List<RuntimeDocumentSearchResult> = emptyList(),
     val isLoadingDocumentCatalog: Boolean = false,
     val isSearchingDocuments: Boolean = false,
+    val sourceReview: RuntimeSourceReview? = null,
+    val trustedSources: List<RuntimeTrustedSource> = emptyList(),
+    val selectedTrustedSourceAnchorIds: List<String> = emptyList(),
+    val hasLoadedTrustedSources: Boolean = false,
+    val isResolvingCitation: Boolean = false,
+    val isApprovingTrustedSource: Boolean = false,
+    val isDismissingTrustedSource: Boolean = false,
+    val isLoadingTrustedSources: Boolean = false,
+    val revokingTrustedSourceAnchorIds: Set<String> = emptySet(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val selectedLanguageSource: String = APP_LANGUAGE_SOURCE_DEFAULT,
     val selectedTheme: RuntimeAppTheme = RuntimeAppTheme.System,
@@ -334,9 +345,26 @@ data class RuntimeDocumentSearchResult(
     val startCharacterOffset: Int,
     val endCharacterOffset: Int,
     val rank: Int,
+    val matchKind: RetrievalMatchKind = RetrievalMatchKind.Lexical,
     val matchedTerms: List<String>,
     val snippet: String,
     val sourceAnchorId: String = "",
+)
+
+data class RuntimeSourceReview(
+    val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocument,
+    val chunkIndex: Int,
+    val startCharacterOffset: Int,
+    val endCharacterOffset: Int,
+    val characterCount: Int,
+    val expiresAt: String,
+    val isTrusted: Boolean,
+)
+
+data class RuntimeTrustedSource(
+    val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocument,
 )
 
 data class RuntimeUiError(

@@ -29,6 +29,8 @@ import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
 import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
+import com.localagentbridge.android.core.protocol.CitationResolveRequestPayload
+import com.localagentbridge.android.core.protocol.CitationResolveResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
@@ -66,6 +68,15 @@ import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
+import com.localagentbridge.android.core.protocol.TrustedSourceApproveRequestPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceApproveResultPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceDismissRequestPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceDismissResultPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceListRequestPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceListResultPayload
+import com.localagentbridge.android.core.protocol.TrustedSourcePayload
+import com.localagentbridge.android.core.protocol.TrustedSourceRevokeRequestPayload
+import com.localagentbridge.android.core.protocol.TrustedSourceRevokeResultPayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.DeviceIdentityStore
 import com.localagentbridge.android.core.pairing.INITIAL_PAIRING_PROOF_SCHEME
@@ -199,6 +210,15 @@ private data class PendingChatSessionRenameMutation(
 private data class PendingMemorySummaryDraftGeneration(
     val draft: RuntimeMemorySummaryDraft,
     val modelId: String,
+)
+
+private data class PendingSourceReview(
+    val sourceAnchorId: String,
+    val citationId: String,
+    val reviewId: String,
+    val confirmationToken: String,
+    val disclosureVersion: String,
+    val usageScope: String,
 )
 
 private data class PendingInitialPairingRequest(
@@ -868,6 +888,7 @@ private val RETRIEVAL_QUERY_RESULT_ITEM_PAYLOAD_KEYS = setOf(
     "start_character_offset",
     "end_character_offset",
     "rank",
+    "match_kind",
     "matched_terms",
     "snippet",
 )
@@ -1087,6 +1108,11 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.ChatSessionDelete,
     MessageType.IndexDocumentsList,
     MessageType.RetrievalQuery,
+    MessageType.CitationResolve,
+    MessageType.TrustedSourceApprove,
+    MessageType.TrustedSourceDismiss,
+    MessageType.TrustedSourceList,
+    MessageType.TrustedSourceRevoke,
     MessageType.MemoryList,
     MessageType.MemoryUpsert,
     MessageType.MemoryDelete,
@@ -1109,6 +1135,7 @@ internal const val ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS = 60_000L
 internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
 internal const val ROUTE_REFRESH_RETRY_DELAY_MS = 10_000L
 internal const val ROUTE_REFRESH_REQUEST_TIMEOUT_MS = 15_000L
+internal const val CITATION_RESOLVE_REQUEST_TIMEOUT_MS = 15_000L
 internal const val RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS = 1_500
 
 internal fun runtimeRouteRefreshLeaseDelayMillis(
@@ -1210,6 +1237,19 @@ class RuntimeClientViewModel internal constructor(
     private var pendingMemorySummaryDraftsRequestId: String? = null
     private var pendingDocumentCatalogRequestId: String? = null
     private var pendingDocumentSearchRequestId: String? = null
+    private var pendingDocumentSearchPayload: RetrievalQueryRequestPayload? = null
+    private var pendingDocumentSearchCanRetryWithoutEmbedding = false
+    private var pendingCitationResolveRequestId: String? = null
+    private var pendingCitationResolveSourceAnchorId: String? = null
+    private var citationResolveRequestTimeoutJob: Job? = null
+    private var pendingSourceReview: PendingSourceReview? = null
+    private var pendingTrustedSourceApproveRequestId: String? = null
+    private var pendingTrustedSourceDismissRequestId: String? = null
+    private var pendingTrustedSourceListRequestId: String? = null
+    private var pendingTrustedSourceListMutationGeneration: Long? = null
+    private var trustedSourceMutationGeneration: Long = 0
+    private val pendingTrustedSourceRevocationsByRequestId = mutableMapOf<String, String>()
+    private val trustedSourceGrantsBySourceAnchorId = mutableMapOf<String, String>()
     private val pendingMemorySummaryDraftGenerationsByRequestId =
         mutableMapOf<String, PendingMemorySummaryDraftGeneration>()
     private val pendingMemorySummaryDraftApprovalDraftIdsByRequestId = mutableMapOf<String, String>()
@@ -1251,6 +1291,14 @@ class RuntimeClientViewModel internal constructor(
         restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
         viewModelScope.launch {
             pairingStore.trustedRuntime.collect { trusted ->
+                val currentTrust = state.value.trustedRuntime
+                if (
+                    currentTrust?.deviceId != trusted?.deviceId ||
+                    currentTrust?.fingerprint != trusted?.fingerprint ||
+                    currentTrust?.publicKeyBase64 != trusted?.publicKeyBase64
+                ) {
+                    clearTrustedSourceSessionState()
+                }
                 if (
                     pendingRouteRefreshRequestId != null &&
                     !state.value.trustedRuntime.hasSameRelayAllocationRoute(trusted)
@@ -1375,6 +1423,30 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
+    fun toggleTrustedSourceSelection(sourceAnchorId: String) {
+        val current = state.value
+        if (current.isStreaming || current.isLoadingActiveChatMessages) return
+        val selectable = current.trustedSources.any { it.sourceAnchorId == sourceAnchorId } &&
+            trustedSourceGrantsBySourceAnchorId.containsKey(sourceAnchorId)
+        if (!selectable) return
+        mutableState.update {
+            val selected = it.selectedTrustedSourceAnchorIds
+            val updated = if (sourceAnchorId in selected) {
+                selected - sourceAnchorId
+            } else {
+                if (selected.size >= MAX_SELECTED_TRUSTED_SOURCES) return@update it
+                selected + sourceAnchorId
+            }
+            it.copy(selectedTrustedSourceAnchorIds = updated)
+        }
+    }
+
+    fun removeTrustedSourceSelection(sourceAnchorId: String) {
+        mutableState.update {
+            it.copy(selectedTrustedSourceAnchorIds = it.selectedTrustedSourceAnchorIds - sourceAnchorId)
+        }
+    }
+
     fun addAttachments(uris: List<Uri>) {
         addAttachmentReferences(uris.map { it.toString() })
     }
@@ -1495,6 +1567,7 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update {
             it.copy(
                 loadingChatSessionId = null,
+                selectedTrustedSourceAnchorIds = emptyList(),
             )
         }
     }
@@ -1517,6 +1590,7 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update {
             it.copy(
                 loadingChatSessionId = null,
+                selectedTrustedSourceAnchorIds = emptyList(),
             )
         }
         requestRuntimeChatMessages(sessionId)
@@ -1800,7 +1874,7 @@ class RuntimeClientViewModel internal constructor(
     fun searchRuntimeDocuments(query: String) {
         val normalizedQuery = query.trim()
         if (normalizedQuery.isBlank()) {
-            pendingDocumentSearchRequestId = null
+            clearPendingRuntimeDocumentSearch()
             mutableState.update {
                 it.copy(
                     documentSearchQuery = "",
@@ -1812,7 +1886,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (normalizedQuery.length > MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS) {
-            pendingDocumentSearchRequestId = null
+            clearPendingRuntimeDocumentSearch()
             mutableState.update {
                 it.copy(
                     documentSearchQuery = "",
@@ -1832,6 +1906,142 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         requestRuntimeDocumentSearch(normalizedQuery)
+    }
+
+    fun resolveCitation(sourceAnchorId: String) {
+        val anchorId = sourceAnchorId.trim()
+        if (pendingCitationResolveRequestId != null) return
+        if (pendingTrustedSourceListRequestId != null) return
+        if (state.value.documentSearchResults.none { it.sourceAnchorId == anchorId }) return
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        val payload = runCatching { CitationResolveRequestPayload(anchorId) }.getOrNull() ?: return
+        val requestId = CITATION_RESOLVE_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingCitationResolveRequestId = requestId
+        pendingCitationResolveSourceAnchorId = anchorId
+        scheduleCitationResolveTimeout(requestId)
+        mutableState.update { it.copy(isResolvingCitation = true, error = null) }
+        sendEnvelope(
+            envelope(
+                type = MessageType.CitationResolve,
+                requestId = requestId,
+                serializer = CitationResolveRequestPayload.serializer(),
+                payload = payload,
+            )
+        )
+    }
+
+    fun approveTrustedSource() {
+        state.value.sourceReview?.sourceAnchorId?.let(::approveTrustedSource)
+    }
+
+    fun approveTrustedSource(sourceAnchorId: String) {
+        if (pendingTrustedSourceApproveRequestId != null) return
+        val review = pendingSourceReview?.takeIf { it.sourceAnchorId == sourceAnchorId.trim() } ?: return
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        val requestId = TRUSTED_SOURCE_APPROVE_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingTrustedSourceApproveRequestId = requestId
+        mutableState.update { it.copy(isApprovingTrustedSource = true, error = null) }
+        sendEnvelope(
+            envelope(
+                type = MessageType.TrustedSourceApprove,
+                requestId = requestId,
+                serializer = TrustedSourceApproveRequestPayload.serializer(),
+                payload = TrustedSourceApproveRequestPayload(
+                    reviewId = review.reviewId,
+                    confirmationToken = review.confirmationToken,
+                    disclosureVersion = review.disclosureVersion,
+                    usageScope = review.usageScope,
+                ),
+            )
+        )
+    }
+
+    fun dismissTrustedSource() {
+        val sourceReview = state.value.sourceReview
+        if (sourceReview == null && pendingCitationResolveRequestId != null) {
+            clearPendingCitationResolve()
+            mutableState.update { it.copy(isResolvingCitation = false, error = null) }
+            return
+        }
+        sourceReview ?: return
+        if (pendingSourceReview == null) {
+            mutableState.update { it.copy(sourceReview = null, error = null) }
+            return
+        }
+        dismissTrustedSource(sourceReview.sourceAnchorId)
+    }
+
+    fun dismissTrustedSource(sourceAnchorId: String) {
+        if (pendingTrustedSourceDismissRequestId != null) return
+        val review = pendingSourceReview?.takeIf { it.sourceAnchorId == sourceAnchorId.trim() } ?: return
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        val requestId = TRUSTED_SOURCE_DISMISS_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingTrustedSourceDismissRequestId = requestId
+        mutableState.update { it.copy(isDismissingTrustedSource = true, error = null) }
+        sendEnvelope(
+            envelope(
+                type = MessageType.TrustedSourceDismiss,
+                requestId = requestId,
+                serializer = TrustedSourceDismissRequestPayload.serializer(),
+                payload = TrustedSourceDismissRequestPayload(review.reviewId),
+            )
+        )
+    }
+
+    fun refreshTrustedSources() {
+        if (pendingTrustedSourceListRequestId != null) return
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        val requestId = TRUSTED_SOURCE_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingTrustedSourceListRequestId = requestId
+        pendingTrustedSourceListMutationGeneration = trustedSourceMutationGeneration
+        mutableState.update { it.copy(isLoadingTrustedSources = true, error = null) }
+        sendEnvelope(
+            envelope(
+                type = MessageType.TrustedSourceList,
+                requestId = requestId,
+                serializer = TrustedSourceListRequestPayload.serializer(),
+                payload = TrustedSourceListRequestPayload(limit = MAX_RUNTIME_TRUSTED_SOURCES),
+            )
+        )
+    }
+
+    fun revokeTrustedSource(sourceAnchorId: String) {
+        val anchorId = sourceAnchorId.trim()
+        if (pendingTrustedSourceRevocationsByRequestId.containsValue(anchorId)) return
+        val grantId = trustedSourceGrantsBySourceAnchorId[anchorId] ?: return
+        removeTrustedSourceSelection(anchorId)
+        if (!canSendRuntimeDocumentSearchCommand()) {
+            showError("document_search_runtime_required")
+            return
+        }
+        val requestId = TRUSTED_SOURCE_REVOKE_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingTrustedSourceRevocationsByRequestId[requestId] = anchorId
+        mutableState.update {
+            it.copy(
+                revokingTrustedSourceAnchorIds = it.revokingTrustedSourceAnchorIds + anchorId,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.TrustedSourceRevoke,
+                requestId = requestId,
+                serializer = TrustedSourceRevokeRequestPayload.serializer(),
+                payload = TrustedSourceRevokeRequestPayload(grantId),
+            )
+        )
     }
 
     fun generateMemorySummaryDraft(draftId: String) {
@@ -2789,13 +2999,31 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun requestRuntimeDocumentSearch(query: String) {
+        val embeddingModelId = state.value.selectedEmbeddingModelId
+        requestRuntimeDocumentSearch(
+            payload = RetrievalQueryRequestPayload(
+                query = query,
+                limit = MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS,
+                maxSnippetCharacters = MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS,
+                embeddingModelId = embeddingModelId,
+            ),
+            canRetryWithoutEmbedding = embeddingModelId != null,
+        )
+    }
+
+    private fun requestRuntimeDocumentSearch(
+        payload: RetrievalQueryRequestPayload,
+        canRetryWithoutEmbedding: Boolean,
+    ) {
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (pendingDocumentSearchRequestId != null) return
-        val requestId = UUID.randomUUID().toString()
+        val requestId = DOCUMENT_SEARCH_REQUEST_ID_PREFIX + UUID.randomUUID()
         pendingDocumentSearchRequestId = requestId
+        pendingDocumentSearchPayload = payload
+        pendingDocumentSearchCanRetryWithoutEmbedding = canRetryWithoutEmbedding
         mutableState.update {
             it.copy(
-                documentSearchQuery = query,
+                documentSearchQuery = payload.query,
                 isSearchingDocuments = true,
                 error = null,
             )
@@ -2805,11 +3033,7 @@ class RuntimeClientViewModel internal constructor(
                 type = MessageType.RetrievalQuery,
                 requestId = requestId,
                 serializer = RetrievalQueryRequestPayload.serializer(),
-                payload = RetrievalQueryRequestPayload(
-                    query = query,
-                    limit = MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS,
-                    maxSnippetCharacters = MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS,
-                ),
+                payload = payload,
             )
         )
     }
@@ -3002,6 +3226,7 @@ class RuntimeClientViewModel internal constructor(
             }
         }
         val model = current.selectedModelId ?: return
+        val trustedSourceGrantIds = trustedSourceGrantIdsForSelection(current) ?: return
         val selectedModel = current.models.firstOrNull { it.id == model }
         if (current.pendingAttachments.any { it.type == ATTACHMENT_TYPE_IMAGE } && selectedModel?.supportsImageInput() != true) {
             showError("select_vision_model")
@@ -3053,6 +3278,7 @@ class RuntimeClientViewModel internal constructor(
                 activeChatSessionId = sessionId,
                 chatInput = "",
                 pendingAttachments = emptyList(),
+                selectedTrustedSourceAnchorIds = emptyList(),
                 messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
@@ -3074,6 +3300,7 @@ class RuntimeClientViewModel internal constructor(
                         attachments = attachments,
                     ),
                     locale = current.runtimeRequestLocale(),
+                    trustedSourceGrantIds = trustedSourceGrantIds,
                 )
             )
         )
@@ -3120,6 +3347,7 @@ class RuntimeClientViewModel internal constructor(
         }
 
         val model = current.selectedModelId ?: return
+        val trustedSourceGrantIds = trustedSourceGrantIdsForSelection(current) ?: return
         val requestId = UUID.randomUUID().toString()
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
         val updatedMessages = retry.contextMessages + assistantMessage
@@ -3128,6 +3356,7 @@ class RuntimeClientViewModel internal constructor(
                 messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
+                selectedTrustedSourceAnchorIds = emptyList(),
                 error = null,
             )
         }
@@ -3145,6 +3374,7 @@ class RuntimeClientViewModel internal constructor(
                         messages = retry.contextMessages,
                     ),
                     locale = current.runtimeRequestLocale(),
+                    trustedSourceGrantIds = trustedSourceGrantIds,
                 )
             )
         )
@@ -3236,6 +3466,7 @@ class RuntimeClientViewModel internal constructor(
         activeChannel = null
         client.close()
         isSessionAuthenticated = false
+        clearTrustedSourceSessionState()
 
         val preflightError = relayReachabilityPreflightError(target)
         if (preflightError != null) {
@@ -3502,6 +3733,11 @@ class RuntimeClientViewModel internal constructor(
             MessageType.ChatSessionDelete -> handleChatSessionLifecycle(envelope)
             MessageType.IndexDocumentsList -> handleIndexDocumentsList(envelope)
             MessageType.RetrievalQuery -> handleRetrievalQuery(envelope)
+            MessageType.CitationResolve -> handleCitationResolve(envelope)
+            MessageType.TrustedSourceApprove -> handleTrustedSourceApprove(envelope)
+            MessageType.TrustedSourceDismiss -> handleTrustedSourceDismiss(envelope)
+            MessageType.TrustedSourceList -> handleTrustedSourceList(envelope)
+            MessageType.TrustedSourceRevoke -> handleTrustedSourceRevoke(envelope)
             MessageType.MemoryList -> handleMemoryList(envelope)
             MessageType.MemorySummaryDraftsList -> handleMemorySummaryDraftsList(envelope)
             MessageType.MemorySummaryDraftGenerate -> handleMemorySummaryDraftGenerate(envelope)
@@ -3523,6 +3759,7 @@ class RuntimeClientViewModel internal constructor(
             val identity = deviceIdentityStore.loadOrCreate()
             if (!verifyRuntimeAuthChallenge(payload, identity.deviceId)) {
                 isSessionAuthenticated = false
+                clearTrustedSourceSessionState()
                 cancelRuntimeRouteRefreshLease()
                 clearPendingRouteRefreshRequest()
                 showError("runtime_authentication_failed")
@@ -3542,7 +3779,8 @@ class RuntimeClientViewModel internal constructor(
                         transportBinding = payload.transportBinding,
                     ),
                     requestId = envelope.requestId,
-                )
+                ),
+                activeChannel,
             )
         }.onFailure { error ->
             showError("authentication_failed", error.message)
@@ -3584,6 +3822,7 @@ class RuntimeClientViewModel internal constructor(
         val transportBinding = activeChannel?.transportSecurityContext?.bindingId
         if (!authenticationTransportBindingMatches(payload.transportBinding, transportBinding)) {
             isSessionAuthenticated = false
+            clearTrustedSourceSessionState()
             cancelRuntimeRouteRefreshLease()
             clearPendingRouteRefreshRequest()
             showError("runtime_authentication_failed")
@@ -3604,6 +3843,7 @@ class RuntimeClientViewModel internal constructor(
             requestRuntimeMemorySummaryDrafts()
         } else {
             isSessionAuthenticated = false
+            clearTrustedSourceSessionState()
             cancelRuntimeRouteRefreshLease()
             clearPendingRouteRefreshRequest()
             showError("authentication_failed", payload.message)
@@ -3888,7 +4128,8 @@ class RuntimeClientViewModel internal constructor(
                     clientSignature = signature,
                 ),
                 requestId = requestId,
-            )
+            ),
+            activeChannel,
         )
     }
 
@@ -4055,6 +4296,7 @@ class RuntimeClientViewModel internal constructor(
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
         if (payload.status.isPairingRequiredRuntimeCode()) {
             isSessionAuthenticated = false
+            clearTrustedSourceSessionState()
             cancelRuntimeRouteRefreshLease()
             clearPendingRouteRefreshRequest()
             mutableState.update {
@@ -4416,7 +4658,7 @@ class RuntimeClientViewModel internal constructor(
 
     private fun handleRetrievalQuery(envelope: ProtocolEnvelope) {
         if (pendingDocumentSearchRequestId != envelope.requestId) return
-        pendingDocumentSearchRequestId = null
+        clearPendingRuntimeDocumentSearch()
         envelope.payload.retrievalQueryResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "retrieval.query response contains unsupported metadata: $unknownKey")
             mutableState.update { it.copy(isSearchingDocuments = false) }
@@ -4436,12 +4678,173 @@ class RuntimeClientViewModel internal constructor(
                         startCharacterOffset = startCharacterOffset,
                         endCharacterOffset = result.endCharacterOffset.coerceAtLeast(startCharacterOffset),
                         rank = result.rank.coerceAtLeast(1),
+                        matchKind = result.matchKind,
                         matchedTerms = result.matchedTerms.canonicalRuntimeDocumentMatchedTerms(),
                         snippet = result.snippet.boundedRuntimeDocumentSnippet(),
                         sourceAnchorId = result.sourceAnchorId.canonicalRuntimeSourceAnchorIdOrEmpty(),
                     )
                 },
                 isSearchingDocuments = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleCitationResolve(envelope: ProtocolEnvelope) {
+        if (pendingCitationResolveRequestId != envelope.requestId) return
+        val expectedAnchorId = pendingCitationResolveSourceAnchorId
+        clearPendingCitationResolve()
+        val payload = decodeTrustedSourceResponse(CitationResolveResultPayload.serializer(), envelope.payload)
+        if (
+            payload == null ||
+            expectedAnchorId == null ||
+            payload.citation.sourceAnchorId != expectedAnchorId ||
+            payload.trustedSource?.let {
+                it.sourceAnchorId != expectedAnchorId || it.citationId != payload.citation.citationId
+            } == true
+        ) {
+            mutableState.update { it.copy(isResolvingCitation = false) }
+            showError("citation_resolve_failed")
+            return
+        }
+        pendingSourceReview = PendingSourceReview(
+            sourceAnchorId = expectedAnchorId,
+            citationId = payload.citation.citationId,
+            reviewId = payload.review.reviewId,
+            confirmationToken = payload.review.confirmationToken,
+            disclosureVersion = payload.review.disclosureVersion,
+            usageScope = payload.review.usageScope,
+        )
+        payload.trustedSource?.let(::rememberTrustedSource)
+        val chunk = payload.citation.chunkSummary
+        mutableState.update {
+            it.copy(
+                sourceReview = RuntimeSourceReview(
+                    sourceAnchorId = expectedAnchorId,
+                    document = payload.citation.document.toRuntimeDocumentIndexDocument(0),
+                    chunkIndex = chunk.chunkIndex,
+                    startCharacterOffset = chunk.startCharacterOffset,
+                    endCharacterOffset = chunk.endCharacterOffset,
+                    characterCount = chunk.characterCount,
+                    expiresAt = payload.review.expiresAt,
+                    isTrusted = payload.trustedSource != null,
+                ),
+                trustedSources = payload.trustedSource?.let { trusted ->
+                    it.trustedSources.upsertTrustedSource(trusted.toRuntimeTrustedSource())
+                } ?: it.trustedSources,
+                isResolvingCitation = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleTrustedSourceApprove(envelope: ProtocolEnvelope) {
+        if (pendingTrustedSourceApproveRequestId != envelope.requestId) return
+        pendingTrustedSourceApproveRequestId = null
+        val review = pendingSourceReview
+        val payload = decodeTrustedSourceResponse(TrustedSourceApproveResultPayload.serializer(), envelope.payload)
+        val trustedSource = payload?.trustedSource
+        if (
+            review == null ||
+            trustedSource == null ||
+            trustedSource.sourceAnchorId != review.sourceAnchorId ||
+            trustedSource.citationId != review.citationId ||
+            state.value.sourceReview?.document != trustedSource.document.toRuntimeDocumentIndexDocument(0)
+        ) {
+            mutableState.update { it.copy(isApprovingTrustedSource = false) }
+            showError("trusted_source_approve_failed")
+            return
+        }
+        rememberTrustedSource(trustedSource)
+        recordTrustedSourceMutation()
+        pendingSourceReview = null
+        mutableState.update {
+            it.copy(
+                sourceReview = it.sourceReview?.takeIf { source ->
+                    source.sourceAnchorId == trustedSource.sourceAnchorId
+                }?.copy(isTrusted = true),
+                trustedSources = it.trustedSources.upsertTrustedSource(trustedSource.toRuntimeTrustedSource()),
+                isApprovingTrustedSource = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleTrustedSourceDismiss(envelope: ProtocolEnvelope) {
+        if (pendingTrustedSourceDismissRequestId != envelope.requestId) return
+        pendingTrustedSourceDismissRequestId = null
+        val review = pendingSourceReview
+        val payload = decodeTrustedSourceResponse(TrustedSourceDismissResultPayload.serializer(), envelope.payload)
+        if (review == null || payload == null || payload.reviewId != review.reviewId) {
+            mutableState.update { it.copy(isDismissingTrustedSource = false) }
+            showError("trusted_source_dismiss_failed")
+            return
+        }
+        pendingSourceReview = null
+        mutableState.update {
+            it.copy(
+                sourceReview = null,
+                isDismissingTrustedSource = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleTrustedSourceList(envelope: ProtocolEnvelope) {
+        if (pendingTrustedSourceListRequestId != envelope.requestId) return
+        pendingTrustedSourceListRequestId = null
+        val requestedMutationGeneration = pendingTrustedSourceListMutationGeneration
+        pendingTrustedSourceListMutationGeneration = null
+        val payload = decodeTrustedSourceResponse(TrustedSourceListResultPayload.serializer(), envelope.payload)
+        if (payload == null) {
+            mutableState.update { it.copy(isLoadingTrustedSources = false) }
+            showError("trusted_source_list_failed")
+            return
+        }
+        if (requestedMutationGeneration != trustedSourceMutationGeneration) {
+            mutableState.update { it.copy(isLoadingTrustedSources = false) }
+            return
+        }
+        trustedSourceGrantsBySourceAnchorId.clear()
+        payload.trustedSources.forEach(::rememberTrustedSource)
+        mutableState.update {
+            it.copy(
+                trustedSources = payload.trustedSources.map { source -> source.toRuntimeTrustedSource() },
+                selectedTrustedSourceAnchorIds = it.selectedTrustedSourceAnchorIds.filter { anchorId ->
+                    anchorId in trustedSourceGrantsBySourceAnchorId
+                },
+                sourceReview = it.sourceReview?.let { review ->
+                    review.copy(isTrusted = review.sourceAnchorId in trustedSourceGrantsBySourceAnchorId)
+                },
+                hasLoadedTrustedSources = true,
+                isLoadingTrustedSources = false,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleTrustedSourceRevoke(envelope: ProtocolEnvelope) {
+        val anchorId = pendingTrustedSourceRevocationsByRequestId.remove(envelope.requestId) ?: return
+        val expectedGrantId = trustedSourceGrantsBySourceAnchorId[anchorId]
+        val payload = decodeTrustedSourceResponse(TrustedSourceRevokeResultPayload.serializer(), envelope.payload)
+        if (payload == null || expectedGrantId == null || payload.grantId != expectedGrantId) {
+            mutableState.update {
+                it.copy(revokingTrustedSourceAnchorIds = it.revokingTrustedSourceAnchorIds - anchorId)
+            }
+            showError("trusted_source_revoke_failed")
+            return
+        }
+        trustedSourceGrantsBySourceAnchorId.remove(anchorId)
+        if (pendingSourceReview?.sourceAnchorId == anchorId) {
+            pendingSourceReview = null
+        }
+        recordTrustedSourceMutation()
+        mutableState.update {
+            it.copy(
+                trustedSources = it.trustedSources.filterNot { source -> source.sourceAnchorId == anchorId },
+                selectedTrustedSourceAnchorIds = it.selectedTrustedSourceAnchorIds - anchorId,
+                sourceReview = it.sourceReview?.takeUnless { review -> review.sourceAnchorId == anchorId },
+                revokingTrustedSourceAnchorIds = it.revokingTrustedSourceAnchorIds - anchorId,
                 error = null,
             )
         }
@@ -4638,6 +5041,157 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
+        val pendingRevocationAnchorId = pendingTrustedSourceRevocationsByRequestId[envelope.requestId]
+        val isPendingTrustedSourceRequest = envelope.requestId == pendingCitationResolveRequestId ||
+            envelope.requestId == pendingTrustedSourceApproveRequestId ||
+            envelope.requestId == pendingTrustedSourceDismissRequestId ||
+            envelope.requestId == pendingTrustedSourceListRequestId ||
+            pendingRevocationAnchorId != null
+        val trustedSourceErrorPayload = if (isPendingTrustedSourceRequest) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                clearTrustedSourceSessionState()
+                showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
+                return
+            }
+            decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                clearTrustedSourceSessionState()
+                return
+            }
+        } else {
+            null
+        }
+        if (trustedSourceErrorPayload?.code.isPairingRequiredRuntimeCode()) {
+            isSessionAuthenticated = false
+            clearTrustedSourceSessionState()
+            cancelRuntimeRouteRefreshLease()
+            clearPendingRouteRefreshRequest()
+            mutableState.value = state.value.withRuntimeError(
+                envelope,
+                trustedSourceErrorPayload,
+                pendingModelPullRequestId,
+            )
+            return
+        }
+        when (envelope.requestId) {
+            pendingCitationResolveRequestId -> {
+                clearPendingCitationResolve()
+                mutableState.update { it.copy(isResolvingCitation = false) }
+                showError(
+                    if (trustedSourceErrorPayload?.code == "citation_not_found") {
+                        "citation_not_found"
+                    } else {
+                        "citation_resolve_failed"
+                    }
+                )
+                return
+            }
+            pendingTrustedSourceApproveRequestId -> {
+                pendingTrustedSourceApproveRequestId = null
+                val terminalReview = trustedSourceErrorPayload?.code in TERMINAL_TRUSTED_SOURCE_REVIEW_ERROR_CODES
+                if (terminalReview) pendingSourceReview = null
+                mutableState.update {
+                    it.copy(
+                        sourceReview = if (terminalReview) null else it.sourceReview,
+                        isApprovingTrustedSource = false,
+                    )
+                }
+                showError(
+                    if (terminalReview) requireNotNull(trustedSourceErrorPayload).code
+                    else "trusted_source_approve_failed"
+                )
+                return
+            }
+            pendingTrustedSourceDismissRequestId -> {
+                pendingTrustedSourceDismissRequestId = null
+                val terminalReview = trustedSourceErrorPayload?.code in TERMINAL_TRUSTED_SOURCE_REVIEW_ERROR_CODES
+                if (terminalReview) pendingSourceReview = null
+                mutableState.update {
+                    it.copy(
+                        sourceReview = if (terminalReview) null else it.sourceReview,
+                        isDismissingTrustedSource = false,
+                    )
+                }
+                showError(
+                    if (terminalReview) requireNotNull(trustedSourceErrorPayload).code
+                    else "trusted_source_dismiss_failed"
+                )
+                return
+            }
+            pendingTrustedSourceListRequestId -> {
+                pendingTrustedSourceListRequestId = null
+                if (trustedSourceErrorPayload?.code == "trusted_source_not_found") {
+                    trustedSourceGrantsBySourceAnchorId.clear()
+                    recordTrustedSourceMutation()
+                    mutableState.update {
+                        it.copy(
+                            trustedSources = emptyList(),
+                            selectedTrustedSourceAnchorIds = emptyList(),
+                            hasLoadedTrustedSources = false,
+                            isLoadingTrustedSources = false,
+                        )
+                    }
+                    showError("trusted_source_not_found")
+                } else {
+                    mutableState.update { it.copy(isLoadingTrustedSources = false) }
+                    showError("trusted_source_list_failed")
+                }
+                return
+            }
+        }
+        pendingTrustedSourceRevocationsByRequestId.remove(envelope.requestId)?.let { anchorId ->
+            mutableState.update {
+                it.copy(revokingTrustedSourceAnchorIds = it.revokingTrustedSourceAnchorIds - anchorId)
+            }
+            if (trustedSourceErrorPayload?.code == "trusted_source_not_found") {
+                trustedSourceGrantsBySourceAnchorId.remove(anchorId)
+                if (pendingSourceReview?.sourceAnchorId == anchorId) {
+                    pendingSourceReview = null
+                }
+                recordTrustedSourceMutation()
+                mutableState.update {
+                    it.copy(
+                        trustedSources = it.trustedSources.filterNot { source ->
+                            source.sourceAnchorId == anchorId
+                        },
+                        selectedTrustedSourceAnchorIds = it.selectedTrustedSourceAnchorIds - anchorId,
+                        sourceReview = it.sourceReview?.takeUnless { review ->
+                            review.sourceAnchorId == anchorId
+                        },
+                    )
+                }
+                showError("trusted_source_not_found")
+            } else {
+                showError("trusted_source_revoke_failed")
+            }
+            return
+        }
+        if (envelope.requestId.isTrustedSourceRequestId()) return
+        if (pendingDocumentSearchRequestId == envelope.requestId) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                clearPendingRuntimeDocumentSearch()
+                mutableState.update { it.copy(isSearchingDocuments = false) }
+                showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            val originalPayload = pendingDocumentSearchPayload
+            val shouldRetryWithoutEmbedding = payload?.code == "invalid_payload" &&
+                pendingDocumentSearchCanRetryWithoutEmbedding &&
+                originalPayload?.embeddingModelId != null &&
+                payload.message.trim() == LEGACY_RETRIEVAL_EMBEDDING_UNSUPPORTED_MESSAGE
+            clearPendingRuntimeDocumentSearch()
+            if (shouldRetryWithoutEmbedding) {
+                requestRuntimeDocumentSearch(
+                    payload = requireNotNull(originalPayload).copy(embeddingModelId = null),
+                    canRetryWithoutEmbedding = false,
+                )
+                return
+            }
+            mutableState.update { it.copy(isSearchingDocuments = false) }
+            showError("document_search_failed", payload?.message)
+            return
+        }
+        if (envelope.requestId.startsWith(DOCUMENT_SEARCH_REQUEST_ID_PREFIX)) return
         envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
             return
@@ -4709,13 +5263,6 @@ class RuntimeClientViewModel internal constructor(
             showError("document_catalog_load_failed", payload?.message)
             return
         }
-        if (pendingDocumentSearchRequestId == envelope.requestId) {
-            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            pendingDocumentSearchRequestId = null
-            mutableState.update { it.copy(isSearchingDocuments = false) }
-            showError("document_search_failed", payload?.message)
-            return
-        }
         pendingMemorySummaryDraftGenerationsByRequestId.remove(envelope.requestId)?.let { pending ->
             val draftId = pending.draft.id
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
@@ -4751,6 +5298,7 @@ class RuntimeClientViewModel internal constructor(
             clearPendingRouteRefreshRequest()
             if (payload?.code.isPairingRequiredRuntimeCode()) {
                 isSessionAuthenticated = false
+                clearTrustedSourceSessionState()
                 cancelRuntimeRouteRefreshLease()
                 mutableState.value = state.value.withRuntimeError(
                     envelope,
@@ -4775,12 +5323,24 @@ class RuntimeClientViewModel internal constructor(
         }
         if (payload?.code.isPairingRequiredRuntimeCode()) {
             isSessionAuthenticated = false
+            clearTrustedSourceSessionState()
             cancelRuntimeRouteRefreshLease()
             clearPendingRouteRefreshRequest()
         }
         val updatedState = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
         mutableState.value = updatedState
         if (isActiveChatError) {
+            if (payload?.code == "trusted_source_not_found") {
+                trustedSourceGrantsBySourceAnchorId.clear()
+                recordTrustedSourceMutation()
+                mutableState.update {
+                    it.copy(
+                        trustedSources = emptyList(),
+                        selectedTrustedSourceAnchorIds = emptyList(),
+                        hasLoadedTrustedSources = false,
+                    )
+                }
+            }
             persistActiveMessages(updatedState.messages, clearError = false)
         }
         if (isModelPullError) {
@@ -4789,8 +5349,9 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun sendEnvelope(envelope: ProtocolEnvelope) {
+        val channelAtDispatch = activeChannel
         viewModelScope.launch {
-            sendEnvelopeInternal(envelope)
+            sendEnvelopeInternal(envelope, channelAtDispatch)
         }
     }
 
@@ -4823,10 +5384,14 @@ class RuntimeClientViewModel internal constructor(
         requestRuntimeChatSessions()
     }
 
-    private suspend fun sendEnvelopeInternal(envelope: ProtocolEnvelope) {
+    private suspend fun sendEnvelopeInternal(
+        envelope: ProtocolEnvelope,
+        channelAtDispatch: RuntimeProtocolChannel?,
+    ) {
         runCatching {
             Log.d(TAG, "Sending ${envelope.type} request_id=${envelope.requestId}")
-            val channel = requireNotNull(activeChannel) { "Runtime transport is not connected" }
+            val channel = requireNotNull(channelAtDispatch) { "Runtime transport is not connected" }
+            check(activeChannel === channel) { "Runtime transport changed before send" }
             channel.send(envelope)
         }
             .onFailure { error ->
@@ -4848,6 +5413,19 @@ class RuntimeClientViewModel internal constructor(
                     pendingDocumentCatalogRequestId == envelope.requestId
                 val isDocumentSearchRequest = envelope.type == MessageType.RetrievalQuery &&
                     pendingDocumentSearchRequestId == envelope.requestId
+                val isCitationResolveRequest = envelope.type == MessageType.CitationResolve &&
+                    pendingCitationResolveRequestId == envelope.requestId
+                val isTrustedSourceApproveRequest = envelope.type == MessageType.TrustedSourceApprove &&
+                    pendingTrustedSourceApproveRequestId == envelope.requestId
+                val isTrustedSourceDismissRequest = envelope.type == MessageType.TrustedSourceDismiss &&
+                    pendingTrustedSourceDismissRequestId == envelope.requestId
+                val isTrustedSourceListRequest = envelope.type == MessageType.TrustedSourceList &&
+                    pendingTrustedSourceListRequestId == envelope.requestId
+                val revokedSourceAnchorId = if (envelope.type == MessageType.TrustedSourceRevoke) {
+                    pendingTrustedSourceRevocationsByRequestId.remove(envelope.requestId)
+                } else {
+                    null
+                }
                 val memorySummaryDraftGenerationId =
                     if (envelope.type == MessageType.MemorySummaryDraftGenerate) {
                         pendingMemorySummaryDraftGenerationsByRequestId.remove(envelope.requestId)?.draft?.id
@@ -4906,9 +5484,43 @@ class RuntimeClientViewModel internal constructor(
                     return@onFailure
                 }
                 if (isDocumentSearchRequest) {
-                    pendingDocumentSearchRequestId = null
+                    clearPendingRuntimeDocumentSearch()
                     mutableState.update { it.copy(isSearchingDocuments = false) }
                     showError("document_search_failed", error.message)
+                    return@onFailure
+                }
+                if (isCitationResolveRequest) {
+                    clearPendingCitationResolve()
+                    mutableState.update { it.copy(isResolvingCitation = false) }
+                    showError("citation_resolve_failed")
+                    return@onFailure
+                }
+                if (isTrustedSourceApproveRequest) {
+                    pendingTrustedSourceApproveRequestId = null
+                    mutableState.update { it.copy(isApprovingTrustedSource = false) }
+                    showError("trusted_source_approve_failed")
+                    return@onFailure
+                }
+                if (isTrustedSourceDismissRequest) {
+                    pendingTrustedSourceDismissRequestId = null
+                    mutableState.update { it.copy(isDismissingTrustedSource = false) }
+                    showError("trusted_source_dismiss_failed")
+                    return@onFailure
+                }
+                if (isTrustedSourceListRequest) {
+                    pendingTrustedSourceListRequestId = null
+                    mutableState.update { it.copy(isLoadingTrustedSources = false) }
+                    showError("trusted_source_list_failed")
+                    return@onFailure
+                }
+                if (revokedSourceAnchorId != null) {
+                    mutableState.update {
+                        it.copy(
+                            revokingTrustedSourceAnchorIds =
+                                it.revokingTrustedSourceAnchorIds - revokedSourceAnchorId,
+                        )
+                    }
+                    showError("trusted_source_revoke_failed")
                     return@onFailure
                 }
                 if (memorySummaryDraftGenerationId != null) {
@@ -5009,6 +5621,55 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
+    private fun <T> decodeTrustedSourceResponse(serializer: KSerializer<T>, payload: JsonObject): T? {
+        return try {
+            json.decodeFromJsonElement(serializer, payload)
+        } catch (_: SerializationException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun rememberTrustedSource(source: TrustedSourcePayload) {
+        trustedSourceGrantsBySourceAnchorId[source.sourceAnchorId] = source.grantId
+    }
+
+    private fun trustedSourceGrantIdsForSelection(current: RuntimeUiState): List<String>? {
+        if (current.selectedTrustedSourceAnchorIds.isEmpty()) return emptyList()
+        val grantIds = current.selectedTrustedSourceAnchorIds.mapNotNull {
+            trustedSourceGrantsBySourceAnchorId[it]
+        }
+        if (grantIds.size == current.selectedTrustedSourceAnchorIds.size) return grantIds
+        mutableState.update { it.copy(selectedTrustedSourceAnchorIds = emptyList()) }
+        showError("trusted_source_not_found")
+        return null
+    }
+
+    private fun scheduleCitationResolveTimeout(requestId: String) {
+        citationResolveRequestTimeoutJob?.cancel()
+        citationResolveRequestTimeoutJob = viewModelScope.launch {
+            delay(CITATION_RESOLVE_REQUEST_TIMEOUT_MS)
+            if (pendingCitationResolveRequestId != requestId) return@launch
+            pendingCitationResolveRequestId = null
+            pendingCitationResolveSourceAnchorId = null
+            citationResolveRequestTimeoutJob = null
+            mutableState.update { it.copy(isResolvingCitation = false) }
+            showError("citation_resolve_failed", "timeout")
+        }
+    }
+
+    private fun clearPendingCitationResolve() {
+        pendingCitationResolveRequestId = null
+        pendingCitationResolveSourceAnchorId = null
+        citationResolveRequestTimeoutJob?.cancel()
+        citationResolveRequestTimeoutJob = null
+    }
+
+    private fun recordTrustedSourceMutation() {
+        trustedSourceMutationGeneration += 1
+    }
+
     private fun decodeRouteRefreshPayloadForRetry(payload: JsonObject): RouteRefreshPayload? {
         return try {
             json.decodeFromJsonElement(RouteRefreshPayload.serializer(), payload)
@@ -5079,7 +5740,39 @@ class RuntimeClientViewModel internal constructor(
 
     private fun clearPendingRuntimeDocumentRequests() {
         pendingDocumentCatalogRequestId = null
+        clearPendingRuntimeDocumentSearch()
+        clearTrustedSourceSessionState()
+    }
+
+    private fun clearPendingRuntimeDocumentSearch() {
         pendingDocumentSearchRequestId = null
+        pendingDocumentSearchPayload = null
+        pendingDocumentSearchCanRetryWithoutEmbedding = false
+    }
+
+    private fun clearTrustedSourceSessionState() {
+        clearPendingCitationResolve()
+        pendingSourceReview = null
+        pendingTrustedSourceApproveRequestId = null
+        pendingTrustedSourceDismissRequestId = null
+        pendingTrustedSourceListRequestId = null
+        pendingTrustedSourceListMutationGeneration = null
+        trustedSourceMutationGeneration = 0
+        pendingTrustedSourceRevocationsByRequestId.clear()
+        trustedSourceGrantsBySourceAnchorId.clear()
+        mutableState.update {
+            it.copy(
+                sourceReview = null,
+                trustedSources = emptyList(),
+                selectedTrustedSourceAnchorIds = emptyList(),
+                hasLoadedTrustedSources = false,
+                isResolvingCitation = false,
+                isApprovingTrustedSource = false,
+                isDismissingTrustedSource = false,
+                isLoadingTrustedSources = false,
+                revokingTrustedSourceAnchorIds = emptySet(),
+            )
+        }
     }
 
     private fun clearChatMessagesLoading(sessionId: String?) {
@@ -5292,7 +5985,21 @@ class RuntimeClientViewModel internal constructor(
         const val MAX_RUNTIME_MEMORY_SUMMARY_DRAFTS = 5
         const val MAX_RUNTIME_DOCUMENT_CATALOG_ROWS = 100
         const val MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS = 10
+        const val MAX_RUNTIME_TRUSTED_SOURCES = 100
         const val MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS = 1024
+        private const val DOCUMENT_SEARCH_REQUEST_ID_PREFIX = "retrieval-query-"
+        private const val CITATION_RESOLVE_REQUEST_ID_PREFIX = "citation-resolve-"
+        private const val TRUSTED_SOURCE_APPROVE_REQUEST_ID_PREFIX = "trusted-source-approve-"
+        private const val TRUSTED_SOURCE_DISMISS_REQUEST_ID_PREFIX = "trusted-source-dismiss-"
+        private const val TRUSTED_SOURCE_LIST_REQUEST_ID_PREFIX = "trusted-source-list-"
+        private const val TRUSTED_SOURCE_REVOKE_REQUEST_ID_PREFIX = "trusted-source-revoke-"
+        private val TERMINAL_TRUSTED_SOURCE_REVIEW_ERROR_CODES = setOf(
+            "trusted_source_review_not_found",
+            "trusted_source_review_expired",
+            "trusted_source_review_stale",
+        )
+        private const val LEGACY_RETRIEVAL_EMBEDDING_UNSUPPORTED_MESSAGE =
+            "retrieval.query payload contains unsupported field(s): embedding_model_id"
         const val MAX_RUNTIME_DOCUMENT_SNIPPET_CHARACTERS = 480
         const val ATTACHMENT_TYPE_IMAGE = "image"
         const val ATTACHMENT_TYPE_DOCUMENT = "document"
@@ -5314,6 +6021,25 @@ private fun RuntimeDocumentIndexDocumentPayload.toRuntimeDocumentIndexDocument(i
         chunkCount = canonicalChunkCount,
         quality = canonicalRuntimeDocumentQualityForChunkCount(canonicalChunkCount),
     )
+}
+
+private fun TrustedSourcePayload.toRuntimeTrustedSource(): RuntimeTrustedSource {
+    return RuntimeTrustedSource(
+        sourceAnchorId = sourceAnchorId,
+        document = document.toRuntimeDocumentIndexDocument(0),
+    )
+}
+
+private fun List<RuntimeTrustedSource>.upsertTrustedSource(source: RuntimeTrustedSource): List<RuntimeTrustedSource> {
+    return filterNot { it.sourceAnchorId == source.sourceAnchorId } + source
+}
+
+private fun String.isTrustedSourceRequestId(): Boolean {
+    return startsWith("citation-resolve-") ||
+        startsWith("trusted-source-approve-") ||
+        startsWith("trusted-source-dismiss-") ||
+        startsWith("trusted-source-list-") ||
+        startsWith("trusted-source-revoke-")
 }
 
 private fun IndexDocumentsSummaryPayload.toRuntimeDocumentIndexSummary(): RuntimeDocumentIndexSummary {

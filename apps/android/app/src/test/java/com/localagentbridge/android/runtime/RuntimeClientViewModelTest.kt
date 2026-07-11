@@ -45,6 +45,7 @@ import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RetrievalMatchKind
 import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultItemPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
@@ -116,7 +117,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11918,7 +11921,7 @@ class RuntimeClientViewModelTest {
                                 startCharacterOffset = 120,
                                 endCharacterOffset = 360,
                                 rank = 1,
-                                matchedTerms = listOf("relay", "recovery", "relay", " "),
+                                matchedTerms = listOf("relay", "recovery", "relay"),
                                 snippet = "Use the latest QR route before retrying relay recovery.",
                                 sourceAnchorId = "source_anchor_8899aabbccddeeff",
                             ),
@@ -11960,7 +11963,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint() = runTest {
+    fun runtimeDocumentSearchSendsSelectedEmbeddingModelHint() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -11982,9 +11985,10 @@ class RuntimeClientViewModelTest {
             assertEquals("source approval notes", searchPayload.query)
             assertEquals(10, searchPayload.limit)
             assertEquals(480, searchPayload.maxSnippetCharacters)
-            assertNull(searchRequest.payload["embedding_model_id"])
+            assertEquals(selectedEmbeddingModel.id, searchPayload.embeddingModelId)
+            assertTrue(searchRequest.payload.containsKey("embedding_model_id"))
             assertNull(searchRequest.payload["source_anchor_id"])
-            assertFalse(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))
+            assertTrue(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))
         } finally {
             Dispatchers.resetMain()
         }
@@ -12080,6 +12084,26 @@ class RuntimeClientViewModelTest {
             assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
             assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
 
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "retrieval.query rejected embedding_model_id",
+                        retryable = false,
+                    ),
+                    requestId = firstRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+
             fixture.viewModel.searchRuntimeDocuments("fresh qr")
             advanceUntilIdle()
             val secondRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
@@ -12166,7 +12190,7 @@ class RuntimeClientViewModelTest {
             )
             val maxWireSnippet = "s".repeat(500)
             val maxWireTerm = "t".repeat(64)
-            val matchedTerms = listOf(" route ", " ", "route", maxWireTerm) +
+            val matchedTerms = listOf(" route ", "route", maxWireTerm) +
                 (1..12).map { index -> "term$index" }
 
             fixture.viewModel.searchRuntimeDocuments("route")
@@ -12355,6 +12379,73 @@ class RuntimeClientViewModelTest {
             assertEquals("source_anchor_fedcba9876543210", result.sourceAnchorId)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchAcceptsSemanticMatchKindAndPreservesEmptyTerms() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("semantic route")
+            advanceUntilIdle()
+
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val requestPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                request.payload,
+            )
+            assertEquals("semantic route", requestPayload.query)
+            assertFalse(request.payload.containsKey("embedding_model_id"))
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = request.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "results": [
+                                {
+                                  "document": {
+                                    "id": "doc-semantic",
+                                    "display_name": "Semantic Route.md",
+                                    "mime_type": "text/markdown",
+                                    "content_fingerprint": "0123456789abcdef",
+                                    "extracted_character_count": 420,
+                                    "chunk_count": 1,
+                                    "quality": "single_chunk"
+                                  },
+                                  "chunk_index": 0,
+                                  "start_character_offset": 0,
+                                  "end_character_offset": 120,
+                                  "rank": 1,
+                                  "match_kind": "semantic",
+                                  "matched_terms": [],
+                                  "snippet": "A semantic document search result.",
+                                  "source_anchor_id": "source_anchor_0123456789abcdef"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            val result = state.documentSearchResults.single()
+            assertEquals(RetrievalMatchKind.Semantic, result.matchKind)
+            assertTrue(result.matchedTerms.isEmpty())
+            assertFalse(state.isSearchingDocuments)
+            assertEquals(null, state.error)
         } finally {
             Dispatchers.resetMain()
         }
@@ -12776,6 +12867,1204 @@ class RuntimeClientViewModelTest {
             assertFalse(disconnectedState.isSearchingDocuments)
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceFullLifecycleKeepsOpaqueValuesOutOfUiPersistenceAndChat() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_0011223344556677"
+            val citationId = "citation_00112233445566778899aabbccddeeff"
+            val reviewId = "source_review_00112233445566778899aabbccddeeff"
+            val confirmationToken = "source_confirmation_${"ab".repeat(32)}"
+            val grantId = "trusted_source_00112233445566778899aabbccddeeff"
+            val dismissedCitationId = "citation_ffeeddccbbaa99887766554433221100"
+            val dismissedReviewId = "source_review_ffeeddccbbaa99887766554433221100"
+            val dismissedConfirmationToken = "source_confirmation_${"ef".repeat(32)}"
+            val beforeStore = fixture.localStore.data
+
+            fixture.viewModel.searchRuntimeDocuments("trusted source")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = trustedSourceSearchResultJson(anchorId),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val resolveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            assertEquals(anchorId, resolveRequest.payload["source_anchor_id"]?.jsonPrimitive?.content)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = "wrong-${resolveRequest.requestId}",
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = reviewId,
+                        confirmationToken = confirmationToken,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertTrue(fixture.viewModel.state.value.isResolvingCitation)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = resolveRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = reviewId,
+                        confirmationToken = confirmationToken,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            val reviewState = fixture.viewModel.state.value.sourceReview
+            assertEquals(anchorId, reviewState?.sourceAnchorId)
+            assertEquals("Trusted Source.md", reviewState?.document?.displayName)
+            assertEquals(2, reviewState?.chunkIndex)
+            assertEquals("2026-07-12T12:30:00Z", reviewState?.expiresAt)
+            assertFalse(requireNotNull(reviewState).isTrusted)
+            val uiText = fixture.viewModel.state.value.toString()
+            assertFalse(uiText.contains(citationId))
+            assertFalse(uiText.contains(reviewId))
+            assertFalse(uiText.contains(confirmationToken))
+            assertEquals(beforeStore, fixture.localStore.data)
+
+            fixture.viewModel.approveTrustedSource(anchorId)
+            advanceUntilIdle()
+            val approveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceApprove }
+            assertEquals(reviewId, approveRequest.payload["review_id"]?.jsonPrimitive?.content)
+            assertEquals(confirmationToken, approveRequest.payload["confirmation_token"]?.jsonPrimitive?.content)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceApprove,
+                    requestId = approveRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        trustedSourceApproveResultJson(anchorId, citationId, grantId)
+                            .toString()
+                            .replace("Trusted Source.md", "Different Source.md")
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
+            assertTrue(fixture.viewModel.state.value.trustedSources.isEmpty())
+            assertEquals("trusted_source_approve_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.approveTrustedSource(anchorId)
+            advanceUntilIdle()
+            val retryApproveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            assertTrue(retryApproveRequest.requestId != approveRequest.requestId)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceApprove,
+                    requestId = retryApproveRequest.requestId,
+                    payload = trustedSourceApproveResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.trustedSources.map { it.sourceAnchorId })
+            assertFalse(fixture.viewModel.state.value.toString().contains(grantId))
+            fixture.viewModel.dismissTrustedSource()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val listRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            val resolveCountWhileListing = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.CitationResolve
+            }
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            assertEquals(
+                resolveCountWhileListing,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.CitationResolve },
+            )
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = listRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.trustedSources.map { it.sourceAnchorId })
+            assertTrue(fixture.viewModel.state.value.hasLoadedTrustedSources)
+
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            advanceUntilIdle()
+            val revokeRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceRevoke }
+            assertEquals(grantId, revokeRequest.payload["grant_id"]?.jsonPrimitive?.content)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceRevoke,
+                    requestId = revokeRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"grant_id":"$grantId","revoked":true}"""
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.trustedSources.isEmpty())
+            assertNull(fixture.viewModel.state.value.sourceReview)
+
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val secondResolveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = secondResolveRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = dismissedCitationId,
+                        reviewId = dismissedReviewId,
+                        confirmationToken = dismissedConfirmationToken,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+            fixture.viewModel.dismissTrustedSource(anchorId)
+            advanceUntilIdle()
+            val dismissRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceDismiss }
+            assertEquals(dismissedReviewId, dismissRequest.payload["review_id"]?.jsonPrimitive?.content)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceDismiss,
+                    requestId = dismissRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"review_id":"$dismissedReviewId","dismissed":true}"""
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+
+            fixture.viewModel.updateChatInput("Summarize the visible source")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+            val chatRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val chatPayload = chatRequest.payload.toString()
+            listOf(
+                citationId,
+                reviewId,
+                confirmationToken,
+                grantId,
+                dismissedCitationId,
+                dismissedReviewId,
+                dismissedConfirmationToken,
+            ).forEach { opaqueValue ->
+                assertFalse(chatPayload.contains(opaqueValue))
+            }
+            val persistedText = fixture.localStore.data.toString()
+            listOf(
+                citationId,
+                reviewId,
+                confirmationToken,
+                grantId,
+                dismissedCitationId,
+                dismissedReviewId,
+                dismissedConfirmationToken,
+            ).forEach { opaqueValue ->
+                assertFalse(persistedText.contains(opaqueValue))
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                    requestId = chatRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            val disconnected = fixture.viewModel.state.value
+            assertNull(disconnected.sourceReview)
+            assertTrue(disconnected.trustedSources.isEmpty())
+            assertFalse(disconnected.hasLoadedTrustedSources)
+            assertFalse(disconnected.isResolvingCitation)
+            assertFalse(disconnected.isApprovingTrustedSource)
+            assertTrue(disconnected.revokingTrustedSourceAnchorIds.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceSelectionCapsAtEightCurrentListedSources() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val sources = (1..9).map { index ->
+                Triple(
+                    "source_anchor_${index.toString(16).padStart(16, '0')}",
+                    "citation_${index.toString(16).padStart(32, '0')}",
+                    "trusted_source_${index.toString(16).padStart(32, '0')}",
+                )
+            }
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = request.requestId,
+                    payload = trustedSourceListResultJson(sources),
+                ),
+            )
+            advanceUntilIdle()
+
+            sources.forEach { fixture.viewModel.toggleTrustedSourceSelection(it.first) }
+
+            assertEquals(sources.take(8).map { it.first }, fixture.viewModel.state.value.selectedTrustedSourceAnchorIds)
+            fixture.viewModel.toggleTrustedSourceSelection(sources.first().first)
+            fixture.viewModel.toggleTrustedSourceSelection(sources.last().first)
+            assertEquals(8, fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.size)
+            assertTrue(sources.last().first in fixture.viewModel.state.value.selectedTrustedSourceAnchorIds)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val listRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = listRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.selectedTrustedSourceAnchorIds)
+            assertFalse(fixture.viewModel.state.value.toString().contains(grantId))
+            assertFalse(fixture.localStore.data.toString().contains(grantId))
+
+            fixture.viewModel.updateChatInput("Summarize this source")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+            val firstSend = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            assertEquals(
+                listOf(grantId),
+                firstSend.payload["trusted_source_grant_ids"]?.jsonArray?.map { it.jsonPrimitive.content },
+            )
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+            assertFalse(fixture.viewModel.state.value.messages.toString().contains(grantId))
+            assertFalse(fixture.localStore.data.toString().contains(grantId))
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = firstSend.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "First answer"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = firstSend.requestId,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.regenerateLatestResponse()
+            advanceUntilIdle()
+            val unselectedRegenerate = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            assertFalse(unselectedRegenerate.payload.containsKey("trusted_source_grant_ids"))
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = unselectedRegenerate.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "Second answer"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = unselectedRegenerate.requestId,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.regenerateLatestResponse()
+            advanceUntilIdle()
+            val selectedRegenerate = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            assertEquals(
+                listOf(grantId),
+                selectedRegenerate.payload["trusted_source_grant_ids"]?.jsonArray?.map { it.jsonPrimitive.content },
+            )
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceChatSendDoesNotCrossAReplacedTransportChannel() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_1234567890abcdef"
+            val citationId = "citation_1234567890abcdef1234567890abcdef"
+            val grantId = "trusted_source_1234567890abcdef1234567890abcdef"
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val listRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = listRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.updateChatInput("Use this source")
+
+            val originalSendCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend }
+            fixture.viewModel.sendChatMessage()
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+            runCurrent()
+
+            assertEquals(
+                originalSendCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend },
+            )
+            assertTrue(replacementChannel.sentEnvelopes.none { it.type == MessageType.ChatSend })
+            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.viewModel.state.value.toString().contains(grantId))
+            assertFalse(fixture.localStore.data.toString().contains(grantId))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_abcdef0123456789"
+            val citationId = "citation_abcdef0123456789abcdef0123456789"
+            val grantId = "trusted_source_abcdef0123456789abcdef0123456789"
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val initialList = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.TrustedSourceList,
+                requestId = initialList.requestId,
+                payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+            ))
+            advanceUntilIdle()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val rejectedList = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(envelope(
+                type = MessageType.Error,
+                requestId = rejectedList.requestId,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "authentication_required",
+                    message = "Pair this device again.",
+                    retryable = false,
+                ),
+            ))
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("pairing_required", state.runtimeStatus)
+            assertEquals("pairing_required", state.error?.code)
+            assertFalse(state.isConnected)
+            assertTrue(state.trustedSources.isEmpty())
+            assertTrue(state.selectedTrustedSourceAnchorIds.isEmpty())
+            assertFalse(state.hasLoadedTrustedSources)
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertFalse(state.toString().contains(grantId))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_fedcba9876543210"
+            val citationId = "citation_fedcba9876543210fedcba9876543210"
+            val reviewId = "source_review_fedcba9876543210fedcba9876543210"
+            val confirmationToken = "source_confirmation_${"12".repeat(32)}"
+            val grantId = "trusted_source_fedcba9876543210fedcba9876543210"
+            fixture.viewModel.searchRuntimeDocuments("terminal review")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.RetrievalQuery,
+                requestId = searchRequest.requestId,
+                payload = trustedSourceSearchResultJson(anchorId),
+            ))
+            advanceUntilIdle()
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val resolveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.CitationResolve,
+                requestId = resolveRequest.requestId,
+                payload = citationResolveResultJson(
+                    anchorId = anchorId,
+                    citationId = citationId,
+                    reviewId = reviewId,
+                    confirmationToken = confirmationToken,
+                ),
+            ))
+            advanceUntilIdle()
+            fixture.viewModel.approveTrustedSource(anchorId)
+            advanceUntilIdle()
+            val approveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceApprove }
+            fixture.channel.enqueue(envelope(
+                type = MessageType.Error,
+                requestId = approveRequest.requestId,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "trusted_source_review_stale",
+                    message = "The reviewed source changed.",
+                    retryable = false,
+                ),
+            ))
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+            assertEquals("trusted_source_review_stale", fixture.viewModel.state.value.error?.code)
+
+            val currentCitationId = "citation_0123456789abcdef0123456789abcdef"
+            val currentReviewId = "source_review_0123456789abcdef0123456789abcdef"
+            val currentConfirmationToken = "source_confirmation_${"34".repeat(32)}"
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val currentResolveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.CitationResolve,
+                requestId = currentResolveRequest.requestId,
+                payload = citationResolveResultJson(
+                    anchorId = anchorId,
+                    citationId = currentCitationId,
+                    reviewId = currentReviewId,
+                    confirmationToken = currentConfirmationToken,
+                ),
+            ))
+            advanceUntilIdle()
+            fixture.viewModel.approveTrustedSource(anchorId)
+            advanceUntilIdle()
+            val currentApproveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceApprove }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.TrustedSourceApprove,
+                requestId = currentApproveRequest.requestId,
+                payload = trustedSourceApproveResultJson(anchorId, currentCitationId, grantId),
+            ))
+            advanceUntilIdle()
+            assertTrue(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            advanceUntilIdle()
+            val revokeRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceRevoke }
+            fixture.channel.enqueue(envelope(
+                type = MessageType.Error,
+                requestId = revokeRequest.requestId,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "trusted_source_not_found",
+                    message = "The grant no longer exists.",
+                    retryable = false,
+                ),
+            ))
+            advanceUntilIdle()
+
+            val finalState = fixture.viewModel.state.value
+            assertTrue(finalState.trustedSources.isEmpty())
+            assertTrue(finalState.selectedTrustedSourceAnchorIds.isEmpty())
+            assertTrue(finalState.revokingTrustedSourceAnchorIds.isEmpty())
+            assertNull(finalState.sourceReview)
+            assertNull(fixture.viewModel.privateField<Any>("pendingSourceReview"))
+            assertEquals("trusted_source_not_found", finalState.error?.code)
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.Error,
+                requestId = firstRequest.requestId,
+                payload = buildJsonObject {
+                    put("code", "trusted_source_not_found")
+                    put("message", "Malformed error")
+                    put("retryable", false)
+                    put("unexpected", "opaque-capability")
+                },
+            ))
+            advanceUntilIdle()
+
+            val failed = fixture.viewModel.state.value
+            assertFalse(failed.isLoadingTrustedSources)
+            assertFalse(failed.hasLoadedTrustedSources)
+            assertTrue(failed.trustedSources.isEmpty())
+            assertEquals("invalid_payload", failed.error?.code)
+            assertNull(fixture.viewModel.privateField<String>("pendingTrustedSourceListRequestId"))
+
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val listRequests = fixture.channel.sentEnvelopes.filter { it.type == MessageType.TrustedSourceList }
+            assertEquals(2, listRequests.size)
+            assertTrue(listRequests.last().requestId != firstRequest.requestId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceSelectionClearsOnChatSwitchListOmissionRevokeAndDisconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val anchorId = "source_anchor_1122334455667788"
+            val citationId = "citation_11223344556677889900aabbccddeeff"
+            val grantId = "trusted_source_11223344556677889900aabbccddeeff"
+
+            suspend fun loadSource() {
+                fixture.viewModel.refreshTrustedSources()
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.TrustedSourceList,
+                        requestId = request.requestId,
+                        payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                    ),
+                )
+                advanceUntilIdle()
+            }
+
+            loadSource()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.startNewChat()
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val unchangedListRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = unchangedListRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.selectedTrustedSourceAnchorIds)
+
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val emptyListRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = emptyListRequest.requestId,
+                    payload = buildJsonObject { put("trusted_sources", JsonArray(emptyList())) },
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+
+            loadSource()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.disconnect()
+            assertTrue(fixture.viewModel.state.value.selectedTrustedSourceAnchorIds.isEmpty())
+            assertTrue(fixture.viewModel.state.value.trustedSources.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedSourceChatFailureInvalidatesStaleGrantListWithoutPersistingOpaqueIds() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_8877665544332211"
+            val citationId = "citation_887766554433221100ffeeddccbbaa99"
+            val grantId = "trusted_source_887766554433221100ffeeddccbbaa99"
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val listRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(ProtocolEnvelope(
+                type = MessageType.TrustedSourceList,
+                requestId = listRequest.requestId,
+                payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+            ))
+            advanceUntilIdle()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+            fixture.viewModel.updateChatInput("Use the selected source")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+            val chatRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            fixture.channel.enqueue(envelope(
+                type = MessageType.Error,
+                requestId = chatRequest.requestId,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "trusted_source_not_found",
+                    message = "The trusted source is unavailable.",
+                    retryable = false,
+                ),
+            ))
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.trustedSources.isEmpty())
+            assertTrue(state.selectedTrustedSourceAnchorIds.isEmpty())
+            assertFalse(state.hasLoadedTrustedSources)
+            assertEquals("trusted_source_not_found", state.error?.code)
+            assertFalse(state.toString().contains(grantId))
+            assertFalse(fixture.localStore.data.toString().contains(grantId))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun staleTrustedSourceListResponseCannotResurrectRevokedGrant() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+
+            assertFalse(fixture.viewModel.state.value.hasLoadedTrustedSources)
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val initialList = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = initialList.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.hasLoadedTrustedSources)
+
+            fixture.viewModel.refreshTrustedSources()
+            advanceUntilIdle()
+            val staleList = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            advanceUntilIdle()
+            val revoke = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceRevoke }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceRevoke,
+                    requestId = revoke.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"grant_id":"$grantId","revoked":true}"""
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.trustedSources.isEmpty())
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = staleList.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            advanceUntilIdle()
+
+            val finalState = fixture.viewModel.state.value
+            assertTrue(finalState.trustedSources.isEmpty())
+            assertFalse(finalState.isLoadingTrustedSources)
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceRevoke })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun revokingTrustedCitationReviewClearsPendingConfirmationCapability() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_1122334455667788"
+            val citationId = "citation_11223344556677889900aabbccddeeff"
+            val reviewId = "source_review_11223344556677889900aabbccddeeff"
+            val confirmationToken = "source_confirmation_${"12".repeat(32)}"
+            val grantId = "trusted_source_11223344556677889900aabbccddeeff"
+
+            fixture.viewModel.searchRuntimeDocuments("trusted review revoke")
+            advanceUntilIdle()
+            val search = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = search.requestId,
+                    payload = trustedSourceSearchResultJson(anchorId),
+                ),
+            )
+            advanceUntilIdle()
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val resolve = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = resolve.requestId,
+                    payload = citationResolveTrustedResultJson(
+                        anchorId,
+                        citationId,
+                        reviewId,
+                        confirmationToken,
+                        grantId,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(requireNotNull(fixture.viewModel.state.value.sourceReview).isTrusted)
+
+            fixture.viewModel.revokeTrustedSource(anchorId)
+            runCurrent()
+            val revoke = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceRevoke }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceRevoke,
+                    requestId = revoke.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"grant_id":"$grantId","revoked":true}"""
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+
+            val approvalCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            fixture.viewModel.approveTrustedSource(anchorId)
+            runCurrent()
+            assertEquals(
+                approvalCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.TrustedSourceApprove },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun malformedCitationResponseReleasesPendingRequestWithoutLeakingOpaqueDetail() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val anchorId = "source_anchor_8899aabbccddeeff"
+            fixture.viewModel.searchRuntimeDocuments("malformed citation")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RetrievalQuery,
+                    requestId = searchRequest.requestId,
+                    payload = trustedSourceSearchResultJson(anchorId),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            val opaqueCanary = "source_confirmation_${"cd".repeat(32)}"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = firstRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"review":{"confirmation_token":"$opaqueCanary"},"unexpected":"$opaqueCanary"}"""
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val failedState = fixture.viewModel.state.value
+            assertFalse(failedState.isResolvingCitation)
+            assertEquals("citation_resolve_failed", failedState.error?.code)
+            assertNull(failedState.error?.detail)
+            assertNull(failedState.error?.technicalDetail)
+            assertFalse(failedState.toString().contains(opaqueCanary))
+
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val resolveRequests = fixture.channel.sentEnvelopes.filter { it.type == MessageType.CitationResolve }
+            assertEquals(2, resolveRequests.size)
+            assertTrue(resolveRequests.last().requestId != firstRequest.requestId)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = firstRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"code":"late","message":"$opaqueCanary","retryable":false}"""
+                    ).jsonObject,
+                ),
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.state.value.isResolvingCitation)
+            assertFalse(fixture.viewModel.state.value.toString().contains(opaqueCanary))
+
+            advanceTimeBy(CITATION_RESOLVE_REQUEST_TIMEOUT_MS + 1)
+            runCurrent()
+            assertFalse(fixture.viewModel.state.value.isResolvingCitation)
+            assertEquals("citation_resolve_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.resolveCitation(anchorId)
+            runCurrent()
+            val cancelledRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.CitationResolve }
+            fixture.viewModel.dismissTrustedSource()
+            assertFalse(fixture.viewModel.state.value.isResolvingCitation)
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.CitationResolve,
+                    requestId = cancelledRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = "citation_8899aabbccddeeff0011223344556677",
+                        reviewId = "source_review_8899aabbccddeeff0011223344556677",
+                        confirmationToken = "source_confirmation_${"89".repeat(32)}",
+                    ),
+                ),
+            )
+            runCurrent()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.viewModel.searchRuntimeDocuments("  relay recovery bounds  ")
+            advanceUntilIdle()
+            val semanticRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+            val semanticPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                semanticRequest.payload,
+            )
+            assertEquals(selectedEmbeddingModel.id, semanticPayload.embeddingModelId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "retrieval.query payload contains unsupported field(s): embedding_model_id",
+                        retryable = false,
+                    ),
+                    requestId = semanticRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val requestsAfterFallback = fixture.channel.sentEnvelopes.filter {
+                it.type == MessageType.RetrievalQuery
+            }
+            assertEquals(2, requestsAfterFallback.size)
+            val lexicalRequest = requestsAfterFallback.last()
+            val lexicalPayload = json.decodeFromJsonElement(
+                RetrievalQueryRequestPayload.serializer(),
+                lexicalRequest.payload,
+            )
+            assertTrue(lexicalRequest.requestId != semanticRequest.requestId)
+            assertEquals(semanticPayload.query, lexicalPayload.query)
+            assertEquals(semanticPayload.limit, lexicalPayload.limit)
+            assertEquals(semanticPayload.maxSnippetCharacters, lexicalPayload.maxSnippetCharacters)
+            assertNull(lexicalPayload.embeddingModelId)
+            assertFalse(lexicalRequest.payload.containsKey("embedding_model_id"))
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(results = emptyList()),
+                    requestId = semanticRequest.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "late embedding_model_id rejection",
+                        retryable = false,
+                    ),
+                    requestId = semanticRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                2,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "retrieval.query still rejects embedding_model_id",
+                        retryable = false,
+                    ),
+                    requestId = lexicalRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                2,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchIgnoresVeryLateErrorsAfterManyCompletedSearches() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            var firstRequestId: String? = null
+            repeat(70) { index ->
+                fixture.viewModel.searchRuntimeDocuments("completed document query $index")
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+                if (firstRequestId == null) firstRequestId = request.requestId
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.RetrievalQuery,
+                        serializer = RetrievalQueryResultPayload.serializer(),
+                        payload = RetrievalQueryResultPayload(results = emptyList()),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "very late document search error",
+                        retryable = false,
+                    ),
+                    requestId = requireNotNull(firstRequestId),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.error)
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val terminalErrors = listOf(
+                "backend_unavailable" to "embedding_model_id backend unavailable",
+                "document_index_unavailable" to "embedding_model_id index unavailable",
+                "transport_error" to "embedding_model_id transport failed",
+                "invalid_payload" to "retrieval query is malformed",
+                "invalid_payload" to "embedding_model_id is not installed",
+            )
+
+            terminalErrors.forEachIndexed { index, (code, message) ->
+                val requestsBefore = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.RetrievalQuery
+                }
+                fixture.viewModel.searchRuntimeDocuments("terminal semantic query $index")
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.RetrievalQuery }
+                val requestPayload = json.decodeFromJsonElement(
+                    RetrievalQueryRequestPayload.serializer(),
+                    request.payload,
+                )
+                assertEquals(selectedEmbeddingModel.id, requestPayload.embeddingModelId)
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(code = code, message = message, retryable = false),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+
+                assertEquals(
+                    requestsBefore + 1,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.RetrievalQuery },
+                )
+                assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+                assertEquals("document_search_failed", fixture.viewModel.state.value.error?.code)
+            }
         } finally {
             Dispatchers.resetMain()
         }
@@ -22004,6 +23293,11 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.ChatSessionDelete))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.IndexDocumentsList))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.RetrievalQuery))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.CitationResolve))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.TrustedSourceApprove))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.TrustedSourceDismiss))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.TrustedSourceList))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.TrustedSourceRevoke))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryList))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryUpsert))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemoryDelete))
@@ -22022,7 +23316,6 @@ class RuntimeClientViewModelTest {
             "research.brief.create",
             "citation.sources.list",
             "source_anchor.resolve",
-            "trusted_source.approve",
             "source_control.status",
             "projects.sessions.list",
             "automation.runs.create",
@@ -22063,6 +23356,147 @@ class RuntimeClientViewModelTest {
         assertTrue(defaultCapabilities.contains(MessageType.IndexDocumentsList))
         assertTrue(defaultCapabilities.contains(MessageType.RetrievalQuery))
         assertTrue(diagnosticCapabilities.contains(MessageType.RouteRefresh))
+    }
+
+    private fun trustedSourceSearchResultJson(anchorId: String): JsonObject {
+        return json.parseToJsonElement(
+            """
+                {
+                  "results": [{
+                    "document": {
+                      "id": "doc-trusted-source",
+                      "display_name": "Trusted Source.md",
+                      "mime_type": "text/markdown",
+                      "content_fingerprint": "0011223344556677",
+                      "extracted_character_count": 1024,
+                      "chunk_count": 4,
+                      "quality": "chunked"
+                    },
+                    "source_anchor_id": "$anchorId",
+                    "chunk_index": 2,
+                    "start_character_offset": 200,
+                    "end_character_offset": 320,
+                    "rank": 1,
+                    "match_kind": "lexical",
+                    "matched_terms": ["trusted", "source"],
+                    "snippet": "A safe search result."
+                  }]
+                }
+            """.trimIndent(),
+        ).jsonObject
+    }
+
+    private fun citationResolveResultJson(
+        anchorId: String,
+        citationId: String,
+        reviewId: String,
+        confirmationToken: String,
+    ): JsonObject {
+        return json.parseToJsonElement(
+            """
+                {
+                  "citation": {
+                    "schema_version": 1,
+                    "citation_id": "$citationId",
+                    "source_anchor_id": "$anchorId",
+                    "document": {
+                      "id": "doc-trusted-source",
+                      "display_name": "Trusted Source.md",
+                      "mime_type": "text/markdown",
+                      "content_fingerprint": "0011223344556677",
+                      "extracted_character_count": 1024,
+                      "chunk_count": 4,
+                      "quality": "chunked"
+                    },
+                    "chunk_summary": {
+                      "chunk_index": 2,
+                      "start_character_offset": 200,
+                      "end_character_offset": 320,
+                      "character_count": 120
+                    }
+                  },
+                  "review": {
+                    "review_id": "$reviewId",
+                    "confirmation_token": "$confirmationToken",
+                    "disclosure_version": "runtime-trusted-source-v1",
+                    "usage_scope": "chat_context",
+                    "expires_at": "2026-07-12T12:30:00Z"
+                  }
+                }
+            """.trimIndent(),
+        ).jsonObject
+    }
+
+    private fun trustedSourceApproveResultJson(
+        anchorId: String,
+        citationId: String,
+        grantId: String,
+    ): JsonObject {
+        return json.parseToJsonElement(
+            """
+                {
+                  "trusted_source": {
+                    "grant_id": "$grantId",
+                    "citation_id": "$citationId",
+                    "source_anchor_id": "$anchorId",
+                    "document": {
+                      "id": "doc-trusted-source",
+                      "display_name": "Trusted Source.md",
+                      "mime_type": "text/markdown",
+                      "content_fingerprint": "0011223344556677",
+                      "extracted_character_count": 1024,
+                      "chunk_count": 4,
+                      "quality": "chunked"
+                    },
+                    "usage_scope": "chat_context",
+                    "approved_at": "2026-07-12T12:00:00Z"
+                  }
+                }
+            """.trimIndent(),
+        ).jsonObject
+    }
+
+    private fun citationResolveTrustedResultJson(
+        anchorId: String,
+        citationId: String,
+        reviewId: String,
+        confirmationToken: String,
+        grantId: String,
+    ): JsonObject {
+        val citation = citationResolveResultJson(anchorId, citationId, reviewId, confirmationToken)
+        val trustedSource = requireNotNull(
+            trustedSourceApproveResultJson(anchorId, citationId, grantId)["trusted_source"]
+        )
+        return buildJsonObject {
+            citation.forEach { (key, value) -> put(key, value) }
+            put("trusted_source", trustedSource)
+        }
+    }
+
+    private fun trustedSourceListResultJson(
+        anchorId: String,
+        citationId: String,
+        grantId: String,
+    ): JsonObject {
+        val trustedSource = trustedSourceApproveResultJson(anchorId, citationId, grantId)["trusted_source"]
+        return buildJsonObject {
+            put("trusted_sources", JsonArray(listOf(requireNotNull(trustedSource))))
+        }
+    }
+
+    private fun trustedSourceListResultJson(
+        sources: List<Triple<String, String, String>>,
+    ): JsonObject = buildJsonObject {
+        put(
+            "trusted_sources",
+            JsonArray(
+                sources.map { (anchorId, citationId, grantId) ->
+                    requireNotNull(
+                        trustedSourceApproveResultJson(anchorId, citationId, grantId)["trusted_source"]
+                    )
+                }
+            ),
+        )
     }
 
     private class MutableTestClock(var nowEpochMillis: Long)
@@ -22800,6 +24234,12 @@ class RuntimeClientViewModelTest {
         val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
         field.isAccessible = true
         return field.get(this) as T?
+    }
+
+    private fun RuntimeClientViewModel.setPrivateField(name: String, value: Any?) {
+        val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        field.set(this, value)
     }
 
     private fun memorySummaryDraftPayload(id: String): MemorySummaryDraftPayload {

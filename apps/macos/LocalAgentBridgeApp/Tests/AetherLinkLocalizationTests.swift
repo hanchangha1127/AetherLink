@@ -193,6 +193,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Status": "Status",
                     "Pairing": "Pairing",
                     "Trusted Devices": "Trusted Devices",
+                    "Document Sources": "Document Sources",
                     "Activity": "Activity",
                     "App Preferences": "App Preferences",
                     "Language": "Language",
@@ -205,6 +206,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Status": "상태",
                     "Pairing": "페어링",
                     "Trusted Devices": "신뢰 기기",
+                    "Document Sources": "문서 소스",
                     "Activity": "활동",
                     "App Preferences": "앱 설정",
                     "Language": "언어",
@@ -217,6 +219,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Status": "ステータス",
                     "Pairing": "ペアリング",
                     "Trusted Devices": "信頼済みデバイス",
+                    "Document Sources": "ドキュメントソース",
                     "Activity": "アクティビティ",
                     "App Preferences": "アプリ設定",
                     "Language": "言語",
@@ -229,6 +232,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Status": "状态",
                     "Pairing": "配对",
                     "Trusted Devices": "受信任设备",
+                    "Document Sources": "文档源",
                     "Activity": "活动",
                     "App Preferences": "应用偏好设置",
                     "Language": "语言",
@@ -241,6 +245,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Status": "État",
                     "Pairing": "Jumelage",
                     "Trusted Devices": "Appareils approuvés",
+                    "Document Sources": "Sources documentaires",
                     "Activity": "Activité",
                     "App Preferences": "Préférences de l’app",
                     "Language": "Langue",
@@ -260,6 +265,50 @@ final class AetherLinkLocalizationTests: XCTestCase {
                         "\(languageTag) \(key)"
                     )
                 }
+            }
+        }
+    }
+
+    func testDocumentSourceInspectorErrorsActionsAndTargetLabelsLocalizeAcrossLanguages() {
+        let issues: [RuntimeDocumentSourceManagementError] = [
+            .sourceUnavailable,
+            .unsupportedOrUnreadableDocument,
+            .resourceLimitExceeded,
+            .reviewExpired,
+            .invalidConfirmation,
+            .sourceChanged,
+            .storageUnavailable,
+        ]
+        let englishMessages = Dictionary(uniqueKeysWithValues: issues.map { issue in
+            (String(describing: issue), issue.localizedDescription)
+        })
+
+        for language in AetherLinkAppLanguage.allCases {
+            withStoredAppLanguage(language.rawValue) {
+                for issue in issues {
+                    let localized = localizedRuntimeDocumentSourceIssue(issue)
+                    XCTAssertFalse(localized.isEmpty)
+                    if language != .english {
+                        XCTAssertNotEqual(localized, englishMessages[String(describing: issue)])
+                    }
+                }
+                XCTAssertNotEqual(
+                    runtimeDocumentAuditActionText(.approved),
+                    runtimeDocumentAuditActionText(.indexed)
+                )
+                let fileName = "quarterly-source.txt"
+                XCTAssertTrue(
+                    String(
+                        format: NSLocalizedString("Remove source %@?", comment: ""),
+                        fileName
+                    ).contains(fileName)
+                )
+                XCTAssertTrue(
+                    String(
+                        format: NSLocalizedString("Review expires %@", comment: ""),
+                        "12:00"
+                    ).contains("12:00")
+                )
             }
         }
     }

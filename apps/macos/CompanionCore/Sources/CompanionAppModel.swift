@@ -688,12 +688,19 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var runtimeChatTranscriptErrors: [String: String] = [:]
     @Published public private(set) var runtimeMemoryEntries: [RuntimeMemoryEntry] = []
     @Published public private(set) var runtimeMemoryEntriesError: String?
+    @Published public private(set) var runtimeDocumentSources: [CompanionRuntimeDocumentSource] = []
+    @Published public private(set) var runtimeDocumentAuditEvents: [RuntimeDocumentSourceAuditEvent] = []
+    @Published public private(set) var pendingRuntimeDocumentReview: CompanionRuntimeDocumentImportReview?
+    @Published public private(set) var runtimeDocumentSourcesError: String?
+    @Published public private(set) var runtimeDocumentSourcesIssue: RuntimeDocumentSourceManagementError?
+    @Published public private(set) var isRuntimeDocumentSourceOperationInFlight = false
     @Published public private(set) var logs: [String] = []
 
     private let backend: any LlmBackend
     private var runtimeRouter: LocalRuntimeMessageRouter!
     private let runtimeChatEventStore: any RuntimeChatEventStore
     private let runtimeMemoryStore: any RuntimeMemoryStore
+    private let runtimeDocumentSourceManager: RuntimeDocumentSourceManager
     private let pairingCoordinator = PairingCoordinator()
     private let trustedDeviceStore: TrustedDeviceStore
     private let userDefaults: UserDefaults
@@ -792,6 +799,7 @@ public final class CompanionAppModel: ObservableObject {
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         runtimeChatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         runtimeMemoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
+        runtimeDocumentIndexStore: SQLiteRuntimeDocumentIndexStore = SQLiteRuntimeDocumentIndexStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil,
         allowsAuthenticatedRouteRefresh: Bool = false
     ) {
@@ -819,6 +827,7 @@ public final class CompanionAppModel: ObservableObject {
         self.trustedDeviceStore = trustedDeviceStore
         self.runtimeChatEventStore = runtimeChatEventStore
         self.runtimeMemoryStore = runtimeMemoryStore
+        self.runtimeDocumentSourceManager = RuntimeDocumentSourceManager(store: runtimeDocumentIndexStore)
         self.remoteRelayRouteAllocator = remoteRelayRouteAllocator ?? Self.makeRemoteRelayRouteAllocator(
             environment: environment,
             bootstrapRelaySettings: loadedBootstrapRelaySettings,
@@ -859,6 +868,7 @@ public final class CompanionAppModel: ObservableObject {
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
             memoryStore: runtimeMemoryStore,
+            documentIndexStore: runtimeDocumentIndexStore,
             routeRefresher: allowsAuthenticatedRouteRefresh ? self : nil,
             runtimeChallengeSigner: runtimeIdentity.signer,
             onPairingAccepted: { [weak self] device in
@@ -1036,6 +1046,116 @@ public final class CompanionAppModel: ObservableObject {
             )
             log("Runtime memory inspector failed: \(message)")
         }
+    }
+
+    public func refreshRuntimeDocumentSources() async {
+        do {
+            let sources = try await runtimeDocumentSourceManager.sources()
+            let auditEvents = try await runtimeDocumentSourceManager.auditEvents()
+            runtimeDocumentSources = sources.sorted { lhs, rhs in
+                if lhs.approvedAt != rhs.approvedAt {
+                    return lhs.approvedAt > rhs.approvedAt
+                }
+                return lhs.id < rhs.id
+            }
+            runtimeDocumentAuditEvents = auditEvents
+            runtimeDocumentSourcesError = nil
+            runtimeDocumentSourcesIssue = nil
+        } catch {
+            publishRuntimeDocumentSourceFailure(error)
+        }
+    }
+
+    public func prepareRuntimeDocumentSource(
+        fileURL: URL,
+        replacingSourceID: String? = nil
+    ) async {
+        guard !isRuntimeDocumentSourceOperationInFlight else { return }
+        isRuntimeDocumentSourceOperationInFlight = true
+        defer { isRuntimeDocumentSourceOperationInFlight = false }
+        do {
+            pendingRuntimeDocumentReview = try await runtimeDocumentSourceManager.prepareImport(
+                from: fileURL,
+                replacingSourceID: replacingSourceID
+            )
+            runtimeDocumentSourcesError = nil
+            runtimeDocumentSourcesIssue = nil
+        } catch {
+            pendingRuntimeDocumentReview = nil
+            publishRuntimeDocumentSourceFailure(error)
+        }
+    }
+
+    public func approveRuntimeDocumentSourceReview() async {
+        guard !isRuntimeDocumentSourceOperationInFlight,
+              let review = pendingRuntimeDocumentReview else { return }
+        isRuntimeDocumentSourceOperationInFlight = true
+        defer { isRuntimeDocumentSourceOperationInFlight = false }
+        do {
+            _ = try await runtimeDocumentSourceManager.approve(
+                reviewID: review.id,
+                confirmationToken: review.confirmationToken,
+                disclosureVersion: review.disclosureVersion
+            )
+            pendingRuntimeDocumentReview = nil
+            runtimeDocumentSourcesError = nil
+            runtimeDocumentSourcesIssue = nil
+            log("Document source approved for trusted devices")
+            await refreshRuntimeDocumentSources()
+        } catch {
+            publishRuntimeDocumentSourceFailure(error)
+        }
+    }
+
+    public func discardRuntimeDocumentSourceReview() async {
+        guard let review = pendingRuntimeDocumentReview else { return }
+        pendingRuntimeDocumentReview = nil
+        await runtimeDocumentSourceManager.cancel(reviewID: review.id)
+    }
+
+    public func removeRuntimeDocumentSource(id sourceID: String, expectedRevision: String) async {
+        guard !isRuntimeDocumentSourceOperationInFlight else { return }
+        isRuntimeDocumentSourceOperationInFlight = true
+        defer { isRuntimeDocumentSourceOperationInFlight = false }
+        do {
+            try await runtimeDocumentSourceManager.removeSource(
+                id: sourceID,
+                expectedRevision: expectedRevision
+            )
+            runtimeDocumentSourcesError = nil
+            runtimeDocumentSourcesIssue = nil
+            log("Document source removed from trusted-device access")
+            await refreshRuntimeDocumentSources()
+        } catch {
+            publishRuntimeDocumentSourceFailure(error)
+        }
+    }
+
+    public func makeRuntimeDocumentAuditExport() async -> Data? {
+        do {
+            let data = try await runtimeDocumentSourceManager.auditExportData()
+            runtimeDocumentSourcesError = nil
+            runtimeDocumentSourcesIssue = nil
+            return data
+        } catch {
+            publishRuntimeDocumentSourceFailure(error)
+            return nil
+        }
+    }
+
+    private func publishRuntimeDocumentSourceFailure(_ error: Error) {
+        let message: String
+        let issue: RuntimeDocumentSourceManagementError
+        if let managementError = error as? RuntimeDocumentSourceManagementError {
+            issue = managementError
+            message = managementError.localizedDescription
+        } else {
+            issue = .storageUnavailable
+            message = RuntimeDocumentSourceManagementError.storageUnavailable.localizedDescription
+        }
+        runtimeDocumentSourcesIssue = issue
+        runtimeDocumentSourcesError = message
+        log("Document source operation failed")
     }
 
     public func refreshRuntimeChatSessions() {

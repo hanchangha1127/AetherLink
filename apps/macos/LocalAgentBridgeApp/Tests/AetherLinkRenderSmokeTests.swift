@@ -1,6 +1,7 @@
 import AppKit
 import CompanionCore
 import CryptoKit
+import DocumentIngestion
 import OllamaBackend
 import SwiftUI
 import TrustedDevices
@@ -67,6 +68,7 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         ("PairingView", AnyView(PairingView(model: model))),
                         ("RemoteRelayRoutePanel", AnyView(RemoteRelayRoutePanel(model: model))),
                         ("TrustedDevicesView", AnyView(TrustedDevicesView(model: model))),
+                        ("RuntimeDocumentSourcesView", AnyView(RuntimeDocumentSourcesView(model: model))),
                         ("LogsView", AnyView(LogsView(model: model))),
                     ]
 
@@ -83,6 +85,83 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                             label: "\(name) \(language.rawValue) \(appearance.rawValue)"
                         )
                     }
+                }
+            }
+        }
+    }
+
+    func testPopulatedDocumentSourceInspectorAndReviewRenderAcrossLanguagesAndAppearances() async throws {
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try await withStoredPreferences(language: language, appearance: appearance) {
+                    let directoryURL = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("aetherlink-render-document-review-\(UUID().uuidString)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: directoryURL) }
+                    let fileURL = directoryURL.appendingPathComponent(
+                        "quarterly-runtime-knowledge-source-with-a-very-long-review-name-2026.txt"
+                    )
+                    try "render audit source canary".write(to: fileURL, atomically: true, encoding: .utf8)
+                    let store = SQLiteRuntimeDocumentIndexStore(
+                        databaseURL: directoryURL.appendingPathComponent("runtime-document-index.sqlite")
+                    )
+                    let approved = try store.replaceDocument(
+                        result: DocumentIngestor().ingest(extractedDocument: ExtractedDocument(
+                            fileName: fileURL.lastPathComponent,
+                            mimeType: "text/plain",
+                            text: "render audit source canary"
+                        ))
+                    )
+                    _ = try store.readApprovedCatalog(
+                        limit: 10,
+                        actorDeviceID: "render-trusted-device",
+                        timestamp: Date(timeIntervalSince1970: 100)
+                    )
+                    let model = renderSmokeModel(runtimeDocumentIndexStore: store)
+                    await model.refreshRuntimeDocumentSources()
+                    XCTAssertEqual(model.runtimeDocumentSources.map(\.id), [approved.id])
+
+                    let inspectorBitmap = try render(
+                        RuntimeDocumentSourcesView(model: model)
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .environment(\.dynamicTypeSize, .accessibility3)
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: minimumDetailSize
+                    )
+                    assertMeaningfulRender(
+                        inspectorBitmap,
+                        label: "Populated RuntimeDocumentSourcesView \(language.rawValue) \(appearance.rawValue)"
+                    )
+
+                    try "replacement review source canary".write(
+                        to: fileURL,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                    await model.prepareRuntimeDocumentSource(
+                        fileURL: fileURL,
+                        replacingSourceID: approved.id
+                    )
+                    let review = try XCTUnwrap(model.pendingRuntimeDocumentReview)
+                    let reviewBitmap = try render(
+                        RuntimeDocumentReviewSheet(
+                            review: review,
+                            isOperationInFlight: false,
+                            errorMessage: nil,
+                            confirmedRuntimeSharedScope: .constant(false),
+                            onApprove: {},
+                            onCancel: {}
+                        )
+                        .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                        .environment(\.dynamicTypeSize, .accessibility3)
+                        .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+                    assertMeaningfulRender(
+                        reviewBitmap,
+                        label: "RuntimeDocumentReviewSheet \(language.rawValue) \(appearance.rawValue)"
+                    )
+                    await model.discardRuntimeDocumentSourceReview()
                 }
             }
         }
@@ -574,13 +653,15 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
     private func renderSmokeModel(
         backend: (any LlmBackend)? = nil,
-        trustedDeviceStore: TrustedDeviceStore? = nil
+        trustedDeviceStore: TrustedDeviceStore? = nil,
+        runtimeDocumentIndexStore: SQLiteRuntimeDocumentIndexStore? = nil
     ) -> CompanionAppModel {
         CompanionAppModel(
             backend: backend ?? RenderSmokeBackend(models: []),
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: isolatedDefaults(),
             trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),
+            runtimeDocumentIndexStore: runtimeDocumentIndexStore ?? isolatedRuntimeDocumentIndexStore(),
             runtimeRouteHostProvider: { "127.0.0.1" }
         )
     }
@@ -589,6 +670,14 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("aetherlink-render-trusted-devices-\(UUID().uuidString)", isDirectory: true)
         return TrustedDeviceStore(fileURL: directoryURL.appendingPathComponent("trusted-devices.json"))
+    }
+
+    private func isolatedRuntimeDocumentIndexStore() -> SQLiteRuntimeDocumentIndexStore {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-render-document-index-\(UUID().uuidString)", isDirectory: true)
+        return SQLiteRuntimeDocumentIndexStore(
+            databaseURL: directoryURL.appendingPathComponent("runtime-document-index.sqlite")
+        )
     }
 
     private func isolatedRuntimeIdentityEnvironment() -> [String: String] {

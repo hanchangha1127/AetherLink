@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +61,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
@@ -71,6 +73,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -107,6 +112,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -122,8 +128,11 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -140,6 +149,7 @@ import com.localagentbridge.android.R
 import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
 import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
+import com.localagentbridge.android.core.protocol.RetrievalMatchKind
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
@@ -148,6 +158,7 @@ import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.MAX_PENDING_ATTACHMENTS
+import com.localagentbridge.android.runtime.MAX_SELECTED_TRUSTED_SOURCES
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDocumentCatalog
@@ -162,6 +173,8 @@ import com.localagentbridge.android.runtime.RuntimeModelResidencyUnloadFailureSt
 import com.localagentbridge.android.runtime.RuntimeModelResidencyStatus
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
+import com.localagentbridge.android.runtime.RuntimeSourceReview
+import com.localagentbridge.android.runtime.RuntimeTrustedSource
 import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
@@ -170,6 +183,9 @@ import com.localagentbridge.android.runtime.isEmbeddingModel
 import com.localagentbridge.android.runtime.supportsImageInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.time.Instant
+import java.util.Date
 import java.util.Locale
 
 private const val COPY_SUCCESS_ANNOUNCEMENT_DURATION_MS = 1_800L
@@ -1599,6 +1615,9 @@ fun ChatScreen(
     onRefreshHealth: () -> Unit,
     onAttachFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
+    onToggleTrustedSource: (String) -> Unit = {},
+    onRemoveTrustedSource: (String) -> Unit = {},
+    onRefreshTrustedSources: () -> Unit = {},
     onScanLatestQr: () -> Unit,
     onRegenerateLatestResponse: () -> Unit = {},
     onReuseLatestUserMessage: () -> Unit = {},
@@ -1615,7 +1634,7 @@ fun ChatScreen(
     val jumpToLatestActionLabel = stringResource(R.string.content_desc_jump_to_latest)
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
-    val composerDockSpace = 166.dp
+    val composerDockSpace = if (state.selectedTrustedSourceAnchorIds.isEmpty()) 166.dp else 206.dp
     var previousMessageCount by rememberSaveable { mutableStateOf(0) }
     var copyAnnouncement by remember { mutableStateOf<CopySuccessAnnouncement?>(null) }
     var copyAnnouncementId by remember { mutableStateOf(0) }
@@ -1803,6 +1822,10 @@ fun ChatScreen(
             ChatComposer(
                 value = state.chatInput,
                 attachments = state.pendingAttachments,
+                trustedSources = state.trustedSources,
+                selectedTrustedSourceAnchorIds = state.selectedTrustedSourceAnchorIds,
+                hasLoadedTrustedSources = state.hasLoadedTrustedSources,
+                isLoadingTrustedSources = state.isLoadingTrustedSources,
                 enabled = canEditComposer,
                 imageAttachmentsSupported = !hasUnsupportedImageAttachment,
                 canSend = canSend,
@@ -1813,6 +1836,9 @@ fun ChatScreen(
                 onClearDraft = onClearDraft,
                 onAttachFiles = onAttachFiles,
                 onRemoveAttachment = onRemoveAttachment,
+                onToggleTrustedSource = onToggleTrustedSource,
+                onRemoveTrustedSource = onRemoveTrustedSource,
+                onRefreshTrustedSources = onRefreshTrustedSources,
                 onSend = onSend,
                 onCancel = onCancel,
             )
@@ -1995,6 +2021,11 @@ fun SettingsScreen(
     onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
     onRefreshDocuments: () -> Unit = {},
     onSearchDocuments: (String) -> Unit = {},
+    onResolveCitation: (String) -> Unit = {},
+    onApproveTrustedSource: () -> Unit = {},
+    onDismissTrustedSource: () -> Unit = {},
+    onRefreshTrustedSources: () -> Unit = {},
+    onRevokeTrustedSource: (String) -> Unit = {},
     onRefreshChatHistory: (String?) -> Unit = {},
     onOpenChatSession: (String) -> Unit = {},
     onRenameChatSession: (String) -> Unit = {},
@@ -2120,6 +2151,14 @@ fun SettingsScreen(
                     searchResults = state.documentSearchResults,
                     isLoadingCatalog = state.isLoadingDocumentCatalog,
                     isSearchingDocuments = state.isSearchingDocuments,
+                    sourceReview = state.sourceReview,
+                    trustedSources = state.trustedSources,
+                    hasLoadedTrustedSources = state.hasLoadedTrustedSources,
+                    isResolvingCitation = state.isResolvingCitation,
+                    isApprovingTrustedSource = state.isApprovingTrustedSource,
+                    isDismissingTrustedSource = state.isDismissingTrustedSource,
+                    isLoadingTrustedSources = state.isLoadingTrustedSources,
+                    revokingTrustedSourceAnchorIds = state.revokingTrustedSourceAnchorIds,
                     actionsEnabled = documentIndexActionsEnabled(state),
                     actionsDisabledReasonRes = documentIndexLockNoticeTextRes(
                         state = state,
@@ -2127,6 +2166,11 @@ fun SettingsScreen(
                     ),
                     onRefreshDocuments = onRefreshDocuments,
                     onSearchDocuments = onSearchDocuments,
+                    onResolveCitation = onResolveCitation,
+                    onApproveTrustedSource = onApproveTrustedSource,
+                    onDismissTrustedSource = onDismissTrustedSource,
+                    onRefreshTrustedSources = onRefreshTrustedSources,
+                    onRevokeTrustedSource = onRevokeTrustedSource,
                     showHeader = false,
                 )
             }
@@ -4729,6 +4773,10 @@ internal fun chatEmptyStaticPromptRes(): Int? = null
 private fun ChatComposer(
     value: String,
     attachments: List<RuntimePendingAttachment>,
+    trustedSources: List<RuntimeTrustedSource>,
+    selectedTrustedSourceAnchorIds: List<String>,
+    hasLoadedTrustedSources: Boolean,
+    isLoadingTrustedSources: Boolean,
     enabled: Boolean,
     imageAttachmentsSupported: Boolean,
     canSend: Boolean,
@@ -4739,11 +4787,18 @@ private fun ChatComposer(
     onClearDraft: () -> Unit,
     onAttachFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
+    onToggleTrustedSource: (String) -> Unit,
+    onRemoveTrustedSource: (String) -> Unit,
+    onRefreshTrustedSources: () -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    var sourcePickerExpanded by remember { mutableStateOf(false) }
+    val selectedTrustedSources = selectedTrustedSourceAnchorIds.mapNotNull { selectedAnchorId ->
+        trustedSources.firstOrNull { it.sourceAnchorId == selectedAnchorId }
+    }
     val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
     val showComposerStatus = chatComposerShouldShowStatus(
         enabled = enabled,
@@ -4776,9 +4831,11 @@ private fun ChatComposer(
     val cancelGenerationStateDescription = stringResource(R.string.cancel_generation_state_ready)
     val cancelGenerationActionLabel = stringResource(R.string.content_desc_cancel_generation)
     val attachFilesActionLabel = stringResource(R.string.content_desc_attach_files)
+    val selectSourcesActionLabel = stringResource(R.string.chat_trusted_sources_select)
     val clearDraftActionLabel = stringResource(R.string.clear_draft)
     val clearDraftStateDescription = stringResource(R.string.clear_draft_state_ready)
     val canAttachFiles = enabled && !attachmentLimitReached
+    val canSelectSources = enabled
     val canClearDraft = enabled && (value.isNotBlank() || attachments.isNotEmpty()) && !isStreaming
     val attachFilesStateDescription = when {
         !enabled && hint.isNotBlank() -> hint
@@ -4815,6 +4872,11 @@ private fun ChatComposer(
                 imageAttachmentsSupported = imageAttachmentsSupported,
                 onRemoveAttachment = onRemoveAttachment,
             )
+            TrustedSourceChips(
+                sources = selectedTrustedSources,
+                enabled = enabled,
+                onRemoveSource = onRemoveTrustedSource,
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4823,6 +4885,78 @@ private fun ChatComposer(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                Box {
+                    FilledTonalIconButton(
+                        onClick = {
+                            sourcePickerExpanded = true
+                            onRefreshTrustedSources()
+                        },
+                        enabled = canSelectSources,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag(CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG),
+                    ) {
+                        Icon(
+                            Icons.Filled.Link,
+                            contentDescription = selectSourcesActionLabel,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = sourcePickerExpanded,
+                        onDismissRequest = { sourcePickerExpanded = false },
+                        modifier = Modifier.testTag(CHAT_COMPOSER_SOURCE_MENU_TEST_TAG),
+                    ) {
+                        if (isLoadingTrustedSources) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .widthIn(min = 220.dp)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            )
+                        } else if (trustedSources.isEmpty()) {
+                            Text(
+                                text = stringResource(
+                                    if (hasLoadedTrustedSources) R.string.trusted_sources_empty
+                                    else R.string.trusted_sources_not_loaded,
+                                ),
+                                modifier = Modifier
+                                    .widthIn(min = 220.dp, max = 320.dp)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        trustedSources.forEach { source ->
+                            val selected = source.sourceAnchorId in selectedTrustedSourceAnchorIds
+                            val selectionEnabled = !isLoadingTrustedSources && (
+                                selected || selectedTrustedSourceAnchorIds.size < MAX_SELECTED_TRUSTED_SOURCES
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = source.document.displayName,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                onClick = { onToggleTrustedSource(source.sourceAnchorId) },
+                                enabled = selectionEnabled,
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = selected,
+                                        onCheckedChange = null,
+                                        enabled = selectionEnabled,
+                                    )
+                                },
+                                modifier = Modifier
+                                    .testTag(chatTrustedSourcePickerRowTestTag(source.document.id))
+                                    .semantics {
+                                        role = Role.Checkbox
+                                        toggleableState = ToggleableState(selected)
+                                    },
+                            )
+                        }
+                    }
+                }
                 FilledTonalIconButton(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -4979,6 +5113,60 @@ private fun ChatComposer(
                     isReady = canSend,
                     isWarning = showComposerWarning,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrustedSourceChips(
+    sources: List<RuntimeTrustedSource>,
+    enabled: Boolean,
+    onRemoveSource: (String) -> Unit,
+) {
+    if (sources.isEmpty()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag(CHAT_COMPOSER_SOURCE_CHIPS_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        sources.forEach { source ->
+            val removeLabel = stringResource(
+                R.string.chat_trusted_source_remove_named,
+                source.document.displayName,
+            )
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.testTag(chatTrustedSourceChipTestTag(source.document.id)),
+            ) {
+                Row(
+                    modifier = Modifier.heightIn(min = 32.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = source.document.displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .widthIn(max = 180.dp)
+                            .padding(start = 10.dp, end = 2.dp),
+                    )
+                    IconButton(
+                        onClick = { onRemoveSource(source.sourceAnchorId) },
+                        enabled = enabled,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = removeLabel,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
             }
         }
     }
@@ -7093,12 +7281,25 @@ internal fun DocumentIndexPanel(
     searchResults: List<RuntimeDocumentSearchResult>,
     isLoadingCatalog: Boolean,
     isSearchingDocuments: Boolean,
+    sourceReview: RuntimeSourceReview? = null,
+    trustedSources: List<RuntimeTrustedSource> = emptyList(),
+    hasLoadedTrustedSources: Boolean = false,
+    isResolvingCitation: Boolean = false,
+    isApprovingTrustedSource: Boolean = false,
+    isDismissingTrustedSource: Boolean = false,
+    isLoadingTrustedSources: Boolean = false,
+    revokingTrustedSourceAnchorIds: Set<String> = emptySet(),
     actionsEnabled: Boolean,
     @StringRes actionsDisabledReasonRes: Int = documentIndexLockNoticeTextRes(
         hasDocuments = catalog.documents.isNotEmpty(),
     ),
     onRefreshDocuments: () -> Unit,
     onSearchDocuments: (String) -> Unit,
+    onResolveCitation: (String) -> Unit = {},
+    onApproveTrustedSource: () -> Unit = {},
+    onDismissTrustedSource: () -> Unit = {},
+    onRefreshTrustedSources: () -> Unit = {},
+    onRevokeTrustedSource: (String) -> Unit = {},
     showHeader: Boolean = true,
 ) {
     var documentSearchQuery by rememberSaveable(searchQuery) { mutableStateOf(searchQuery) }
@@ -7257,7 +7458,12 @@ internal fun DocumentIndexPanel(
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         searchResults.forEach { result ->
-                            DocumentSearchResultRow(result)
+                            DocumentSearchResultRow(
+                                result = result,
+                                reviewEnabled = actionsEnabled && !isResolvingCitation &&
+                                    !isLoadingTrustedSources,
+                                onResolveCitation = onResolveCitation,
+                            )
                         }
                     }
                 }
@@ -7299,8 +7505,31 @@ internal fun DocumentIndexPanel(
                     }
                 }
             }
+            HorizontalDivider()
+            TrustedSourcesSection(
+                trustedSources = trustedSources,
+                hasLoaded = hasLoadedTrustedSources,
+                actionsEnabled = actionsEnabled,
+                isLoading = isLoadingTrustedSources,
+                revokingSourceAnchorIds = revokingTrustedSourceAnchorIds,
+                onRefresh = onRefreshTrustedSources,
+                onRevoke = onRevokeTrustedSource,
+            )
         }
     }
+    SourceReviewDialog(
+        review = sourceReview,
+        isResolving = isResolvingCitation,
+        isApproving = isApprovingTrustedSource,
+        isDismissing = isDismissingTrustedSource,
+        isLoadingTrustedSources = isLoadingTrustedSources,
+        isRevoking = sourceReview?.sourceAnchorId?.let { it in revokingTrustedSourceAnchorIds } == true,
+        onApprove = onApproveTrustedSource,
+        onDismiss = onDismissTrustedSource,
+        onRevoke = {
+            sourceReview?.sourceAnchorId?.let(onRevokeTrustedSource)
+        },
+    )
 }
 
 @Composable
@@ -7405,19 +7634,34 @@ private fun DocumentSearchResultSummary(
 }
 
 @Composable
-private fun DocumentSearchResultRow(result: RuntimeDocumentSearchResult) {
+private fun DocumentSearchResultRow(
+    result: RuntimeDocumentSearchResult,
+    reviewEnabled: Boolean,
+    onResolveCitation: (String) -> Unit,
+) {
     val qualityLabel = documentQualityLabel(result.document.quality)
-    val terms = result.matchedTerms.joinToString(", ").ifBlank {
-        stringResource(R.string.document_index_search_no_terms)
+    val metadata = when (result.matchKind) {
+        RetrievalMatchKind.Semantic -> stringResource(
+            R.string.document_index_search_semantic_metadata,
+            result.rank,
+            result.chunkIndex + 1,
+            result.startCharacterOffset,
+            result.endCharacterOffset,
+        )
+        RetrievalMatchKind.Lexical -> {
+            val terms = result.matchedTerms.joinToString(", ").ifBlank {
+                stringResource(R.string.document_index_search_no_terms)
+            }
+            stringResource(
+                R.string.document_index_search_metadata,
+                result.rank,
+                result.chunkIndex + 1,
+                result.startCharacterOffset,
+                result.endCharacterOffset,
+                terms,
+            )
+        }
     }
-    val metadata = stringResource(
-        R.string.document_index_search_metadata,
-        result.rank,
-        result.chunkIndex + 1,
-        result.startCharacterOffset,
-        result.endCharacterOffset,
-        terms,
-    )
     val rowSummary = stringResource(
         R.string.document_index_search_row_summary,
         result.document.displayName,
@@ -7440,13 +7684,39 @@ private fun DocumentSearchResultRow(result: RuntimeDocumentSearchResult) {
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = result.document.displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = result.document.displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (result.sourceAnchorId.isNotBlank()) {
+                    val reviewLabel = stringResource(
+                        R.string.document_source_review_action_named,
+                        result.document.displayName,
+                    )
+                    IconButton(
+                        onClick = { onResolveCitation(result.sourceAnchorId) },
+                        enabled = reviewEnabled,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag(documentSourceReviewActionTestTag(result.document.id, result.rank))
+                            .semantics {
+                                contentDescription = reviewLabel
+                                onClick(label = reviewLabel, action = null)
+                            },
+                    ) {
+                        Icon(Icons.Filled.Info, contentDescription = null)
+                    }
+                }
+            }
             Text(
                 text = metadata,
                 style = MaterialTheme.typography.labelSmall,
@@ -7464,6 +7734,291 @@ private fun DocumentSearchResultRow(result: RuntimeDocumentSearchResult) {
                 modifier = Modifier.testTag(documentSearchSnippetTestTag(result.document.id, result.rank)),
             )
         }
+    }
+}
+
+@Composable
+private fun TrustedSourcesSection(
+    trustedSources: List<RuntimeTrustedSource>,
+    hasLoaded: Boolean,
+    actionsEnabled: Boolean,
+    isLoading: Boolean,
+    revokingSourceAnchorIds: Set<String>,
+    onRefresh: () -> Unit,
+    onRevoke: (String) -> Unit,
+) {
+    val refreshLabel = stringResource(R.string.trusted_sources_refresh)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TRUSTED_SOURCES_SECTION_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.trusted_sources_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.trusted_sources_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            IconButton(
+                onClick = onRefresh,
+                enabled = actionsEnabled && !isLoading,
+                modifier = Modifier
+                    .testTag(TRUSTED_SOURCES_REFRESH_ACTION_TEST_TAG)
+                    .semantics {
+                        contentDescription = refreshLabel
+                        onClick(label = refreshLabel, action = null)
+                    },
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = null)
+            }
+        }
+        if (isLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(TRUSTED_SOURCES_PROGRESS_TEST_TAG),
+            )
+        }
+        if (trustedSources.isEmpty() && !isLoading) {
+            Text(
+                text = stringResource(
+                    if (hasLoaded) R.string.trusted_sources_empty
+                    else R.string.trusted_sources_not_loaded,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.testTag(TRUSTED_SOURCES_EMPTY_TEST_TAG),
+            )
+        } else {
+            trustedSources.forEachIndexed { index, source ->
+                if (index > 0) HorizontalDivider()
+                TrustedSourceRow(
+                    source = source,
+                    actionsEnabled = actionsEnabled && !isLoading,
+                    isRevoking = source.sourceAnchorId in revokingSourceAnchorIds,
+                    onRevoke = onRevoke,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrustedSourceRow(
+    source: RuntimeTrustedSource,
+    actionsEnabled: Boolean,
+    isRevoking: Boolean,
+    onRevoke: (String) -> Unit,
+) {
+    val revokeLabel = stringResource(
+        R.string.trusted_source_revoke_named,
+        source.document.displayName,
+    )
+    val actionLabel = if (isRevoking) {
+        stringResource(R.string.trusted_source_revoking_named, source.document.displayName)
+    } else {
+        revokeLabel
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(trustedSourceRowTestTag(source.document.id))
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = source.document.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = source.document.mimeType,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(
+            onClick = { onRevoke(source.sourceAnchorId) },
+            enabled = actionsEnabled && !isRevoking,
+            modifier = Modifier
+                .testTag(trustedSourceRevokeActionTestTag(source.document.id))
+                .semantics {
+                    contentDescription = actionLabel
+                    stateDescription = actionLabel
+                    onClick(label = actionLabel, action = null)
+                },
+        ) {
+            if (isRevoking) {
+                LinearProgressIndicator(modifier = Modifier.width(24.dp))
+            } else {
+                Icon(Icons.Filled.Close, contentDescription = null)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceReviewDialog(
+    review: RuntimeSourceReview?,
+    isResolving: Boolean,
+    isApproving: Boolean,
+    isDismissing: Boolean,
+    isLoadingTrustedSources: Boolean,
+    isRevoking: Boolean,
+    onApprove: () -> Unit,
+    onDismiss: () -> Unit,
+    onRevoke: () -> Unit,
+) {
+    if (review == null && !isResolving) return
+    val canCancelResolve = review == null && isResolving
+    val controlsEnabled = !isResolving && !isApproving && !isDismissing &&
+        !isLoadingTrustedSources && !isRevoking
+    AlertDialog(
+        onDismissRequest = {
+            if (canCancelResolve || (review != null && controlsEnabled)) onDismiss()
+        },
+        modifier = Modifier.testTag(SOURCE_REVIEW_DIALOG_TEST_TAG),
+        title = {
+            Text(
+                text = stringResource(
+                    if (review?.isTrusted == true) {
+                        R.string.source_review_trusted_title
+                    } else {
+                        R.string.source_review_title
+                    },
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            if (review == null || isResolving) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(SOURCE_REVIEW_PROGRESS_TEST_TAG),
+                    )
+                    Text(stringResource(R.string.source_review_loading))
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                        .testTag(SOURCE_REVIEW_METADATA_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = review.document.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.source_review_metadata,
+                            review.document.mimeType,
+                            review.chunkIndex + 1,
+                            review.startCharacterOffset,
+                            review.endCharacterOffset,
+                            localizedProtocolDateTime(review.expiresAt),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = stringResource(R.string.source_review_trust_boundary),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(
+                            if (review.isTrusted) {
+                                R.string.source_review_trusted_detail
+                            } else {
+                                R.string.source_review_untrusted_detail
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (review != null) {
+                TextButton(
+                    onClick = if (review.isTrusted) onRevoke else onApprove,
+                    enabled = controlsEnabled,
+                    modifier = Modifier.testTag(
+                        if (review.isTrusted) SOURCE_REVIEW_REVOKE_ACTION_TEST_TAG
+                        else SOURCE_REVIEW_APPROVE_ACTION_TEST_TAG,
+                    ),
+                ) {
+                    Text(
+                        stringResource(
+                            when {
+                                review.isTrusted && isRevoking -> R.string.trusted_source_revoking
+                                review.isTrusted -> R.string.trusted_source_revoke
+                                isApproving -> R.string.source_review_approving
+                                else -> R.string.source_review_approve
+                            },
+                        ),
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            if (review != null || canCancelResolve) {
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = canCancelResolve || controlsEnabled,
+                    modifier = Modifier.testTag(SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG),
+                ) {
+                    Text(
+                        stringResource(
+                            if (isDismissing) R.string.source_review_dismissing
+                            else R.string.source_review_dismiss,
+                        ),
+                    )
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun localizedProtocolDateTime(value: String): String {
+    val localeTag = LocalConfiguration.current.locales[0]?.toLanguageTag().orEmpty()
+    return remember(value, localeTag) {
+        runCatching {
+            val locale = localeTag.takeIf(String::isNotBlank)
+                ?.let(Locale::forLanguageTag)
+                ?: Locale.getDefault()
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+                .format(Date.from(Instant.parse(value)))
+        }.getOrDefault(value)
     }
 }
 
@@ -8632,6 +9187,19 @@ internal const val DOCUMENT_INDEX_CATALOG_METADATA_TEST_TAG_PREFIX = "document_i
 internal const val DOCUMENT_INDEX_SEARCH_ROW_TEST_TAG_PREFIX = "document_index_search_row_"
 internal const val DOCUMENT_INDEX_SEARCH_METADATA_TEST_TAG_PREFIX = "document_index_search_metadata_"
 internal const val DOCUMENT_INDEX_SEARCH_SNIPPET_TEST_TAG_PREFIX = "document_index_search_snippet_"
+internal const val DOCUMENT_SOURCE_REVIEW_ACTION_TEST_TAG_PREFIX = "document_source_review_action_"
+internal const val SOURCE_REVIEW_DIALOG_TEST_TAG = "source_review_dialog"
+internal const val SOURCE_REVIEW_PROGRESS_TEST_TAG = "source_review_progress"
+internal const val SOURCE_REVIEW_METADATA_TEST_TAG = "source_review_metadata"
+internal const val SOURCE_REVIEW_APPROVE_ACTION_TEST_TAG = "source_review_approve_action"
+internal const val SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG = "source_review_dismiss_action"
+internal const val SOURCE_REVIEW_REVOKE_ACTION_TEST_TAG = "source_review_revoke_action"
+internal const val TRUSTED_SOURCES_SECTION_TEST_TAG = "trusted_sources_section"
+internal const val TRUSTED_SOURCES_REFRESH_ACTION_TEST_TAG = "trusted_sources_refresh_action"
+internal const val TRUSTED_SOURCES_PROGRESS_TEST_TAG = "trusted_sources_progress"
+internal const val TRUSTED_SOURCES_EMPTY_TEST_TAG = "trusted_sources_empty"
+internal const val TRUSTED_SOURCE_ROW_TEST_TAG_PREFIX = "trusted_source_row_"
+internal const val TRUSTED_SOURCE_REVOKE_ACTION_TEST_TAG_PREFIX = "trusted_source_revoke_action_"
 
 internal fun memoryEntrySourceExcerptTestTag(index: Int): String =
     "$MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX$index"
@@ -8656,6 +9224,15 @@ internal fun documentSearchMetadataTestTag(documentId: String, rank: Int): Strin
 
 internal fun documentSearchSnippetTestTag(documentId: String, rank: Int): String =
     "$DOCUMENT_INDEX_SEARCH_SNIPPET_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}_$rank"
+
+internal fun documentSourceReviewActionTestTag(documentId: String, rank: Int): String =
+    "$DOCUMENT_SOURCE_REVIEW_ACTION_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}_$rank"
+
+internal fun trustedSourceRowTestTag(documentId: String): String =
+    "$TRUSTED_SOURCE_ROW_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}"
+
+internal fun trustedSourceRevokeActionTestTag(documentId: String): String =
+    "$TRUSTED_SOURCE_REVOKE_ACTION_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}"
 
 private fun documentIndexTagKey(value: String): String =
     value.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9_-]+"), "_").ifBlank { "document" }
@@ -9539,6 +10116,9 @@ internal const val ASSISTANT_IDENTITY_MARKER_TEST_TAG = "aetherlink_assistant_id
 internal const val CHAT_COMPOSER_CONTAINER_TEST_TAG = "aetherlink_chat_composer_container"
 internal const val CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG = "aetherlink_chat_composer_controls_row"
 internal const val CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG = "aetherlink_chat_composer_attach_action"
+internal const val CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG = "aetherlink_chat_composer_source_action"
+internal const val CHAT_COMPOSER_SOURCE_MENU_TEST_TAG = "aetherlink_chat_composer_source_menu"
+internal const val CHAT_COMPOSER_SOURCE_CHIPS_TEST_TAG = "aetherlink_chat_composer_source_chips"
 internal const val CHAT_COMPOSER_INPUT_TEST_TAG = "aetherlink_chat_composer_input"
 internal const val CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG = "aetherlink_chat_composer_clear_draft_action"
 internal const val CHAT_COMPOSER_SEND_ACTION_TEST_TAG = "aetherlink_chat_composer_send_action"
@@ -9546,6 +10126,12 @@ internal const val CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG = "aetherlink_chat_compo
 internal const val CHAT_COMPOSER_STATUS_TEST_TAG = "aetherlink_chat_composer_status"
 internal const val CHAT_COMPOSER_STATUS_DOT_TEST_TAG = "aetherlink_chat_composer_status_dot"
 internal const val CHAT_COMPOSER_STATUS_TEXT_TEST_TAG = "aetherlink_chat_composer_status_text"
+
+internal fun chatTrustedSourcePickerRowTestTag(documentId: String) =
+    "aetherlink_chat_source_picker_$documentId"
+
+internal fun chatTrustedSourceChipTestTag(documentId: String) =
+    "aetherlink_chat_source_chip_$documentId"
 
 internal fun settingsExpandableSectionTestTag(@StringRes title: Int): String =
     "$SETTINGS_EXPANDABLE_SECTION_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
@@ -9921,6 +10507,14 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "document_search_runtime_required" -> stringResource(R.string.error_document_search_runtime_required)
         "document_catalog_load_failed" -> stringResource(R.string.error_document_catalog_load_failed)
         "document_search_failed" -> stringResource(R.string.error_document_search_failed)
+        "citation_resolve_failed", "citation_not_found" ->
+            stringResource(R.string.error_citation_resolve_failed)
+        "trusted_source_approve_failed", "trusted_source_dismiss_failed",
+        "trusted_source_list_failed", "trusted_source_revoke_failed" ->
+            stringResource(R.string.error_trusted_source_action_failed)
+        "trusted_source_not_found" -> stringResource(R.string.error_trusted_source_not_found)
+        "trusted_source_review_not_found", "trusted_source_review_expired",
+        "trusted_source_review_stale" -> stringResource(R.string.error_trusted_source_review_invalid)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
         "chat_context_window_exceeded" -> stringResource(R.string.error_chat_context_window_exceeded)

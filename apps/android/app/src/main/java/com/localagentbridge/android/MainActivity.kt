@@ -741,6 +741,9 @@ private fun LocalAgentBridgeApp(
                                     onRefreshHealth = viewModel::requestRuntimeHealth,
                                     onAttachFiles = { attachmentPickerLauncher.launch(attachmentPickerMimeTypes(state)) },
                                     onRemoveAttachment = viewModel::removePendingAttachment,
+                                    onToggleTrustedSource = viewModel::toggleTrustedSourceSelection,
+                                    onRemoveTrustedSource = viewModel::removeTrustedSourceSelection,
+                                    onRefreshTrustedSources = viewModel::refreshTrustedSources,
                                     onScanLatestQr = scanPairingQr,
                                     onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
                                     onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,
@@ -783,6 +786,11 @@ private fun LocalAgentBridgeApp(
                                     },
                                     onRefreshDocuments = viewModel::refreshRuntimeDocumentCatalog,
                                     onSearchDocuments = viewModel::searchRuntimeDocuments,
+                                    onResolveCitation = viewModel::resolveCitation,
+                                    onApproveTrustedSource = viewModel::approveTrustedSource,
+                                    onDismissTrustedSource = viewModel::dismissTrustedSource,
+                                    onRefreshTrustedSources = viewModel::refreshTrustedSources,
+                                    onRevokeTrustedSource = viewModel::revokeTrustedSource,
                                     onRefreshChatHistory = { query ->
                                         viewModel.refreshRuntimeChatHistory(query)
                                     },

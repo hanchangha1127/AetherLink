@@ -387,6 +387,11 @@ class ProtocolCodecTest {
             "chat_context_window_exceeded",
             "document_index_unavailable",
             "source_anchor_not_found",
+            "citation_not_found",
+            "trusted_source_review_not_found",
+            "trusted_source_review_expired",
+            "trusted_source_review_stale",
+            "trusted_source_not_found",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",
@@ -620,6 +625,7 @@ class ProtocolCodecTest {
                 ),
             ),
             locale = "fr",
+            trustedSourceGrantIds = emptyList(),
         )
 
         val json = Json.parseToJsonElement(Json.encodeToString(payload)).jsonObject
@@ -629,6 +635,50 @@ class ProtocolCodecTest {
         assertEquals("ollama:llama3.1:8b", json["model"]?.jsonPrimitive?.content)
         assertEquals("fr", json["locale"]?.jsonPrimitive?.content)
         assertEquals("fr", decoded.locale)
+        assertFalse(json.containsKey("trusted_source_grant_ids"))
+    }
+
+    @Test
+    fun chatSendPayloadCarriesUniqueCanonicalTrustedSourceGrantIds() {
+        val grantIds = listOf(
+            "trusted_source_00112233445566778899aabbccddeeff",
+            "trusted_source_ffeeddccbbaa99887766554433221100",
+        )
+        val payload = ChatSendPayload(
+            sessionId = "session-1",
+            model = "ollama:llama3.1:8b",
+            messages = listOf(ChatMessagePayload(role = "user", content = "Compare sources")),
+            trustedSourceGrantIds = grantIds,
+        )
+
+        val encoded = Json.encodeToString(payload)
+        val json = Json.parseToJsonElement(encoded).jsonObject
+
+        assertEquals(grantIds, json["trusted_source_grant_ids"]?.jsonArray?.map { it.jsonPrimitive.content })
+        assertEquals(grantIds, Json.decodeFromString<ChatSendPayload>(encoded).trustedSourceGrantIds)
+    }
+
+    @Test
+    fun chatSendPayloadRejectsMalformedDuplicateEmptyAndExcessTrustedSourceGrantIds() {
+        val canonical = "trusted_source_00112233445566778899aabbccddeeff"
+        val invalidGrantLists = listOf(
+            "null",
+            "[]",
+            "[\"$canonical\",\"$canonical\"]",
+            "[\"trusted_source_00112233445566778899AABBCCDDEEFF\"]",
+            "[\"trusted_source_0011\"]",
+            (0..8).joinToString(prefix = "[", postfix = "]") { index ->
+                "\"trusted_source_${index.toString(16).padStart(32, '0')}\""
+            },
+        )
+
+        invalidGrantLists.forEach { grants ->
+            assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSendPayload>(
+                    """{"session_id":"session-1","model":"ollama:llama3.1:8b","messages":[{"role":"user","content":"Hello"}],"trusted_source_grant_ids":$grants}"""
+                )
+            }
+        }
     }
 
     @Test
@@ -1564,6 +1614,7 @@ class ProtocolCodecTest {
         assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)
         assertEquals("5", requestJson["limit"]?.jsonPrimitive?.content)
         assertEquals("120", requestJson["max_snippet_characters"]?.jsonPrimitive?.content)
+        assertFalse(requestJson.containsKey("embedding_model_id"))
         assertFalse(requestJson.containsKey("source_anchor_id"))
         val item = resultJson["results"]?.jsonArray?.first()?.jsonObject
         val document = item?.get("document")?.jsonObject
@@ -1594,6 +1645,104 @@ class ProtocolCodecTest {
         assertTrue(sourceAnchorWireShape.matches(decodedItem.sourceAnchorId))
         assertEquals(listOf("relay", "route"), decodedItem.matchedTerms)
         assertEquals("Runtime document snippet matched relay route.", decodedItem.snippet)
+    }
+
+    @Test
+    fun retrievalQueryRequestSerializesEmbeddingModelHintAndRejectsBlankHint() {
+        val semanticRequest = RetrievalQueryRequestPayload(
+            query = "semantic relay route",
+            limit = 7,
+            maxSnippetCharacters = 240,
+            embeddingModelId = "embedding-model-1",
+        )
+
+        val semanticJson = Json.parseToJsonElement(Json.encodeToString(semanticRequest)).jsonObject
+        val decoded = Json.decodeFromString<RetrievalQueryRequestPayload>(Json.encodeToString(semanticRequest))
+
+        assertEquals("embedding-model-1", semanticJson["embedding_model_id"]?.jsonPrimitive?.content)
+        assertEquals("embedding-model-1", decoded.embeddingModelId)
+
+        listOf("", "   ").forEach { invalidHint ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                RetrievalQueryRequestPayload(
+                    query = "relay route",
+                    embeddingModelId = invalidHint,
+                )
+            }
+            assertTrue(error.message.orEmpty().contains("embedding_model_id"))
+        }
+        val decodeError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<RetrievalQueryRequestPayload>(
+                """{"query":"relay route","embedding_model_id":"   "}""",
+            )
+        }
+        assertTrue(decodeError.message.orEmpty().contains("embedding_model_id"))
+    }
+
+    @Test
+    fun retrievalQueryMatchKindDefaultsLexicalAndControlsMatchedTermsBounds() {
+        val missingKind = Json.decodeFromString<RetrievalQueryResultPayload>(
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+            ),
+        ).results.single()
+        val semantic = Json.decodeFromString<RetrievalQueryResultPayload>(
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "semantic",
+                matchedTermsJson = "",
+            ),
+        ).results.single()
+
+        assertEquals(RetrievalMatchKind.Lexical, missingKind.matchKind)
+        assertEquals(RetrievalMatchKind.Semantic, semantic.matchKind)
+        assertTrue(semantic.matchedTerms.isEmpty())
+        val semanticJson = Json.parseToJsonElement(Json.encodeToString(semantic)).jsonObject
+        assertEquals("semantic", semanticJson["match_kind"]?.jsonPrimitive?.content)
+
+        val invalidSamples = listOf(
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "lexical",
+                matchedTermsJson = "",
+            ),
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "semantic",
+                matchedTermsJson = (1..17).joinToString(", ") { index -> "\"term$index\"" },
+            ),
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "semantic",
+                matchedTermsJson = "\"\"",
+            ),
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "lexical",
+                matchedTermsJson = "\"   \"",
+            ),
+            retrievalQueryResultJsonWithSourceAnchor(
+                sourceAnchorId = "source_anchor_0123456789abcdef",
+                matchKind = "semantic",
+                matchedTermsJson = "\"   \"",
+            ),
+        )
+        invalidSamples.forEach { sample ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<RetrievalQueryResultPayload>(sample)
+            }
+            assertTrue(error.message.orEmpty().contains("matched_terms"))
+        }
+
+        val unknownKindError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<RetrievalQueryResultPayload>(
+                retrievalQueryResultJsonWithSourceAnchor(
+                    sourceAnchorId = "source_anchor_0123456789abcdef",
+                    matchKind = "hybrid",
+                ),
+            )
+        }
+        assertTrue(unknownKindError.message.orEmpty().contains("match_kind"))
     }
 
     @Test
@@ -2012,6 +2161,220 @@ class ProtocolCodecTest {
         }
 
         assertTrue(error.message.orEmpty().contains("matched_terms"))
+    }
+
+    @Test
+    fun citationResolvePayloadsRoundTripCanonicalClosedWireShape() {
+        val request = CitationResolveRequestPayload(sourceAnchorId = canonicalSourceAnchorId)
+        val result = CitationResolveResultPayload(
+            citation = canonicalCitationPayload(),
+            review = canonicalSourceReviewPayload(),
+            trustedSource = canonicalTrustedSourcePayload(),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultEncoded = Json.encodeToString(result)
+        val resultJson = Json.parseToJsonElement(resultEncoded).jsonObject
+        val decoded = Json.decodeFromString<CitationResolveResultPayload>(resultEncoded)
+
+        assertEquals(setOf("source_anchor_id"), requestJson.keys)
+        assertEquals(setOf("citation", "review", "trusted_source"), resultJson.keys)
+        assertEquals(
+            setOf("schema_version", "citation_id", "source_anchor_id", "document", "chunk_summary"),
+            resultJson.getValue("citation").jsonObject.keys,
+        )
+        assertEquals(
+            setOf("review_id", "confirmation_token", "disclosure_version", "usage_scope", "expires_at"),
+            resultJson.getValue("review").jsonObject.keys,
+        )
+        assertEquals(result, decoded)
+        assertEquals("citation.resolve", MessageType.CitationResolve)
+        listOf("body", "snippet", "path", "query", "model", "vector", "revision", "approval_id").forEach {
+            forbiddenField -> assertFalse(resultEncoded.contains("\"$forbiddenField\""))
+        }
+    }
+
+    @Test
+    fun trustedSourceOperationPayloadsRoundTripCanonicalWireShapes() {
+        val approveRequest = TrustedSourceApproveRequestPayload(
+            reviewId = canonicalReviewId,
+            confirmationToken = canonicalConfirmationToken,
+            disclosureVersion = "runtime-trusted-source-v1",
+            usageScope = "chat_context",
+        )
+        val approveResult = TrustedSourceApproveResultPayload(canonicalTrustedSourcePayload())
+        val dismissRequest = TrustedSourceDismissRequestPayload(canonicalReviewId)
+        val dismissResult = TrustedSourceDismissResultPayload(canonicalReviewId, dismissed = true)
+        val listRequest = TrustedSourceListRequestPayload(limit = 100)
+        val listResult = TrustedSourceListResultPayload(listOf(canonicalTrustedSourcePayload()))
+        val revokeRequest = TrustedSourceRevokeRequestPayload(canonicalGrantId)
+        val revokeResult = TrustedSourceRevokeResultPayload(canonicalGrantId, revoked = true)
+
+        assertEquals(approveRequest, Json.decodeFromString<TrustedSourceApproveRequestPayload>(Json.encodeToString(approveRequest)))
+        assertEquals(approveResult, Json.decodeFromString<TrustedSourceApproveResultPayload>(Json.encodeToString(approveResult)))
+        assertEquals(dismissRequest, Json.decodeFromString<TrustedSourceDismissRequestPayload>(Json.encodeToString(dismissRequest)))
+        assertEquals(dismissResult, Json.decodeFromString<TrustedSourceDismissResultPayload>(Json.encodeToString(dismissResult)))
+        assertEquals(listRequest, Json.decodeFromString<TrustedSourceListRequestPayload>(Json.encodeToString(listRequest)))
+        assertEquals(listResult, Json.decodeFromString<TrustedSourceListResultPayload>(Json.encodeToString(listResult)))
+        assertEquals(revokeRequest, Json.decodeFromString<TrustedSourceRevokeRequestPayload>(Json.encodeToString(revokeRequest)))
+        assertEquals(revokeResult, Json.decodeFromString<TrustedSourceRevokeResultPayload>(Json.encodeToString(revokeResult)))
+        assertEquals("trusted_source.approve", MessageType.TrustedSourceApprove)
+        assertEquals("trusted_source.dismiss", MessageType.TrustedSourceDismiss)
+        assertEquals("trusted_source.list", MessageType.TrustedSourceList)
+        assertEquals("trusted_source.revoke", MessageType.TrustedSourceRevoke)
+    }
+
+    @Test
+    fun citationAndTrustedSourcePayloadsRejectUnknownAndForbiddenFieldsEvenPermissively() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val decodeSamples = listOf<() -> Unit>(
+            {
+                permissiveJson.decodeFromString<CitationResolveRequestPayload>(
+                    """{"source_anchor_id":"$canonicalSourceAnchorId","query":"secret"}""",
+                )
+            },
+            {
+                val sample = Json.parseToJsonElement(Json.encodeToString(
+                    CitationResolveResultPayload.serializer(),
+                    CitationResolveResultPayload(canonicalCitationPayload(), canonicalSourceReviewPayload()),
+                )).jsonObject.replacing("body", JsonPrimitive("secret")).toString()
+                permissiveJson.decodeFromString<CitationResolveResultPayload>(sample)
+            },
+            {
+                val sample = Json.parseToJsonElement(Json.encodeToString(canonicalCitationPayload()))
+                    .jsonObject.replacing("revision", JsonPrimitive("secret")).toString()
+                permissiveJson.decodeFromString<CitationPayload>(sample)
+            },
+            {
+                val sample = Json.encodeToString(canonicalCitationPayload()).replace(
+                    "\"quality\":\"chunked\"",
+                    "\"quality\":\"chunked\",\"path\":\"secret\"",
+                )
+                permissiveJson.decodeFromString<CitationPayload>(sample)
+            },
+            {
+                val sample = Json.encodeToString(canonicalCitationPayload()).replace(
+                    "\"character_count\":120",
+                    "\"character_count\":120,\"revision\":1",
+                )
+                permissiveJson.decodeFromString<CitationPayload>(sample)
+            },
+            {
+                val sample = Json.parseToJsonElement(Json.encodeToString(canonicalSourceReviewPayload()))
+                    .jsonObject.replacing("approval_id", JsonPrimitive("secret")).toString()
+                permissiveJson.decodeFromString<SourceReviewPayload>(sample)
+            },
+            {
+                val sample = Json.parseToJsonElement(Json.encodeToString(canonicalTrustedSourcePayload()))
+                    .jsonObject.replacing("path", JsonPrimitive("secret")).toString()
+                permissiveJson.decodeFromString<TrustedSourcePayload>(sample)
+            },
+            {
+                val sample = Json.parseToJsonElement(Json.encodeToString(
+                    TrustedSourceApproveRequestPayload.serializer(),
+                    TrustedSourceApproveRequestPayload(
+                        canonicalReviewId,
+                        canonicalConfirmationToken,
+                        "runtime-trusted-source-v1",
+                        "chat_context",
+                    ),
+                )).jsonObject.replacing("model", JsonPrimitive("secret")).toString()
+                permissiveJson.decodeFromString<TrustedSourceApproveRequestPayload>(sample)
+            },
+            {
+                permissiveJson.decodeFromString<TrustedSourceDismissRequestPayload>(
+                    """{"review_id":"$canonicalReviewId","snippet":"secret"}""",
+                )
+            },
+            { permissiveJson.decodeFromString<TrustedSourceListRequestPayload>("""{"limit":1,"vector":[]}""") },
+            {
+                permissiveJson.decodeFromString<TrustedSourceRevokeRequestPayload>(
+                    """{"grant_id":"$canonicalGrantId","body":"secret"}""",
+                )
+            },
+        )
+
+        decodeSamples.forEach { decode ->
+            val error = assertThrows(Exception::class.java) { decode() }
+            assertTrue(error.message.orEmpty().contains("unknown field"))
+        }
+    }
+
+    @Test
+    fun citationAndTrustedSourcePayloadsRejectMalformedBlankAndUnknownValues() {
+        val citationJson = Json.encodeToString(canonicalCitationPayload())
+        val reviewJson = Json.encodeToString(canonicalSourceReviewPayload())
+        val trustedSourceJson = Json.encodeToString(canonicalTrustedSourcePayload())
+        val decodeSamples = listOf<() -> Unit>(
+            { Json.decodeFromString<CitationPayload>(citationJson.replace(canonicalCitationId, "citation_${"A".repeat(32)}")) },
+            { Json.decodeFromString<CitationPayload>(citationJson.replace("\"schema_version\":1", "\"schema_version\":2")) },
+            { Json.decodeFromString<SourceReviewPayload>(reviewJson.replace(canonicalReviewId, "source_review_${"0".repeat(31)}")) },
+            {
+                Json.decodeFromString<SourceReviewPayload>(
+                    reviewJson.replace(canonicalConfirmationToken, "source_confirmation_${"0".repeat(63)}"),
+                )
+            },
+            { Json.decodeFromString<SourceReviewPayload>(reviewJson.replace("runtime-trusted-source-v1", "runtime-trusted-source-v2")) },
+            { Json.decodeFromString<SourceReviewPayload>(reviewJson.replace("chat_context", "retrieval")) },
+            { Json.decodeFromString<SourceReviewPayload>(reviewJson.replace("2026-07-12T12:00:00Z", "   ")) },
+            { Json.decodeFromString<TrustedSourcePayload>(trustedSourceJson.replace(canonicalGrantId, "trusted_source_${"g".repeat(32)}")) },
+            { Json.decodeFromString<TrustedSourcePayload>(trustedSourceJson.replace("chat_context", "global")) },
+            { Json.decodeFromString<TrustedSourcePayload>(trustedSourceJson.replace("2026-07-12T11:00:00Z", "not-an-instant")) },
+        )
+
+        decodeSamples.forEach { decode ->
+            assertThrows(Exception::class.java) { decode() }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CitationResolveResultPayload(
+                citation = canonicalCitationPayload(),
+                review = canonicalSourceReviewPayload(),
+                trustedSource = canonicalTrustedSourcePayload().copy(
+                    document = canonicalDocumentPayload().copy(displayName = "different-source.md"),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun trustedSourceListAndBooleanResultsRejectOutOfContractValues() {
+        listOf(-1, 101).forEach { limit ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<TrustedSourceListRequestPayload>("""{"limit":$limit}""")
+            }
+            assertTrue(error.message.orEmpty().contains("limit"))
+        }
+        val sources = (0..100).joinToString(",") { Json.encodeToString(canonicalTrustedSourcePayload()) }
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<TrustedSourceListResultPayload>("""{"trusted_sources":[$sources]}""")
+        }
+        val canonicalSource = canonicalTrustedSourcePayload()
+        assertThrows(IllegalArgumentException::class.java) {
+            TrustedSourceListResultPayload(
+                listOf(
+                    canonicalSource,
+                    canonicalSource.copy(sourceAnchorId = "source_anchor_${"1".repeat(16)}"),
+                ),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            TrustedSourceListResultPayload(
+                listOf(
+                    canonicalSource,
+                    canonicalSource.copy(grantId = "trusted_source_${"1".repeat(32)}"),
+                ),
+            )
+        }
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<TrustedSourceDismissResultPayload>(
+                """{"review_id":"$canonicalReviewId","dismissed":false}""",
+            )
+        }
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<TrustedSourceRevokeResultPayload>(
+                """{"grant_id":"$canonicalGrantId","revoked":false}""",
+            )
+        }
     }
 
     @Test
@@ -3172,6 +3535,52 @@ class ProtocolCodecTest {
         )
     }
 
+    private val canonicalSourceAnchorId = "source_anchor_0123456789abcdef"
+    private val canonicalCitationId = "citation_${"0".repeat(32)}"
+    private val canonicalReviewId = "source_review_${"1".repeat(32)}"
+    private val canonicalConfirmationToken = "source_confirmation_${"2".repeat(64)}"
+    private val canonicalGrantId = "trusted_source_${"3".repeat(32)}"
+
+    private fun canonicalDocumentPayload() = RuntimeDocumentIndexDocumentPayload(
+        id = "doc-1",
+        displayName = "runtime-notes.md",
+        mimeType = "text/markdown",
+        contentFingerprint = "0011223344556677",
+        extractedCharacterCount = 2048,
+        chunkCount = 3,
+        quality = "chunked",
+    )
+
+    private fun canonicalCitationPayload() = CitationPayload(
+        schemaVersion = 1,
+        citationId = canonicalCitationId,
+        sourceAnchorId = canonicalSourceAnchorId,
+        document = canonicalDocumentPayload(),
+        chunkSummary = SourceAnchorChunkSummaryPayload(
+            chunkIndex = 1,
+            startCharacterOffset = 120,
+            endCharacterOffset = 240,
+            characterCount = 120,
+        ),
+    )
+
+    private fun canonicalSourceReviewPayload() = SourceReviewPayload(
+        reviewId = canonicalReviewId,
+        confirmationToken = canonicalConfirmationToken,
+        disclosureVersion = "runtime-trusted-source-v1",
+        usageScope = "chat_context",
+        expiresAt = "2026-07-12T12:00:00Z",
+    )
+
+    private fun canonicalTrustedSourcePayload() = TrustedSourcePayload(
+        grantId = canonicalGrantId,
+        citationId = canonicalCitationId,
+        sourceAnchorId = canonicalSourceAnchorId,
+        document = canonicalDocumentPayload(),
+        usageScope = "chat_context",
+        approvedAt = "2026-07-12T11:00:00Z",
+    )
+
     private fun jsonString(value: String): String = "\"$value\""
 
     private fun indexDocumentJson(
@@ -3330,9 +3739,11 @@ class ProtocolCodecTest {
         startCharacterOffset: Int = 120,
         endCharacterOffset: Int = 240,
         rank: Int = 2,
+        matchKind: String? = null,
         matchedTermsJson: String = "\"relay\", \"route\"",
         snippet: String = "Runtime document snippet matched relay route.",
     ): String {
+        val matchKindJson = matchKind?.let { "\"match_kind\": \"$it\"," }.orEmpty()
         return """
             {
               "results": [
@@ -3350,6 +3761,7 @@ class ProtocolCodecTest {
                   "start_character_offset": $startCharacterOffset,
                   "end_character_offset": $endCharacterOffset,
                   "rank": $rank,
+                  $matchKindJson
                   "matched_terms": [$matchedTermsJson],
                   "snippet": "$snippet",
                   "source_anchor_id": "$sourceAnchorId"

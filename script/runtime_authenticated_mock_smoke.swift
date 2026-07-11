@@ -3363,6 +3363,11 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("index.documents.list", "smoke-unauthenticated-index-documents-list", [:]),
         ("retrieval.query", "smoke-unauthenticated-retrieval-query", [:]),
         ("source_anchor.resolve", "smoke-unauthenticated-source-anchor-resolve", [:]),
+        ("citation.resolve", "smoke-unauthenticated-citation-resolve", [:]),
+        ("trusted_source.approve", "smoke-unauthenticated-trusted-source-approve", [:]),
+        ("trusted_source.dismiss", "smoke-unauthenticated-trusted-source-dismiss", [:]),
+        ("trusted_source.list", "smoke-unauthenticated-trusted-source-list", [:]),
+        ("trusted_source.revoke", "smoke-unauthenticated-trusted-source-revoke", [:]),
         ("memory.list", "smoke-unauthenticated-memory", [:]),
         ("memory.upsert", "smoke-unauthenticated-memory-upsert", [:]),
         ("memory.delete", "smoke-unauthenticated-memory-delete", [:]),
@@ -6877,14 +6882,6 @@ func runAuthenticatedFutureNamespaceRejectionChecks(client: TCPClient) throws {
             ]
         ),
         (
-            "trusted_source.approve",
-            "smoke-future-trusted-source-approve",
-            [
-                "source_anchor_id": "source_anchor_ffffffffffffffff",
-                "approval": "future trusted source approval namespace smoke",
-            ]
-        ),
-        (
             "source_control.status",
             "smoke-future-source-control-status",
             [
@@ -7705,7 +7702,8 @@ func runMockBackendChecks(
           ) != nil,
           firstRetrievalResult["chunk_index"] as? Int == 0,
           let retrievalRank = firstRetrievalResult["rank"] as? Int,
-          retrievalRank >= 0,
+          retrievalRank >= 1,
+          firstRetrievalResult["match_kind"] == nil,
           let retrievalStartOffset = firstRetrievalResult["start_character_offset"] as? Int,
           retrievalStartOffset == 0,
           let retrievalEndOffset = firstRetrievalResult["end_character_offset"] as? Int,
@@ -7727,6 +7725,154 @@ func runMockBackendChecks(
         "trusted_source"
     ] where retrievalPayloadDescription.contains(forbidden) {
         throw SmokeFailure.message("retrieval.query exposed forbidden seeded retrieval metadata \(forbidden): \(retrievalQuery)")
+    }
+
+    let embeddingAuditBeforeSemanticDocumentSearch = FileManager.default.fileExists(
+        atPath: embeddingRequestAuditFile.path
+    ) ? try mockChatRequestAuditEntries(fileURL: embeddingRequestAuditFile) : []
+    let semanticRetrievalQuery = try sendAndRead(
+        client,
+        type: "retrieval.query",
+        requestID: "smoke-retrieval-query-semantic-cold",
+        payload: [
+            "query": smokeRetrievalQuery,
+            "limit": 1,
+            "max_snippet_characters": 64,
+            "embedding_model_id": smokeEmbeddingSearchHintModelID
+        ]
+    )
+    try requireType(
+        semanticRetrievalQuery,
+        "retrieval.query",
+        context: "semantic retrieval.query cold search"
+    )
+    let semanticRetrievalPayload = try payload(
+        semanticRetrievalQuery,
+        context: "semantic retrieval.query cold search"
+    )
+    guard let semanticResults = semanticRetrievalPayload["results"] as? [[String: Any]],
+          semanticResults.count == 1,
+          let firstSemanticResult = semanticResults.first,
+          firstSemanticResult["match_kind"] as? String == "semantic",
+          firstSemanticResult["rank"] as? Int == 1,
+          let semanticSnippet = firstSemanticResult["snippet"] as? String,
+          !semanticSnippet.isEmpty,
+          semanticSnippet.count <= 64,
+          firstSemanticResult["matched_terms"] is [String] else {
+        throw SmokeFailure.message(
+            "semantic retrieval.query did not return a bounded explicit semantic result: \(semanticRetrievalQuery)"
+        )
+    }
+    let semanticPayloadDescription = String(describing: semanticRetrievalPayload)
+    for forbidden in [
+        smokeEmbeddingSearchHintModelID,
+        "model_fingerprint",
+        "source_revision",
+        "document_fingerprint",
+        "vector",
+        "score",
+        "cache",
+        "backend_url",
+        "source_path",
+        "workspace_id",
+        "project_id",
+        "citation",
+        "trusted_source"
+    ] where semanticPayloadDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "semantic retrieval.query exposed forbidden metadata \(forbidden): \(semanticRetrievalQuery)"
+        )
+    }
+    let embeddingAuditAfterSemanticColdSearch = try mockChatRequestAuditEntries(
+        fileURL: embeddingRequestAuditFile
+    )
+    guard embeddingAuditAfterSemanticColdSearch.count >=
+            embeddingAuditBeforeSemanticDocumentSearch.count + 2,
+          embeddingAuditAfterSemanticColdSearch.suffix(2).allSatisfy({
+              Set($0.keys) == Set(["provider", "model", "input_count"])
+          }),
+          try requireInt(
+              embeddingAuditAfterSemanticColdSearch[embeddingAuditAfterSemanticColdSearch.count - 2],
+              "input_count",
+              context: "semantic document cold query embedding audit"
+          ) == 1,
+          try requireInt(
+              embeddingAuditAfterSemanticColdSearch.last ?? [:],
+              "input_count",
+              context: "semantic document cold candidate embedding audit"
+          ) >= 1 else {
+        throw SmokeFailure.message(
+            "semantic document cold search did not record content-free query and candidate batches: \(embeddingAuditAfterSemanticColdSearch)"
+        )
+    }
+
+    let semanticRetrievalCacheHit = try sendAndRead(
+        client,
+        type: "retrieval.query",
+        requestID: "smoke-retrieval-query-semantic-cache-hit",
+        payload: [
+            "query": smokeRetrievalQuery,
+            "limit": 1,
+            "max_snippet_characters": 64,
+            "embedding_model_id": smokeEmbeddingSearchHintModelID
+        ]
+    )
+    try requireType(
+        semanticRetrievalCacheHit,
+        "retrieval.query",
+        context: "semantic retrieval.query cache hit"
+    )
+    let semanticCacheHitPayload = try payload(
+        semanticRetrievalCacheHit,
+        context: "semantic retrieval.query cache hit"
+    )
+    guard let semanticCacheHitResults = semanticCacheHitPayload["results"] as? [[String: Any]],
+          semanticCacheHitResults.count == 1,
+          let firstSemanticCacheHit = semanticCacheHitResults.first,
+          firstSemanticCacheHit["match_kind"] as? String == "semantic",
+          firstSemanticCacheHit["rank"] as? Int == 1,
+          let semanticCacheHitSnippet = firstSemanticCacheHit["snippet"] as? String,
+          !semanticCacheHitSnippet.isEmpty,
+          semanticCacheHitSnippet.count <= 64,
+          firstSemanticCacheHit["matched_terms"] is [String] else {
+        throw SmokeFailure.message(
+            "semantic retrieval.query cache hit did not preserve the bounded semantic response: \(semanticRetrievalCacheHit)"
+        )
+    }
+    let semanticCacheHitDescription = String(describing: semanticCacheHitPayload)
+    for forbidden in [
+        smokeEmbeddingSearchHintModelID,
+        "model_fingerprint",
+        "source_revision",
+        "document_fingerprint",
+        "vector",
+        "score",
+        "cache",
+        "backend_url",
+        "source_path",
+        "workspace_id",
+        "project_id",
+        "citation",
+        "trusted_source"
+    ] where semanticCacheHitDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "semantic retrieval.query cache hit exposed forbidden metadata \(forbidden): \(semanticRetrievalCacheHit)"
+        )
+    }
+    let embeddingAuditAfterSemanticCacheHit = try mockChatRequestAuditEntries(
+        fileURL: embeddingRequestAuditFile
+    )
+    guard embeddingAuditAfterSemanticCacheHit.count == embeddingAuditAfterSemanticColdSearch.count + 1,
+          let semanticCacheHitAudit = embeddingAuditAfterSemanticCacheHit.last,
+          Set(semanticCacheHitAudit.keys) == Set(["provider", "model", "input_count"]),
+          try requireInt(
+              semanticCacheHitAudit,
+              "input_count",
+              context: "semantic document persistent cache-hit embedding audit"
+          ) == 1 else {
+        throw SmokeFailure.message(
+            "semantic document cache hit should embed only the query without logging text: \(embeddingAuditAfterSemanticCacheHit)"
+        )
     }
 
     print("Checking source_anchor.resolve...")
@@ -7831,6 +7977,276 @@ func runMockBackendChecks(
         "approval"
     ] where sourceAnchorPayloadDescription.contains(forbidden) {
         throw SmokeFailure.message("source_anchor.resolve exposed forbidden seeded resolver metadata \(forbidden): \(sourceAnchorResolve)")
+    }
+
+    print("Checking citation and trusted-source review lifecycle...")
+    let citationResolve = try sendAndRead(
+        client,
+        type: "citation.resolve",
+        requestID: "smoke-citation-resolve",
+        payload: ["source_anchor_id": retrievalSourceAnchorID]
+    )
+    try requireType(citationResolve, "citation.resolve", context: "citation.resolve")
+    let citationResolvePayload = try payload(citationResolve, context: "citation.resolve")
+    guard let citation = citationResolvePayload["citation"] as? [String: Any],
+          citation["schema_version"] as? Int == 1,
+          let citationID = citation["citation_id"] as? String,
+          citationID.range(of: #"^citation_[0-9a-f]{32}$"#, options: .regularExpression) != nil,
+          citation["source_anchor_id"] as? String == retrievalSourceAnchorID,
+          let citationDocument = citation["document"] as? [String: Any],
+          citationDocument["id"] as? String == smokeRetrievalDocumentID,
+          let citationChunkSummary = citation["chunk_summary"] as? [String: Any],
+          citationChunkSummary["chunk_index"] as? Int == 0,
+          let review = citationResolvePayload["review"] as? [String: Any],
+          let reviewID = review["review_id"] as? String,
+          reviewID.range(of: #"^source_review_[0-9a-f]{32}$"#, options: .regularExpression) != nil,
+          let confirmationToken = review["confirmation_token"] as? String,
+          confirmationToken.range(
+              of: #"^source_confirmation_[0-9a-f]{64}$"#,
+              options: .regularExpression
+          ) != nil,
+          review["disclosure_version"] as? String == "runtime-trusted-source-v1",
+          review["usage_scope"] as? String == "chat_context",
+          review["expires_at"] is String,
+          citationResolvePayload["trusted_source"] == nil else {
+        throw SmokeFailure.message(
+            "citation.resolve did not return a canonical untrusted review envelope: \(citationResolve)"
+        )
+    }
+    let citationDescription = String(describing: citationResolvePayload)
+    for forbidden in [
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
+        "source_revision",
+        "approval_id",
+        "source_path",
+        "snippet",
+        "embedding_model_id",
+        "vector",
+        "backend_url"
+    ] where citationDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "citation.resolve exposed forbidden metadata \(forbidden): \(citationResolve)"
+        )
+    }
+
+    let wrongConfirmation = "source_confirmation_" + String(repeating: "0", count: 64)
+    let rejectedTrustedSource = try sendAndRead(
+        client,
+        type: "trusted_source.approve",
+        requestID: "smoke-trusted-source-wrong-confirmation",
+        payload: [
+            "review_id": reviewID,
+            "confirmation_token": wrongConfirmation,
+            "disclosure_version": "runtime-trusted-source-v1",
+            "usage_scope": "chat_context"
+        ]
+    )
+    try requireErrorCode(
+        rejectedTrustedSource,
+        "trusted_source_review_not_found",
+        requestID: "smoke-trusted-source-wrong-confirmation",
+        context: "trusted_source.approve wrong confirmation"
+    )
+
+    let approvedTrustedSource = try sendAndRead(
+        client,
+        type: "trusted_source.approve",
+        requestID: "smoke-trusted-source-approve",
+        payload: [
+            "review_id": reviewID,
+            "confirmation_token": confirmationToken,
+            "disclosure_version": "runtime-trusted-source-v1",
+            "usage_scope": "chat_context"
+        ]
+    )
+    try requireType(
+        approvedTrustedSource,
+        "trusted_source.approve",
+        context: "trusted_source.approve"
+    )
+    let approvedPayload = try payload(
+        approvedTrustedSource,
+        context: "trusted_source.approve"
+    )
+    guard let trustedSource = approvedPayload["trusted_source"] as? [String: Any],
+          let grantID = trustedSource["grant_id"] as? String,
+          grantID.range(of: #"^trusted_source_[0-9a-f]{32}$"#, options: .regularExpression) != nil,
+          trustedSource["citation_id"] as? String == citationID,
+          trustedSource["source_anchor_id"] as? String == retrievalSourceAnchorID,
+          trustedSource["usage_scope"] as? String == "chat_context",
+          trustedSource["approved_at"] is String,
+          approvedPayload["confirmation_token"] == nil else {
+        throw SmokeFailure.message(
+            "trusted_source.approve did not return a redacted grant: \(approvedTrustedSource)"
+        )
+    }
+
+    let replayedApproval = try sendAndRead(
+        client,
+        type: "trusted_source.approve",
+        requestID: "smoke-trusted-source-replay",
+        payload: [
+            "review_id": reviewID,
+            "confirmation_token": confirmationToken,
+            "disclosure_version": "runtime-trusted-source-v1",
+            "usage_scope": "chat_context"
+        ]
+    )
+    try requireErrorCode(
+        replayedApproval,
+        "trusted_source_review_not_found",
+        requestID: "smoke-trusted-source-replay",
+        context: "trusted_source.approve one-time replay"
+    )
+
+    let trustedSourceList = try sendAndRead(
+        client,
+        type: "trusted_source.list",
+        requestID: "smoke-trusted-source-list",
+        payload: ["limit": 100]
+    )
+    try requireType(trustedSourceList, "trusted_source.list", context: "trusted_source.list")
+    let trustedSourceListPayload = try payload(
+        trustedSourceList,
+        context: "trusted_source.list"
+    )
+    guard let trustedSources = trustedSourceListPayload["trusted_sources"] as? [[String: Any]],
+          trustedSources.count == 1,
+          trustedSources.first?["grant_id"] as? String == grantID else {
+        throw SmokeFailure.message(
+            "trusted_source.list did not return the device-scoped grant: \(trustedSourceList)"
+        )
+    }
+
+    let trustedSourceChatSessionID = "\(smokeSessionID)-trusted-source-context"
+    let trustedSourceChatPrompt = "Answer from the reviewed runtime source."
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-trusted-source-chat-context",
+        payload: [
+            "session_id": trustedSourceChatSessionID,
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": trustedSourceChatPrompt]
+            ],
+            "trusted_source_grant_ids": [grantID]
+        ]
+    ))
+    let trustedSourceChatText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-trusted-source-chat-context",
+        context: "trusted-source chat context"
+    )
+    guard trustedSourceChatText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message(
+            "trusted-source chat context did not stream mock text: \(trustedSourceChatText)"
+        )
+    }
+    let trustedSourceBackendMessages = try mockChatRequestAuditMessages(
+        fileURL: chatRequestAuditFile,
+        sessionID: trustedSourceChatSessionID,
+        context: "trusted-source chat context"
+    )
+    let trustedSourceBackendDescription = String(describing: trustedSourceBackendMessages)
+    guard trustedSourceBackendDescription.contains(smokeRetrievalSnippetMarker),
+          trustedSourceBackendDescription.contains("Runtime trusted source excerpts") else {
+        throw SmokeFailure.message(
+            "trusted-source text did not reach the backend-only request: \(trustedSourceBackendMessages)"
+        )
+    }
+    for forbidden in [grantID, citationID, retrievalSourceAnchorID]
+        where trustedSourceBackendDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "trusted-source backend context exposed opaque authorization metadata \(forbidden)"
+        )
+    }
+    let trustedSourceStoredMessages = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-trusted-source-chat-messages",
+        payload: ["session_id": trustedSourceChatSessionID, "limit": 20]
+    )
+    let trustedSourceStoredPayload = try payload(
+        trustedSourceStoredMessages,
+        context: "trusted-source stored chat messages"
+    )
+    let trustedSourceStoredDescription = String(describing: trustedSourceStoredPayload)
+    guard trustedSourceStoredDescription.contains(trustedSourceChatPrompt),
+          !trustedSourceStoredDescription.contains(smokeRetrievalPrivateBodyCanary),
+          !trustedSourceStoredDescription.contains(grantID),
+          !trustedSourceStoredDescription.contains(citationID),
+          !trustedSourceStoredDescription.contains(retrievalSourceAnchorID) else {
+        throw SmokeFailure.message(
+            "trusted-source backend-only context entered stored chat history: \(trustedSourceStoredMessages)"
+        )
+    }
+
+    let revokedTrustedSource = try sendAndRead(
+        client,
+        type: "trusted_source.revoke",
+        requestID: "smoke-trusted-source-revoke",
+        payload: ["grant_id": grantID]
+    )
+    try requireType(
+        revokedTrustedSource,
+        "trusted_source.revoke",
+        context: "trusted_source.revoke"
+    )
+    let revokedPayload = try payload(
+        revokedTrustedSource,
+        context: "trusted_source.revoke"
+    )
+    guard revokedPayload["grant_id"] as? String == grantID,
+          revokedPayload["revoked"] as? Bool == true else {
+        throw SmokeFailure.message(
+            "trusted_source.revoke did not return the canonical result: \(revokedTrustedSource)"
+        )
+    }
+    let revokedGrantChat = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-trusted-source-chat-after-revoke",
+        payload: [
+            "session_id": "\(trustedSourceChatSessionID)-revoked",
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "This revoked grant must fail closed."]
+            ],
+            "trusted_source_grant_ids": [grantID]
+        ]
+    )
+    try requireErrorCode(
+        revokedGrantChat,
+        "trusted_source_not_found",
+        requestID: "smoke-trusted-source-chat-after-revoke",
+        context: "trusted-source chat after revoke"
+    )
+    let revokedGrantBackendEntries = try mockChatRequestAuditEntries(
+        fileURL: chatRequestAuditFile
+    ).filter { entry in
+        entry["session_id"] as? String == "\(trustedSourceChatSessionID)-revoked"
+    }
+    guard revokedGrantBackendEntries.isEmpty else {
+        throw SmokeFailure.message(
+            "revoked trusted-source grant reached backend audit: \(revokedGrantBackendEntries)"
+        )
+    }
+    let emptyTrustedSourceList = try sendAndRead(
+        client,
+        type: "trusted_source.list",
+        requestID: "smoke-trusted-source-list-after-revoke",
+        payload: ["limit": 100]
+    )
+    let emptyTrustedSourcePayload = try payload(
+        emptyTrustedSourceList,
+        context: "trusted_source.list after revoke"
+    )
+    guard let emptyTrustedSources = emptyTrustedSourcePayload["trusted_sources"] as? [Any],
+          emptyTrustedSources.isEmpty else {
+        throw SmokeFailure.message(
+            "trusted_source.list retained a revoked grant: \(emptyTrustedSourceList)"
+        )
     }
 
     print("Checking models.pull...")

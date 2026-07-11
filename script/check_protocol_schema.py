@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import json
 import re
@@ -71,9 +72,19 @@ ALLOWED_INDEX_TYPES = {
 ALLOWED_RETRIEVAL_TYPES = {
     "retrieval.query",
 }
+ALLOWED_CITATION_TYPES = {
+    "citation.resolve",
+}
 ALLOWED_SOURCE_ANCHOR_TYPES = {
     "source_anchor.resolve",
 }
+ALLOWED_TRUSTED_SOURCE_TYPES = {
+    "trusted_source.approve",
+    "trusted_source.dismiss",
+    "trusted_source.list",
+    "trusted_source.revoke",
+}
+SCHEMA_ONLY_MESSAGE_TYPES = ALLOWED_CITATION_TYPES | ALLOWED_TRUSTED_SOURCE_TYPES
 ALLOWED_TOOL_TYPES = frozenset()
 ALLOWED_ROUTE_TYPES = {"route.refresh"}
 INDEX_DOCUMENT_MIME_TYPE_PATTERN = r"^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$"
@@ -278,7 +289,9 @@ def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) ->
         if message_type.startswith(RESERVED_PREFIXES)
         and message_type not in ALLOWED_INDEX_TYPES
         and message_type not in ALLOWED_RETRIEVAL_TYPES
+        and message_type not in ALLOWED_CITATION_TYPES
         and message_type not in ALLOWED_SOURCE_ANCHOR_TYPES
+        and message_type not in ALLOWED_TRUSTED_SOURCE_TYPES
     ]
 
 
@@ -312,9 +325,14 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "index.build",
         "research.brief.create",
         "citation.sources.list",
+        "citation.resolve",
         "source_anchor.resolve",
         "source_anchor.metadata.get",
         "trusted_source.approve",
+        "trusted_source.dismiss",
+        "trusted_source.list",
+        "trusted_source.revoke",
+        "trusted_source.metadata.get",
         "source_control.status",
         "p2p.session.open",
         "rendezvous.records.publish",
@@ -357,7 +375,7 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "research.brief.create",
         "citation.sources.list",
         "source_anchor.metadata.get",
-        "trusted_source.approve",
+        "trusted_source.metadata.get",
         "source_control.status",
         "p2p.session.open",
         "rendezvous.records.publish",
@@ -380,7 +398,7 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
             "python.*, projects.*, automation.*, permission.*, approval.*, audit.*, "
             "file.*, terminal.*, network.*, backend.*, embeddings.*, "
             "unsupported retrieval.* beyond retrieval.query, unsupported index.*, "
-            "research.*, citation.*, unsupported source_anchor.* beyond source_anchor.resolve, trusted_source.*, source_control.*, p2p.*, rendezvous.*, "
+            "research.*, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*, "
             "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*, "
             "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names"
         )
@@ -1620,11 +1638,12 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                 "end_character_offset",
                 "rank",
                 "matched_terms",
+                "match_kind",
                 "snippet",
             }
             if set(result_properties.keys()) != allowed_result_properties:
                 failures.append(
-                    "$defs.retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet"
+                    "$defs.retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, match_kind, and snippet"
                 )
             if result_properties.get("document") != {"$ref": "#/$defs/indexDocument"}:
                 failures.append(
@@ -1647,11 +1666,10 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                     )
             expected_matched_terms_schema = {
                 "type": "array",
-                "minItems": 1,
                 "maxItems": 16,
                 "items": {
                     "allOf": [
-                        {"$ref": "#/$defs/nonEmptyString"},
+                        {"$ref": "#/$defs/nonBlankString"},
                         {"maxLength": 64},
                     ]
                 },
@@ -1659,6 +1677,13 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
             if result_properties.get("matched_terms") != expected_matched_terms_schema:
                 failures.append(
                     "$defs.retrievalQueryResult.properties.matched_terms must cap matched terms at 16 items of 64 characters"
+                )
+            if result_properties.get("match_kind") != {
+                "type": "string",
+                "enum": ["lexical", "semantic"],
+            }:
+                failures.append(
+                    "$defs.retrievalQueryResult.properties.match_kind must be lexical or semantic"
                 )
             expected_snippet_schema = {
                 "allOf": [
@@ -1690,6 +1715,19 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                 failures.append(
                     "$defs.retrievalQueryResult.required must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet"
                 )
+        expected_match_kind_condition = [
+            {
+                "if": {
+                    "properties": {"match_kind": {"const": "semantic"}},
+                    "required": ["match_kind"],
+                },
+                "else": {"properties": {"matched_terms": {"minItems": 1}}},
+            }
+        ]
+        if retrieval_result.get("allOf") != expected_match_kind_condition:
+            failures.append(
+                "$defs.retrievalQueryResult must allow empty matched_terms only for explicit semantic matches"
+            )
         if retrieval_result.get("additionalProperties") is not False:
             failures.append("$defs.retrievalQueryResult additionalProperties must be false")
 
@@ -1715,10 +1753,15 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                 if not isinstance(request_properties, dict):
                     failures.append("$defs.retrievalQueryPayload request properties must be an object")
                 else:
-                    allowed_request_properties = {"query", "limit", "max_snippet_characters"}
+                    allowed_request_properties = {
+                        "query",
+                        "limit",
+                        "max_snippet_characters",
+                        "embedding_model_id",
+                    }
                     if set(request_properties.keys()) != allowed_request_properties:
                         failures.append(
-                            "$defs.retrievalQueryPayload request properties must stay limited to query, limit, and max_snippet_characters"
+                            "$defs.retrievalQueryPayload request properties must stay limited to query, limit, max_snippet_characters, and embedding_model_id"
                         )
                     expected_query_schema = {
                         "allOf": [
@@ -1729,6 +1772,12 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                     if request_properties.get("query") != expected_query_schema:
                         failures.append(
                             "$defs.retrievalQueryPayload request query must use #/$defs/nonBlankString with maxLength 1024"
+                        )
+                    if request_properties.get("embedding_model_id") != {
+                        "$ref": "#/$defs/nonBlankString"
+                    }:
+                        failures.append(
+                            "$defs.retrievalQueryPayload request embedding_model_id must use #/$defs/nonBlankString"
                         )
                     if "source_anchor_id" in request_properties:
                         failures.append(
@@ -1767,6 +1816,18 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                             "source-anchor-id",
                             build_retrieval_query_request_source_anchor_sample(
                                 source_anchor_id="source_anchor_0123456789abcdef"
+                            ),
+                        ),
+                        (
+                            "blank-embedding-model-id",
+                            build_retrieval_query_request_source_anchor_sample(
+                                embedding_model_id="   "
+                            ),
+                        ),
+                        (
+                            "non-string-embedding-model-id",
+                            build_retrieval_query_request_source_anchor_sample(
+                                embedding_model_id=42
                             ),
                         ),
                         (
@@ -1971,10 +2032,24 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                     ),
                 ),
                 (
+                    "unknown-match-kind",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"match_kind": "hybrid"},
+                    ),
+                ),
+                (
                     "empty-matched-term",
                     build_retrieval_query_response_source_anchor_sample(
                         "source_anchor_0123456789abcdef",
                         result_overrides={"matched_terms": [""]},
+                    ),
+                ),
+                (
+                    "blank-matched-term",
+                    build_retrieval_query_response_source_anchor_sample(
+                        "source_anchor_0123456789abcdef",
+                        result_overrides={"matched_terms": ["  \n  "]},
                     ),
                 ),
                 (
@@ -2145,6 +2220,23 @@ def check_retrieval_query_source_anchor_schema_contract(schema: dict[str, object
                         "$defs.retrievalQueryPayload response result sample must reject "
                         f"{label}"
                     )
+            semantic_payload_sample = build_retrieval_query_response_source_anchor_sample(
+                "source_anchor_0123456789abcdef",
+                result_overrides={"match_kind": "semantic", "matched_terms": []},
+            )
+            semantic_failures = retrieval_query_response_source_anchor_sample_failures(
+                semantic_payload_sample,
+                compiled_source_anchor_pattern,
+                retrieval_result,
+                max_results_count=retrieval_response_results_max_items,
+                document_schema=index_document if isinstance(index_document, dict) else None,
+            )
+            if semantic_failures:
+                failures.append(
+                    "$defs.retrievalQueryPayload response result sample must accept "
+                    "explicit semantic match_kind with empty matched_terms: "
+                    + "; ".join(semantic_failures)
+                )
 
     return failures
 
@@ -2456,6 +2548,340 @@ def check_source_anchor_resolve_payload_schema_contract(schema: dict[str, object
     return failures
 
 
+def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include citation and trusted source schemas"]
+
+    expected_defs: dict[str, dict[str, object]] = {
+        "citationID": {"type": "string", "pattern": "^citation_[0-9a-f]{32}$"},
+        "sourceReviewID": {"type": "string", "pattern": "^source_review_[0-9a-f]{32}$"},
+        "sourceConfirmationToken": {
+            "type": "string",
+            "pattern": "^source_confirmation_[0-9a-f]{64}$",
+        },
+        "trustedSourceGrantID": {
+            "type": "string",
+            "pattern": "^trusted_source_[0-9a-f]{32}$",
+        },
+        "iso8601DateTime": {"type": "string", "minLength": 1, "format": "date-time"},
+        "citation": {
+            "type": "object",
+            "required": [
+                "schema_version",
+                "citation_id",
+                "source_anchor_id",
+                "document",
+                "chunk_summary",
+            ],
+            "properties": {
+                "schema_version": {"const": 1},
+                "citation_id": {"$ref": "#/$defs/citationID"},
+                "source_anchor_id": {"$ref": "#/$defs/sourceAnchorID"},
+                "document": {"$ref": "#/$defs/indexDocument"},
+                "chunk_summary": {"$ref": "#/$defs/sourceAnchorChunkSummary"},
+            },
+            "additionalProperties": False,
+        },
+        "sourceReview": {
+            "type": "object",
+            "required": [
+                "review_id",
+                "confirmation_token",
+                "disclosure_version",
+                "usage_scope",
+                "expires_at",
+            ],
+            "properties": {
+                "review_id": {"$ref": "#/$defs/sourceReviewID"},
+                "confirmation_token": {"$ref": "#/$defs/sourceConfirmationToken"},
+                "disclosure_version": {"const": "runtime-trusted-source-v1"},
+                "usage_scope": {"const": "chat_context"},
+                "expires_at": {"$ref": "#/$defs/iso8601DateTime"},
+            },
+            "additionalProperties": False,
+        },
+        "trustedSource": {
+            "type": "object",
+            "required": [
+                "grant_id",
+                "citation_id",
+                "source_anchor_id",
+                "document",
+                "usage_scope",
+                "approved_at",
+            ],
+            "properties": {
+                "grant_id": {"$ref": "#/$defs/trustedSourceGrantID"},
+                "citation_id": {"$ref": "#/$defs/citationID"},
+                "source_anchor_id": {"$ref": "#/$defs/sourceAnchorID"},
+                "document": {"$ref": "#/$defs/indexDocument"},
+                "usage_scope": {"const": "chat_context"},
+                "approved_at": {"$ref": "#/$defs/iso8601DateTime"},
+            },
+            "additionalProperties": False,
+        },
+    }
+
+    def closed_object(
+        required: list[str], properties: dict[str, object]
+    ) -> dict[str, object]:
+        return {
+            "type": "object",
+            "required": required,
+            "properties": properties,
+            "additionalProperties": False,
+        }
+
+    expected_defs.update(
+        {
+            "citationResolvePayload": {
+                "oneOf": [
+                    closed_object(
+                        ["source_anchor_id"],
+                        {"source_anchor_id": {"$ref": "#/$defs/sourceAnchorID"}},
+                    ),
+                    closed_object(
+                        ["citation", "review"],
+                        {
+                            "citation": {"$ref": "#/$defs/citation"},
+                            "review": {"$ref": "#/$defs/sourceReview"},
+                            "trusted_source": {"$ref": "#/$defs/trustedSource"},
+                        },
+                    ),
+                ]
+            },
+            "trustedSourceApprovePayload": {
+                "oneOf": [
+                    closed_object(
+                        ["review_id", "confirmation_token", "disclosure_version", "usage_scope"],
+                        {
+                            "review_id": {"$ref": "#/$defs/sourceReviewID"},
+                            "confirmation_token": {"$ref": "#/$defs/sourceConfirmationToken"},
+                            "disclosure_version": {"const": "runtime-trusted-source-v1"},
+                            "usage_scope": {"const": "chat_context"},
+                        },
+                    ),
+                    closed_object(
+                        ["trusted_source"],
+                        {"trusted_source": {"$ref": "#/$defs/trustedSource"}},
+                    ),
+                ]
+            },
+            "trustedSourceDismissPayload": {
+                "oneOf": [
+                    closed_object(
+                        ["review_id"],
+                        {"review_id": {"$ref": "#/$defs/sourceReviewID"}},
+                    ),
+                    closed_object(
+                        ["review_id", "dismissed"],
+                        {
+                            "review_id": {"$ref": "#/$defs/sourceReviewID"},
+                            "dismissed": {"const": True},
+                        },
+                    ),
+                ]
+            },
+            "trustedSourceListPayload": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "limit": {"type": "integer", "minimum": 0, "maximum": 100}
+                        },
+                        "additionalProperties": False,
+                    },
+                    closed_object(
+                        ["trusted_sources"],
+                        {
+                            "trusted_sources": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {"$ref": "#/$defs/trustedSource"},
+                            }
+                        },
+                    ),
+                ]
+            },
+            "trustedSourceRevokePayload": {
+                "oneOf": [
+                    closed_object(
+                        ["grant_id"],
+                        {"grant_id": {"$ref": "#/$defs/trustedSourceGrantID"}},
+                    ),
+                    closed_object(
+                        ["grant_id", "revoked"],
+                        {
+                            "grant_id": {"$ref": "#/$defs/trustedSourceGrantID"},
+                            "revoked": {"const": True},
+                        },
+                    ),
+                ]
+            },
+        }
+    )
+
+    for def_name, expected_schema in expected_defs.items():
+        if defs.get(def_name) != expected_schema:
+            failures.append(f"$defs.{def_name} must match the active trusted-source contract exactly")
+
+    expected_payload_refs = {
+        "citation.resolve": "#/$defs/citationResolvePayload",
+        "trusted_source.approve": "#/$defs/trustedSourceApprovePayload",
+        "trusted_source.dismiss": "#/$defs/trustedSourceDismissPayload",
+        "trusted_source.list": "#/$defs/trustedSourceListPayload",
+        "trusted_source.revoke": "#/$defs/trustedSourceRevokePayload",
+    }
+    actual_payload_refs: dict[str, object] = {}
+    for rule in schema.get("allOf", []):
+        if not isinstance(rule, dict):
+            continue
+        message_type = rule.get("if", {}).get("properties", {}).get("type", {}).get("const")
+        payload_ref = rule.get("then", {}).get("properties", {}).get("payload", {}).get("$ref")
+        if message_type in expected_payload_refs:
+            actual_payload_refs[message_type] = payload_ref
+    for message_type, expected_ref in expected_payload_refs.items():
+        if actual_payload_refs.get(message_type) != expected_ref:
+            failures.append(f"{message_type} payload must use {expected_ref}")
+
+    if any(defs.get(name) != expected for name, expected in expected_defs.items()):
+        return failures
+
+    document = build_index_document_sample()
+    chunk_summary = build_source_anchor_chunk_summary_sample()
+    citation = {
+        "schema_version": 1,
+        "citation_id": "citation_0123456789abcdef0123456789abcdef",
+        "source_anchor_id": "source_anchor_0123456789abcdef",
+        "document": document,
+        "chunk_summary": chunk_summary,
+    }
+    review = {
+        "review_id": "source_review_0123456789abcdef0123456789abcdef",
+        "confirmation_token": "source_confirmation_" + "a" * 64,
+        "disclosure_version": "runtime-trusted-source-v1",
+        "usage_scope": "chat_context",
+        "expires_at": "2026-07-12T12:30:45Z",
+    }
+    trusted_source = {
+        "grant_id": "trusted_source_0123456789abcdef0123456789abcdef",
+        "citation_id": citation["citation_id"],
+        "source_anchor_id": citation["source_anchor_id"],
+        "document": document,
+        "usage_scope": "chat_context",
+        "approved_at": "2026-07-12T12:31:00+09:00",
+    }
+    approve_request = {
+        key: review[key]
+        for key in ("review_id", "confirmation_token", "disclosure_version", "usage_scope")
+    }
+
+    canonical_samples = {
+        "citationResolvePayload": [
+            {"source_anchor_id": citation["source_anchor_id"]},
+            {"citation": citation, "review": review},
+            {"citation": citation, "review": review, "trusted_source": trusted_source},
+        ],
+        "trustedSourceApprovePayload": [
+            approve_request,
+            {"trusted_source": trusted_source},
+        ],
+        "trustedSourceDismissPayload": [
+            {"review_id": review["review_id"]},
+            {"review_id": review["review_id"], "dismissed": True},
+        ],
+        "trustedSourceListPayload": [
+            {},
+            {"limit": 0},
+            {"limit": 100},
+            {"trusted_sources": []},
+            {"trusted_sources": [trusted_source]},
+        ],
+        "trustedSourceRevokePayload": [
+            {"grant_id": trusted_source["grant_id"]},
+            {"grant_id": trusted_source["grant_id"], "revoked": True},
+        ],
+    }
+
+    def changed(value: object, path: tuple[object, ...], replacement: object) -> object:
+        clone = json.loads(json.dumps(value))
+        target = clone
+        for component in path[:-1]:
+            target = target[component]
+        target[path[-1]] = replacement
+        return clone
+
+    invalid_samples = {
+        "citationResolvePayload": [
+            {},
+            {"source_anchor_id": "source_anchor_0123456789ABCDEF"},
+            {"source_anchor_id": citation["source_anchor_id"], "query": "secret"},
+            {"citation": citation},
+            changed({"citation": citation, "review": review}, ("citation", "schema_version"), 2),
+            changed({"citation": citation, "review": review}, ("citation", "citation_id"), "citation_bad"),
+            changed({"citation": citation, "review": review}, ("citation", "snippet"), "secret"),
+            changed({"citation": citation, "review": review}, ("review", "confirmation_token"), "source_confirmation_bad"),
+            changed({"citation": citation, "review": review}, ("review", "disclosure_version"), "v2"),
+            changed({"citation": citation, "review": review}, ("review", "usage_scope"), "indexing"),
+            changed({"citation": citation, "review": review}, ("review", "expires_at"), "not-a-date"),
+            changed({"citation": citation, "review": review}, ("review", "approval_id"), "approval_1"),
+            changed({"citation": citation, "review": review}, ("citation", "document", "path"), "/tmp/private"),
+            changed({"citation": citation, "review": review, "trusted_source": trusted_source}, ("trusted_source", "grant_id"), "trusted_source_bad"),
+        ],
+        "trustedSourceApprovePayload": [
+            {"review_id": review["review_id"]},
+            changed(approve_request, ("confirmation_token",), "source_confirmation_bad"),
+            changed(approve_request, ("disclosure_version",), "runtime-trusted-source-v2"),
+            changed(approve_request, ("usage_scope",), "retrieval"),
+            changed(approve_request, ("body",), "secret"),
+            changed({"trusted_source": trusted_source}, ("trusted_source", "approved_at"), ""),
+            changed({"trusted_source": trusted_source}, ("trusted_source", "model"), "private-model"),
+        ],
+        "trustedSourceDismissPayload": [
+            {},
+            {"review_id": "source_review_bad"},
+            {"review_id": review["review_id"], "dismissed": False},
+            {"review_id": review["review_id"], "dismissed": True, "revision": 1},
+        ],
+        "trustedSourceListPayload": [
+            {"limit": -1},
+            {"limit": 101},
+            {"limit": True},
+            {"limit": "10"},
+            {"query": "secret"},
+            {"trusted_sources": [trusted_source] * 101},
+            changed({"trusted_sources": [trusted_source]}, ("trusted_sources", 0, "vector"), [0.1]),
+        ],
+        "trustedSourceRevokePayload": [
+            {},
+            {"grant_id": "trusted_source_bad"},
+            {"grant_id": trusted_source["grant_id"], "revoked": False},
+            {"grant_id": trusted_source["grant_id"], "revoked": True, "approval_id": "approval_1"},
+        ],
+    }
+
+    for def_name, samples in canonical_samples.items():
+        payload_schema = defs[def_name]
+        for index, sample in enumerate(samples):
+            sample_failures = simple_schema_sample_failures(
+                sample, payload_schema, defs, path=f"{def_name} canonical[{index}]"
+            )
+            if sample_failures:
+                failures.append(
+                    f"$defs.{def_name} must accept canonical sample {index}: "
+                    + "; ".join(sample_failures)
+                )
+        for index, sample in enumerate(invalid_samples[def_name]):
+            if not simple_schema_sample_failures(
+                sample, payload_schema, defs, path=f"{def_name} negative[{index}]"
+            ):
+                failures.append(f"$defs.{def_name} must reject negative sample {index}")
+
+    return failures
+
+
 def build_source_anchor_chunk_summary_sample(
     *,
     chunk_summary_overrides: dict[str, object] | None = None,
@@ -2727,6 +3153,7 @@ def build_retrieval_query_request_source_anchor_sample(
     query: object = "protocol source anchor",
     limit: object = 3,
     max_snippet_characters: object = 160,
+    embedding_model_id: object | None = "ollama:nomic-embed-text",
     source_anchor_id: object | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -2735,6 +3162,8 @@ def build_retrieval_query_request_source_anchor_sample(
     }
     if include_query:
         payload["query"] = query
+    if embedding_model_id is not None:
+        payload["embedding_model_id"] = embedding_model_id
     if source_anchor_id is not None:
         payload["source_anchor_id"] = source_anchor_id
     return payload
@@ -2789,6 +3218,17 @@ def retrieval_query_request_source_anchor_sample_failures(
                         query_max_length = nested_max_length
         if isinstance(query_max_length, int) and len(query) > query_max_length:
             failures.append("retrieval.query request payload sample query above maximum length")
+
+    embedding_model_id = payload.get("embedding_model_id")
+    if embedding_model_id is not None:
+        if not isinstance(embedding_model_id, str):
+            failures.append(
+                "retrieval.query request payload sample embedding_model_id must be a string"
+            )
+        elif not embedding_model_id.strip():
+            failures.append(
+                "retrieval.query request payload sample embedding_model_id must be nonblank"
+            )
 
     for integer_field_name in ("limit", "max_snippet_characters"):
         if integer_field_name not in payload:
@@ -2916,6 +3356,9 @@ def retrieval_query_response_source_anchor_sample_failures(
             )
 
         matched_terms = result.get("matched_terms")
+        match_kind = result.get("match_kind", "lexical")
+        if match_kind not in {"lexical", "semantic"}:
+            failures.append(f"results[{index}].match_kind must be lexical or semantic")
         if "matched_terms" in result:
             if not isinstance(matched_terms, list):
                 failures.append(f"results[{index}].matched_terms must be an array")
@@ -2953,10 +3396,14 @@ def retrieval_query_response_source_anchor_sample_failures(
                                 matched_term_max_length = nested_max_length
                 if isinstance(matched_terms_min_items, int) and len(matched_terms) < matched_terms_min_items:
                     failures.append(f"results[{index}].matched_terms below minimum items")
+                if match_kind != "semantic" and not matched_terms:
+                    failures.append(
+                        f"results[{index}].matched_terms must be nonempty for lexical matches"
+                    )
                 if isinstance(matched_terms_max_items, int) and len(matched_terms) > matched_terms_max_items:
                     failures.append(f"results[{index}].matched_terms above maximum items")
                 for term_index, matched_term in enumerate(matched_terms):
-                    if not isinstance(matched_term, str) or not matched_term:
+                    if not isinstance(matched_term, str) or not matched_term.strip():
                         failures.append(
                             f"results[{index}].matched_terms[{term_index}] must be a non-empty string"
                         )
@@ -3046,11 +3493,17 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
     if not isinstance(properties, dict):
         failures.append("$defs.chatSendPayload.properties must be an object")
     else:
-        allowed_keys = {"session_id", "model", "locale", "messages"}
+        allowed_keys = {
+            "session_id",
+            "model",
+            "locale",
+            "messages",
+            "trusted_source_grant_ids",
+        }
         actual_keys = set(properties.keys())
         if actual_keys != allowed_keys:
             failures.append(
-                "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, and messages"
+                "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, messages, and trusted_source_grant_ids"
             )
         forbidden_keys = {
             "project_id",
@@ -3079,6 +3532,17 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
             failures.append("$defs.chatSendPayload request locale must be an optional string")
         if properties.get("messages", {}).get("minItems") != 1:
             failures.append("$defs.chatSendPayload request messages must require at least one item")
+        trusted_source_grant_ids = properties.get("trusted_source_grant_ids")
+        if trusted_source_grant_ids != {
+            "type": "array",
+            "items": {"$ref": "#/$defs/trustedSourceGrantID"},
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": True,
+        }:
+            failures.append(
+                "$defs.chatSendPayload request trusted_source_grant_ids must be an optional unique array of 1 through 8 canonical grant ids"
+            )
     if chat_send_payload.get("additionalProperties") is not False:
         failures.append("$defs.chatSendPayload.additionalProperties must be false")
     return failures
@@ -4138,6 +4602,29 @@ def simple_schema_sample_failures(
         return simple_schema_sample_failures(value, target, defs, path=path)
 
     failures: list[str] = []
+    all_of = schema_fragment.get("allOf")
+    if isinstance(all_of, list):
+        for index, option in enumerate(all_of):
+            failures.extend(
+                simple_schema_sample_failures(
+                    value,
+                    option,
+                    defs,
+                    path=f"{path}.allOf[{index}]",
+                )
+            )
+
+    one_of = schema_fragment.get("oneOf")
+    if isinstance(one_of, list):
+        option_failures = [
+            simple_schema_sample_failures(value, option, defs, path=path)
+            for option in one_of
+        ]
+        matching_options = sum(not option_failure for option_failure in option_failures)
+        if matching_options != 1:
+            failures.append(f"{path} must match exactly one oneOf option")
+        return failures
+
     if "const" in schema_fragment and value != schema_fragment["const"]:
         failures.append(f"{path} must equal {schema_fragment['const']!r}")
     enum_values = schema_fragment.get("enum")
@@ -4149,7 +4636,7 @@ def simple_schema_sample_failures(
         if not isinstance(value, dict):
             return failures + [f"{path} must be an object"]
         properties = schema_fragment.get("properties")
-        required = schema_fragment.get("required")
+        required = schema_fragment.get("required", [])
         if not isinstance(properties, dict) or not isinstance(required, list):
             return failures + [f"{path} object schema must define properties and required"]
         for field in required:
@@ -4168,6 +4655,33 @@ def simple_schema_sample_failures(
                         path=f"{path}.{field}",
                     )
                 )
+        return failures
+
+    if value_type == "array":
+        if not isinstance(value, list):
+            return failures + [f"{path} must be an array"]
+        minimum_items = schema_fragment.get("minItems")
+        if isinstance(minimum_items, int) and len(value) < minimum_items:
+            failures.append(f"{path} must contain at least {minimum_items} items")
+        maximum_items = schema_fragment.get("maxItems")
+        if isinstance(maximum_items, int) and len(value) > maximum_items:
+            failures.append(f"{path} must contain at most {maximum_items} items")
+        item_schema = schema_fragment.get("items")
+        if item_schema is not None:
+            for index, item in enumerate(value):
+                failures.extend(
+                    simple_schema_sample_failures(
+                        item,
+                        item_schema,
+                        defs,
+                        path=f"{path}[{index}]",
+                    )
+                )
+        return failures
+
+    if value_type == "boolean":
+        if not isinstance(value, bool):
+            failures.append(f"{path} must be a boolean")
         return failures
 
     if value_type == "integer":
@@ -4195,6 +4709,14 @@ def simple_schema_sample_failures(
         pattern = schema_fragment.get("pattern")
         if isinstance(pattern, str) and re.search(pattern, value) is None:
             failures.append(f"{path} does not match {pattern}")
+        if schema_fragment.get("format") == "date-time":
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", value) is None:
+                failures.append(f"{path} must be an RFC3339 date-time")
+            else:
+                try:
+                    datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    failures.append(f"{path} must be a valid RFC3339 date-time")
     return failures
 
 
@@ -4554,6 +5076,7 @@ def main() -> int:
         failures.extend(check_index_documents_list_payload_schema_contract(schema))
         failures.extend(check_retrieval_query_source_anchor_schema_contract(schema))
         failures.extend(check_source_anchor_resolve_payload_schema_contract(schema))
+        failures.extend(check_trusted_source_payload_schema_contract(schema))
         failures.extend(check_chat_send_payload_schema_contract(schema))
         failures.extend(check_chat_title_request_payload_schema_contract(schema))
         failures.extend(check_chat_message_schema_contract(schema))
@@ -5153,6 +5676,11 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "chat_context_window_exceeded",
         "document_index_unavailable",
         "source_anchor_not_found",
+        "citation_not_found",
+        "trusted_source_review_not_found",
+        "trusted_source_review_expired",
+        "trusted_source_review_stale",
+        "trusted_source_not_found",
         "memory_store_unavailable",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",
@@ -5362,7 +5890,9 @@ def check_platform_message_constants(schema_message_types: set[str]) -> list[str
             failures.append(f"{label} has duplicate message constants {duplicates}")
 
         platform_message_types = set(message_types)
-        missing = sorted(schema_message_types - platform_message_types)
+        missing = sorted(
+            schema_message_types - SCHEMA_ONLY_MESSAGE_TYPES - platform_message_types
+        )
         if missing:
             failures.append(f"{label} missing schema message constants {missing}")
 

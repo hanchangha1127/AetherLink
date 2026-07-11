@@ -18974,8 +18974,6 @@ def attachment_ingestion_guard_failures() -> list[str]:
         "retrieval_context",
         "embeddingModelID",
         "embeddingModelId",
-        "trustedSource",
-        "trusted_source",
     )
     for term in forbidden_document_index_terms:
         if term in macos_document_index_text:
@@ -22309,7 +22307,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`",
+            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, `messages`, and optional `trusted_source_grant_ids`",
             "Protocol docs must document the active chat.send payload allowlist.",
         ),
         (
@@ -22327,7 +22325,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "must not carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, tool results, or trusted-source metadata",
+            "must not carry raw source anchors, source text, source revision, approval state, project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, or tool results",
             "Protocol docs must document forbidden top-level chat.send project/RAG/backend metadata.",
         ),
         (
@@ -22339,7 +22337,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
-            "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, and messages",
+            "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, messages, and trusted_source_grant_ids",
             "Protocol schema checker must fail if chatSendPayload grows future metadata fields.",
         ),
         (
@@ -22741,7 +22739,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings",
+            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, `messages`, and optional `trusted_source_grant_ids`; `session_id` and `model` must be non-blank strings",
             "Protocol docs must document blank chat.send session_id and model rejection.",
         ),
         (
@@ -36506,7 +36504,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "python.*, projects.*, automation.*, permission.*, approval.*, audit.*,",
         "file.*, terminal.*, network.*, backend.*, embeddings.*,",
         "unsupported retrieval.* beyond retrieval.query, unsupported index.*,",
-        "research.*, citation.*, unsupported source_anchor.* beyond source_anchor.resolve, trusted_source.*, source_control.*, p2p.*, rendezvous.*,",
+        "research.*, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*,",
         "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*,",
         "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names",
         "future_memory_message_types(",
@@ -36650,7 +36648,12 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"smoke-future-research-brief-create"',
         '"smoke-future-citation-sources-list"',
         '"smoke-future-source-anchor-metadata-get"',
-        '"smoke-future-trusted-source-approve"',
+        '"smoke-citation-resolve"',
+        '"smoke-trusted-source-wrong-confirmation"',
+        '"smoke-trusted-source-approve"',
+        '"smoke-trusted-source-replay"',
+        '"smoke-trusted-source-list"',
+        '"smoke-trusted-source-revoke"',
         '"smoke-future-source-control-status"',
         '"smoke-future-p2p-session-open"',
         '"smoke-future-rendezvous-records-publish"',
@@ -36710,7 +36713,10 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "future research brief namespace smoke",
         "future citation sources namespace smoke",
         "future source anchor metadata namespace smoke",
-        "future trusted source approval namespace smoke",
+        "Checking citation and trusted-source review lifecycle",
+        "citation.resolve did not return a canonical untrusted review envelope",
+        "trusted_source.approve did not return a redacted grant",
+        "trusted_source.list retained a revoked grant",
         "future source control status namespace smoke",
         "future p2p session namespace smoke",
         "future rendezvous record namespace smoke",
@@ -36766,9 +36772,9 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "protocol reserved runtime action namespace guard addendum",
         "file., terminal., network., and backend. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
         "protocol reserved RAG/research namespace guard addendum",
-        "embeddings., unsupported retrieval.* beyond retrieval.query, unsupported index.* beyond index.documents.list, research., citation., and source_control. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
-        "protocol reserved source-anchor/trusted-source namespace guard addendum",
-        "source_anchor.resolve is the only active read-only source_anchor. resolver message",
+        "approved semantic retrieval is active only through retrieval.query; embeddings., unsupported retrieval.* beyond retrieval.query, unsupported index.* beyond index.documents.list, research., citation., and source_control. active messages remain blocked",
+        "protocol citation and trusted-source namespace guard addendum",
+        "citation.resolve plus trusted_source.approve, trusted_source.dismiss, trusted_source.list, and trusted_source.revoke are the only active citation/trusted_source messages",
         "RuntimeDevServer reserved source-anchor namespace rejection addendum",
         "authenticated RuntimeDevServer relay smoke accepts source_anchor.resolve but rejects source_anchor.metadata.get with unknown_message_type",
         "protocol reserved private-overlay namespace guard addendum",
@@ -36789,16 +36795,18 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "authenticated RuntimeDevServer relay smoke rejects file.read, file.write, file.index, terminal.exec, terminal.kill, network.request, network.open, backend.call, and backend.configure with unknown_message_type",
         "RuntimeDevServer index.documents.list seeded catalog no-device smoke addendum",
         "authenticated RuntimeDevServer relay smoke accepts index.documents.list against a seeded runtime document index with one bounded catalog row",
-        "RuntimeDevServer retrieval.query lexical no-device smoke addendum",
-        "authenticated RuntimeDevServer relay smoke accepts retrieval.query against a seeded runtime document index with one bounded lexical snippet",
+        "RuntimeDevServer retrieval.query lexical and semantic no-device smoke addendum",
+        "authenticated RuntimeDevServer relay smoke preserves the bounded legacy lexical response, then opts into approved semantic ranking with embedding_model_id",
         "RuntimeDevServer retrieval.query request bounds no-device smoke addendum",
         "authenticated RuntimeDevServer relay smoke rejects retrieval.query query text longer than 1024 characters with invalid_payload",
         "RuntimeDevServer reserved RAG/research namespace rejection addendum",
-        "authenticated RuntimeDevServer relay smoke rejects embeddings.create, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
+        "authenticated RuntimeDevServer relay smoke keeps approved semantic retrieval on retrieval.query and rejects embeddings.create, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
         "RuntimeDevServer source-anchor resolver no-device smoke addendum",
         "authenticated RuntimeDevServer relay smoke accepts source_anchor.resolve for a seeded retrieval source_anchor_id",
-        "RuntimeDevServer reserved trusted-source namespace rejection addendum",
-        "authenticated RuntimeDevServer relay smoke rejects trusted_source.approve with unknown_message_type",
+        "RuntimeDevServer citation and device trusted-source lifecycle addendum",
+        "authenticated RuntimeDevServer relay smoke resolves a current approved source anchor into a redacted citation/review envelope",
+        "citation and device trusted-source review addendum",
+        "explicit cancel plus 15-second citation timeout",
         "RuntimeDevServer reserved private-overlay namespace rejection addendum",
         "authenticated RuntimeDevServer relay smoke rejects p2p.session.open, rendezvous.records.publish, bootstrap.records.lookup, dht.records.put, nat.candidates.gather, stun.binding.request, and turn.relay.allocate with unknown_message_type",
         "RuntimeDevServer reserved encrypted-session namespace rejection addendum",
@@ -36836,18 +36844,18 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "reserve the `network.` namespace",
         "reserve the `backend.` namespace",
         "reserve the `embeddings.` namespace",
-        "keep `retrieval.query` as the only active deterministic lexical read-only document retrieval message",
-        "reserve unsupported `retrieval.*` messages beyond `retrieval.query`",
-        "keep `index.documents.list` as the only active read-only `index.` catalog message",
-        "reserve other `index.` messages",
-        "reserve the `research.` namespace",
-        "reserve the `citation.` namespace",
-        "keep `source_anchor.resolve` as the only active read-only `source_anchor.` resolver message",
-        "reserve the `trusted_source.` namespace",
-        "reserve the `source_control.` namespace",
+        "`retrieval.query` accepts optional provider-qualified `embedding_model_id`",
+        "Omission uses deterministic lexical retrieval and preserves the legacy result key set",
+        "Explicit opt-in uses runtime-host semantic ranking",
+        "`citation.resolve` is an authenticated opt-in resolver",
+        "`trusted_source.approve` consumes the exact review id",
+        "`trusted_source.dismiss` discards a pending review",
+        "`trusted_source.list` returns at most 100 current grants",
+        "`trusted_source.revoke` removes only that device's named grant",
+        "No client command can change host source approval",
         "source_anchor.resolve",
         "trusted_source.approve",
-        "`source_anchor.resolve` accepts only `source_anchor_id` in requests and returns only `source_anchor_id`, `document`, and `chunk_summary`",
+        "The citation carries only an opaque `citation_[32 lowercase hex]` handle, the source anchor, safe document metadata, and the existing bounded chunk summary",
         "reserve the `p2p.` namespace",
         "reserve the `rendezvous.` namespace",
         "reserve the `bootstrap.` namespace",
@@ -36871,11 +36879,11 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "Protocol schema hygiene rejects active message enum entries under `transport.` and `crypto.`",
         "Protocol schema hygiene rejects active message enum entries under `permission.`, `approval.`, and `audit.`",
         "Protocol schema hygiene rejects active message enum entries under `file.`, `terminal.`, `network.`, and `backend.`",
-        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, unsupported `retrieval.`, unsupported `index.`, `research.`, `citation.`, unsupported `source_anchor.*` beyond `source_anchor.resolve`, `trusted_source.`, and `source_control.`",
+        "The active citation/trusted-source commands above create only authenticated-device `chat_context` review grants bound to the current host-approved revision",
         "Protocol schema hygiene rejects active message enum entries under generic `tool.`",
-        "current `models.list` embedding model metadata",
-        "current embedding-backed chat and approved-memory search",
-        "the deterministic lexical `retrieval.query` document-index filter",
+        "The candidate cache is not a wire feature",
+        "Android sends its selected runtime-host embedding model only with a valid bounded document query",
+        "without adding cache metadata or host approval controls to the wire",
         "current `chat.sessions.list` and `memory.list` `embedding_model_id` hints",
         "Without `embedding_model_id`, nonblank queries use deterministic lexical filtering",
         "separate `memory.search` command",
@@ -36946,9 +36954,9 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved RAG/research namespace rejection."
         )
-    if "protocol reserved source-anchor/trusted-source namespace guard" not in roadmap_text:
+    if "`citation.resolve`, `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, and `trusted_source.revoke`" not in roadmap_text:
         failures.append(
-            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved source-anchor/trusted-source namespace guard."
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name the complete active citation/trusted-source message set."
         )
     if "RuntimeDevServer source-anchor resolver" not in roadmap_text:
         failures.append(
@@ -36958,9 +36966,9 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved source-anchor namespace rejection."
         )
-    if "RuntimeDevServer reserved trusted-source namespace rejection" not in roadmap_text:
+    if "check-no-device-quality-citation-trusted-source-review-final-reviewed-20260712.log" not in roadmap_text:
         failures.append(
-            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved trusted-source namespace rejection."
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap must name final RuntimeDevServer citation/trusted-source lifecycle evidence."
         )
     if "protocol reserved private-overlay namespace guard" not in roadmap_text:
         failures.append(
@@ -37094,9 +37102,9 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved source-anchor namespace rejection no-device gate."
             )
-        if "RuntimeDevServer Reserved Trusted-Source Namespace Rejection No-Device Gate" not in text:
+        if "Citation And Device Trusted-Source Review" not in text:
             failures.append(
-                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved trusted-source namespace rejection no-device gate."
+                f"{path.relative_to(ROOT)}: Docs must record the active citation and device trusted-source review gate."
             )
         if "Protocol Reserved Private Overlay Namespace No-Device Gate" not in text:
             failures.append(
@@ -37178,9 +37186,18 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             failures.append(
                 f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future source-anchor messages."
             )
-        if "RuntimeDevServer authenticated relay smoke rejects `trusted_source.approve`" not in text:
+        if not all(
+            message_type in text
+            for message_type in (
+                "`citation.resolve`",
+                "`trusted_source.approve`",
+                "`trusted_source.dismiss`",
+                "`trusted_source.list`",
+                "`trusted_source.revoke`",
+            )
+        ):
             failures.append(
-                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future trusted-source messages."
+                f"{path.relative_to(ROOT)}: Docs must record the complete active RuntimeDevServer citation/trusted-source lifecycle."
             )
         if "RuntimeDevServer authenticated relay smoke rejects `p2p.session.open`, `rendezvous.records.publish`, `bootstrap.records.lookup`, `dht.records.put`, `nat.candidates.gather`, `stun.binding.request`, and `turn.relay.allocate`" not in text:
             failures.append(
@@ -39769,7 +39786,7 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
         "Android source-anchor canonical decode addendum",
         "Android retrieval/source-anchor coordinate decode addendum",
         "Android retrieval matched-terms required decode addendum",
-        "Android retrieval lexical metadata decode addendum",
+        "Android retrieval match-kind contract addendum",
         "Android document retrieval request bounds decode addendum",
         "Android chat.sessions.list request bounds decode addendum",
         "Android SourceAnchorResolveResultPayload now rejects missing source_anchor_id, document, chunk_summary, and nested chunk_summary chunk_index, start_character_offset, end_character_offset, and character_count required fields",
@@ -39777,7 +39794,7 @@ def android_protocol_document_retrieval_payload_guard_failures() -> list[str]:
         "Android ChatSessionsListRequestPayload rejects negative and over-maximum limit values, empty query text, and empty embedding_model_id values during decode",
         "RetrievalQueryRequestPayload rejects blank or overlong query text, negative or over-maximum limit values, and negative or over-maximum max_snippet_characters values",
         "Android RetrievalQueryResultItemPayload rejects negative chunk indexes, negative offsets, end-before-start offsets, and nonpositive ranks during decode",
-        "Android RetrievalQueryResultItemPayload rejects empty matched_terms arrays, over-maximum matched_terms arrays, empty matched term entries, overlong matched term entries, empty snippets, and overlong snippets during decode",
+        "missing match_kind remains legacy lexical, explicit lexical results require nonempty bounded matched_terms, explicit semantic results may carry zero honest lexical overlaps",
         "SourceAnchorChunkSummaryPayload rejects the same invalid resolver chunk summary coordinates",
         "Android SourceAnchorResolveRequestPayload now rejects missing source_anchor_id during DTO decode",
         "Android protocol DTO decode rejects noncanonical retrieval.query and source_anchor.resolve source_anchor_id values",
@@ -39990,7 +40007,9 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
         "runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
         "runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
-        "runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
+        "runtimeDocumentSearchSendsSelectedEmbeddingModelHint",
+        "runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses",
+        "runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors",
         "runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
         "runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
         "runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
@@ -40061,9 +40080,11 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         'assertFalse(chatSendPayload.contains("retrieval_context"))',
         'assertFalse(chatSendPayload.contains("source_path"))',
         'assertFalse(chatSendPayload.contains("trusted_source"))',
-        'assertNull(searchRequest.payload["embedding_model_id"])',
+        'assertTrue(searchRequest.payload.containsKey("embedding_model_id"))',
         'assertNull(searchRequest.payload["source_anchor_id"])',
-        "assertFalse(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))",
+        "assertTrue(json.encodeToString(searchRequest.payload).contains(selectedEmbeddingModel.id))",
+        "assertNull(lexicalPayload.embeddingModelId)",
+        'assertFalse(lexicalRequest.payload.containsKey("embedding_model_id"))',
     )
     for snippet in required_test_snippets:
         if snippet not in viewmodel_test_text:
@@ -40083,7 +40104,9 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
         "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
-        "RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
+        "RuntimeClientViewModelTest.runtimeDocumentSearchSendsSelectedEmbeddingModelHint",
+        "RuntimeClientViewModelTest.runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses",
+        "RuntimeClientViewModelTest.runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors",
         "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
         "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
         "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
@@ -40103,7 +40126,7 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "Android retrieval query outbound bounds addendum",
         "Android document response row transient-state cap addendum",
         "Android retrieval lexical metadata transient-state bounds addendum",
-        "Android retrieval lexical metadata decode addendum",
+        "Android retrieval match-kind contract addendum",
         "decodes catalog and lexical snippet responses into transient RuntimeUiState only",
         "clears transient index.documents.list documentCatalog rows and summary values on explicit disconnect and receive failure",
         "rejects schema-invalid index.documents.list summary values before transient state",
@@ -40128,11 +40151,13 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
         "memory.search",
         "route.candidates.exchange",
         "coerces retrieval.query transient rank values to positive integers",
-        "rejects malformed retrieval.query lexical responses before transient source_anchor_id state",
+        "unknown kinds and malformed terms fail closed",
         "rejects malformed retrieval.query coordinate responses before transient source_anchor_id state",
         "keeps chat.send payloads free of retrieval_context, source paths, workspace/project IDs, citations, and trusted-source fields",
-        "Android retrieval.query selected embedding-model isolation addendum",
-        "keeps selected embedding_model_id out of retrieval.query payloads",
+        "Android semantic document request compatibility addendum",
+        "retries exactly one strict older-runtime unsupported-field rejection with the same query and bounds but no hint",
+        "approved runtime semantic document retrieval addendum",
+        "SQLite records content-free semantic_accessed after pre-inference approval revalidation",
     )
     for snippet in required_no_device_snippets:
         if snippet not in no_device_text:
@@ -40180,7 +40205,9 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
             "RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState",
             "RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext",
-            "RuntimeClientViewModelTest.runtimeDocumentSearchDoesNotSendSelectedEmbeddingModelHint",
+            "RuntimeClientViewModelTest.runtimeDocumentSearchSendsSelectedEmbeddingModelHint",
+            "RuntimeClientViewModelTest.runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses",
+            "RuntimeClientViewModelTest.runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors",
             "RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest",
             "RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses",
             "RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses",
@@ -40227,10 +40254,10 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
             f"{roadmap_path.relative_to(ROOT)}: Roadmap must record Android retrieval.query selected "
             "embedding-model isolation."
         )
-    if "does not send or use selected embedding models in `retrieval.query` request payloads" not in protocol_text:
+    if "Android sends the selected runtime-host embedding model only with a valid bounded document query" not in protocol_text:
         failures.append(
-            f"{protocol_path.relative_to(ROOT)}: Protocol docs must keep retrieval.query request payloads scoped "
-            "away from selected embedding models."
+            f"{protocol_path.relative_to(ROOT)}: Protocol docs must describe bounded Android semantic "
+            "retrieval.query model selection."
         )
 
     return failures
@@ -40283,7 +40310,14 @@ def android_document_retrieval_compose_ui_guard_failures() -> list[str]:
         "onSearchDocuments",
         "DocumentIndexSummary(catalog)",
         "DocumentCatalogRow(document)",
-        "DocumentSearchResultRow(result)",
+        "DocumentSearchResultRow(",
+        "SourceReviewDialog(",
+        "TrustedSourcesSection(",
+        "onResolveCitation",
+        "onApproveTrustedSource",
+        "onDismissTrustedSource",
+        "onRefreshTrustedSources",
+        "onRevokeTrustedSource",
         "documentIndexActionsEnabled(state)",
         "document_index_read_only_notice",
         "DOCUMENT_INDEX_SEARCH_TEST_TAG",
@@ -40300,6 +40334,11 @@ def android_document_retrieval_compose_ui_guard_failures() -> list[str]:
     required_main_snippets = (
         "onRefreshDocuments = viewModel::refreshRuntimeDocumentCatalog",
         "onSearchDocuments = viewModel::searchRuntimeDocuments",
+        "onResolveCitation = viewModel::resolveCitation",
+        "onApproveTrustedSource = viewModel::approveTrustedSource",
+        "onDismissTrustedSource = viewModel::dismissTrustedSource",
+        "onRefreshTrustedSources = viewModel::refreshTrustedSources",
+        "onRevokeTrustedSource = viewModel::revokeTrustedSource",
     )
     for snippet in required_main_snippets:
         if snippet not in main_activity_text:
@@ -40312,6 +40351,10 @@ def android_document_retrieval_compose_ui_guard_failures() -> list[str]:
         "settingsDocumentPanelShowsCatalogSummaryAndRows",
         "settingsDocumentSearchCallsRuntimeQueryAndShowsResults",
         "settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi",
+        "settingsDocumentSearchSourceReviewActionUsesNamedTalkBackLabelAndHidesOpaqueCanaries",
+        "settingsSourceReviewDialogShowsLoadingAndSafeUntrustedMetadataWithDisabledBusyControls",
+        "settingsTrustedSourceReviewAndListSupportRefreshAndRevokeWithoutOpaqueExposure",
+        "settingsTrustedSourcesDistinguishNotLoadedFromLoadedEmpty",
         "settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages",
         "settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsDocumentIndexRowsNarrowRootTestTag",
@@ -40525,9 +40568,16 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
     paths = {
         "store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift",
         "sqlite": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift",
+        "semantic_cache": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentSemanticEmbeddingCache.swift",
+        "governance": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentSourceGovernance.swift",
+        "citation": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentCitationGovernance.swift",
+        "source_manager": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentSourceManager.swift",
         "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
         "store_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentIndexStoreTests.swift",
         "sqlite_tests": ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentIndexStoreTests.swift",
+        "semantic_cache_tests": ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeDocumentSemanticEmbeddingCacheTests.swift",
+        "source_manager_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentSourceManagerTests.swift",
+        "citation_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentCitationGovernanceTests.swift",
         "router_tests": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
         "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
         "android_protocol": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
@@ -40535,6 +40585,8 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         "android_state": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt",
         "android_viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
         "android_viewmodel_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "android_ui": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
+        "android_ui_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
         "android_relay_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelRelayIntegrationTest.kt",
         "runtime_smoke": ROOT / "script/runtime_authenticated_mock_smoke.swift",
         "no_device": ROOT / "script/check_no_device_quality.sh",
@@ -40555,6 +40607,59 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
     }
     required_snippets = (
         ("store", "public var sourceAnchorID: String", "Runtime search results must carry a source anchor."),
+        ("store", "public enum RuntimeDocumentSearchMatchKind", "Runtime search results must define lexical and semantic match origins."),
+        ("store", "public var matchKind: RuntimeDocumentSearchMatchKind? = nil", "Legacy lexical runtime responses must be able to omit match_kind."),
+        ("router", 'payload["match_kind"] = .string(matchKind.rawValue)', "Runtime router must serialize match_kind only when a result explicitly carries it."),
+        ("schema", '"enum": ["lexical", "semantic"]', "Shared schema must close retrieval match_kind to lexical and semantic."),
+        ("schema_checker", "must allow empty matched_terms only for explicit semantic matches", "Protocol schema checker must pin conditional matched_terms semantics."),
+        ("android_protocol", "enum class RetrievalMatchKind", "Android protocol must decode typed retrieval match kinds."),
+        ("android_protocol", "matchKind == RetrievalMatchKind.Semantic || matchedTerms.isNotEmpty()", "Android protocol must require terms for legacy and lexical results only."),
+        ("android_protocol_tests", "retrievalQueryMatchKindDefaultsLexicalAndControlsMatchedTermsBounds", "Android protocol tests must cover legacy, lexical, semantic, and unknown match kinds."),
+        ("android_viewmodel", '"match_kind"', "Android closed retrieval payload validation must admit the reviewed match_kind field."),
+        ("android_viewmodel_tests", "runtimeDocumentSearchAcceptsSemanticMatchKindAndPreservesEmptyTerms", "Android transient state must preserve semantic match origin without invented terms."),
+        ("android_ui", "document_index_search_semantic_metadata", "Android UI must label semantic ranking without presenting a fake lexical term."),
+        ("android_ui_tests", "settingsSemanticDocumentSearchUsesLocalizedMetadataAcrossSupportedLanguages", "Android no-device UI tests must cover the semantic label in every supported language."),
+        ("semantic_cache", "runtime_document_semantic_embeddings", "Document candidate vectors must use the document index SQLite database."),
+        ("semantic_cache", "sourceRevision", "Document candidate cache keys must include the approved source revision."),
+        ("semantic_cache", "documentFingerprint", "Document candidate cache keys must include the exact bounded semantic document fingerprint."),
+        ("semantic_cache", "byteLimitPerModel", "Document vector cache must enforce a per-model byte ceiling."),
+        ("semantic_cache", "totalByteLimit", "Document vector cache must enforce a runtime-wide byte ceiling."),
+        ("semantic_cache", "RuntimeDocumentSemanticEmbeddingCacheError.staleSource", "Stale in-flight document embeddings must fail before cache commit."),
+        ("semantic_cache_tests", "testApprovedCandidatesAreSelectedFairlyAcrossDocuments", "Document semantic cache tests must prove deterministic fairness across approved documents."),
+        ("semantic_cache_tests", "testRankedResultsRemainOrderedForHugeFiniteVectors", "Document semantic ranking tests must cover huge finite vectors without overflow."),
+        ("semantic_cache", "AND EXISTS (", "Document semantic candidate discovery must filter unusable approved documents before applying its document limit."),
+        ("semantic_cache", "maximumCandidateRowScanMultiplier = 4", "Document semantic candidate discovery must bound candidate-row materialization."),
+        ("semantic_cache", "runtimeDocumentProgressCancellationHandler", "Document semantic candidate SQL must remain interruptible when its connection task is cancelled."),
+        ("semantic_cache_tests", "testCandidateDiscoveryReadsAtMostFourTimesTheFinalCandidateLimit", "Document semantic cache tests must pin the candidate-row work ceiling."),
+        ("semantic_cache_tests", "testCandidateDiscoveryStopsWhenCancellationIsObserved", "Document semantic cache tests must prove cancellation interrupts candidate discovery."),
+        ("semantic_cache_tests", "testSQLiteProgressHandlerInterruptsInsideCandidateStatement", "Document semantic cache tests must exercise cancellation from inside SQLite progress handling."),
+        ("semantic_cache_tests", "onCandidateSQLWillExecute", "Document semantic cache tests must prove progress cancellation occurs after candidate SQL begins."),
+        ("source_manager", "hostManagedApprovedDocuments", "Host source management must list beyond the remote catalog page ceiling."),
+        ("source_manager_tests", "testHostManagementListsAndRevokesApprovedSourcesBeyondRemoteCatalogPage", "Host source manager tests must prove later approved sources remain revocable."),
+        ("governance", "runtimeDocumentApprovedSourceLimitCeiling = 800", "Runtime document governance must cap the approved shared-source corpus."),
+        ("semantic_cache_tests", "testApprovedSourceCeilingBlocksNewApprovalsAndOversizedLegacyCorpus", "Document semantic cache tests must prove the approval ceiling and oversized legacy fail-closed path."),
+        ("governance", 'case semanticAccessed = "semantic_accessed"', "Document governance must distinguish semantic content access from completed query results."),
+        ("sqlite", "func beginApprovedSemanticAccess(", "SQLite semantic retrieval must revalidate and audit approved content access before inference."),
+        ("router", "if !hasStrongModelFingerprint", "Weak semantic model identities must use a separate nonpersistent inference policy."),
+        ("router", "let texts = [query] + candidates.map(\\.semanticDocument)", "Weak semantic document ranking must embed query and candidates atomically in one request."),
+        ("router_tests", "testSemanticRetrievalLMStudioWithoutStrongFingerprintUsesOneAtomicEmbeddingRequest", "Router tests must prove LM Studio weak-identity inference is atomic and uncached."),
+        ("router_tests", "testSemanticRetrievalCancellationAfterDocumentAccessKeepsContentFreeAudit", "Router tests must preserve content-free access audit across cancellation."),
+        ("router_tests", "testSemanticRetrievalCancellationDuringFinalAuditRollsBackQueriedEvent", "Router tests must roll back final queried audit when cancellation is observed before commit."),
+        ("router_tests", "testSemanticRetrievalBackendFailureDoesNotFallBackToLexicalResults", "Router tests must preserve access audit without lexical fallback after backend failure."),
+        ("sqlite", "DELETE FROM runtime_document_semantic_embeddings WHERE document_id = ?", "Document replacement and deletion must invalidate vectors in the same transaction."),
+        ("semantic_cache_tests", "testReplacementAndDeletionAtomicallyInvalidateDerivedRows", "Cache tests must cover transactional replacement and deletion invalidation."),
+        ("semantic_cache_tests", "testStaleRevisionCannotRepopulateAfterReplacement", "Cache tests must prevent stale inference from repopulating replaced sources."),
+        ("semantic_cache_tests", "testRowAndVectorByteLimitsEvictOldestCandidates", "Cache tests must cover row and vector-byte ceilings."),
+        ("no_device", "SQLiteRuntimeDocumentSemanticEmbeddingCacheTests", "Default no-device gate must run the document semantic cache foundation suite."),
+        ("no_device", "Covered Android retrieval match-kind contract addendum", "Default no-device gate must summarize match-kind compatibility coverage."),
+        ("no_device", "Covered approved runtime semantic document retrieval addendum", "Default no-device gate must summarize revision-keyed cache and semantic retrieval coverage."),
+        ("no_device", "atomically embed one query plus at most 63 candidates", "Default no-device gate must pin weak-model atomic inference bounds."),
+        ("android_viewmodel", "DOCUMENT_SEARCH_REQUEST_ID_PREFIX", "Android document search request IDs must remain classifiable after bounded pending history is cleared."),
+        ("android_viewmodel_tests", "runtimeDocumentSearchIgnoresVeryLateErrorsAfterManyCompletedSearches", "Android tests must ignore very late document-search errors after many completed searches."),
+        ("no_device", "RuntimeClientViewModelTest.runtimeDocumentSearchIgnoresVeryLateErrorsAfterManyCompletedSearches", "Default no-device gate must run very-late document-search error isolation."),
+        ("runtime_smoke", "retrievalRank >= 1", "RuntimeDevServer smoke must require positive lexical retrieval ranks."),
+        ("runtime_smoke", 'firstRetrievalResult["match_kind"] == nil', "RuntimeDevServer smoke must preserve legacy lexical match_kind omission."),
+        ("runtime_smoke", "semantic retrieval.query cache hit did not preserve the bounded semantic response", "RuntimeDevServer smoke must validate the semantic cache-hit response, not only backend audit activity."),
         ("store", "public struct RuntimeDocumentSourceAnchor", "Runtime document indexing must keep a redacted source-anchor resolver envelope."),
         ("store", "public func sourceAnchor(id sourceAnchorID: String) -> RuntimeDocumentSourceAnchor?", "In-memory store must resolve source anchors without protocol exposure."),
         ("store", "func runtimeDocumentIndexCanonicalSourceAnchorID", "Runtime source-anchor lookup must canonicalize opaque anchor IDs."),
@@ -40567,7 +40672,48 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("sqlite_tests", "PRIVATE_SQLITE_ANCHOR_SENTINEL", "SQLite resolver tests must prove body sentinels stay out of resolved metadata."),
         ("sqlite_tests", "sourceAnchor(id: searchResult.sourceAnchorID)", "SQLite resolver tests must call the source-anchor resolver."),
         ("sqlite_tests", "XCTAssertFalse(description.contains(\"retrieval_context\"))", "SQLite resolver tests must reject future retrieval metadata leakage."),
-        ("router_tests", "testChatSendRejectsSourceAnchorIDBeforeTrustedSourceSemanticsExist", "Router tests must reject source_anchor_id in chat.send before trusted-source semantics exist."),
+        ("router_tests", "testChatSendRejectsRawSourceAnchorInsteadOfTrustedSourceGrantIDs", "Router tests must reject raw source_anchor_id in chat.send and require canonical trusted-source grant ids."),
+        ("governance", 'case trustedSourceContextConsumed = "trusted_source_context_consumed"', "Document governance must audit trusted-source chat-context consumption."),
+        ("store", "public func consumeTrustedSourceChatContexts(", "In-memory document governance must atomically validate and materialize selected chat contexts."),
+        ("sqlite", "public func consumeTrustedSourceChatContexts(", "SQLite document governance must expose one transaction-scoped chat-context consumption operation."),
+        ("sqlite", "onBeforeTrustedSourceContextAuditCommit", "SQLite chat-context consumption must expose a race-test commit boundary."),
+        ("citation_tests", "testInMemoryChatContextConsumptionIsAllOrNothingAndRevocationBlocksReuse", "Citation governance tests must prove all-or-nothing consumption and revoke blocking."),
+        ("citation_tests", "testSQLiteChatContextConsumptionLinearizesBeforeConcurrentRevocation", "Citation governance tests must prove consumption and revoke serialize."),
+        ("router", '"trusted_source_grant_ids"', "Runtime chat parser must admit only the reviewed top-level grant-id field."),
+        ("router", "chatRequestWithTrustedSourceContexts", "Runtime chat must inject validated source text only into backend request context."),
+        ("router_tests", "testChatSendReplacesLegacyClientCapabilityGuardWithCurrentRuntimeGuard", "Router tests must replace legacy or spoofed capability guards with the current trusted-source instruction boundary."),
+        ("citation", "SecRandomCopyBytes", "Trusted-source confirmation tokens must use operating-system cryptographic random bytes."),
+        ("router_tests", "testChatSendConsumesCurrentDeviceGrantAsBackendOnlyTrustedSourceContext", "Router tests must prove source text is backend-only and authorization handles stay model-hidden."),
+        ("router_tests", "testChatSendTrustedSourceContextFailsClosedWhenAuditPersistenceFails", "Router tests must fail closed before backend dispatch when trusted-source consumption audit persistence fails."),
+        ("router_tests", "testChatSendTrustedSourceContextRespectsModelWindowWithoutPersistingContext", "Router tests must apply model-window limits after source injection without persisting source context."),
+        ("router_tests", "testChatSendRejectsMalformedOrWrongDeviceTrustedSourceGrantsBeforeBackend", "Router tests must reject malformed, excessive, duplicate, and unavailable grants before backend dispatch."),
+        ("schema", '"trusted_source_grant_ids"', "Shared chat.send schema must include the optional bounded grant-id array."),
+        ("schema_checker", "trusted_source_grant_ids must be an optional unique array of 1 through 8 canonical grant ids", "Protocol schema checker must pin trusted-source grant bounds and uniqueness."),
+        ("android_protocol", '@SerialName("trusted_source_grant_ids") val trustedSourceGrantIds', "Android chat.send DTO must encode the reviewed grant-id authorization field."),
+        ("android_protocol_tests", "chatSendPayloadCarriesUniqueCanonicalTrustedSourceGrantIds", "Android protocol tests must cover canonical grant-id serialization."),
+        ("android_viewmodel", "trustedSourceGrantIdsForSelection", "Android ViewModel must fail closed when transient selection and private grant lookup diverge."),
+        ("android_viewmodel_tests", "trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection", "Android tests must prove trusted-source selection is transient and one-shot."),
+        ("android_viewmodel_tests", "trustedSourceChatFailureInvalidatesStaleGrantListWithoutPersistingOpaqueIds", "Android tests must invalidate stale grants after a chat authorization failure."),
+        ("android_viewmodel_tests", "trustedSourceChatSendDoesNotCrossAReplacedTransportChannel", "Android tests must prevent a prepared grant-bearing chat request from crossing onto a replacement transport."),
+        ("android_viewmodel_tests", "trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling", "Android tests must prioritize authentication loss over operation-specific trusted-source errors."),
+        ("android_viewmodel_tests", "trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities", "Android tests must remove terminal review and revoke capabilities."),
+        ("android_viewmodel_tests", "malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry", "Android tests must clear malformed trusted-source operation state and allow retry."),
+        ("no_device", "RuntimeTransportClientTest.queuedSendDoesNotCrossReconnectOnSameClientObject", "Default no-device gate must prove a queued direct send cannot cross a same-client reconnect."),
+        ("android_ui", "CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG", "Android chat composer must expose a source picker control."),
+        ("android_ui_tests", "chatTrustedSourcePickerUsesCheckboxesCapsSelectionAndRemovesSafeDocumentChips", "Android Compose tests must cover bounded source selection without opaque UI leakage."),
+        ("android_ui_tests", "chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback", "Android Compose tests must render actionable trusted-source errors instead of the unknown fallback."),
+        ("runtime_smoke", 'requestID: "smoke-trusted-source-chat-context"', "RuntimeDevServer smoke must consume an approved grant through chat.send."),
+        ("runtime_smoke", "trusted-source backend-only context entered stored chat history", "RuntimeDevServer smoke must fail if source context enters stored transcript history."),
+        ("no_device", "trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection", "Default no-device gate must run Android one-shot source-selection coverage."),
+        ("no_device", "trustedSourceChatSendDoesNotCrossAReplacedTransportChannel", "Default no-device gate must run grant-bearing transport replacement coverage."),
+        ("no_device", "trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling", "Default no-device gate must run trusted-source authentication-loss cleanup coverage."),
+        ("no_device", "trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities", "Default no-device gate must run terminal trusted-source capability cleanup coverage."),
+        ("no_device", "malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry", "Default no-device gate must run malformed trusted-source error recovery coverage."),
+        ("no_device", "chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback", "Default no-device gate must run trusted-source error-copy coverage."),
+        ("no_device", "testChatSendConsumesCurrentDeviceGrantAsBackendOnlyTrustedSourceContext", "Default no-device gate must run backend-only source-context router coverage."),
+        ("no_device", "testChatSendTrustedSourceContextFailsClosedWhenAuditPersistenceFails", "Default no-device gate must run trusted-source audit failure coverage."),
+        ("no_device", "testChatSendTrustedSourceContextRespectsModelWindowWithoutPersistingContext", "Default no-device gate must run trusted-source model-window coverage."),
+        ("no_device", "commits content-free consumed audit before bounded text release", "Default no-device summary must state the trusted-source authorization linearization boundary."),
         ("router_tests", '"source_anchor_id": .string("source_anchor_0000000000000000")', "Router tests must exercise source_anchor_id as an unsupported chat.send field."),
         ("router_tests", "errorMessage.contains(\"source_anchor_id\")", "Router tests must assert source_anchor_id is named in the invalid payload error."),
         ("router_tests", "testSourceAnchorResolveRejectsMissingBlankOrNonStringAnchorBeforeStoreDispatch", "Router tests must reject missing, blank, and non-string source_anchor.resolve handles before store dispatch."),
@@ -40719,8 +40865,9 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("schema_checker", "canonical_retrieval_query_request_payload_sample", "Protocol schema checker must accept a complete canonical retrieval.query request payload sample."),
         ("schema_checker", "rejected_retrieval_query_request_payload_samples", "Protocol schema checker must reject invalid retrieval.query request payload samples."),
         ("schema_checker", "source-anchor-id", "Protocol schema checker must reject request payload source_anchor_id samples."),
-        ("schema_checker", "allowed_request_properties = {\"query\", \"limit\", \"max_snippet_characters\"}", "Protocol schema checker must pin retrieval.query request property names."),
-        ("schema_checker", "request properties must stay limited to query, limit, and max_snippet_characters", "Protocol schema checker must reject new retrieval.query request metadata fields."),
+        ("schema_checker", '"embedding_model_id",', "Protocol schema checker must pin retrieval.query embedding_model_id as an allowed request property."),
+        ("schema_checker", "request properties must stay limited to query, limit, max_snippet_characters, and embedding_model_id", "Protocol schema checker must reject unreviewed retrieval.query request metadata fields."),
+        ("schema_checker", "blank-embedding-model-id", "Protocol schema checker must reject blank retrieval.query embedding model hints."),
         ("schema_checker", "string-limit", "Protocol schema checker must reject string retrieval.query request limit samples."),
         ("schema_checker", "float-limit", "Protocol schema checker must reject fractional retrieval.query request limit samples."),
         ("schema_checker", "bool-limit", "Protocol schema checker must reject boolean retrieval.query request limit samples."),
@@ -40737,7 +40884,7 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("schema_checker", "oversized-query", "Protocol schema checker must reject oversized retrieval.query request text samples."),
         ("schema_checker", "query above maximum length", "Protocol schema checker must report oversized retrieval.query request text samples."),
         ("schema_checker", "allowed_result_properties", "Protocol schema checker must pin retrieval.query result property names."),
-        ("schema_checker", "retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, and snippet", "Protocol schema checker must reject new retrieval.query result metadata fields."),
+        ("schema_checker", "retrievalQueryResult properties must stay limited to document, source_anchor_id, chunk_index, start_character_offset, end_character_offset, rank, matched_terms, match_kind, and snippet", "Protocol schema checker must reject new retrieval.query result metadata fields."),
         ("schema_checker", '"$defs.retrievalQueryResult.properties.document must use #/$defs/indexDocument"', "Protocol schema checker must require retrieval.query result documents to reuse indexDocument."),
         ("schema_checker", "document_schema=index_document", "Protocol schema checker must pass indexDocument into retrieval.query response sample validation."),
         ("schema_checker", '"$defs.retrievalQueryResult.properties.matched_terms must cap matched terms at 16 items of 64 characters"', "Protocol schema checker must bound retrieval.query matched_terms schema."),
@@ -40918,15 +41065,15 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("protocol_docs", "`content_fingerprint` as a 16-character lowercase hex value", "Protocol docs must document index.documents.list content_fingerprint shape."),
         ("protocol_docs", "Document `quality` is derived from `chunk_count`", "Protocol docs must document document quality/chunk-count consistency."),
         ("protocol_docs", "summary `quality_counts` object always contains `no_usable_text`, `single_chunk`, and `chunked` integer counts", "Protocol docs must document complete catalog quality_counts."),
-        ("protocol_docs", "`retrieval.query` is the active deterministic lexical document retrieval message", "Protocol docs must describe active retrieval.query semantics."),
+        ("protocol_docs", "`retrieval.query` is the active read-only document retrieval message with a deterministic lexical default and explicit approved semantic opt-in", "Protocol docs must describe active lexical and semantic retrieval.query semantics."),
         ("protocol_docs", "request payload requires nonblank `query` text capped at 1024 characters", "Protocol docs must document retrieval.query request text bounds."),
         ("protocol_docs", "response `results` array is capped at 100 rows", "Protocol docs must document the retrieval.query response row cap."),
         ("protocol_docs", "Character offsets are zero-based half-open ranges", "Protocol docs must document retrieval.query character-offset semantics."),
         ("protocol_docs", "positive integer `rank`", "Protocol docs must document positive retrieval.query rank values."),
-        ("protocol_docs", "clients must treat positive `rank` as implementation metadata", "Protocol docs must avoid presenting rank as semantic relevance."),
+        ("protocol_docs", "Clients must treat positive `rank` as implementation metadata", "Protocol docs must avoid presenting rank as semantic relevance."),
         ("protocol_docs", "non-empty `matched_terms` capped at 16 terms of 64 characters each", "Protocol docs must document retrieval.query matched_terms bounds."),
         ("protocol_docs", "non-empty response `snippet` capped at 500 characters", "Protocol docs must document retrieval.query snippet bounds."),
-        ("protocol_docs", "`source_anchor_id` computed from safe document/chunk metadata", "Protocol docs must describe source_anchor_id as safe metadata."),
+        ("protocol_docs", "`source_anchor_id` is response-only metadata for `retrieval.query` requests", "Protocol docs must describe source_anchor_id as safe response-only metadata."),
         ("roadmap", "Latest macOS document retrieval source anchor exact-shape no-device gate", "Roadmap must name the macOS source-anchor exact-shape gate."),
         ("roadmap", "Latest Android retrieval source-anchor required decode no-device gate", "Roadmap must name the Android source-anchor required decode gate."),
         ("roadmap", "Latest protocol document quality/chunk-count consistency no-device gate", "Roadmap must name the document quality/chunk-count consistency gate."),
@@ -41058,6 +41205,118 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
                 failures.append(
                     f"{paths[name].relative_to(ROOT)}: Source-anchor docs must keep proof-boundary wording; "
                     f"missing {forbidden_absence!r}."
+                )
+
+    return failures
+
+
+def runtime_document_source_governance_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "governance": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentSourceGovernance.swift",
+        "manager": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentSourceManager.swift",
+        "model": ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
+        "store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeDocumentIndexStore.swift",
+        "sqlite": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeDocumentIndexStore.swift",
+        "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "governance_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentSourceGovernanceTests.swift",
+        "manager_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentSourceManagerTests.swift",
+        "host_ui": ROOT / "apps/macos/LocalAgentBridgeApp/Sources/RuntimeDocumentSourcesView.swift",
+        "router_tests": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa_evidence": ROOT / "docs/qa-evidence.md",
+        "protocol_docs": ROOT / "docs/protocol.md",
+        "security_docs": ROOT / "docs/security.md",
+    }
+    for path in paths.values():
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for runtime document source governance.")
+            return failures
+
+    texts = {
+        name: path.read_text(encoding="utf-8", errors="replace")
+        for name, path in paths.items()
+    }
+    required_snippets = (
+        ("governance", 'case runtimeShared = "runtime_shared"', "Approval scope must stay explicit and runtime-wide."),
+        ("manager", "runtimeDocumentSourceReviewLifetime", "Host reviews must retain a bounded lifetime."),
+        ("manager", "confirmationToken", "Host approvals must require one-time review confirmation."),
+        ("manager", "expectedActiveRevision", "Host replacement must compare the reviewed active revision."),
+        ("manager", "startAccessingSecurityScopedResource", "Host import must hold security-scoped access while snapshotting."),
+        ("manager", "NSFileCoordinator", "Host import must coordinate the source snapshot."),
+        ("manager", "copyBoundedFile", "Host import must copy into a bounded private snapshot."),
+        ("model", "documentIndexStore: runtimeDocumentIndexStore", "The runtime router must share the host manager SQLite store."),
+        ("host_ui", "confirmedRuntimeSharedScope", "The host UI must require explicit runtime-wide sharing confirmation."),
+        ("host_ui", "makeRuntimeDocumentAuditExport", "The host UI contract must expose bounded audit export."),
+        ("governance", "runtimeDocumentSourceRevision", "Approvals must bind a strong source revision."),
+        ("governance", "SHA256()", "Source revisions must use a cryptographic digest."),
+        ("store", "approvalsByDocumentID", "The in-memory store must keep approval state separate from documents."),
+        ("store", "guard approvalsByDocumentID[documentID] != nil", "Direct document reads must hide unapproved rows."),
+        ("store", "revokeAndDeleteDocumentUnlocked", "In-memory revoke and delete must share one lifecycle operation."),
+        ("sqlite", "runtime_document_source_approvals", "SQLite must persist source approvals separately."),
+        ("sqlite", "runtime_document_source_audit_events", "SQLite must persist append-only source audit events."),
+        ("sqlite", "JOIN runtime_document_source_approvals", "SQLite reads must join the approval ledger."),
+        ("sqlite", "BEGIN IMMEDIATE", "SQLite approval and revoke mutations must remain transactional."),
+        ("sqlite", "RuntimeEventLogFileProtection.secureFile", "The governance database must retain owner-only file protection."),
+        ("governance", "func readApprovedCatalog", "Governed catalog reads and audit must share one store operation."),
+        ("governance", "func queryApprovedDocuments", "Governed retrieval and audit must share one store operation."),
+        ("governance", "func resolveApprovedSourceAnchor", "Governed anchor resolution and audit must share one store operation."),
+        ("router", "documentSourceGovernance().readApprovedCatalog", "Remote catalog reads must use the atomic governed read."),
+        ("router", "documentSourceGovernance().queryApprovedDocuments", "Remote retrieval must use the atomic governed read."),
+        ("router", "documentSourceGovernance().resolveApprovedSourceAnchor", "Remote anchor resolution must use the atomic governed read."),
+        ("router", "Approved document access failed.", "Routers without governance must fail closed with generic detail."),
+        ("governance_tests", "testSQLiteLegacyRowsRemainUnapprovedUntilExplicitHostReplacement", "Legacy rows must remain unreadable until host replacement."),
+        ("governance_tests", "testInMemoryApprovalRevisionAuditAndRevocationStayContentFree", "Approval revision and content-free audit behavior need a regression."),
+        ("governance_tests", "testSQLiteApprovedQueryAndAuditLinearizeBeforeConcurrentRevocation", "Concurrent revoke must not cross the approved read-and-audit transaction."),
+        ("governance_tests", "testAcceptedZeroResultApprovedQueriesStillWriteAudit", "Accepted zero-result queries must not bypass audit."),
+        ("manager_tests", "testPrepareDoesNotApproveUntilMatchingDisclosureConfirmation", "Prepare must remain unapproved until explicit confirmation."),
+        ("manager_tests", "testReplacementKeepsApprovedRevisionUntilExplicitApprovalThenRotatesSameSource", "Replacement must preserve the active revision during review."),
+        ("manager_tests", "testStaleReplacementCannotOverwriteNewerApprovedRevision", "Stale host reviews must fail compare-and-swap."),
+        ("manager_tests", "testPreparingNewReviewInvalidatesPriorCandidate", "A newer host review must invalidate prior candidate content."),
+        ("manager_tests", "testStaleRemovalCannotDeleteNewerApprovedRevision", "Stale removal must fail atomic compare-and-swap."),
+        ("manager_tests", "testSnapshotOpenRejectsFileSwappedToSymlinkAfterValidation", "Snapshot opening must reject post-validation symlink swaps."),
+        ("manager_tests", "testAuditExportUsesExactLatestThousandNewestFirst", "Audit export must prove its exact newest-first bound."),
+        ("manager_tests", "testAuditExportIsBoundedContentFreeAndPathFree", "Host audit export must stay content and path free."),
+        ("manager_tests", "testCompanionAppModelPublishesOnlyReviewedSourcesFromInjectedRuntimeStore", "The model and runtime must share one reviewed source store."),
+        ("host_ui", "localizedRuntimeDocumentSourceIssue", "Host management failures must use app localization."),
+        ("sqlite", "withImmediateTransaction", "Approved SQLite reads and audit must linearize in one write transaction."),
+        ("router_tests", "testApprovedRuntimeSharedDocumentsAuditTrustedReadersAndRevokeAcrossDevices", "Two trusted runtime-shared readers need a regression."),
+        ("router_tests", "testDocumentReadsFailClosedWhenSourceAuditWriteFails", "Audit-write failures must close every remote document read."),
+        ("router_tests", "testDocumentRoutesWithoutGovernanceReturnSameGenericRedactedFailure", "All document routes must redact unavailable governance detail."),
+        ("no_device", "RuntimeDocumentSourceGovernanceTests", "The default no-device gate must run governance tests."),
+        ("no_device", "RuntimeDocumentSourceManagerTests", "The default no-device gate must run host source manager tests."),
+        ("no_device", "macOS host document source review and audit export addendum", "The no-device summary must state the host review boundary."),
+        ("no_device", "runtime-shared document source governance foundation", "The no-device summary must state the governance boundary."),
+        ("roadmap", "Runtime-Shared Document Source Governance Foundation", "Roadmap must record the governance foundation."),
+        ("progress", "Runtime-Shared Document Source Governance Foundation", "Progress must record the governance foundation."),
+        ("qa_evidence", "Runtime-Shared Document Source Governance Foundation", "QA evidence must record the governance foundation."),
+        ("protocol_docs", "Runtime-Shared Document Source Governance Boundary", "Protocol docs must record the unchanged-wire governance boundary."),
+        ("security_docs", "Runtime-Shared Document Source Governance", "Security docs must record runtime-wide sharing and fail-closed audit."),
+        ("roadmap", "macOS Host Document Source Review And Audit Export", "Roadmap must record the host review workflow."),
+        ("progress", "macOS Host Document Source Review And Audit Export", "Progress must record the host review workflow."),
+        ("qa_evidence", "macOS Host Document Source Review And Audit Export", "QA evidence must record the host review workflow."),
+        ("protocol_docs", "Host Document Source Review Boundary", "Protocol docs must record unchanged wire behavior."),
+        ("security_docs", "macOS Host Document Source Review", "Security docs must record snapshot and review controls."),
+    )
+    for name, snippet, guidance in required_snippets:
+        if snippet not in texts[name]:
+            failures.append(f"{paths[name].relative_to(ROOT)}: {guidance} Missing {snippet!r}.")
+
+    for forbidden_field in ("var query:", "var snippet:", "var text:", "var body:"):
+        if forbidden_field in texts["governance"]:
+            failures.append(
+                f"{paths['governance'].relative_to(ROOT)}: Audit envelopes must not persist content field "
+                f"{forbidden_field!r}."
+            )
+
+    for name in ("roadmap", "progress", "qa_evidence", "protocol_docs", "security_docs"):
+        for boundary in ("runtime_shared", "semantic", "phone is disconnected"):
+            if boundary not in texts[name]:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)}: Governance docs must preserve scope and proof boundaries; "
+                    f"missing {boundary!r}."
                 )
 
     return failures
@@ -43109,7 +43368,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
     if len(manifest_lines) != 13:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
-    expected_manifest_hash = "3e778069ab57755e350b287355993d9bd27fe836f450d477354c8d34201a117c"
+    expected_manifest_hash = "2b2a44f2ac7a2f081a5fbc7856a5b3d7dbe1585cec59c871282c98c9d4e33cbd"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -44377,6 +44636,13 @@ def main() -> int:
     if document_retrieval_source_anchor_failures:
         print("Document retrieval source anchor guard failed:", file=sys.stderr)
         for failure in document_retrieval_source_anchor_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_document_source_governance_failures = runtime_document_source_governance_guard_failures()
+    if runtime_document_source_governance_failures:
+        print("Runtime document source governance guard failed:", file=sys.stderr)
+        for failure in runtime_document_source_governance_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

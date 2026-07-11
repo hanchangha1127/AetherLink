@@ -38,6 +38,11 @@ public struct RuntimeDocumentSourceAnchor: Equatable, Sendable {
     public var chunkSummary: RuntimeDocumentIndexChunkSummary
 }
 
+public enum RuntimeDocumentSearchMatchKind: String, Codable, Equatable, Sendable {
+    case lexical
+    case semantic
+}
+
 public struct RuntimeDocumentSearchResult: Equatable, Sendable {
     public var document: RuntimeDocumentIndexDocument
     public var chunk: RuntimeDocumentIndexChunk
@@ -45,6 +50,7 @@ public struct RuntimeDocumentSearchResult: Equatable, Sendable {
     public var rank: Int
     public var matchedTerms: [String]
     public var snippet: String
+    public var matchKind: RuntimeDocumentSearchMatchKind? = nil
 }
 
 public struct RuntimeDocumentIndexSummary: Equatable, Sendable {
@@ -98,9 +104,17 @@ let runtimeDocumentSourceAnchorPrefix = "source_anchor_"
 public final class RuntimeDocumentIndexStore {
     private var documentsByID: [String: RuntimeDocumentIndexDocument] = [:]
     private var chunksByDocumentID: [String: [RuntimeDocumentIndexChunk]] = [:]
+    private var approvalsByDocumentID: [String: RuntimeDocumentSourceApproval] = [:]
+    private var sourceAuditLog: [RuntimeDocumentSourceAuditEvent] = []
+    private var citationsByID: [String: RuntimeStoredDocumentCitation] = [:]
+    private var trustedSourceReviewsByID: [String: RuntimeStoredTrustedSourceReview] = [:]
+    private var trustedSourceGrantsByID: [String: RuntimeStoredTrustedSourceGrant] = [:]
+    private let sourceAuditEventLimit: Int
     private let lock = NSLock()
 
-    public init() {}
+    public init(sourceAuditEventLimit: Int = 100_000) {
+        self.sourceAuditEventLimit = max(1, min(sourceAuditEventLimit, runtimeDocumentSourceAuditEventLimitCeiling))
+    }
 
     public static func stableDocumentID(for result: DocumentIngestionResult) -> String {
         let digest = stableHexDigest([
@@ -121,10 +135,28 @@ public final class RuntimeDocumentIndexStore {
         )
         let document = runtimeDocumentIndexDocument(for: result, documentID: documentID)
         let chunks = runtimeDocumentIndexChunks(for: result, documentID: documentID)
+        let timestamp = Date()
+        let approval = runtimeDocumentHostApproval(
+            document: document,
+            chunks: chunks,
+            timestamp: timestamp
+        )
 
         lock.withLock {
+            let wasApproved = approvalsByDocumentID[documentID] != nil
+            if let currentApproval = approvalsByDocumentID[documentID],
+               currentApproval.sourceRevision != approval.sourceRevision {
+                invalidateCitationStateUnlocked(documentID: documentID, timestamp: timestamp)
+            }
             documentsByID[documentID] = document
             chunksByDocumentID[documentID] = chunks
+            approvalsByDocumentID[documentID] = approval
+            if wasApproved {
+                appendSourceAuditUnlocked(.reindexed, approval: approval, timestamp: timestamp)
+            } else {
+                appendSourceAuditUnlocked(.approved, approval: approval, timestamp: timestamp)
+                appendSourceAuditUnlocked(.indexed, approval: approval, timestamp: timestamp)
+            }
         }
         return document
     }
@@ -132,15 +164,16 @@ public final class RuntimeDocumentIndexStore {
     public func deleteDocument(id documentID: String) {
         guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID) else { return }
         lock.withLock {
-            documentsByID.removeValue(forKey: documentID)
-            chunksByDocumentID.removeValue(forKey: documentID)
+            revokeAndDeleteDocumentUnlocked(documentID, timestamp: Date())
         }
     }
 
     public func deleteAllDocuments() {
         lock.withLock {
-            documentsByID.removeAll()
-            chunksByDocumentID.removeAll()
+            let timestamp = Date()
+            for documentID in documentsByID.keys.sorted() {
+                revokeAndDeleteDocumentUnlocked(documentID, timestamp: timestamp)
+            }
         }
     }
 
@@ -150,9 +183,9 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .filter { $0.quality == quality }
                 .map(\.id)
+            let timestamp = Date()
             for documentID in documentIDs {
-                documentsByID.removeValue(forKey: documentID)
-                chunksByDocumentID.removeValue(forKey: documentID)
+                revokeAndDeleteDocumentUnlocked(documentID, timestamp: timestamp)
             }
         }
     }
@@ -164,9 +197,9 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .filter { $0.contentFingerprint == contentFingerprint }
                 .map(\.id)
+            let timestamp = Date()
             for documentID in documentIDs {
-                documentsByID.removeValue(forKey: documentID)
-                chunksByDocumentID.removeValue(forKey: documentID)
+                revokeAndDeleteDocumentUnlocked(documentID, timestamp: timestamp)
             }
         }
     }
@@ -178,9 +211,9 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .filter { $0.displayName == displayName }
                 .map(\.id)
+            let timestamp = Date()
             for documentID in documentIDs {
-                documentsByID.removeValue(forKey: documentID)
-                chunksByDocumentID.removeValue(forKey: documentID)
+                revokeAndDeleteDocumentUnlocked(documentID, timestamp: timestamp)
             }
         }
     }
@@ -192,9 +225,9 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .filter { $0.mimeType == mimeType }
                 .map(\.id)
+            let timestamp = Date()
             for documentID in documentIDs {
-                documentsByID.removeValue(forKey: documentID)
-                chunksByDocumentID.removeValue(forKey: documentID)
+                revokeAndDeleteDocumentUnlocked(documentID, timestamp: timestamp)
             }
         }
     }
@@ -202,7 +235,8 @@ public final class RuntimeDocumentIndexStore {
     public func document(id documentID: String) -> RuntimeDocumentIndexDocument? {
         guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID) else { return nil }
         return lock.withLock {
-            documentsByID[documentID]
+            guard approvalsByDocumentID[documentID] != nil else { return nil }
+            return documentsByID[documentID]
         }
     }
 
@@ -215,8 +249,9 @@ public final class RuntimeDocumentIndexStore {
                 limit,
                 ceiling: runtimeDocumentIndexChunkReadLimitCeiling
               ) else { return [] }
-        let chunks = lock.withLock {
-            chunksByDocumentID[documentID] ?? []
+        let chunks: [RuntimeDocumentIndexChunk] = lock.withLock {
+            guard approvalsByDocumentID[documentID] != nil else { return [] }
+            return chunksByDocumentID[documentID] ?? []
         }
         return runtimeDocumentIndexChunksForRead(chunks, limit: effectiveLimit)
     }
@@ -230,8 +265,9 @@ public final class RuntimeDocumentIndexStore {
                 limit,
                 ceiling: runtimeDocumentIndexChunkSummaryLimitCeiling
               ) else { return [] }
-        let chunks = lock.withLock {
-            chunksByDocumentID[documentID] ?? []
+        let chunks: [RuntimeDocumentIndexChunk] = lock.withLock {
+            guard approvalsByDocumentID[documentID] != nil else { return [] }
+            return chunksByDocumentID[documentID] ?? []
         }
         return runtimeDocumentIndexChunkSummaries(chunks, limit: effectiveLimit)
     }
@@ -243,6 +279,7 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .flatMap { $0 }
                 .compactMap { chunk -> (RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunkSummary)? in
+                    guard approvalsByDocumentID[chunk.documentID] != nil else { return nil }
                     guard let document = documentsByID[chunk.documentID] else { return nil }
                     return (document, runtimeDocumentIndexChunkSummary(chunk))
                 }
@@ -256,7 +293,7 @@ public final class RuntimeDocumentIndexStore {
             ceiling: runtimeDocumentIndexCatalogLimitCeiling
         ) else { return [] }
         let documents = lock.withLock {
-            Array(documentsByID.values)
+            documentsByID.values.filter { approvalsByDocumentID[$0.id] != nil }
         }
         return runtimeDocumentIndexCatalogDocuments(documents, limit: effectiveLimit)
     }
@@ -271,7 +308,9 @@ public final class RuntimeDocumentIndexStore {
                 ceiling: runtimeDocumentIndexCatalogLimitCeiling
               ) else { return [] }
         let documents = lock.withLock {
-            documentsByID.values.filter { $0.displayName == displayName }
+            documentsByID.values.filter {
+                approvalsByDocumentID[$0.id] != nil && $0.displayName == displayName
+            }
         }
         return runtimeDocumentIndexCatalogDocuments(documents, limit: effectiveLimit)
     }
@@ -286,7 +325,9 @@ public final class RuntimeDocumentIndexStore {
                 ceiling: runtimeDocumentIndexCatalogLimitCeiling
               ) else { return [] }
         let documents = lock.withLock {
-            documentsByID.values.filter { $0.contentFingerprint == contentFingerprint }
+            documentsByID.values.filter {
+                approvalsByDocumentID[$0.id] != nil && $0.contentFingerprint == contentFingerprint
+            }
         }
         return runtimeDocumentIndexCatalogDocuments(documents, limit: effectiveLimit)
     }
@@ -301,7 +342,9 @@ public final class RuntimeDocumentIndexStore {
                 ceiling: runtimeDocumentIndexCatalogLimitCeiling
               ) else { return [] }
         let documents = lock.withLock {
-            documentsByID.values.filter { $0.mimeType == mimeType }
+            documentsByID.values.filter {
+                approvalsByDocumentID[$0.id] != nil && $0.mimeType == mimeType
+            }
         }
         return runtimeDocumentIndexCatalogDocuments(documents, limit: effectiveLimit)
     }
@@ -315,14 +358,16 @@ public final class RuntimeDocumentIndexStore {
             ceiling: runtimeDocumentIndexCatalogLimitCeiling
         ) else { return [] }
         let documents = lock.withLock {
-            documentsByID.values.filter { $0.quality == quality }
+            documentsByID.values.filter {
+                approvalsByDocumentID[$0.id] != nil && $0.quality == quality
+            }
         }
         return runtimeDocumentIndexCatalogDocuments(documents, limit: effectiveLimit)
     }
 
     public func summary() -> RuntimeDocumentIndexSummary {
         let documents = lock.withLock {
-            Array(documentsByID.values)
+            documentsByID.values.filter { approvalsByDocumentID[$0.id] != nil }
         }
         return runtimeDocumentIndexSummary(documents)
     }
@@ -348,6 +393,7 @@ public final class RuntimeDocumentIndexStore {
                 .values
                 .flatMap { $0 }
                 .compactMap { chunk -> (RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunk)? in
+                    guard approvalsByDocumentID[chunk.documentID] != nil else { return nil }
                     guard let document = documentsByID[chunk.documentID] else { return nil }
                     return (document, chunk)
                 }
@@ -359,6 +405,490 @@ public final class RuntimeDocumentIndexStore {
             limit: effectiveLimit,
             maxSnippetCharacters: effectiveSnippetLimit
         )
+    }
+
+    public func readApprovedCatalog(
+        limit: Int,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) -> RuntimeDocumentApprovedCatalog {
+        guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+            limit,
+            ceiling: runtimeDocumentIndexCatalogLimitCeiling
+        ) else {
+            return RuntimeDocumentApprovedCatalog(
+                documents: [],
+                summary: runtimeDocumentIndexSummary([])
+            )
+        }
+        return lock.withLock {
+            let approvedDocuments = documentsByID.values.filter {
+                approvalsByDocumentID[$0.id] != nil
+            }
+            let documents = runtimeDocumentIndexCatalogDocuments(
+                approvedDocuments,
+                limit: effectiveLimit
+            )
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .catalogListed,
+                actorDeviceID: actorDeviceID,
+                resultCount: documents.count,
+                timestamp: timestamp
+            ))
+            return RuntimeDocumentApprovedCatalog(
+                documents: documents,
+                summary: runtimeDocumentIndexSummary(approvedDocuments)
+            )
+        }
+    }
+
+    public func queryApprovedDocuments(
+        _ query: String,
+        limit: Int,
+        maxSnippetCharacters: Int,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) -> [RuntimeDocumentSearchResult] {
+        let terms = runtimeDocumentSearchTerms(query)
+        let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+            limit,
+            ceiling: runtimeDocumentIndexQueryLimitCeiling
+        )
+        let effectiveSnippetLimit = runtimeDocumentIndexEffectiveLimit(
+            maxSnippetCharacters,
+            ceiling: runtimeDocumentIndexSnippetCharacterLimitCeiling
+        )
+        return lock.withLock {
+            let results: [RuntimeDocumentSearchResult]
+            if !terms.isEmpty,
+               let effectiveLimit,
+               let effectiveSnippetLimit {
+                let snapshot = chunksByDocumentID
+                    .values
+                    .flatMap { $0 }
+                    .compactMap { chunk -> (RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunk)? in
+                        guard approvalsByDocumentID[chunk.documentID] != nil,
+                              let document = documentsByID[chunk.documentID] else { return nil }
+                        return (document, chunk)
+                    }
+                results = runtimeDocumentSearchResults(
+                    from: snapshot,
+                    terms: terms,
+                    limit: effectiveLimit,
+                    maxSnippetCharacters: effectiveSnippetLimit
+                )
+            } else {
+                results = []
+            }
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .queried,
+                actorDeviceID: actorDeviceID,
+                resultCount: results.count,
+                timestamp: timestamp
+            ))
+            return results
+        }
+    }
+
+    public func resolveApprovedSourceAnchor(
+        id sourceAnchorID: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) -> RuntimeDocumentSourceAnchor? {
+        guard let sourceAnchorID = runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) else { return nil }
+        return lock.withLock {
+            guard let anchor = approvedSourceAnchorUnlocked(sourceAnchorID: sourceAnchorID) else { return nil }
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .anchorResolved,
+                approval: approvalsByDocumentID[anchor.document.id],
+                actorDeviceID: actorDeviceID,
+                sourceAnchorID: sourceAnchorID,
+                resultCount: 1,
+                timestamp: timestamp
+            ))
+            return anchor
+        }
+    }
+
+    public func prepareTrustedSourceReview(
+        sourceAnchorID: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws -> RuntimeTrustedSourceReviewEnvelope {
+        guard let sourceAnchorID = runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID),
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.citationNotFound
+        }
+        return try lock.withLock {
+            guard let anchor = approvedSourceAnchorUnlocked(sourceAnchorID: sourceAnchorID),
+                  let approval = approvalsByDocumentID[anchor.document.id] else {
+                throw RuntimeTrustedSourceGovernanceError.citationNotFound
+            }
+            let citation = runtimeDocumentCitation(anchor: anchor, approval: approval)
+            citationsByID[citation.citationID] = RuntimeStoredDocumentCitation(
+                citation: citation,
+                documentID: anchor.document.id,
+                sourceRevision: approval.sourceRevision,
+                issuedAt: timestamp,
+                staleAt: nil
+            )
+            trustedSourceReviewsByID = trustedSourceReviewsByID.filter {
+                $0.value.actorDeviceID != actorDeviceID
+            }
+            let review = runtimeTrustedSourceReview(
+                citationID: citation.citationID,
+                actorDeviceID: actorDeviceID,
+                timestamp: timestamp
+            )
+            trustedSourceReviewsByID[review.reviewID] = RuntimeStoredTrustedSourceReview(
+                review: review,
+                citationID: citation.citationID,
+                actorDeviceID: actorDeviceID
+            )
+            for action in [
+                RuntimeDocumentSourceAuditAction.citationResolved,
+                .trustedSourceReviewPrepared
+            ] {
+                appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                    action: action,
+                    approval: approval,
+                    actorDeviceID: actorDeviceID,
+                    sourceAnchorID: sourceAnchorID,
+                    resultCount: 1,
+                    timestamp: timestamp
+                ))
+            }
+            let existingGrant = (trustedSourceGrantsByID.values
+                .first {
+                    $0.actorDeviceID == actorDeviceID
+                        && $0.documentID == approval.documentID
+                        && $0.sourceRevision == approval.sourceRevision
+                        && $0.revokedAt == nil
+                })?.grant
+            return RuntimeTrustedSourceReviewEnvelope(
+                citation: citation,
+                review: review,
+                trustedSource: existingGrant
+            )
+        }
+    }
+
+    public func approveTrustedSourceReview(
+        reviewID: String,
+        confirmationToken: String,
+        disclosureVersion: String,
+        usageScope: RuntimeTrustedSourceUsageScope,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws -> RuntimeTrustedSourceGrant {
+        guard let reviewID = runtimeDocumentCanonicalTrustedSourceReviewID(reviewID),
+              let confirmationToken = runtimeDocumentCanonicalTrustedSourceConfirmationToken(confirmationToken),
+              disclosureVersion == runtimeTrustedSourceDisclosureVersion,
+              usageScope == .chatContext,
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.reviewNotFound
+        }
+        return try lock.withLock {
+            guard let storedReview = trustedSourceReviewsByID[reviewID],
+                  storedReview.actorDeviceID == actorDeviceID,
+                  storedReview.review.confirmationToken == confirmationToken else {
+                throw RuntimeTrustedSourceGovernanceError.reviewNotFound
+            }
+            guard timestamp <= storedReview.review.expiresAt else {
+                trustedSourceReviewsByID.removeValue(forKey: reviewID)
+                throw RuntimeTrustedSourceGovernanceError.reviewExpired
+            }
+            guard let storedCitation = citationsByID[storedReview.citationID],
+                  storedCitation.staleAt == nil,
+                  let approval = approvalsByDocumentID[storedCitation.documentID],
+                  approval.sourceRevision == storedCitation.sourceRevision,
+                  approvedSourceAnchorUnlocked(
+                      sourceAnchorID: storedCitation.citation.sourceAnchorID
+                  ) != nil else {
+                trustedSourceReviewsByID.removeValue(forKey: reviewID)
+                throw RuntimeTrustedSourceGovernanceError.reviewStale
+            }
+            let grant = runtimeTrustedSourceGrant(
+                citation: storedCitation.citation,
+                approval: approval,
+                actorDeviceID: actorDeviceID,
+                timestamp: timestamp
+            )
+            trustedSourceGrantsByID[grant.grantID] = RuntimeStoredTrustedSourceGrant(
+                grant: grant,
+                documentID: approval.documentID,
+                sourceRevision: approval.sourceRevision,
+                actorDeviceID: actorDeviceID,
+                revokedAt: nil
+            )
+            trustedSourceReviewsByID.removeValue(forKey: reviewID)
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .trustedSourceApproved,
+                approval: approval,
+                actorDeviceID: actorDeviceID,
+                sourceAnchorID: storedCitation.citation.sourceAnchorID,
+                resultCount: 1,
+                timestamp: timestamp
+            ))
+            return grant
+        }
+    }
+
+    public func dismissTrustedSourceReview(
+        reviewID: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws {
+        guard let reviewID = runtimeDocumentCanonicalTrustedSourceReviewID(reviewID),
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.reviewNotFound
+        }
+        try lock.withLock {
+            guard let review = trustedSourceReviewsByID[reviewID],
+                  review.actorDeviceID == actorDeviceID else {
+                throw RuntimeTrustedSourceGovernanceError.reviewNotFound
+            }
+            trustedSourceReviewsByID.removeValue(forKey: reviewID)
+            let citation = citationsByID[review.citationID]
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .trustedSourceReviewDismissed,
+                approval: citation.flatMap { approvalsByDocumentID[$0.documentID] },
+                actorDeviceID: actorDeviceID,
+                sourceAnchorID: citation?.citation.sourceAnchorID,
+                resultCount: 0,
+                timestamp: timestamp
+            ))
+        }
+    }
+
+    public func trustedSources(
+        actorDeviceID: String?,
+        limit: Int,
+        timestamp: Date = Date()
+    ) throws -> [RuntimeTrustedSourceGrant] {
+        guard let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else { return [] }
+        let effectiveLimit = min(max(0, limit), runtimeTrustedSourceListLimitCeiling)
+        return lock.withLock {
+            let grants = trustedSourceGrantsByID.values
+                .filter { stored in
+                    guard stored.actorDeviceID == actorDeviceID,
+                          stored.revokedAt == nil,
+                          let approval = approvalsByDocumentID[stored.documentID] else {
+                        return false
+                    }
+                    return approval.sourceRevision == stored.sourceRevision
+                }
+                .map(\.grant)
+                .sorted {
+                    if $0.approvedAt != $1.approvedAt { return $0.approvedAt > $1.approvedAt }
+                    return $0.grantID < $1.grantID
+                }
+            let result = Array(grants.prefix(effectiveLimit))
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .trustedSourcesListed,
+                actorDeviceID: actorDeviceID,
+                resultCount: result.count,
+                timestamp: timestamp
+            ))
+            return result
+        }
+    }
+
+    public func revokeTrustedSource(
+        grantID: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws {
+        guard let grantID = runtimeDocumentCanonicalTrustedSourceGrantID(grantID),
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.trustedSourceNotFound
+        }
+        try lock.withLock {
+            guard var stored = trustedSourceGrantsByID[grantID],
+                  stored.actorDeviceID == actorDeviceID,
+                  stored.revokedAt == nil else {
+                throw RuntimeTrustedSourceGovernanceError.trustedSourceNotFound
+            }
+            stored.revokedAt = timestamp
+            trustedSourceGrantsByID[grantID] = stored
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: .trustedSourceRevoked,
+                approval: approvalsByDocumentID[stored.documentID],
+                actorDeviceID: actorDeviceID,
+                sourceAnchorID: stored.grant.sourceAnchorID,
+                resultCount: 0,
+                timestamp: timestamp
+            ))
+        }
+    }
+
+    public func consumeTrustedSourceChatContexts(
+        grantIDs: [String],
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws -> [RuntimeTrustedSourceChatContext] {
+        guard !grantIDs.isEmpty,
+              grantIDs.count <= runtimeTrustedSourceChatContextGrantLimitCeiling,
+              Set(grantIDs).count == grantIDs.count,
+              grantIDs.allSatisfy({ runtimeDocumentCanonicalTrustedSourceGrantID($0) == $0 }),
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.trustedSourceNotFound
+        }
+        return try lock.withLock {
+            let contexts = try grantIDs.map { grantID -> RuntimeTrustedSourceChatContext in
+                guard let storedGrant = trustedSourceGrantsByID[grantID],
+                      storedGrant.actorDeviceID == actorDeviceID,
+                      storedGrant.revokedAt == nil,
+                      storedGrant.grant.usageScope == .chatContext,
+                      let storedCitation = citationsByID[storedGrant.grant.citationID],
+                      storedCitation.staleAt == nil,
+                      storedCitation.documentID == storedGrant.documentID,
+                      storedCitation.sourceRevision == storedGrant.sourceRevision,
+                      storedCitation.citation.sourceAnchorID == storedGrant.grant.sourceAnchorID,
+                      let approval = approvalsByDocumentID[storedGrant.documentID],
+                      approval.scope == .runtimeShared,
+                      approval.sourceRevision == storedGrant.sourceRevision,
+                      let document = documentsByID[storedGrant.documentID],
+                      document == storedCitation.citation.document,
+                      let chunk = chunksByDocumentID[storedGrant.documentID]?.first(where: {
+                          let summary = runtimeDocumentIndexChunkSummary($0)
+                          return summary == storedCitation.citation.chunkSummary
+                              && runtimeDocumentSourceAnchorID(
+                                  document: document,
+                                  chunkSummary: summary
+                              ) == storedGrant.grant.sourceAnchorID
+                      }),
+                      let text = runtimeTrustedSourceChatContextText(chunk.text) else {
+                    throw RuntimeTrustedSourceGovernanceError.trustedSourceNotFound
+                }
+                let anchor = RuntimeDocumentSourceAnchor(
+                    sourceAnchorID: storedGrant.grant.sourceAnchorID,
+                    document: document,
+                    chunkSummary: runtimeDocumentIndexChunkSummary(chunk)
+                )
+                guard runtimeDocumentCitation(anchor: anchor, approval: approval).citationID
+                        == storedGrant.grant.citationID else {
+                    throw RuntimeTrustedSourceGovernanceError.trustedSourceNotFound
+                }
+                return RuntimeTrustedSourceChatContext(
+                    grantID: grantID,
+                    citationID: storedGrant.grant.citationID,
+                    sourceAnchorID: storedGrant.grant.sourceAnchorID,
+                    document: document,
+                    chunkSummary: anchor.chunkSummary,
+                    text: text
+                )
+            }
+            for context in contexts {
+                appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                    action: .trustedSourceContextConsumed,
+                    approval: approvalsByDocumentID[context.document.id],
+                    actorDeviceID: actorDeviceID,
+                    sourceAnchorID: context.sourceAnchorID,
+                    resultCount: 1,
+                    timestamp: timestamp
+                ))
+            }
+            return contexts
+        }
+    }
+
+    public func sourceApproval(documentID: String) -> RuntimeDocumentSourceApproval? {
+        guard let documentID = runtimeDocumentIndexCanonicalDocumentID(documentID) else { return nil }
+        return lock.withLock { approvalsByDocumentID[documentID] }
+    }
+
+    public func recordSourceAudit(
+        action: RuntimeDocumentSourceAuditAction,
+        actorDeviceID: String?,
+        documentID: String?,
+        sourceAnchorID: String?,
+        resultCount: Int?,
+        timestamp: Date = Date()
+    ) {
+        lock.withLock {
+            appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                action: action,
+                approval: documentID.flatMap { approvalsByDocumentID[$0] },
+                actorDeviceID: actorDeviceID,
+                documentID: documentID,
+                sourceAnchorID: sourceAnchorID,
+                resultCount: resultCount,
+                timestamp: timestamp
+            ))
+        }
+    }
+
+    public func sourceAuditEvents(limit: Int = 100) -> [RuntimeDocumentSourceAuditEvent] {
+        guard let effectiveLimit = runtimeDocumentIndexEffectiveLimit(
+            limit,
+            ceiling: runtimeDocumentSourceAuditLimitCeiling
+        ) else { return [] }
+        return lock.withLock {
+            Array(sourceAuditLog.suffix(effectiveLimit).reversed())
+        }
+    }
+
+    private func appendSourceAuditEventUnlocked(_ event: RuntimeDocumentSourceAuditEvent) {
+        sourceAuditLog.append(event)
+        let overflow = sourceAuditLog.count - sourceAuditEventLimit
+        if overflow > 0 {
+            sourceAuditLog.removeFirst(overflow)
+        }
+    }
+
+    private func appendSourceAuditUnlocked(
+        _ action: RuntimeDocumentSourceAuditAction,
+        approval: RuntimeDocumentSourceApproval,
+        timestamp: Date
+    ) {
+        appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+            action: action,
+            approval: approval,
+            actorDeviceID: approval.approvedBy,
+            timestamp: timestamp
+        ))
+    }
+
+    private func revokeAndDeleteDocumentUnlocked(_ documentID: String, timestamp: Date) {
+        guard documentsByID[documentID] != nil else { return }
+        invalidateCitationStateUnlocked(documentID: documentID, timestamp: timestamp)
+        if let approval = approvalsByDocumentID[documentID] {
+            appendSourceAuditUnlocked(.revoked, approval: approval, timestamp: timestamp)
+            appendSourceAuditUnlocked(.deleted, approval: approval, timestamp: timestamp)
+        }
+        approvalsByDocumentID.removeValue(forKey: documentID)
+        documentsByID.removeValue(forKey: documentID)
+        chunksByDocumentID.removeValue(forKey: documentID)
+    }
+
+    private func approvedSourceAnchorUnlocked(sourceAnchorID: String) -> RuntimeDocumentSourceAnchor? {
+        let snapshot = chunksByDocumentID
+            .values
+            .flatMap { $0 }
+            .compactMap { chunk -> (RuntimeDocumentIndexDocument, RuntimeDocumentIndexChunkSummary)? in
+                guard approvalsByDocumentID[chunk.documentID] != nil,
+                      let document = documentsByID[chunk.documentID] else { return nil }
+                return (document, runtimeDocumentIndexChunkSummary(chunk))
+            }
+        return runtimeDocumentSourceAnchor(sourceAnchorID: sourceAnchorID, from: snapshot)
+    }
+
+    private func invalidateCitationStateUnlocked(documentID: String, timestamp: Date) {
+        for citationID in Array(citationsByID.keys) {
+            guard var citation = citationsByID[citationID],
+                  citation.documentID == documentID,
+                  citation.staleAt == nil else { continue }
+            citation.staleAt = timestamp
+            citationsByID[citationID] = citation
+        }
+        for grantID in Array(trustedSourceGrantsByID.keys) {
+            guard var grant = trustedSourceGrantsByID[grantID],
+                  grant.documentID == documentID,
+                  grant.revokedAt == nil else { continue }
+            grant.revokedAt = timestamp
+            trustedSourceGrantsByID[grantID] = grant
+        }
     }
 
     static func stableContentFingerprint(for result: DocumentIngestionResult) -> String {
@@ -389,6 +919,7 @@ public final class RuntimeDocumentIndexStore {
 }
 
 extension RuntimeDocumentIndexStore: RuntimeDocumentIndexReading {}
+extension RuntimeDocumentIndexStore: RuntimeDocumentSourceGovernance {}
 
 func runtimeDocumentIndexDocument(
     for result: DocumentIngestionResult,

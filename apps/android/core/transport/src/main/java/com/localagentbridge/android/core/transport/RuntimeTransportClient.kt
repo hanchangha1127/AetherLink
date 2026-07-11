@@ -3,6 +3,7 @@ package com.localagentbridge.android.core.transport
 import com.localagentbridge.android.core.protocol.ProtocolCodec
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -12,6 +13,7 @@ import java.net.Socket
 
 class RuntimeTransportClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : RuntimeProtocolChannel {
     private val sendMutex = Mutex()
     private var socket: Socket? = null
@@ -19,7 +21,7 @@ class RuntimeTransportClient(
     override val isConnected: Boolean
         get() = socket?.isConnected == true && socket?.isClosed == false
 
-    suspend fun connect(host: String, port: Int, timeoutMillis: Int = 5_000): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
+    suspend fun connect(host: String, port: Int, timeoutMillis: Int = 5_000): RuntimeProtocolChannel = withContext(ioDispatcher) {
         close()
         val connected = Socket()
         connected.tcpNoDelay = true
@@ -28,18 +30,22 @@ class RuntimeTransportClient(
         this@RuntimeTransportClient
     }
 
-    override suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
+    override suspend fun send(envelope: ProtocolEnvelope) {
         val active = requireNotNull(socket) { "Runtime transport is not connected" }
         val frame = codec.encode(envelope)
-        sendMutex.withLock {
-            active.outputStream.write(frame)
-            active.outputStream.flush()
+        withContext(ioDispatcher) {
+            sendMutex.withLock {
+                active.outputStream.write(frame)
+                active.outputStream.flush()
+            }
         }
     }
 
-    override suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
+    override suspend fun receive(): ProtocolEnvelope {
         val active = requireNotNull(socket) { "Runtime transport is not connected" }
-        codec.readFrame(active.inputStream)
+        return withContext(ioDispatcher) {
+            codec.readFrame(active.inputStream)
+        }
     }
 
     override fun close() {

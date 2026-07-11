@@ -15,7 +15,7 @@ not implemented.
 - Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `3e778069ab57755e350b287355993d9bd27fe836f450d477354c8d34201a117c`
+  `2b2a44f2ac7a2f081a5fbc7856a5b3d7dbe1585cec59c871282c98c9d4e33cbd`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.

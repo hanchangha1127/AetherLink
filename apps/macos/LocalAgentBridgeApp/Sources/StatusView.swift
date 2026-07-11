@@ -8,6 +8,7 @@ struct StatusView: View {
     var onGenerateRelayQRCode: (() -> Void)?
     @State private var isRuntimeHistoryInspectorPresented = false
     @State private var isRuntimeMemoryInspectorPresented = false
+    @State private var isRuntimeDocumentSourcesInspectorPresented = false
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12)]
 
     var body: some View {
@@ -71,6 +72,13 @@ struct StatusView: View {
                         systemImage: "brain.head.profile",
                         tone: runtimeDataTone
                     )
+                    StatusCard(
+                        title: NSLocalizedString("Document Sources", comment: ""),
+                        value: model.runtimeDocumentSources.count.formatted(),
+                        detail: runtimeDocumentSourcesDetail,
+                        systemImage: "doc.text.magnifyingglass",
+                        tone: runtimeDocumentSourcesTone
+                    )
                 }
 
                 CompanionPanel(title: NSLocalizedString("Readiness", comment: ""), systemImage: "checklist") {
@@ -96,6 +104,10 @@ struct StatusView: View {
                         onInspectRuntimeMemory: {
                             model.refreshRuntimeMemoryEntries()
                             isRuntimeMemoryInspectorPresented = true
+                        },
+                        onManageRuntimeDocumentSources: {
+                            isRuntimeDocumentSourcesInspectorPresented = true
+                            Task { await model.refreshRuntimeDocumentSources() }
                         }
                     )
                 }
@@ -190,6 +202,12 @@ struct StatusView: View {
                 errorMessage: model.runtimeMemoryEntriesError,
                 onRefresh: model.refreshRuntimeMemoryEntries
             )
+        }
+        .sheet(isPresented: $isRuntimeDocumentSourcesInspectorPresented) {
+            RuntimeDocumentSourcesView(model: model)
+        }
+        .task {
+            await model.refreshRuntimeDocumentSources()
         }
     }
 
@@ -381,6 +399,20 @@ struct StatusView: View {
         return totalCount == 0 ? .inactive : .ready
     }
 
+    private var runtimeDocumentSourcesDetail: String {
+        if model.runtimeDocumentSourcesError != nil {
+            return NSLocalizedString("Document sources could not be read. Check Activity.", comment: "")
+        }
+        return NSLocalizedString("Approved sources", comment: "")
+    }
+
+    private var runtimeDocumentSourcesTone: StatusTone {
+        if model.runtimeDocumentSourcesError != nil {
+            return .warning
+        }
+        return model.runtimeDocumentSources.isEmpty ? .inactive : .ready
+    }
+
     private func localizedProviderName(_ provider: ModelProvider) -> String {
         switch provider {
         case .ollama:
@@ -564,6 +596,7 @@ private struct StatusQuickActions: View {
     let onGenerateRelayQRCode: (() -> Void)?
     let onInspectRuntimeHistory: () -> Void
     let onInspectRuntimeMemory: () -> Void
+    let onManageRuntimeDocumentSources: () -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 10, alignment: .leading)]
 
@@ -687,6 +720,16 @@ private struct StatusQuickActions: View {
             .help(inspectRuntimeMemoryActionAccessibilityHint())
             .accessibilityValue(Text(inspectRuntimeMemoryActionAccessibilityValue()))
             .accessibilityHint(Text(inspectRuntimeMemoryActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                onManageRuntimeDocumentSources()
+            } label: {
+                Label(NSLocalizedString("Manage Document Sources", comment: ""), systemImage: "doc.text.magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+            .help(NSLocalizedString("Review which document sources trusted devices can access.", comment: ""))
+            .accessibilityHint(Text(NSLocalizedString("Review which document sources trusted devices can access.", comment: "")))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .controlSize(.regular)

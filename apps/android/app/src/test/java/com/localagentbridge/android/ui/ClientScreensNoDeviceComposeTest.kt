@@ -36,6 +36,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -161,11 +163,14 @@ import com.localagentbridge.android.runtime.RuntimeModelResidencyUnloadFailureSt
 import com.localagentbridge.android.runtime.RuntimeModelResidencyStatus
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
+import com.localagentbridge.android.runtime.RuntimeSourceReview
+import com.localagentbridge.android.runtime.RuntimeTrustedSource
 import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.core.protocol.RetrievalMatchKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20213,6 +20218,393 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsDocumentSearchSourceReviewActionUsesNamedTalkBackLabelAndHidesOpaqueCanaries() {
+        val opaqueCanaries = listOf(
+            "source_anchor_canary",
+            "grant_canary",
+            "review_canary",
+            "token_canary",
+            "/private/path/canary",
+            "body_canary",
+            "model_canary",
+            "approval_canary",
+        )
+        val opaqueAnchor = opaqueCanaries.joinToString("|")
+        var resolvedAnchor: String? = null
+        val trustedSourceListLoading = mutableStateOf(false)
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-review-action",
+            displayName = "Review Source.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "review-fingerprint",
+            extractedCharacterCount = 256,
+            chunkCount = 2,
+            quality = "chunked",
+        )
+        val result = RuntimeDocumentSearchResult(
+            document = document,
+            chunkIndex = 0,
+            startCharacterOffset = 0,
+            endCharacterOffset = 96,
+            rank = 1,
+            matchedTerms = listOf("review"),
+            snippet = "A safe search result snippet.",
+            sourceAnchorId = opaqueAnchor,
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(760.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        DocumentIndexPanel(
+                            catalog = RuntimeDocumentCatalog(),
+                            searchQuery = "review",
+                            searchResults = listOf(result),
+                            isLoadingCatalog = false,
+                            isSearchingDocuments = false,
+                            isLoadingTrustedSources = trustedSourceListLoading.value,
+                            actionsEnabled = true,
+                            onRefreshDocuments = {},
+                            onSearchDocuments = {},
+                            onResolveCitation = { resolvedAnchor = it },
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Review source for Review Source.md", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(opaqueAnchor, resolvedAnchor)
+        trustedSourceListLoading.value = true
+        compose.waitForIdle()
+        compose.onNodeWithTag(
+            documentSourceReviewActionTestTag(document.id, result.rank),
+            useUnmergedTree = true,
+        ).assertIsNotEnabled()
+        opaqueCanaries.forEach { canary ->
+            compose.onAllNodesWithText(canary, substring = true, useUnmergedTree = true)
+                .assertCountEquals(0)
+            compose.onAllNodesWithContentDescription(canary, substring = true, useUnmergedTree = true)
+                .assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun settingsSourceReviewDialogShowsLoadingAndSafeUntrustedMetadataWithDisabledBusyControls() {
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-review-dialog",
+            displayName = "A very long source review document name that must remain bounded.md",
+            mimeType = "text/markdown",
+            contentFingerprint = "dialog-fingerprint",
+            extractedCharacterCount = 640,
+            chunkCount = 5,
+            quality = "chunked",
+        )
+        val review = RuntimeSourceReview(
+            sourceAnchorId = "opaque-review-anchor",
+            document = document,
+            chunkIndex = 2,
+            startCharacterOffset = 120,
+            endCharacterOffset = 240,
+            characterCount = 120,
+            expiresAt = "2026-07-12T12:30:00Z",
+            isTrusted = false,
+        )
+        val state = mutableStateOf<RuntimeSourceReview?>(null)
+        val resolving = mutableStateOf(true)
+        val approving = mutableStateOf(false)
+        var approveClicks = 0
+        var dismissClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                DocumentIndexPanel(
+                    catalog = RuntimeDocumentCatalog(),
+                    searchQuery = "",
+                    searchResults = emptyList(),
+                    isLoadingCatalog = false,
+                    isSearchingDocuments = false,
+                    sourceReview = state.value,
+                    isResolvingCitation = resolving.value,
+                    isApprovingTrustedSource = approving.value,
+                    actionsEnabled = true,
+                    onRefreshDocuments = {},
+                    onSearchDocuments = {},
+                    onApproveTrustedSource = { approveClicks += 1 },
+                    onDismissTrustedSource = { dismissClicks += 1 },
+                    showHeader = false,
+                )
+            }
+        }
+
+        compose.onNodeWithTag(SOURCE_REVIEW_PROGRESS_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithText("Loading source details…").assertIsDisplayed()
+        compose.onNodeWithTag(SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, dismissClicks)
+
+        state.value = review
+        resolving.value = false
+        compose.waitForIdle()
+        compose.onNodeWithText(document.displayName).assertIsDisplayed()
+        compose.onNodeWithText(
+            "text/markdown. Chunk 3. Characters 120-240. Expires",
+            substring = true,
+        ).assertIsDisplayed()
+        compose.onAllNodesWithText("2026-07-12T12:30:00Z", substring = true)
+            .assertCountEquals(0)
+        compose.onNodeWithText(
+            "Host document approval and this device’s chat trust are separate permissions.",
+        ).assertIsDisplayed()
+        compose.onNodeWithTag(SOURCE_REVIEW_APPROVE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        compose.onNodeWithTag(SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, approveClicks)
+        assertEquals(2, dismissClicks)
+
+        approving.value = true
+        compose.waitForIdle()
+        compose.onNodeWithTag(SOURCE_REVIEW_APPROVE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsNotEnabled()
+        compose.onNodeWithTag(SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun settingsTrustedSourceReviewAndListSupportRefreshAndRevokeWithoutOpaqueExposure() {
+        val opaqueCanaries = listOf(
+            "source_anchor_canary",
+            "grant_canary",
+            "review_canary",
+            "token_canary",
+            "/private/path/canary",
+            "body_canary",
+            "model_canary",
+            "approval_canary",
+        )
+        val opaqueAnchor = opaqueCanaries.joinToString("|")
+        val document = RuntimeDocumentIndexDocument(
+            id = "doc-trusted-source",
+            displayName = "Trusted Source.pdf",
+            mimeType = "application/pdf",
+            contentFingerprint = "trusted-fingerprint",
+            extractedCharacterCount = 900,
+            chunkCount = 4,
+            quality = "chunked",
+        )
+        val review = RuntimeSourceReview(
+            sourceAnchorId = opaqueAnchor,
+            document = document,
+            chunkIndex = 1,
+            startCharacterOffset = 200,
+            endCharacterOffset = 400,
+            characterCount = 200,
+            expiresAt = "2026-07-12T13:00:00Z",
+            isTrusted = true,
+        )
+        var refreshClicks = 0
+        val revokedAnchors = mutableListOf<String>()
+        val reviewState = mutableStateOf<RuntimeSourceReview?>(review)
+        val revokingAnchors = mutableStateOf(emptySet<String>())
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(760.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        DocumentIndexPanel(
+                            catalog = RuntimeDocumentCatalog(),
+                            searchQuery = "",
+                            searchResults = emptyList(),
+                            isLoadingCatalog = false,
+                            isSearchingDocuments = false,
+                            sourceReview = reviewState.value,
+                            trustedSources = listOf(RuntimeTrustedSource(opaqueAnchor, document)),
+                            hasLoadedTrustedSources = true,
+                            revokingTrustedSourceAnchorIds = revokingAnchors.value,
+                            actionsEnabled = true,
+                            onRefreshDocuments = {},
+                            onSearchDocuments = {},
+                            onRefreshTrustedSources = { refreshClicks += 1 },
+                            onRevokeTrustedSource = { revokedAnchors += it },
+                            onDismissTrustedSource = { reviewState.value = null },
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithText("Trusted source").assertIsDisplayed()
+        compose.onNodeWithTag(SOURCE_REVIEW_REVOKE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(listOf(opaqueAnchor), revokedAnchors)
+
+        compose.onNodeWithTag(SOURCE_REVIEW_DISMISS_ACTION_TEST_TAG, useUnmergedTree = true)
+            .performClick()
+        compose.onNodeWithTag(TRUSTED_SOURCES_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+            .performScrollTo()
+            .performClick()
+        compose.onNodeWithTag(trustedSourceRowTestTag(document.id), useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText(document.displayName).assertIsDisplayed()
+        compose.onNodeWithText(document.mimeType).assertIsDisplayed()
+        compose.onNodeWithTag(trustedSourceRevokeActionTestTag(document.id), useUnmergedTree = true)
+            .performClick()
+        assertEquals(1, refreshClicks)
+        assertEquals(listOf(opaqueAnchor, opaqueAnchor), revokedAnchors)
+        revokingAnchors.value = setOf(opaqueAnchor)
+        compose.waitForIdle()
+        compose.onNodeWithTag(trustedSourceRevokeActionTestTag(document.id), useUnmergedTree = true)
+            .assertIsNotEnabled()
+            .assert(hasContentDescription("Revoking chat trust for Trusted Source.pdf"))
+        opaqueCanaries.forEach { canary ->
+            compose.onAllNodesWithText(canary, substring = true, useUnmergedTree = true)
+                .assertCountEquals(0)
+            compose.onAllNodesWithContentDescription(canary, substring = true, useUnmergedTree = true)
+                .assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun settingsTrustedSourcesDistinguishNotLoadedFromLoadedEmpty() {
+        val hasLoaded = mutableStateOf(false)
+        compose.setContent {
+            MaterialTheme {
+                DocumentIndexPanel(
+                    catalog = RuntimeDocumentCatalog(),
+                    searchQuery = "",
+                    searchResults = emptyList(),
+                    isLoadingCatalog = false,
+                    isSearchingDocuments = false,
+                    hasLoadedTrustedSources = hasLoaded.value,
+                    actionsEnabled = true,
+                    onRefreshDocuments = {},
+                    onSearchDocuments = {},
+                    showHeader = false,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Trusted document sources have not been loaded yet.")
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("No document sources are trusted for chat on this device.")
+            .assertCountEquals(0)
+
+        hasLoaded.value = true
+        compose.waitForIdle()
+        compose.onNodeWithText("No document sources are trusted for chat on this device.")
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("Trusted document sources have not been loaded yet.")
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun settingsSemanticDocumentSearchUsesLocalizedMetadataAcrossSupportedLanguages() {
+        data class ExpectedSemanticMetadata(
+            val languageTag: String,
+            val metadata: String,
+            val confusingLexicalMetadata: String,
+        )
+
+        val language = mutableStateOf("en")
+        val result = RuntimeDocumentSearchResult(
+            document = RuntimeDocumentIndexDocument(
+                id = "doc-semantic",
+                displayName = "Semantic Search.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "5555666677778888",
+                extractedCharacterCount = 320,
+                chunkCount = 1,
+                quality = "single_chunk",
+            ),
+            chunkIndex = 0,
+            startCharacterOffset = 0,
+            endCharacterOffset = 96,
+            rank = 1,
+            matchKind = RetrievalMatchKind.Semantic,
+            matchedTerms = emptyList(),
+            snippet = "A semantic match does not require lexical terms.",
+        )
+
+        compose.setContent {
+            LocalizedTestContent(languageTag = language.value) {
+                key(language.value) {
+                    MaterialTheme {
+                        Surface(modifier = Modifier.width(360.dp).height(760.dp)) {
+                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                DocumentIndexPanel(
+                                    catalog = RuntimeDocumentCatalog(),
+                                    searchQuery = "semantic route",
+                                    searchResults = listOf(result),
+                                    isLoadingCatalog = false,
+                                    isSearchingDocuments = false,
+                                    actionsEnabled = true,
+                                    onRefreshDocuments = {},
+                                    onSearchDocuments = {},
+                                    showHeader = false,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        listOf(
+            ExpectedSemanticMetadata(
+                "en",
+                "Match 1. Chunk 1. Characters 0-96. Semantic match.",
+                "Terms: Semantic match",
+            ),
+            ExpectedSemanticMetadata(
+                "ko",
+                "일치 1. 청크 1. 문자 0-96. 의미 일치.",
+                "검색어: 의미 일치",
+            ),
+            ExpectedSemanticMetadata(
+                "ja",
+                "一致 1。チャンク 1。文字 0-96。セマンティック一致。",
+                "語句: セマンティック一致",
+            ),
+            ExpectedSemanticMetadata(
+                "zh-CN",
+                "匹配 1。分块 1。字符 0-96。语义匹配。",
+                "词项：语义匹配",
+            ),
+            ExpectedSemanticMetadata(
+                "fr",
+                "Correspondance 1. Bloc 1. Caractères 0-96. Correspondance sémantique.",
+                "Termes : Correspondance sémantique",
+            ),
+        ).forEach { expected ->
+            language.value = expected.languageTag
+            compose.waitForIdle()
+            compose.onNodeWithTag(
+                documentSearchMetadataTestTag("doc-semantic", 1),
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assertTextContains(expected.metadata, substring = false)
+            compose.onAllNodesWithText(
+                expected.confusingLexicalMetadata,
+                substring = true,
+                useUnmergedTree = true,
+            )
+                .assertCountEquals(0)
+        }
+    }
+
+    @Test
     fun settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages() {
         data class ExpectedDocumentRefreshState(
             val languageTag: String,
@@ -25983,6 +26375,148 @@ class ClientScreensNoDeviceComposeTest {
                 .performScrollTo()
                 .assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun chatTrustedSourcePickerUsesCheckboxesCapsSelectionAndRemovesSafeDocumentChips() {
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val sources = (1..9).map { index ->
+            RuntimeTrustedSource(
+                sourceAnchorId = "opaque-anchor-$index",
+                document = RuntimeDocumentIndexDocument(
+                    id = "doc-chat-source-$index",
+                    displayName = "Reference $index.pdf",
+                    mimeType = "application/pdf",
+                    contentFingerprint = index.toString().padStart(16, '0'),
+                    extractedCharacterCount = 100,
+                    chunkCount = 1,
+                    quality = "single_chunk",
+                ),
+            )
+        }
+        val selected = sources.take(8).map(RuntimeTrustedSource::sourceAnchorId)
+        val toggled = mutableListOf<String>()
+        val removed = mutableListOf<String>()
+        var refreshes = 0
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime("runtime-1", "AetherLink Runtime"),
+                        backendAvailable = true,
+                        selectedModelId = chatModel.id,
+                        models = listOf(chatModel),
+                        trustedSources = sources,
+                        selectedTrustedSourceAnchorIds = selected,
+                    ),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onToggleTrustedSource = { toggled += it },
+                    onRemoveTrustedSource = { removed += it },
+                    onRefreshTrustedSources = { refreshes += 1 },
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithTag(CHAT_COMPOSER_SOURCE_CHIPS_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove Reference 1.pdf from chat context", useUnmergedTree = true)
+            .performClick()
+        assertEquals(listOf("opaque-anchor-1"), removed)
+
+        compose.onNodeWithTag(CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, refreshes)
+        compose.onNodeWithTag(chatTrustedSourcePickerRowTestTag("doc-chat-source-1"), useUnmergedTree = true)
+            .assertIsEnabled()
+            .assertIsOn()
+            .performClick()
+        assertEquals(listOf("opaque-anchor-1"), toggled)
+        compose.onNodeWithTag(chatTrustedSourcePickerRowTestTag("doc-chat-source-9"), useUnmergedTree = true)
+            .assertIsOff()
+            .assertIsNotEnabled()
+        compose.onAllNodesWithText("trusted_source_", substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("trusted_source_", substring = true, useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback() {
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime("runtime-1", "AetherLink Runtime"),
+                backendAvailable = true,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                error = RuntimeUiError("citation_resolve_failed"),
+            )
+        )
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = state.value,
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Could not open the source review. Try again.", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.runOnUiThread {
+            state.value = state.value.copy(error = RuntimeUiError("trusted_source_review_expired"))
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            "This source review expired or changed. Open it again.",
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.runOnUiThread {
+            state.value = state.value.copy(error = RuntimeUiError("trusted_source_not_found"))
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            "This trusted source is no longer available. Refresh sources.",
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onAllNodesWithText("The request could not be completed.", useUnmergedTree = true)
+            .assertCountEquals(0)
     }
 
     @Test

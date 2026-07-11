@@ -9,8 +9,12 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 import java.util.UUID
 
@@ -20,6 +24,10 @@ const val RELAY_ALLOCATION_PROOF_SCHEME = "runtime-client-p256-v2"
 const val RELAY_ALLOCATION_PROTOCOL_VERSION = 2
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
+private val CITATION_ID_PATTERN = Regex("^citation_[0-9a-f]{32}$")
+private val SOURCE_REVIEW_ID_PATTERN = Regex("^source_review_[0-9a-f]{32}$")
+private val SOURCE_CONFIRMATION_TOKEN_PATTERN = Regex("^source_confirmation_[0-9a-f]{64}$")
+private val TRUSTED_SOURCE_GRANT_ID_PATTERN = Regex("^trusted_source_[0-9a-f]{32}$")
 private val DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")
 private val LOWERCASE_HEX_64_PATTERN = Regex("^[0-9a-f]{64}$")
 private val RUNTIME_KEY_BOUND_RELAY_ID_PATTERN = Regex("^rt2-[0-9a-f]{64}$")
@@ -29,6 +37,9 @@ private const val MAX_CHAT_SESSION_LIST_LIMIT = 200
 private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500
 private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50
 private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
+private const val MAX_TRUSTED_SOURCE_GRANT_IDS = 8
+private const val TRUSTED_SOURCE_DISCLOSURE_VERSION = "runtime-trusted-source-v1"
+private const val TRUSTED_SOURCE_USAGE_SCOPE = "chat_context"
 private const val MAX_DOCUMENT_ID_LENGTH = 128
 private const val MAX_DOCUMENT_DISPLAY_NAME_LENGTH = 256
 private const val MAX_DOCUMENT_MIME_TYPE_LENGTH = 128
@@ -82,6 +93,11 @@ private val ERROR_CODES = setOf(
     "chat_context_window_exceeded",
     "document_index_unavailable",
     "source_anchor_not_found",
+    "citation_not_found",
+    "trusted_source_review_not_found",
+    "trusted_source_review_expired",
+    "trusted_source_review_stale",
+    "trusted_source_not_found",
     "memory_store_unavailable",
     "memory_summary_draft_unavailable",
     "memory_summary_draft_stale",
@@ -635,6 +651,42 @@ private fun Decoder.decodeExactJsonObject(
     return jsonDecoder to payload
 }
 
+private abstract class ExactJsonObjectTransformingSerializer<T, S>(
+    private val surrogateSerializer: KSerializer<S>,
+    private val expectedFields: Set<String>,
+    private val payloadName: String,
+    private val validatePayload: (JsonObject) -> Unit = {},
+) : KSerializer<T> {
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    final override fun deserialize(decoder: Decoder): T {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(expectedFields, payloadName)
+        validatePayload(payload)
+        return fromSurrogate(jsonDecoder.json.decodeFromJsonElement(surrogateSerializer, payload))
+    }
+
+    final override fun serialize(encoder: Encoder, value: T) {
+        encoder.encodeSerializableValue(surrogateSerializer, toSurrogate(value))
+    }
+
+    protected abstract fun fromSurrogate(value: S): T
+
+    protected abstract fun toSurrogate(value: T): S
+}
+
+private fun JsonObject.requireExactNestedJsonObject(
+    fieldName: String,
+    expectedFields: Set<String>,
+    objectName: String,
+) {
+    val nested = this[fieldName] as? JsonObject
+        ?: throw IllegalArgumentException("$objectName must be a JSON object")
+    val unknownFields = nested.keys.filterNot { it in expectedFields }.sorted()
+    require(unknownFields.isEmpty()) {
+        "$objectName contains unknown field: ${unknownFields.first()}"
+    }
+}
+
 private fun String.isBoundedNonBlankRelayAllocationValue(): Boolean =
     length <= MAX_RELAY_ALLOCATION_OPAQUE_LENGTH && any { !it.isWhitespace() }
 
@@ -742,6 +794,11 @@ object MessageType {
     const val IndexDocumentsList = "index.documents.list"
     const val RetrievalQuery = "retrieval.query"
     const val SourceAnchorResolve = "source_anchor.resolve"
+    const val CitationResolve = "citation.resolve"
+    const val TrustedSourceApprove = "trusted_source.approve"
+    const val TrustedSourceDismiss = "trusted_source.dismiss"
+    const val TrustedSourceList = "trusted_source.list"
+    const val TrustedSourceRevoke = "trusted_source.revoke"
     const val MemoryList = "memory.list"
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"
@@ -978,11 +1035,66 @@ data class ChatStoredAttachmentPayload(
 }
 
 @Serializable
+private data class ChatSendPayloadSurrogate(
+    @SerialName("session_id") val sessionId: String,
+    val model: String,
+    val messages: List<ChatMessagePayload>,
+    val locale: String? = null,
+    @SerialName("trusted_source_grant_ids") val trustedSourceGrantIds: List<String> = emptyList(),
+)
+
+object ChatSendPayloadSerializer : KSerializer<ChatSendPayload> {
+    private val surrogateSerializer = ChatSendPayloadSurrogate.serializer()
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    override fun deserialize(decoder: Decoder): ChatSendPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            setOf("session_id", "model", "messages", "locale", "trusted_source_grant_ids"),
+            "chat.send request",
+        )
+        payload["trusted_source_grant_ids"]?.let { grants ->
+            require(grants is JsonArray && grants.isNotEmpty()) {
+                "chat.send request trusted_source_grant_ids must be a nonempty array when present"
+            }
+        }
+        val value = jsonDecoder.json.decodeFromJsonElement(surrogateSerializer, payload)
+        return ChatSendPayload(
+            sessionId = value.sessionId,
+            model = value.model,
+            messages = value.messages,
+            locale = value.locale,
+            trustedSourceGrantIds = value.trustedSourceGrantIds,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatSendPayload) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw IllegalArgumentException("chat.send request requires JSON encoding")
+        val surrogate = ChatSendPayloadSurrogate(
+            sessionId = value.sessionId,
+            model = value.model,
+            messages = value.messages,
+            locale = value.locale,
+            trustedSourceGrantIds = value.trustedSourceGrantIds,
+        )
+        val payload = jsonEncoder.json.encodeToJsonElement(surrogateSerializer, surrogate).jsonObject
+        jsonEncoder.encodeJsonElement(
+            if (value.trustedSourceGrantIds.isEmpty()) {
+                JsonObject(payload - "trusted_source_grant_ids")
+            } else {
+                payload
+            }
+        )
+    }
+}
+
+@Serializable(with = ChatSendPayloadSerializer::class)
 data class ChatSendPayload(
     @SerialName("session_id") val sessionId: String,
     val model: String,
     val messages: List<ChatMessagePayload>,
     val locale: String? = null,
+    @SerialName("trusted_source_grant_ids") val trustedSourceGrantIds: List<String> = emptyList(),
 ) {
     init {
         require(sessionId.isNotBlank()) {
@@ -993,6 +1105,15 @@ data class ChatSendPayload(
         }
         require(messages.isNotEmpty()) {
             "chat.send request messages must be nonempty"
+        }
+        require(trustedSourceGrantIds.size <= MAX_TRUSTED_SOURCE_GRANT_IDS) {
+            "chat.send request trusted_source_grant_ids must contain at most 8 entries"
+        }
+        require(trustedSourceGrantIds.distinct().size == trustedSourceGrantIds.size) {
+            "chat.send request trusted_source_grant_ids must contain unique entries"
+        }
+        require(trustedSourceGrantIds.all(TRUSTED_SOURCE_GRANT_ID_PATTERN::matches)) {
+            "chat.send request trusted_source_grant_ids entries must match trusted_source_[32 lowercase hex]"
         }
     }
 }
@@ -1207,6 +1328,7 @@ data class RetrievalQueryRequestPayload(
     val query: String,
     val limit: Int? = null,
     @SerialName("max_snippet_characters") val maxSnippetCharacters: Int? = null,
+    @SerialName("embedding_model_id") val embeddingModelId: String? = null,
 ) {
     init {
         require(query.isNotBlank()) {
@@ -1227,6 +1349,9 @@ data class RetrievalQueryRequestPayload(
         require(maxSnippetCharacters == null || maxSnippetCharacters <= MAX_RETRIEVAL_SNIPPET_LENGTH) {
             "retrieval.query request max_snippet_characters must be at most 500"
         }
+        require(embeddingModelId == null || embeddingModelId.isNotBlank()) {
+            "retrieval.query request embedding_model_id must be nonblank"
+        }
     }
 }
 
@@ -1242,12 +1367,22 @@ data class RetrievalQueryResultPayload(
 }
 
 @Serializable
+enum class RetrievalMatchKind {
+    @SerialName("lexical")
+    Lexical,
+
+    @SerialName("semantic")
+    Semantic,
+}
+
+@Serializable
 data class RetrievalQueryResultItemPayload(
     val document: RuntimeDocumentIndexDocumentPayload,
     @SerialName("chunk_index") val chunkIndex: Int,
     @SerialName("start_character_offset") val startCharacterOffset: Int,
     @SerialName("end_character_offset") val endCharacterOffset: Int,
     val rank: Int,
+    @SerialName("match_kind") val matchKind: RetrievalMatchKind = RetrievalMatchKind.Lexical,
     @SerialName("matched_terms") val matchedTerms: List<String>,
     val snippet: String,
     @Serializable(with = SourceAnchorIdSerializer::class)
@@ -1269,14 +1404,14 @@ data class RetrievalQueryResultItemPayload(
         require(rank >= 1) {
             "retrieval.query result rank must be positive"
         }
-        require(matchedTerms.isNotEmpty()) {
+        require(matchKind == RetrievalMatchKind.Semantic || matchedTerms.isNotEmpty()) {
             "retrieval.query result matched_terms must be nonempty"
         }
         require(matchedTerms.size <= MAX_RETRIEVAL_MATCHED_TERMS) {
             "retrieval.query result matched_terms must contain at most 16 terms"
         }
-        require(matchedTerms.all { it.isNotEmpty() }) {
-            "retrieval.query result matched_terms entries must be nonempty"
+        require(matchedTerms.all { it.isNotBlank() }) {
+            "retrieval.query result matched_terms entries must be nonblank"
         }
         require(matchedTerms.all { it.length <= MAX_RETRIEVAL_MATCHED_TERM_LENGTH }) {
             "retrieval.query result matched_terms entries must be at most 64 characters"
@@ -1327,6 +1462,538 @@ data class SourceAnchorChunkSummaryPayload(
         require(endCharacterOffset >= startCharacterOffset) {
             "chunk_summary.end_character_offset must be greater than or equal to start_character_offset"
         }
+    }
+}
+
+@Serializable
+private data class CitationResolveRequestPayloadSurrogate(
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+)
+
+object CitationResolveRequestPayloadSerializer : KSerializer<CitationResolveRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<CitationResolveRequestPayload, CitationResolveRequestPayloadSurrogate>(
+        CitationResolveRequestPayloadSurrogate.serializer(),
+        setOf("source_anchor_id"),
+        "citation.resolve request",
+    ) {
+    override fun fromSurrogate(value: CitationResolveRequestPayloadSurrogate) =
+        CitationResolveRequestPayload(value.sourceAnchorId)
+
+    override fun toSurrogate(value: CitationResolveRequestPayload) =
+        CitationResolveRequestPayloadSurrogate(value.sourceAnchorId)
+}
+
+@Serializable(with = CitationResolveRequestPayloadSerializer::class)
+data class CitationResolveRequestPayload(
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+) {
+    init {
+        require(SOURCE_ANCHOR_ID_PATTERN.matches(sourceAnchorId)) {
+            "citation.resolve request source_anchor_id must match source_anchor_[16 lowercase hex]"
+        }
+    }
+}
+
+@Serializable
+private data class CitationPayloadSurrogate(
+    @SerialName("schema_version") val schemaVersion: Int,
+    @SerialName("citation_id") val citationId: String,
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("chunk_summary") val chunkSummary: SourceAnchorChunkSummaryPayload,
+)
+
+object CitationPayloadSerializer : KSerializer<CitationPayload> by object :
+    ExactJsonObjectTransformingSerializer<CitationPayload, CitationPayloadSurrogate>(
+        CitationPayloadSurrogate.serializer(),
+        setOf("schema_version", "citation_id", "source_anchor_id", "document", "chunk_summary"),
+        "citation",
+        { payload ->
+            payload.requireExactNestedJsonObject(
+                "document",
+                setOf(
+                    "id",
+                    "display_name",
+                    "mime_type",
+                    "content_fingerprint",
+                    "extracted_character_count",
+                    "chunk_count",
+                    "quality",
+                ),
+                "citation document",
+            )
+            payload.requireExactNestedJsonObject(
+                "chunk_summary",
+                setOf("chunk_index", "start_character_offset", "end_character_offset", "character_count"),
+                "citation chunk_summary",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: CitationPayloadSurrogate) = CitationPayload(
+        schemaVersion = value.schemaVersion,
+        citationId = value.citationId,
+        sourceAnchorId = value.sourceAnchorId,
+        document = value.document,
+        chunkSummary = value.chunkSummary,
+    )
+
+    override fun toSurrogate(value: CitationPayload) = CitationPayloadSurrogate(
+        schemaVersion = value.schemaVersion,
+        citationId = value.citationId,
+        sourceAnchorId = value.sourceAnchorId,
+        document = value.document,
+        chunkSummary = value.chunkSummary,
+    )
+}
+
+@Serializable(with = CitationPayloadSerializer::class)
+data class CitationPayload(
+    @SerialName("schema_version") val schemaVersion: Int,
+    @SerialName("citation_id") val citationId: String,
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("chunk_summary") val chunkSummary: SourceAnchorChunkSummaryPayload,
+) {
+    init {
+        require(schemaVersion == 1) { "citation schema_version must be 1" }
+        require(CITATION_ID_PATTERN.matches(citationId)) {
+            "citation_id must match citation_[32 lowercase hex]"
+        }
+        require(SOURCE_ANCHOR_ID_PATTERN.matches(sourceAnchorId)) {
+            "citation source_anchor_id must match source_anchor_[16 lowercase hex]"
+        }
+    }
+}
+
+@Serializable
+private data class SourceReviewPayloadSurrogate(
+    @SerialName("review_id") val reviewId: String,
+    @SerialName("confirmation_token") val confirmationToken: String,
+    @SerialName("disclosure_version") val disclosureVersion: String,
+    @SerialName("usage_scope") val usageScope: String,
+    @SerialName("expires_at") val expiresAt: String,
+)
+
+object SourceReviewPayloadSerializer : KSerializer<SourceReviewPayload> by object :
+    ExactJsonObjectTransformingSerializer<SourceReviewPayload, SourceReviewPayloadSurrogate>(
+        SourceReviewPayloadSurrogate.serializer(),
+        setOf("review_id", "confirmation_token", "disclosure_version", "usage_scope", "expires_at"),
+        "citation review",
+    ) {
+    override fun fromSurrogate(value: SourceReviewPayloadSurrogate) = SourceReviewPayload(
+        reviewId = value.reviewId,
+        confirmationToken = value.confirmationToken,
+        disclosureVersion = value.disclosureVersion,
+        usageScope = value.usageScope,
+        expiresAt = value.expiresAt,
+    )
+
+    override fun toSurrogate(value: SourceReviewPayload) = SourceReviewPayloadSurrogate(
+        reviewId = value.reviewId,
+        confirmationToken = value.confirmationToken,
+        disclosureVersion = value.disclosureVersion,
+        usageScope = value.usageScope,
+        expiresAt = value.expiresAt,
+    )
+}
+
+@Serializable(with = SourceReviewPayloadSerializer::class)
+data class SourceReviewPayload(
+    @SerialName("review_id") val reviewId: String,
+    @SerialName("confirmation_token") val confirmationToken: String,
+    @SerialName("disclosure_version") val disclosureVersion: String,
+    @SerialName("usage_scope") val usageScope: String,
+    @SerialName("expires_at") val expiresAt: String,
+) {
+    init {
+        require(SOURCE_REVIEW_ID_PATTERN.matches(reviewId)) {
+            "review_id must match source_review_[32 lowercase hex]"
+        }
+        require(SOURCE_CONFIRMATION_TOKEN_PATTERN.matches(confirmationToken)) {
+            "confirmation_token must match source_confirmation_[64 lowercase hex]"
+        }
+        require(disclosureVersion == TRUSTED_SOURCE_DISCLOSURE_VERSION) {
+            "disclosure_version must be runtime-trusted-source-v1"
+        }
+        require(usageScope == TRUSTED_SOURCE_USAGE_SCOPE) { "usage_scope must be chat_context" }
+        requireProtocolDateTime(expiresAt, "expires_at")
+    }
+}
+
+@Serializable
+private data class TrustedSourcePayloadSurrogate(
+    @SerialName("grant_id") val grantId: String,
+    @SerialName("citation_id") val citationId: String,
+    @Serializable(with = SourceAnchorIdSerializer::class)
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("usage_scope") val usageScope: String,
+    @SerialName("approved_at") val approvedAt: String,
+)
+
+object TrustedSourcePayloadSerializer : KSerializer<TrustedSourcePayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourcePayload, TrustedSourcePayloadSurrogate>(
+        TrustedSourcePayloadSurrogate.serializer(),
+        setOf("grant_id", "citation_id", "source_anchor_id", "document", "usage_scope", "approved_at"),
+        "trusted_source",
+        { payload ->
+            payload.requireExactNestedJsonObject(
+                "document",
+                setOf(
+                    "id",
+                    "display_name",
+                    "mime_type",
+                    "content_fingerprint",
+                    "extracted_character_count",
+                    "chunk_count",
+                    "quality",
+                ),
+                "trusted_source document",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: TrustedSourcePayloadSurrogate) = TrustedSourcePayload(
+        grantId = value.grantId,
+        citationId = value.citationId,
+        sourceAnchorId = value.sourceAnchorId,
+        document = value.document,
+        usageScope = value.usageScope,
+        approvedAt = value.approvedAt,
+    )
+
+    override fun toSurrogate(value: TrustedSourcePayload) = TrustedSourcePayloadSurrogate(
+        grantId = value.grantId,
+        citationId = value.citationId,
+        sourceAnchorId = value.sourceAnchorId,
+        document = value.document,
+        usageScope = value.usageScope,
+        approvedAt = value.approvedAt,
+    )
+}
+
+@Serializable(with = TrustedSourcePayloadSerializer::class)
+data class TrustedSourcePayload(
+    @SerialName("grant_id") val grantId: String,
+    @SerialName("citation_id") val citationId: String,
+    @SerialName("source_anchor_id") val sourceAnchorId: String,
+    val document: RuntimeDocumentIndexDocumentPayload,
+    @SerialName("usage_scope") val usageScope: String,
+    @SerialName("approved_at") val approvedAt: String,
+) {
+    init {
+        require(TRUSTED_SOURCE_GRANT_ID_PATTERN.matches(grantId)) {
+            "grant_id must match trusted_source_[32 lowercase hex]"
+        }
+        require(CITATION_ID_PATTERN.matches(citationId)) {
+            "citation_id must match citation_[32 lowercase hex]"
+        }
+        require(SOURCE_ANCHOR_ID_PATTERN.matches(sourceAnchorId)) {
+            "trusted_source source_anchor_id must match source_anchor_[16 lowercase hex]"
+        }
+        require(usageScope == TRUSTED_SOURCE_USAGE_SCOPE) { "usage_scope must be chat_context" }
+        requireProtocolDateTime(approvedAt, "approved_at")
+    }
+}
+
+@Serializable
+private data class CitationResolveResultPayloadSurrogate(
+    val citation: CitationPayload,
+    val review: SourceReviewPayload,
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload? = null,
+)
+
+object CitationResolveResultPayloadSerializer : KSerializer<CitationResolveResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<CitationResolveResultPayload, CitationResolveResultPayloadSurrogate>(
+        CitationResolveResultPayloadSurrogate.serializer(),
+        setOf("citation", "review", "trusted_source"),
+        "citation.resolve response",
+    ) {
+    override fun fromSurrogate(value: CitationResolveResultPayloadSurrogate) = CitationResolveResultPayload(
+        citation = value.citation,
+        review = value.review,
+        trustedSource = value.trustedSource,
+    )
+
+    override fun toSurrogate(value: CitationResolveResultPayload) = CitationResolveResultPayloadSurrogate(
+        citation = value.citation,
+        review = value.review,
+        trustedSource = value.trustedSource,
+    )
+}
+
+@Serializable(with = CitationResolveResultPayloadSerializer::class)
+data class CitationResolveResultPayload(
+    val citation: CitationPayload,
+    val review: SourceReviewPayload,
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload? = null,
+) {
+    init {
+        require(
+            trustedSource == null || (
+                trustedSource.citationId == citation.citationId &&
+                    trustedSource.sourceAnchorId == citation.sourceAnchorId &&
+                    trustedSource.document == citation.document
+                )
+        ) {
+            "citation.resolve trusted_source must match the citation identity and document"
+        }
+    }
+}
+
+@Serializable
+private data class TrustedSourceApproveRequestPayloadSurrogate(
+    @SerialName("review_id") val reviewId: String,
+    @SerialName("confirmation_token") val confirmationToken: String,
+    @SerialName("disclosure_version") val disclosureVersion: String,
+    @SerialName("usage_scope") val usageScope: String,
+)
+
+object TrustedSourceApproveRequestPayloadSerializer : KSerializer<TrustedSourceApproveRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceApproveRequestPayload, TrustedSourceApproveRequestPayloadSurrogate>(
+        TrustedSourceApproveRequestPayloadSurrogate.serializer(),
+        setOf("review_id", "confirmation_token", "disclosure_version", "usage_scope"),
+        "trusted_source.approve request",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceApproveRequestPayloadSurrogate) = TrustedSourceApproveRequestPayload(
+        value.reviewId,
+        value.confirmationToken,
+        value.disclosureVersion,
+        value.usageScope,
+    )
+
+    override fun toSurrogate(value: TrustedSourceApproveRequestPayload) = TrustedSourceApproveRequestPayloadSurrogate(
+        value.reviewId,
+        value.confirmationToken,
+        value.disclosureVersion,
+        value.usageScope,
+    )
+}
+
+@Serializable(with = TrustedSourceApproveRequestPayloadSerializer::class)
+data class TrustedSourceApproveRequestPayload(
+    @SerialName("review_id") val reviewId: String,
+    @SerialName("confirmation_token") val confirmationToken: String,
+    @SerialName("disclosure_version") val disclosureVersion: String,
+    @SerialName("usage_scope") val usageScope: String,
+) {
+    init {
+        require(SOURCE_REVIEW_ID_PATTERN.matches(reviewId)) {
+            "review_id must match source_review_[32 lowercase hex]"
+        }
+        require(SOURCE_CONFIRMATION_TOKEN_PATTERN.matches(confirmationToken)) {
+            "confirmation_token must match source_confirmation_[64 lowercase hex]"
+        }
+        require(disclosureVersion == TRUSTED_SOURCE_DISCLOSURE_VERSION) {
+            "disclosure_version must be runtime-trusted-source-v1"
+        }
+        require(usageScope == TRUSTED_SOURCE_USAGE_SCOPE) { "usage_scope must be chat_context" }
+    }
+}
+
+@Serializable
+private data class TrustedSourceApproveResultPayloadSurrogate(
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload,
+)
+
+object TrustedSourceApproveResultPayloadSerializer : KSerializer<TrustedSourceApproveResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceApproveResultPayload, TrustedSourceApproveResultPayloadSurrogate>(
+        TrustedSourceApproveResultPayloadSurrogate.serializer(),
+        setOf("trusted_source"),
+        "trusted_source.approve response",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceApproveResultPayloadSurrogate) =
+        TrustedSourceApproveResultPayload(value.trustedSource)
+
+    override fun toSurrogate(value: TrustedSourceApproveResultPayload) =
+        TrustedSourceApproveResultPayloadSurrogate(value.trustedSource)
+}
+
+@Serializable(with = TrustedSourceApproveResultPayloadSerializer::class)
+data class TrustedSourceApproveResultPayload(
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload,
+)
+
+@Serializable
+private data class TrustedSourceDismissRequestPayloadSurrogate(
+    @SerialName("review_id") val reviewId: String,
+)
+
+object TrustedSourceDismissRequestPayloadSerializer : KSerializer<TrustedSourceDismissRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceDismissRequestPayload, TrustedSourceDismissRequestPayloadSurrogate>(
+        TrustedSourceDismissRequestPayloadSurrogate.serializer(),
+        setOf("review_id"),
+        "trusted_source.dismiss request",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceDismissRequestPayloadSurrogate) =
+        TrustedSourceDismissRequestPayload(value.reviewId)
+
+    override fun toSurrogate(value: TrustedSourceDismissRequestPayload) =
+        TrustedSourceDismissRequestPayloadSurrogate(value.reviewId)
+}
+
+@Serializable(with = TrustedSourceDismissRequestPayloadSerializer::class)
+data class TrustedSourceDismissRequestPayload(
+    @SerialName("review_id") val reviewId: String,
+) {
+    init {
+        require(SOURCE_REVIEW_ID_PATTERN.matches(reviewId)) {
+            "review_id must match source_review_[32 lowercase hex]"
+        }
+    }
+}
+
+@Serializable
+private data class TrustedSourceDismissResultPayloadSurrogate(
+    @SerialName("review_id") val reviewId: String,
+    val dismissed: Boolean,
+)
+
+object TrustedSourceDismissResultPayloadSerializer : KSerializer<TrustedSourceDismissResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceDismissResultPayload, TrustedSourceDismissResultPayloadSurrogate>(
+        TrustedSourceDismissResultPayloadSurrogate.serializer(),
+        setOf("review_id", "dismissed"),
+        "trusted_source.dismiss response",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceDismissResultPayloadSurrogate) =
+        TrustedSourceDismissResultPayload(value.reviewId, value.dismissed)
+
+    override fun toSurrogate(value: TrustedSourceDismissResultPayload) =
+        TrustedSourceDismissResultPayloadSurrogate(value.reviewId, value.dismissed)
+}
+
+@Serializable(with = TrustedSourceDismissResultPayloadSerializer::class)
+data class TrustedSourceDismissResultPayload(
+    @SerialName("review_id") val reviewId: String,
+    val dismissed: Boolean,
+) {
+    init {
+        require(SOURCE_REVIEW_ID_PATTERN.matches(reviewId)) {
+            "review_id must match source_review_[32 lowercase hex]"
+        }
+        require(dismissed) { "trusted_source.dismiss response dismissed must be true" }
+    }
+}
+
+@Serializable
+private data class TrustedSourceListRequestPayloadSurrogate(val limit: Int? = null)
+
+object TrustedSourceListRequestPayloadSerializer : KSerializer<TrustedSourceListRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceListRequestPayload, TrustedSourceListRequestPayloadSurrogate>(
+        TrustedSourceListRequestPayloadSurrogate.serializer(),
+        setOf("limit"),
+        "trusted_source.list request",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceListRequestPayloadSurrogate) =
+        TrustedSourceListRequestPayload(value.limit)
+
+    override fun toSurrogate(value: TrustedSourceListRequestPayload) =
+        TrustedSourceListRequestPayloadSurrogate(value.limit)
+}
+
+@Serializable(with = TrustedSourceListRequestPayloadSerializer::class)
+data class TrustedSourceListRequestPayload(val limit: Int? = null) {
+    init {
+        require(limit == null || limit in 0..MAX_DOCUMENT_REQUEST_LIMIT) {
+            "trusted_source.list request limit must be between 0 and 100"
+        }
+    }
+}
+
+@Serializable
+private data class TrustedSourceListResultPayloadSurrogate(
+    @SerialName("trusted_sources") val trustedSources: List<TrustedSourcePayload>,
+)
+
+object TrustedSourceListResultPayloadSerializer : KSerializer<TrustedSourceListResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceListResultPayload, TrustedSourceListResultPayloadSurrogate>(
+        TrustedSourceListResultPayloadSurrogate.serializer(),
+        setOf("trusted_sources"),
+        "trusted_source.list response",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceListResultPayloadSurrogate) =
+        TrustedSourceListResultPayload(value.trustedSources)
+
+    override fun toSurrogate(value: TrustedSourceListResultPayload) =
+        TrustedSourceListResultPayloadSurrogate(value.trustedSources)
+}
+
+@Serializable(with = TrustedSourceListResultPayloadSerializer::class)
+data class TrustedSourceListResultPayload(
+    @SerialName("trusted_sources") val trustedSources: List<TrustedSourcePayload>,
+) {
+    init {
+        require(trustedSources.size <= MAX_DOCUMENT_REQUEST_LIMIT) {
+            "trusted_source.list response trusted_sources must contain at most 100 items"
+        }
+        require(trustedSources.map { it.grantId }.distinct().size == trustedSources.size) {
+            "trusted_source.list response grant_id values must be unique"
+        }
+        require(trustedSources.map { it.sourceAnchorId }.distinct().size == trustedSources.size) {
+            "trusted_source.list response source_anchor_id values must be unique"
+        }
+    }
+}
+
+@Serializable
+private data class TrustedSourceRevokeRequestPayloadSurrogate(
+    @SerialName("grant_id") val grantId: String,
+)
+
+object TrustedSourceRevokeRequestPayloadSerializer : KSerializer<TrustedSourceRevokeRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceRevokeRequestPayload, TrustedSourceRevokeRequestPayloadSurrogate>(
+        TrustedSourceRevokeRequestPayloadSurrogate.serializer(),
+        setOf("grant_id"),
+        "trusted_source.revoke request",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceRevokeRequestPayloadSurrogate) =
+        TrustedSourceRevokeRequestPayload(value.grantId)
+
+    override fun toSurrogate(value: TrustedSourceRevokeRequestPayload) =
+        TrustedSourceRevokeRequestPayloadSurrogate(value.grantId)
+}
+
+@Serializable(with = TrustedSourceRevokeRequestPayloadSerializer::class)
+data class TrustedSourceRevokeRequestPayload(
+    @SerialName("grant_id") val grantId: String,
+) {
+    init {
+        require(TRUSTED_SOURCE_GRANT_ID_PATTERN.matches(grantId)) {
+            "grant_id must match trusted_source_[32 lowercase hex]"
+        }
+    }
+}
+
+@Serializable
+private data class TrustedSourceRevokeResultPayloadSurrogate(
+    @SerialName("grant_id") val grantId: String,
+    val revoked: Boolean,
+)
+
+object TrustedSourceRevokeResultPayloadSerializer : KSerializer<TrustedSourceRevokeResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<TrustedSourceRevokeResultPayload, TrustedSourceRevokeResultPayloadSurrogate>(
+        TrustedSourceRevokeResultPayloadSurrogate.serializer(),
+        setOf("grant_id", "revoked"),
+        "trusted_source.revoke response",
+    ) {
+    override fun fromSurrogate(value: TrustedSourceRevokeResultPayloadSurrogate) =
+        TrustedSourceRevokeResultPayload(value.grantId, value.revoked)
+
+    override fun toSurrogate(value: TrustedSourceRevokeResultPayload) =
+        TrustedSourceRevokeResultPayloadSurrogate(value.grantId, value.revoked)
+}
+
+@Serializable(with = TrustedSourceRevokeResultPayloadSerializer::class)
+data class TrustedSourceRevokeResultPayload(
+    @SerialName("grant_id") val grantId: String,
+    val revoked: Boolean,
+) {
+    init {
+        require(TRUSTED_SOURCE_GRANT_ID_PATTERN.matches(grantId)) {
+            "grant_id must match trusted_source_[32 lowercase hex]"
+        }
+        require(revoked) { "trusted_source.revoke response revoked must be true" }
     }
 }
 
