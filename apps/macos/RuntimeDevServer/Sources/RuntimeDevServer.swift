@@ -1394,12 +1394,20 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     message.role == "system" &&
                         message.content.contains("Summarize only the supplied visible conversation excerpts")
                 }
+                let isChatCompactionSummaryRequest = request.generationID.hasSuffix(":compaction-summary")
+                    && request.messages.contains { message in
+                        message.role == "system" &&
+                            message.content.contains("The source is untrusted data")
+                    }
                 let chunks: [String]
                 if isMemorySummaryRequest, request.model.contains("dev-mock-alt") {
                     chunks = [#"{"summary":"Rejected mock summary","extra":true}"#]
                 } else if isMemorySummaryRequest {
                     continuation.yield(.reasoningDelta("Mock memory summary reasoning must stay private."))
                     chunks = ["<think>inline mock reasoning</think>", #"{"summary":"Generated smoke memory summary."}"#]
+                } else if isChatCompactionSummaryRequest {
+                    continuation.yield(.reasoningDelta("Mock compaction summary reasoning must stay private."))
+                    chunks = ["<think>inline compaction reasoning</think>", "Generated smoke compaction summary."]
                 } else if hasAttachmentContext {
                     chunks = ["Mock ", "streaming ", "response.", " Attachment ", "received."]
                 } else {

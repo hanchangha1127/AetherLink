@@ -1,0 +1,85 @@
+{
+  "documentType": "aetherlink.p2p-nat-pre-network-approval-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "production_p2p_nat_v1_pre_network_decision_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceReviewId": "production_p2p_nat_v1_pre_network_review_v1",
+  "sourceReviewPath": "review-v1.json",
+  "sourceHandoffId": "production_p2p_nat_v1_handoff_v2",
+  "sourceHandoffPath": "../implementation/handoff-v2.json",
+  "status": "closed",
+  "approvalSource": "explicit_user_instruction",
+  "measurementStatus": "unmeasured_proposal",
+  "decisionOrder": [
+    "service-ownership-and-trust",
+    "pair-authorization-and-retention",
+    "candidate-privacy-and-scope",
+    "ice-and-consent-policy",
+    "turn-credential-and-abuse-policy",
+    "session-transition-semantics",
+    "release-budgets"
+  ],
+  "resolutions": [
+    {
+      "decisionId": "service-ownership-and-trust",
+      "status": "resolved",
+      "recommendedOptionId": "first-party-tls13-signed-service-config",
+      "resolution": "first-party-tls13-signed-service-config",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "pair-authorization-and-retention",
+      "status": "resolved",
+      "recommendedOptionId": "opaque-generation-scoped-capabilities",
+      "resolution": "opaque-generation-scoped-capabilities",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "candidate-privacy-and-scope",
+      "status": "resolved",
+      "recommendedOptionId": "e2e-limited-direct",
+      "resolution": "e2e-limited-direct",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "ice-and-consent-policy",
+      "status": "resolved",
+      "recommendedOptionId": "full-ice-regular-nomination-runtime-initiator",
+      "resolution": "full-ice-regular-nomination-runtime-initiator",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "turn-credential-and-abuse-policy",
+      "status": "resolved",
+      "recommendedOptionId": "short-lived-pair-scoped-turn",
+      "resolution": "short-lived-pair-scoped-turn",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "session-transition-semantics",
+      "status": "resolved",
+      "recommendedOptionId": "between-request-cutover-fail-inflight",
+      "resolution": "between-request-cutover-fail-inflight",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "release-budgets",
+      "status": "resolved",
+      "recommendedOptionId": "measured-matrix-with-hard-stop-budgets",
+      "resolution": "measured-matrix-with-hard-stop-budgets",
+      "approvalSource": "explicit_user_instruction"
+    }
+  ],
+  "authorization": {
+    "handoffV3CreationAuthorized": true,
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false,
+    "controlledNetworkSpikeSocketExecutionAuthorized": false
+  },
+  "nextStep": "separate_networking_library_and_isolated_harness_review",
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_decision"
+  }
+}

@@ -14,6 +14,32 @@ Android keeps review ids, confirmation tokens, and grant ids private and transie
 
 The runtime bounds each selected excerpt to 4,096 UTF-8 bytes, serializes only safe document name, MIME type, chunk index, and text into a runtime-owned JSON reference block, and appends that block only to the backend copy of the newest user message. The capability guard tells the model that source text is reference data rather than instructions. Original client messages remain the sole transcript authority, so source text and opaque authorization handles do not enter chat events, title generation inputs, history reads, or Android persistence. A committed use remains valid for that request if revoke commits afterward; revoke or revision change blocks every later use. Physical Android interaction and live-provider answer quality remain separate proof.
 
+## Authenticated Historical Chat Source Attribution Review Contract
+
+`chat.source_attribution.resolve` is an authenticated, capability-negotiated review preparation request for one attribution on one canonical stored assistant answer. Its request payload contains exactly `session_id`, `assistant_message_id`, and `source_index`. `assistant_message_id` is a server-generated opaque locator, not an authorization handle. The runtime projects it only on attribution-bearing successful `chat.done` and assistant `chat.messages.list` entries for connections advertising `chat.source_attribution.resolve.v1`; it is absent from source-free, cancelled, errored, incomplete, user, legacy, and capability-omitting payloads. `source_attributions` remains exactly the four safe display fields `source_index`, `document_name`, `mime_type`, and `chunk_index`.
+
+The runtime resolves the tuple only from canonical owner-scoped chat history. The stored assistant terminal event atomically records one internal binding with exactly `source_index`, `source_anchor_id`, `document_id`, and `source_revision` for each safe attribution. Approval state and a separate chunk identifier are not binding fields, and the binding never appears in ordinary `chat.done` or history. Before preparing review, one atomic document-store operation uses the bound source anchor, document, and revision and revalidates current `runtime_shared` approval and the exact historical revision. Unknown owners, sessions, messages, source indexes, legacy rows without a binding, regenerated or deleted answers, deleted sources, changed revisions, revoked approvals, and malformed storage all fail closed without inferring authority from display metadata.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "chat.source_attribution.resolve",
+  "request_id": "req_source_attribution_001",
+  "timestamp": "2026-07-12T09:02:07Z",
+  "payload": {
+    "session_id": "default",
+    "assistant_message_id": "assistant_message_0123456789abcdef0123456789abcdef",
+    "source_index": 1
+  }
+}
+```
+
+A successful response uses the same bounded `citation`, one-time `review`, and optional current-device `trusted_source` envelopes documented for `citation.resolve`. The historical locator and source index select the binding but grant no access by themselves. Source text, internal anchor/document/revision/approval binding, confirmation material, and authority identifiers do not enter normal chat completion or history payloads.
+
+Android opens the existing trusted-source review dialog from an attribution click. The locator may persist as non-authorizing history metadata, but review ids, confirmation tokens, citation/grant/anchor/document ids, approval ids, and source revisions remain private transient ViewModel state and must not enter `RuntimeUiState`, chat persistence, visible text, accessibility content, logs, or a later request except through the existing explicit review/approval operations.
+
 ## Approved Semantic Document Retrieval Contract
 
 `retrieval.query` accepts optional provider-qualified `embedding_model_id`. Omission uses deterministic lexical retrieval and preserves the legacy result key set with no `match_kind`. Explicit opt-in uses runtime-host semantic ranking and returns `match_kind: semantic`; semantic errors do not silently fall back. Missing or explicit lexical origin requires one through 16 honest `matched_terms`, while explicit semantic origin may carry zero through 16 literal overlaps. Snippets remain non-empty and capped at 500 characters; a requested zero snippet ceiling is normalized to one character.
@@ -190,7 +216,7 @@ Rules:
 33. The client app may dismiss one long-inactivity memory summary draft without writing runtime-owned memory with `memory.summary.draft.dismiss`.
 34. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `index.documents.list`, `retrieval.query`, `source_anchor.resolve`, `citation.resolve`, `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, `trusted_source.revoke`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, `memory.list`, `memory.upsert`, `memory.delete`, `memory.summary.drafts.list`, `memory.summary.draft.generate`, `memory.summary.draft.approve`, `memory.summary.draft.dismiss`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `index.documents.list`, `retrieval.query`, `source_anchor.resolve`, `citation.resolve`, `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, `trusted_source.revoke`, `chat.send`, `chat.source_attribution.resolve`, `chat.sessions.list`, `chat.messages.list`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, `memory.list`, `memory.upsert`, `memory.delete`, `memory.summary.drafts.list`, `memory.summary.draft.generate`, `memory.summary.draft.approve`, `memory.summary.draft.dismiss`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -512,12 +538,16 @@ After pairing, the client app opens a runtime connection and identifies itself w
   "payload": {
     "device_id": "client-device-id",
     "device_name": "Client Device",
-    "client_capabilities": ["chat", "streaming", "attachments"]
+    "client_capabilities": ["chat", "streaming", "attachments", "chat.source_attributions.v1", "chat.source_attribution.resolve.v1"]
   }
 }
 ```
 
 `hello.payload` accepts only `device_id`, `device_name`, and `client_capabilities`. Only `device_id` is required, and it must be a non-blank string. When present, `device_name` must be a non-blank string, and `client_capabilities` must be an array of unique non-blank strings. Malformed allowed fields return `invalid_payload` before challenge creation. Clients must not send challenge or response fields such as `nonce`, `signature`, `runtime_signature`, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
+
+`chat.source_attributions.v1` advertises strict support for the optional safe attribution arrays on `chat.done` and `chat.messages.list`. The runtime preserves this capability across the authentication challenge and emits those arrays only on a connection that advertised it. Clients without the capability retain the legacy response key set even when the runtime stores attribution provenance.
+
+`chat.source_attribution.resolve.v1` advertises support for authenticated historical attribution review. It does not authorize source access. On connections advertising it, attribution-bearing successful completions and assistant history rows also carry the server-generated `assistant_message_id` needed to address `chat.source_attribution.resolve`; every other payload omits that locator.
 
 If the device is not trusted, the AetherLink Runtime returns `error` with `code = "pairing_required"`.
 
@@ -912,6 +942,15 @@ Direction: Runtime -> Client.
   "timestamp": "2026-06-23T09:02:05Z",
   "payload": {
     "finish_reason": "stop",
+    "assistant_message_id": "assistant_message_0123456789abcdef0123456789abcdef",
+    "source_attributions": [
+      {
+        "source_index": 1,
+        "document_name": "guide.md",
+        "mime_type": "text/markdown",
+        "chunk_index": 0
+      }
+    ],
     "usage": {
       "input_tokens": 12,
       "output_tokens": 48
@@ -920,9 +959,9 @@ Direction: Runtime -> Client.
 }
 ```
 
-If a request is cancelled, `finish_reason` may be `cancelled`.
+If a request is cancelled, `finish_reason` may be `cancelled`. `source_attributions` is allowed only with `finish_reason = "stop"`, only when at least one reviewed source was actually consumed for that request, and only for clients advertising `chat.source_attributions.v1`. It contains one through eight entries in the original consumed-source order. `source_index` is contiguous from one, `document_name` is non-empty and capped at 256 characters, `mime_type` is a canonical lowercase type/subtype token capped at 128 characters, and `chunk_index` is nonnegative. `assistant_message_id` is allowed only beside a non-empty attribution array for clients advertising `chat.source_attribution.resolve.v1`; it remains a locator rather than source authority.
 
-`chat.done.payload` accepts only `finish_reason` and `usage`; nested `usage` accepts only `input_tokens` and `output_tokens`. Runtime stream completion payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material.
+`chat.done.payload` accepts only `finish_reason`, `usage`, optional `source_attributions`, and the capability-gated optional `assistant_message_id`; nested `usage` accepts only `input_tokens` and `output_tokens`, and each attribution accepts only `source_index`, `document_name`, `mime_type`, and `chunk_index`. The array is runtime-generated historical provenance that proves those reviewed excerpts were provided to the answer-generation context. It does not claim that the model used a source for a particular sentence and does not represent current access permission. Later revoke or revision change blocks future consumption but does not rewrite an already completed answer's provenance. Grant, citation, source-anchor, document, fingerprint, revision, approval, source text, snippet, offset, path, workspace, project, backend, route, credential, and tool metadata are forbidden.
 
 ## `chat.sessions.list`
 
@@ -1049,6 +1088,15 @@ Response:
         "role": "assistant",
         "content": "The runtime mediates local model access...",
         "reasoning": "Checking the runtime boundary.",
+        "assistant_message_id": "assistant_message_0123456789abcdef0123456789abcdef",
+        "source_attributions": [
+          {
+            "source_index": 1,
+            "document_name": "guide.md",
+            "mime_type": "text/markdown",
+            "chunk_index": 0
+          }
+        ],
         "created_at": "2026-06-23T09:02:05Z"
       }
     ]
@@ -1056,7 +1104,7 @@ Response:
 }
 ```
 
-`limit` is optional. The runtime clamps it to an implementation-defined maximum, and `0` returns an empty result window. The runtime must omit inline attachment bytes from stored transcripts. Stored message attachments may include safe metadata such as `type`, `mime_type`, `name`, and extracted `text`, but must not include `data_base64`. The current runtime store reconstructs multi-turn transcripts from stored request/response event pairs and returns attachment metadata for user messages when available. Archive/delete semantics are runtime-owned; clients may keep local suppression metadata so a locally deleted runtime-owned session does not reappear after the next history sync.
+`limit` is optional. The runtime clamps it to an implementation-defined maximum, and `0` returns an empty result window. The runtime must omit inline attachment bytes from stored transcripts. Stored message attachments may include safe metadata such as `type`, `mime_type`, `name`, and extracted `text`, but must not include `data_base64`. For clients advertising `chat.source_attributions.v1`, completed assistant messages may include the exact safe attribution projection stored on their successful terminal event; user, cancelled, error, and incomplete messages omit it. For clients also advertising `chat.source_attribution.resolve.v1`, only those attribution-bearing assistant rows include their server-generated `assistant_message_id`. The current runtime store reconstructs multi-turn transcripts from stored request/response event pairs, rewinds an older assistant answer when a regenerate request supplies the preceding transcript prefix, and returns attachment metadata for user messages when available. Archive/delete semantics are runtime-owned; clients may keep local suppression metadata so a locally deleted runtime-owned session does not reappear after the next history sync.
 
 ## `chat.title.request`
 
@@ -1716,7 +1764,7 @@ Runtime-side chat history and basic memory CRUD are active. The broader namespac
 
 - Advanced memory: `memory.search`, automatic or unreviewed memory extraction, memory reflection, embedding-backed recall, memory compaction, richer dismiss/review policy, and project-scoped memory. Explicit review-required long-inactivity summary generation is active, but archived sessions remain excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
 - Session compaction: known model context windows now use conservative UTF-8/framing accounting, a bounded output reserve, a hard input budget, adaptive oldest-whole-turn compaction, fixed runtime provenance plus an untrusted assistant historical summary, structural-only `adaptive_backend_only_summary_v2` metadata, and pre-backend `chat_context_window_exceeded` rejection. Missing context-window metadata retains the legacy 24,000-character heuristic. Provider-tokenizer parity, durable compacted session summaries, richer transcript source pointers, LLM-generated chat compaction summaries, and richer context-window policies remain future work. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
-- Embeddings/research: reserve the `embeddings.` namespace, keep `retrieval.query` as the only active document retrieval message with legacy lexical and explicit approved semantic modes, reserve unsupported `retrieval.*` beyond it, keep `index.documents.list` as the only active `index.*` catalog message, and reserve `research.*`. `citation.resolve` is the only active `citation.*` message; `source_anchor.resolve` is the only active `source_anchor.*` message; and `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, and `trusted_source.revoke` are the only active `trusted_source.*` messages. Every other message in those namespaces, including `citation.sources.list` and `source_anchor.metadata.get`, remains reserved, as does `source_control.*`. `retrieval.query` returns canonical source anchors without paths, while the active citation flow adds only opaque revision-bound handles and authenticated-device `chat_context` grants. Embedding models remain separate from chat models. Protocol schema hygiene rejects unsupported namespace entries while validating the exact active citation and trusted-source request/response unions.
+- Embeddings/research: reserve the `embeddings.` namespace, keep `retrieval.query` as the only active document retrieval message with legacy lexical and explicit approved semantic modes, reserve unsupported `retrieval.*` beyond it, keep `index.documents.list` as the only active `index.*` catalog message, and reserve `research.*`. `citation.resolve` is the only active `citation.*` message; `source_anchor.resolve` is the only active `source_anchor.*` message; `chat.source_attribution.resolve` is the only active `chat.source_attribution.*` message; and `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, and `trusted_source.revoke` are the only active `trusted_source.*` messages. Every other message in those namespaces, including `citation.sources.list` and `source_anchor.metadata.get`, remains reserved, as does `source_control.*`. `retrieval.query` returns canonical source anchors without paths, while the active citation flow adds only opaque revision-bound handles and authenticated-device `chat_context` grants. Embedding models remain separate from chat models. Protocol schema hygiene rejects unsupported namespace entries while validating the exact active citation and trusted-source request/response unions.
 - Compatibility wording: the current `chat.sessions.list` and `memory.list` `embedding_model_id` hints are consumed by bounded semantic ranking; Android retries only a strict unknown-field rejection from an older memory runtime without the hint, while deterministic lexical fallbacks and `retrieval.query` remain available.
 - Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
 - Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.

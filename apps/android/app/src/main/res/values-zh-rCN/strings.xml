@@ -426,6 +426,17 @@
     <string name="assistant_reasoning_show">展开思考</string>
     <string name="assistant_reasoning_hide">收起思考</string>
     <string name="copy_message">复制消息</string>
+    <string name="chat_source_attributions_title">为回复提供的来源</string>
+    <plurals name="chat_source_attributions_accessibility_summary">
+        <item quantity="one">为回复提供了 %1$d 个来源。</item>
+        <item quantity="other">为回复提供了 %1$d 个来源。</item>
+    </plurals>
+    <string name="chat_source_attribution_item">%1$d. %2$s，%3$s，第 %4$d 段</string>
+    <string name="chat_source_attribution_accessibility_summary">第 %1$d 个来源，共 %2$d 个。%3$s。%4$s。第 %5$d 段。</string>
+    <string name="chat_source_attribution_open">打开来源审核</string>
+    <string name="chat_source_attribution_state_ready">可以打开</string>
+    <string name="chat_source_attribution_state_loading">正在打开来源审核</string>
+    <string name="chat_source_attribution_state_unavailable">来源审核不可用</string>
     <string name="regenerate_response">重新生成回复</string>
     <string name="regenerate_response_state_ready">可以重新生成最新回复。</string>
     <string name="reuse_message">用作草稿</string>
@@ -686,6 +697,7 @@
     <string name="error_document_catalog_load_failed">无法从 AetherLink Runtime 加载文档目录。</string>
     <string name="error_document_search_failed">无法从 AetherLink Runtime 搜索文档。</string>
     <string name="error_citation_resolve_failed">无法打开来源审核。请重试。</string>
+    <string name="error_source_attribution_resolve_failed">无法打开此历史来源审核。请重试。</string>
     <string name="error_trusted_source_action_failed">无法更新受信任来源。请重试。</string>
     <string name="error_trusted_source_not_found">此受信任来源已不可用。请刷新来源。</string>
     <string name="error_trusted_source_review_invalid">来源审核已过期或发生更改。请重新打开。</string>

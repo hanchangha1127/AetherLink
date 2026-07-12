@@ -35,6 +35,7 @@ public struct RuntimeTrustedSourceChatContext: Equatable, Sendable {
     public var grantID: String
     public var citationID: String
     public var sourceAnchorID: String
+    public var sourceRevision: String
     public var document: RuntimeDocumentIndexDocument
     public var chunkSummary: RuntimeDocumentIndexChunkSummary
     public var text: String

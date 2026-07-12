@@ -160,6 +160,7 @@ import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.MAX_PENDING_ATTACHMENTS
 import com.localagentbridge.android.runtime.MAX_SELECTED_TRUSTED_SOURCES
 import com.localagentbridge.android.runtime.RuntimeChatMessage
+import com.localagentbridge.android.runtime.RuntimeChatSourceAttribution
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDocumentCatalog
 import com.localagentbridge.android.runtime.RuntimeDocumentIndexDocument
@@ -1618,6 +1619,10 @@ fun ChatScreen(
     onToggleTrustedSource: (String) -> Unit = {},
     onRemoveTrustedSource: (String) -> Unit = {},
     onRefreshTrustedSources: () -> Unit = {},
+    onReviewHistoricalSourceAttribution: (String, Int) -> Unit = { _, _ -> },
+    onApproveTrustedSource: () -> Unit = {},
+    onDismissTrustedSource: () -> Unit = {},
+    onRevokeTrustedSource: (String) -> Unit = {},
     onScanLatestQr: () -> Unit,
     onRegenerateLatestResponse: () -> Unit = {},
     onReuseLatestUserMessage: () -> Unit = {},
@@ -1768,6 +1773,15 @@ fun ChatScreen(
                             !state.isLoadingActiveChatMessages,
                         onRegenerateLatestResponse = onRegenerateLatestResponse,
                         onReuseLatestUserMessage = onReuseLatestUserMessage,
+                        sourceAttributionActionsEnabled = state.isConnected &&
+                            state.runtimeStatus == "authenticated" &&
+                            !state.isStreaming &&
+                            !state.isLoadingActiveChatMessages &&
+                            !state.isResolvingCitation &&
+                            state.resolvingSourceAttributionMessageId == null,
+                        resolvingSourceAttributionMessageId = state.resolvingSourceAttributionMessageId,
+                        resolvingSourceAttributionIndex = state.resolvingSourceAttributionIndex,
+                        onReviewHistoricalSourceAttribution = onReviewHistoricalSourceAttribution,
                         modifier = Modifier.testTag(chatMessageRowTestTag(message.id)),
                     )
                 }
@@ -1847,7 +1861,23 @@ fun ChatScreen(
             CopySuccessLiveRegion(message = announcement.message)
         }
     }
-}
+    }
+
+    SourceReviewDialog(
+        review = state.sourceReview,
+        isResolving = state.resolvingSourceAttributionMessageId != null,
+        isApproving = state.isApprovingTrustedSource,
+        isDismissing = state.isDismissingTrustedSource,
+        isLoadingTrustedSources = state.isLoadingTrustedSources,
+        isRevoking = state.sourceReview?.sourceAnchorId?.let {
+            it in state.revokingTrustedSourceAnchorIds
+        } == true,
+        onApprove = onApproveTrustedSource,
+        onDismiss = onDismissTrustedSource,
+        onRevoke = {
+            state.sourceReview?.sourceAnchorId?.let(onRevokeTrustedSource)
+        },
+    )
 
 }
 
@@ -3434,6 +3464,10 @@ private fun ChatMessageRow(
     showReuseAction: Boolean,
     onRegenerateLatestResponse: () -> Unit,
     onReuseLatestUserMessage: () -> Unit,
+    sourceAttributionActionsEnabled: Boolean,
+    resolvingSourceAttributionMessageId: String?,
+    resolvingSourceAttributionIndex: Int?,
+    onReviewHistoricalSourceAttribution: (String, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == "user"
@@ -3567,6 +3601,10 @@ private fun ChatMessageRow(
                 copyMessageActionLabel = copyMessageActionLabel,
                 showRegenerateAction = showRegenerateAction,
                 onRegenerateLatestResponse = onRegenerateLatestResponse,
+                sourceAttributionActionsEnabled = sourceAttributionActionsEnabled,
+                resolvingSourceAttributionIndex = resolvingSourceAttributionIndex
+                    ?.takeIf { resolvingSourceAttributionMessageId == message.id },
+                onReviewHistoricalSourceAttribution = onReviewHistoricalSourceAttribution,
             )
         }
     }
@@ -3581,6 +3619,9 @@ private fun AssistantMessage(
     copyMessageActionLabel: String,
     showRegenerateAction: Boolean,
     onRegenerateLatestResponse: () -> Unit,
+    sourceAttributionActionsEnabled: Boolean,
+    resolvingSourceAttributionIndex: Int?,
+    onReviewHistoricalSourceAttribution: (String, Int) -> Unit,
 ) {
     val hasReasoning = message.reasoning.isNotBlank()
     val hapticFeedback = LocalHapticFeedback.current
@@ -3650,6 +3691,18 @@ private fun AssistantMessage(
                         textColor = MaterialTheme.colorScheme.onSurface,
                         modifier = contentModifier,
                     )
+                    if (message.sourceAttributions.isNotEmpty() && !showTyping) {
+                        ChatSourceAttributionList(
+                            messageId = message.id,
+                            sourceAttributions = message.sourceAttributions,
+                            actionsEnabled = sourceAttributionActionsEnabled &&
+                                message.assistantMessageId != null,
+                            resolvingSourceIndex = resolvingSourceAttributionIndex,
+                            onReview = { sourceIndex ->
+                                onReviewHistoricalSourceAttribution(message.id, sourceIndex)
+                            },
+                        )
+                    }
                     if ((showVisibleCopyAction && !showTyping) || showRegenerateAction) {
                         MessageActionRow(
                             messageId = message.id,
@@ -3705,6 +3758,106 @@ private fun AssistantMessage(
                     modifier = Modifier
                         .fillMaxWidth(),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatSourceAttributionList(
+    messageId: String,
+    sourceAttributions: List<RuntimeChatSourceAttribution>,
+    actionsEnabled: Boolean,
+    resolvingSourceIndex: Int?,
+    onReview: (Int) -> Unit,
+) {
+    val title = stringResource(R.string.chat_source_attributions_title)
+    val listSummary = pluralStringResource(
+        R.plurals.chat_source_attributions_accessibility_summary,
+        sourceAttributions.size,
+        sourceAttributions.size,
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(chatSourceAttributionsTestTag(messageId))
+            .semantics { contentDescription = listSummary },
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        sourceAttributions.forEach { attribution ->
+            val displayedSection = attribution.chunkIndex.toLong() + 1L
+            val visibleText = stringResource(
+                R.string.chat_source_attribution_item,
+                attribution.sourceIndex,
+                attribution.documentName,
+                attribution.mimeType,
+                displayedSection,
+            )
+            val itemSummary = stringResource(
+                R.string.chat_source_attribution_accessibility_summary,
+                attribution.sourceIndex,
+                sourceAttributions.size,
+                attribution.documentName,
+                attribution.mimeType,
+                displayedSection,
+            )
+            val isResolving = resolvingSourceIndex == attribution.sourceIndex
+            val rowEnabled = actionsEnabled && resolvingSourceIndex == null
+            val actionLabel = stringResource(R.string.chat_source_attribution_open)
+            val stateLabel = stringResource(
+                when {
+                    isResolving -> R.string.chat_source_attribution_state_loading
+                    rowEnabled -> R.string.chat_source_attribution_state_ready
+                    else -> R.string.chat_source_attribution_state_unavailable
+                },
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag(chatSourceAttributionItemTestTag(messageId, attribution.sourceIndex))
+                    .clickable(
+                        enabled = rowEnabled,
+                        onClickLabel = actionLabel,
+                    ) { onReview(attribution.sourceIndex) }
+                    .semantics {
+                        contentDescription = itemSummary
+                        stateDescription = stateLabel
+                    }
+                    .padding(horizontal = 2.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Link,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (rowEnabled || isResolving) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    },
+                )
+                Text(
+                    text = visibleText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier = Modifier.size(width = 28.dp, height = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isResolving) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }
@@ -9915,6 +10068,12 @@ internal fun chatMessageRowTestTag(messageId: String): String = "$CHAT_MESSAGE_R
 
 internal fun chatMessageActionsTestTag(messageId: String): String = "$CHAT_MESSAGE_ACTIONS_TEST_TAG_PREFIX$messageId"
 
+internal fun chatSourceAttributionsTestTag(messageId: String): String =
+    "$CHAT_SOURCE_ATTRIBUTIONS_TEST_TAG_PREFIX$messageId"
+
+internal fun chatSourceAttributionItemTestTag(messageId: String, sourceIndex: Int): String =
+    "${chatSourceAttributionsTestTag(messageId)}_item_$sourceIndex"
+
 internal fun readOnlyAttachmentChipsTestTag(messageId: String): String =
     "$READ_ONLY_ATTACHMENT_CHIPS_TEST_TAG_PREFIX$messageId"
 
@@ -10012,6 +10171,7 @@ internal const val CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG = "aetherlink_chat_code_
 internal const val CHAT_CODE_BLOCK_TEXT_TEST_TAG = "aetherlink_chat_code_block_text"
 internal const val CHAT_MESSAGE_ROW_TEST_TAG_PREFIX = "aetherlink_chat_message_row_"
 internal const val CHAT_MESSAGE_ACTIONS_TEST_TAG_PREFIX = "aetherlink_chat_message_actions_"
+internal const val CHAT_SOURCE_ATTRIBUTIONS_TEST_TAG_PREFIX = "aetherlink_chat_source_attributions_"
 internal const val READ_ONLY_ATTACHMENT_CHIP_MAX_WIDTH_DP = 210
 internal const val READ_ONLY_ATTACHMENT_CHIPS_TEST_TAG_PREFIX = "aetherlink_read_only_attachment_chips_"
 internal const val PENDING_ATTACHMENT_CHIP_MAX_WIDTH_DP = 244
@@ -10509,6 +10669,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "document_search_failed" -> stringResource(R.string.error_document_search_failed)
         "citation_resolve_failed", "citation_not_found" ->
             stringResource(R.string.error_citation_resolve_failed)
+        "source_attribution_resolve_failed" ->
+            stringResource(R.string.error_source_attribution_resolve_failed)
         "trusted_source_approve_failed", "trusted_source_dismiss_failed",
         "trusted_source_list_failed", "trusted_source_revoke_failed" ->
             stringResource(R.string.error_trusted_source_action_failed)

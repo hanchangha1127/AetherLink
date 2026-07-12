@@ -3,6 +3,9 @@ package com.localagentbridge.android.core.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -22,9 +25,12 @@ const val PROTOCOL_VERSION = 1
 const val PAIRING_PROOF_SCHEME_P256_SHA256_DER_V1 = "p256-sha256-der-v1"
 const val RELAY_ALLOCATION_PROOF_SCHEME = "runtime-client-p256-v2"
 const val RELAY_ALLOCATION_PROTOCOL_VERSION = 2
+const val CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY = "chat.source_attributions.v1"
+const val CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY = "chat.source_attribution.resolve.v1"
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
 private val CITATION_ID_PATTERN = Regex("^citation_[0-9a-f]{32}$")
+private val ASSISTANT_MESSAGE_ID_PATTERN = Regex("^assistant_message_[0-9a-f]{32}$")
 private val SOURCE_REVIEW_ID_PATTERN = Regex("^source_review_[0-9a-f]{32}$")
 private val SOURCE_CONFIRMATION_TOKEN_PATTERN = Regex("^source_confirmation_[0-9a-f]{64}$")
 private val TRUSTED_SOURCE_GRANT_ID_PATTERN = Regex("^trusted_source_[0-9a-f]{32}$")
@@ -38,6 +44,7 @@ private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500
 private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50
 private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
 private const val MAX_TRUSTED_SOURCE_GRANT_IDS = 8
+private const val MAX_CHAT_SOURCE_ATTRIBUTIONS = 8
 private const val TRUSTED_SOURCE_DISCLOSURE_VERSION = "runtime-trusted-source-v1"
 private const val TRUSTED_SOURCE_USAGE_SCOPE = "chat_context"
 private const val MAX_DOCUMENT_ID_LENGTH = 128
@@ -94,6 +101,7 @@ private val ERROR_CODES = setOf(
     "document_index_unavailable",
     "source_anchor_not_found",
     "citation_not_found",
+    "chat_source_attribution_not_found",
     "trusted_source_review_not_found",
     "trusted_source_review_expired",
     "trusted_source_review_stale",
@@ -782,6 +790,7 @@ object MessageType {
     const val ChatSend = "chat.send"
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
+    const val ChatSourceAttributionResolve = "chat.source_attribution.resolve"
     const val ChatCancel = "chat.cancel"
     const val ChatSessionsList = "chat.sessions.list"
     const val ChatMessagesList = "chat.messages.list"
@@ -1142,11 +1151,129 @@ data class ChatDeltaPayload(
 data class ChatDonePayload(
     @SerialName("finish_reason") val finishReason: String? = null,
     val usage: UsagePayload? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @Serializable(with = NonEmptyChatSourceAttributionsSerializer::class)
+    @SerialName("source_attributions")
+    val sourceAttributions: List<ChatSourceAttributionPayload> = emptyList(),
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("assistant_message_id")
+    val assistantMessageId: String? = null,
 ) {
     init {
         require(finishReason == null || finishReason in CHAT_DONE_FINISH_REASONS) {
             "chat.done finish_reason must be stop, cancelled, or error"
         }
+        require(sourceAttributions.isEmpty() || finishReason == "stop") {
+            "chat.done source_attributions require finish_reason stop"
+        }
+        require(assistantMessageId == null || sourceAttributions.isNotEmpty()) {
+            "chat.done assistant_message_id requires source_attributions"
+        }
+        requireAssistantMessageId(assistantMessageId, "chat.done assistant_message_id")
+        requireCanonicalChatSourceAttributions(sourceAttributions, "chat.done source_attributions")
+    }
+}
+
+@Serializable
+private data class ChatSourceAttributionPayloadSurrogate(
+    @SerialName("source_index") val sourceIndex: Int,
+    @SerialName("document_name") val documentName: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("chunk_index") val chunkIndex: Int,
+)
+
+object ChatSourceAttributionPayloadSerializer : KSerializer<ChatSourceAttributionPayload> by object :
+    ExactJsonObjectTransformingSerializer<ChatSourceAttributionPayload, ChatSourceAttributionPayloadSurrogate>(
+        ChatSourceAttributionPayloadSurrogate.serializer(),
+        setOf("source_index", "document_name", "mime_type", "chunk_index"),
+        "source attribution",
+    ) {
+    override fun fromSurrogate(value: ChatSourceAttributionPayloadSurrogate) = ChatSourceAttributionPayload(
+        value.sourceIndex,
+        value.documentName,
+        value.mimeType,
+        value.chunkIndex,
+    )
+
+    override fun toSurrogate(value: ChatSourceAttributionPayload) = ChatSourceAttributionPayloadSurrogate(
+        value.sourceIndex,
+        value.documentName,
+        value.mimeType,
+        value.chunkIndex,
+    )
+}
+
+@Serializable(with = ChatSourceAttributionPayloadSerializer::class)
+data class ChatSourceAttributionPayload(
+    @SerialName("source_index") val sourceIndex: Int,
+    @SerialName("document_name") val documentName: String,
+    @SerialName("mime_type") val mimeType: String,
+    @SerialName("chunk_index") val chunkIndex: Int,
+) {
+    init {
+        require(sourceIndex in 1..MAX_CHAT_SOURCE_ATTRIBUTIONS) {
+            "source attribution source_index must be between 1 and 8"
+        }
+        require(documentName.isNotBlank()) {
+            "source attribution document_name must be nonblank"
+        }
+        require(documentName.codePointCount(0, documentName.length) <= MAX_DOCUMENT_DISPLAY_NAME_LENGTH) {
+            "source attribution document_name must be at most 256 Unicode code points"
+        }
+        require(documentName.none { character ->
+            character.code in 0x00..0x1F ||
+                character.code in 0x7F..0x9F ||
+                character == '/' ||
+                character == '\\'
+        }) {
+            "source attribution document_name must not contain controls or path separators"
+        }
+        require(mimeType.length <= MAX_DOCUMENT_MIME_TYPE_LENGTH && DOCUMENT_MIME_TYPE_PATTERN.matches(mimeType)) {
+            "source attribution mime_type must be canonical lowercase type/subtype and at most 128 characters"
+        }
+        require(chunkIndex >= 0) {
+            "source attribution chunk_index must be nonnegative"
+        }
+    }
+}
+
+object NonEmptyChatSourceAttributionsSerializer : KSerializer<List<ChatSourceAttributionPayload>> {
+    private val delegate = ListSerializer(ChatSourceAttributionPayload.serializer())
+
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun deserialize(decoder: Decoder): List<ChatSourceAttributionPayload> =
+        decoder.decodeSerializableValue(delegate).also { value ->
+            require(value.isNotEmpty()) {
+                "source_attributions must contain between 1 and 8 entries when present"
+            }
+        }
+
+    override fun serialize(encoder: Encoder, value: List<ChatSourceAttributionPayload>) {
+        require(value.isNotEmpty()) {
+            "source_attributions must contain between 1 and 8 entries when present"
+        }
+        encoder.encodeSerializableValue(delegate, value)
+    }
+}
+
+private fun requireAssistantMessageId(value: String?, fieldName: String) {
+    require(value == null || ASSISTANT_MESSAGE_ID_PATTERN.matches(value)) {
+        "$fieldName must match assistant_message_[32 lowercase hex]"
+    }
+}
+
+private fun requireCanonicalChatSourceAttributions(
+    sourceAttributions: List<ChatSourceAttributionPayload>,
+    fieldName: String,
+) {
+    require(sourceAttributions.size <= MAX_CHAT_SOURCE_ATTRIBUTIONS) {
+        "$fieldName must contain at most 8 entries"
+    }
+    require(sourceAttributions.map(ChatSourceAttributionPayload::sourceIndex) == (1..sourceAttributions.size).toList()) {
+        "$fieldName source_index must be contiguous and match array order"
     }
 }
 
@@ -1743,6 +1870,109 @@ data class CitationResolveResultPayload(
 }
 
 @Serializable
+private data class ChatSourceAttributionResolveRequestPayloadSurrogate(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("assistant_message_id") val assistantMessageId: String,
+    @SerialName("source_index") val sourceIndex: Int,
+)
+
+object ChatSourceAttributionResolveRequestPayloadSerializer :
+    KSerializer<ChatSourceAttributionResolveRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ChatSourceAttributionResolveRequestPayload,
+        ChatSourceAttributionResolveRequestPayloadSurrogate
+    >(
+        ChatSourceAttributionResolveRequestPayloadSurrogate.serializer(),
+        setOf("session_id", "assistant_message_id", "source_index"),
+        "chat.source_attribution.resolve request",
+    ) {
+    override fun fromSurrogate(value: ChatSourceAttributionResolveRequestPayloadSurrogate) =
+        ChatSourceAttributionResolveRequestPayload(
+            value.sessionId,
+            value.assistantMessageId,
+            value.sourceIndex,
+        )
+
+    override fun toSurrogate(value: ChatSourceAttributionResolveRequestPayload) =
+        ChatSourceAttributionResolveRequestPayloadSurrogate(
+            value.sessionId,
+            value.assistantMessageId,
+            value.sourceIndex,
+        )
+}
+
+@Serializable(with = ChatSourceAttributionResolveRequestPayloadSerializer::class)
+data class ChatSourceAttributionResolveRequestPayload(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("assistant_message_id") val assistantMessageId: String,
+    @SerialName("source_index") val sourceIndex: Int,
+) {
+    init {
+        require(sessionId.isNotBlank()) {
+            "chat.source_attribution.resolve request session_id must be nonblank"
+        }
+        requireAssistantMessageId(
+            assistantMessageId,
+            "chat.source_attribution.resolve request assistant_message_id",
+        )
+        require(sourceIndex in 1..MAX_CHAT_SOURCE_ATTRIBUTIONS) {
+            "chat.source_attribution.resolve request source_index must be between 1 and 8"
+        }
+    }
+}
+
+@Serializable
+private data class ChatSourceAttributionResolveResultPayloadSurrogate(
+    val citation: CitationPayload,
+    val review: SourceReviewPayload,
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload? = null,
+)
+
+object ChatSourceAttributionResolveResultPayloadSerializer :
+    KSerializer<ChatSourceAttributionResolveResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ChatSourceAttributionResolveResultPayload,
+        ChatSourceAttributionResolveResultPayloadSurrogate
+    >(
+        ChatSourceAttributionResolveResultPayloadSurrogate.serializer(),
+        setOf("citation", "review", "trusted_source"),
+        "chat.source_attribution.resolve response",
+    ) {
+    override fun fromSurrogate(value: ChatSourceAttributionResolveResultPayloadSurrogate) =
+        ChatSourceAttributionResolveResultPayload(
+            value.citation,
+            value.review,
+            value.trustedSource,
+        )
+
+    override fun toSurrogate(value: ChatSourceAttributionResolveResultPayload) =
+        ChatSourceAttributionResolveResultPayloadSurrogate(
+            value.citation,
+            value.review,
+            value.trustedSource,
+        )
+}
+
+@Serializable(with = ChatSourceAttributionResolveResultPayloadSerializer::class)
+data class ChatSourceAttributionResolveResultPayload(
+    val citation: CitationPayload,
+    val review: SourceReviewPayload,
+    @SerialName("trusted_source") val trustedSource: TrustedSourcePayload? = null,
+) {
+    init {
+        require(
+            trustedSource == null || (
+                trustedSource.citationId == citation.citationId &&
+                    trustedSource.sourceAnchorId == citation.sourceAnchorId &&
+                    trustedSource.document == citation.document
+                )
+        ) {
+            "chat.source_attribution.resolve trusted_source must match the citation identity and document"
+        }
+    }
+}
+
+@Serializable
 private data class TrustedSourceApproveRequestPayloadSurrogate(
     @SerialName("review_id") val reviewId: String,
     @SerialName("confirmation_token") val confirmationToken: String,
@@ -2080,9 +2310,32 @@ data class ChatStoredMessagePayload(
     val content: String,
     val reasoning: String? = null,
     val attachments: List<ChatStoredAttachmentPayload> = emptyList(),
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @Serializable(with = NonEmptyChatSourceAttributionsSerializer::class)
+    @SerialName("source_attributions")
+    val sourceAttributions: List<ChatSourceAttributionPayload> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @SerialName("assistant_message_id")
+    val assistantMessageId: String? = null,
 ) {
     init {
+        require(sourceAttributions.isEmpty() || role == "assistant") {
+            "chat.messages.list response source_attributions require assistant role"
+        }
+        requireCanonicalChatSourceAttributions(
+            sourceAttributions,
+            "chat.messages.list response source_attributions",
+        )
+        require(assistantMessageId == null || (role == "assistant" && sourceAttributions.isNotEmpty())) {
+            "chat.messages.list response assistant_message_id requires assistant source_attributions"
+        }
+        requireAssistantMessageId(
+            assistantMessageId,
+            "chat.messages.list response assistant_message_id",
+        )
         requireProtocolDateTime(createdAt, "chat.messages.list response created_at")
     }
 }

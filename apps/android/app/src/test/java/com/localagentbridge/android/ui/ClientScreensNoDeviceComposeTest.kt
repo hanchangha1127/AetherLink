@@ -145,6 +145,7 @@ import com.localagentbridge.android.runtime.MODEL_KIND_CHAT
 import com.localagentbridge.android.runtime.MODEL_KIND_EMBEDDING
 import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeChatMessage
+import com.localagentbridge.android.runtime.RuntimeChatSourceAttribution
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDocumentCatalog
 import com.localagentbridge.android.runtime.RuntimeDocumentIndexDocument
@@ -26791,6 +26792,241 @@ class ClientScreensNoDeviceComposeTest {
         )
         assertTrue("Same-user messages should still keep visible separation.", sameUserGap > 0.dp)
         assertTrue("Same-assistant messages should still keep visible separation.", sameAssistantGap > 0.dp)
+    }
+
+    @Test
+    fun chatScreenSourceAttributionsRenderBetweenAnswerAndActionsWithLocalizedTalkBackSummaries() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val expectedSingularSummaries = mapOf(
+            "en" to "Sources provided to the response. 1 source.",
+            "ko" to "응답에 제공된 소스가 1개 있습니다.",
+            "ja" to "応答に提供されたソースは1件です。",
+            "zh-CN" to "为回复提供了 1 个来源。",
+            "fr" to "1 source fournie à la réponse.",
+        )
+        val languageTag = mutableStateOf(languageTags.first())
+        val answer = "Only this answer should be copied."
+        val assistantMessageId = "assistant-with-sources"
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            messages = listOf(
+                RuntimeChatMessage(id = "user-source", role = "user", content = "Use the sources"),
+                RuntimeChatMessage(
+                    id = assistantMessageId,
+                    role = "assistant",
+                    content = answer,
+                    sourceAttributions = listOf(
+                        RuntimeChatSourceAttribution(
+                            sourceIndex = 1,
+                            documentName = "release-notes.md",
+                            mimeType = "text/markdown",
+                            chunkIndex = 0,
+                        ),
+                        RuntimeChatSourceAttribution(
+                            sourceIndex = 2,
+                            documentName = "qa-report.pdf",
+                            mimeType = "application/pdf",
+                            chunkIndex = Int.MAX_VALUE,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value) {
+                    Surface(modifier = Modifier.width(360.dp).height(640.dp)) {
+                        ChatScreen(
+                            state = state.copy(selectedLanguageTag = languageTag.value),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            onRegenerateLatestResponse = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread { languageTag.value = nextLanguageTag }
+            compose.waitForIdle()
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val title = localizedContext.getString(R.string.chat_source_attributions_title)
+            val listSummary = localizedContext.resources.getQuantityString(
+                R.plurals.chat_source_attributions_accessibility_summary,
+                2,
+                2,
+            )
+            assertEquals(
+                expectedSingularSummaries.getValue(nextLanguageTag),
+                localizedContext.resources.getQuantityString(
+                    R.plurals.chat_source_attributions_accessibility_summary,
+                    1,
+                    1,
+                ),
+            )
+            val firstItem = localizedContext.getString(
+                R.string.chat_source_attribution_item,
+                1,
+                "release-notes.md",
+                "text/markdown",
+                1,
+            )
+            val secondItem = localizedContext.getString(
+                R.string.chat_source_attribution_item,
+                2,
+                "qa-report.pdf",
+                "application/pdf",
+                2_147_483_648L,
+            )
+            val firstItemSummary = localizedContext.getString(
+                R.string.chat_source_attribution_accessibility_summary,
+                1,
+                2,
+                "release-notes.md",
+                "text/markdown",
+                1,
+            )
+            val listTag = chatSourceAttributionsTestTag(assistantMessageId)
+
+            compose.onNodeWithText(title, useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithText(firstItem, useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithText(secondItem, useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithTag(listTag, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assert(hasContentDescription(listSummary))
+            compose.onNodeWithTag(
+                chatSourceAttributionItemTestTag(assistantMessageId, 1),
+                useUnmergedTree = true,
+            ).assert(hasContentDescription(firstItemSummary))
+            listOf("source_anchor_", "citation_", "trusted_source_", "/private/").forEach { forbidden ->
+                compose.onAllNodesWithText(forbidden, substring = true, useUnmergedTree = true)
+                    .assertCountEquals(0)
+            }
+        }
+
+        val answerBounds = compose.onNodeWithText(answer, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val sourceBounds = compose.onNodeWithTag(chatSourceAttributionsTestTag(assistantMessageId))
+            .getUnclippedBoundsInRoot()
+        val actionTag = chatMessageActionsTestTag(assistantMessageId)
+        val actionBounds = compose.onNodeWithTag(actionTag).getUnclippedBoundsInRoot()
+        assertTrue("Source list must follow the assistant answer.", answerBounds.bottom <= sourceBounds.top)
+        assertTrue("Source list must precede the assistant action row.", sourceBounds.bottom <= actionBounds.top)
+
+        val copyLabel = ApplicationProvider.getApplicationContext<Context>()
+            .localizedContext(languageTag.value)
+            .getString(R.string.copy_message)
+        compose.onNode(
+            hasContentDescription(copyLabel) and hasAnyAncestor(hasTestTag(actionTag)),
+            useUnmergedTree = true,
+        ).performClick()
+        waitForClipboardPayload(copyLabel, answer)
+        assertFalse(clipboardText().orEmpty().contains("release-notes.md"))
+    }
+
+    @Test
+    fun historicalSourceAttributionRowOpensReviewAndKeepsStableLoadingDimensions() {
+        val messageId = "historical-assistant"
+        val sourceIndex = 1
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                activeChatSessionId = "history-session",
+                messages = listOf(
+                    RuntimeChatMessage(
+                        id = messageId,
+                        role = "assistant",
+                        content = "Historical answer",
+                        assistantMessageId = "assistant_message_00112233445566778899aabbccddeeff",
+                        sourceAttributions = listOf(
+                            RuntimeChatSourceAttribution(
+                                sourceIndex = sourceIndex,
+                                documentName = "release-notes.md",
+                                mimeType = "text/markdown",
+                                chunkIndex = 2,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        var clicked: Pair<String, Int>? = null
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(640.dp)) {
+                    ChatScreen(
+                        state = state.value,
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onScanLatestQr = {},
+                        onReviewHistoricalSourceAttribution = { selectedMessageId, selectedIndex ->
+                            clicked = selectedMessageId to selectedIndex
+                        },
+                    )
+                }
+            }
+        }
+
+        val rowTag = chatSourceAttributionItemTestTag(messageId, sourceIndex)
+        val readyLabel = ApplicationProvider.getApplicationContext<Context>()
+            .getString(R.string.chat_source_attribution_state_ready)
+        val loadingLabel = ApplicationProvider.getApplicationContext<Context>()
+            .getString(R.string.chat_source_attribution_state_loading)
+        val readyBounds = compose.onNodeWithTag(rowTag, useUnmergedTree = true)
+            .assertIsEnabled()
+            .assert(hasStateDescription(readyLabel))
+            .getUnclippedBoundsInRoot()
+        compose.onNodeWithTag(rowTag, useUnmergedTree = true).performClick()
+        assertEquals(messageId to sourceIndex, clicked)
+
+        compose.runOnUiThread {
+            state.value = state.value.copy(
+                resolvingSourceAttributionMessageId = messageId,
+                resolvingSourceAttributionIndex = sourceIndex,
+            )
+        }
+        compose.waitForIdle()
+        val loadingBounds = compose.onNodeWithTag(rowTag, useUnmergedTree = true)
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(loadingLabel))
+            .getUnclippedBoundsInRoot()
+        assertEquals(readyBounds.bottom - readyBounds.top, loadingBounds.bottom - loadingBounds.top)
+        assertEquals(readyBounds.right - readyBounds.left, loadingBounds.right - loadingBounds.left)
+        compose.onNodeWithTag(SOURCE_REVIEW_DIALOG_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(SOURCE_REVIEW_PROGRESS_TEST_TAG).assertIsDisplayed()
     }
 
     @Test

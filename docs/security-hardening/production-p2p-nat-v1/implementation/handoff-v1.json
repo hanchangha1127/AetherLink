@@ -1,0 +1,66 @@
+{
+  "documentType": "aetherlink.p2p-nat-bounded-handoff",
+  "schemaVersion": "1.0",
+  "handoffId": "production_p2p_nat_v1_handoff_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "selectionDecisionPath": "../selection-decision.json",
+  "status": "closed",
+  "productionDesignStatus": "not_implemented",
+  "activeProtocolNamespace": [
+    "route.refresh"
+  ],
+  "authorization": {
+    "implementationAuthorized": true,
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false
+  },
+  "packages": [
+    {
+      "packageId": "canonical-contracts",
+      "authorizationStatus": "authorized",
+      "executionStatus": "not_started",
+      "executionAuthorized": true,
+      "networkIOAllowed": false
+    },
+    {
+      "packageId": "no-network-conformance",
+      "authorizationStatus": "blocked_on_dependency",
+      "executionStatus": "not_started",
+      "executionAuthorized": false,
+      "networkIOAllowed": false,
+      "blockedOnPackageIds": [
+        "canonical-contracts"
+      ]
+    },
+    {
+      "packageId": "controlled-network-spike",
+      "authorizationStatus": "blocked_on_separate_review",
+      "executionStatus": "not_started",
+      "executionAuthorized": false,
+      "networkIOAllowed": false,
+      "blockedOnDecisionIds": [
+        "service-ownership-and-trust",
+        "pair-authorization-and-retention",
+        "candidate-privacy-and-scope",
+        "ice-and-consent-policy",
+        "turn-credential-and-abuse-policy",
+        "session-transition-semantics",
+        "release-budgets"
+      ]
+    }
+  ],
+  "preNetworkDecisions": [
+    {"decisionId": "service-ownership-and-trust", "status": "open"},
+    {"decisionId": "pair-authorization-and-retention", "status": "open"},
+    {"decisionId": "candidate-privacy-and-scope", "status": "open"},
+    {"decisionId": "ice-and-consent-policy", "status": "open"},
+    {"decisionId": "turn-credential-and-abuse-policy", "status": "open"},
+    {"decisionId": "session-transition-semantics", "status": "open"},
+    {"decisionId": "release-budgets", "status": "open"}
+  ],
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_handoff"
+  }
+}

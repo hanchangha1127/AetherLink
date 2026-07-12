@@ -98,6 +98,7 @@ The runtime host is responsible for the following. In v0.1, this role is impleme
 - Managing local direct, remote P2P, and encrypted relay/TURN-style connectivity through a replaceable connection manager.
 - Receiving client protocol messages.
 - Checking runtime health.
+- Assigning non-authorizing assistant-message locators to attribution-bearing successful answers and atomically storing private historical bindings containing only `source_index`, `source_anchor_id`, `document_id`, and `source_revision`. Authenticated attribution review resolves only owner-scoped canonical history, then separately revalidates current `runtime_shared` approval and that exact historical revision before preparing the existing trusted-source review; approval state and a separate chunk identifier are not stored in the binding, and display metadata is never an authority lookup key.
 - Listing models through backend adapters.
 - Listing embedding models separately from chat/text-generation models.
 - Returning installed backend models exactly as backend adapters report them while keeping normal client chat selection focused on installed runtime-host-local chat models.

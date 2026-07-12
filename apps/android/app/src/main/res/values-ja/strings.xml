@@ -426,6 +426,17 @@
     <string name="assistant_reasoning_show">思考を表示</string>
     <string name="assistant_reasoning_hide">思考を非表示</string>
     <string name="copy_message">メッセージをコピー</string>
+    <string name="chat_source_attributions_title">応答に提供されたソース</string>
+    <plurals name="chat_source_attributions_accessibility_summary">
+        <item quantity="one">応答に提供されたソースは%1$d件です。</item>
+        <item quantity="other">応答に提供されたソースは%1$d件です。</item>
+    </plurals>
+    <string name="chat_source_attribution_item">%1$d. %2$s、%3$s、区間 %4$d</string>
+    <string name="chat_source_attribution_accessibility_summary">%2$d件中%1$d件目のソース。%3$s。%4$s。区間%5$d。</string>
+    <string name="chat_source_attribution_open">ソースの確認を開く</string>
+    <string name="chat_source_attribution_state_ready">開くことができます</string>
+    <string name="chat_source_attribution_state_loading">ソースの確認を開いています</string>
+    <string name="chat_source_attribution_state_unavailable">ソースの確認を利用できません</string>
     <string name="regenerate_response">応答を再生成</string>
     <string name="regenerate_response_state_ready">最新の応答を再生成できます。</string>
     <string name="reuse_message">下書きとして使用</string>
@@ -686,6 +697,7 @@
     <string name="error_document_catalog_load_failed">AetherLink Runtime からドキュメント カタログを読み込めませんでした。</string>
     <string name="error_document_search_failed">AetherLink Runtime からドキュメントを検索できませんでした。</string>
     <string name="error_citation_resolve_failed">ソースの確認を開けませんでした。もう一度お試しください。</string>
+    <string name="error_source_attribution_resolve_failed">過去のソース確認を開けませんでした。もう一度お試しください。</string>
     <string name="error_trusted_source_action_failed">信頼済みソースを更新できませんでした。もう一度お試しください。</string>
     <string name="error_trusted_source_not_found">この信頼済みソースは利用できなくなりました。ソースを更新してください。</string>
     <string name="error_trusted_source_review_invalid">ソースの確認は期限切れか変更されています。もう一度開いてください。</string>

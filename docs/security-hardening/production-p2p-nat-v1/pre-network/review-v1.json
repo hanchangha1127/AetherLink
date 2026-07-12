@@ -1,0 +1,377 @@
+{
+  "documentType": "aetherlink.p2p-nat-pre-network-review",
+  "schemaVersion": "1.0",
+  "reviewId": "production_p2p_nat_v1_pre_network_review_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceHandoffId": "production_p2p_nat_v1_handoff_v2",
+  "selectionDecisionPath": "../selection-decision.json",
+  "sourceHandoffPath": "../implementation/handoff-v2.json",
+  "status": "proposed_not_selected",
+  "approvalRequired": true,
+  "measurementStatus": "unmeasured_proposal",
+  "authorization": {
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false,
+    "nextHandoffAuthorized": false
+  },
+  "securityFloors": [
+    "route_token_separation",
+    "end_to_end_identity_before_application_readiness",
+    "no_unauthenticated_or_plaintext_downgrade",
+    "default_deny_candidate_destinations",
+    "bounded_replay_and_resource_state",
+    "control_plane_application_data_exclusion"
+  ],
+  "decisionOrder": [
+    "service-ownership-and-trust",
+    "pair-authorization-and-retention",
+    "candidate-privacy-and-scope",
+    "ice-and-consent-policy",
+    "turn-credential-and-abuse-policy",
+    "session-transition-semantics",
+    "release-budgets"
+  ],
+  "decisions": [
+    {
+      "decisionId": "service-ownership-and-trust",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["service_operator", "trust_root_owner", "incident_owner"],
+      "question": "Who operates rendezvous, STUN, and TURN, and which explicit trust, rotation, outage, and incident rules authenticate each service?",
+      "recommendedOptionId": "first-party-tls13-signed-service-config",
+      "options": [
+        {
+          "optionId": "first-party-tls13-signed-service-config",
+          "disposition": "recommended",
+          "tradeoff": "Highest policy and incident-control ownership, with the largest operational burden."
+        },
+        {
+          "optionId": "contracted-provider-tls13-signed-service-config",
+          "disposition": "alternative",
+          "tradeoff": "Lower infrastructure burden, but trust, retention, abuse handling, and outage control depend on a provider contract and audit evidence."
+        },
+        {
+          "optionId": "enterprise-self-hosted-signed-service-config",
+          "disposition": "deferred",
+          "tradeoff": "Supports private deployments but creates certificate, upgrade, compatibility, and support fragmentation before the first profile is stable."
+        }
+      ],
+      "proposedContract": {
+        "operatorClass": "first_party",
+        "serviceClasses": ["rendezvous", "stun", "turn"],
+        "transportTrust": "rendezvous_tls_1_3_and_authenticated_stun_turn_no_unauthenticated_fallback",
+        "configurationTrust": "offline_root_signed_service_allowlist_with_version_and_expiry",
+        "rotationRule": "overlap_current_and_next_service_keys_with_fail_closed_expiry",
+        "outageRule": "fall_back_only_to_relay_only_sealed_signaling_or_report_unavailable",
+        "incidentRule": "revoke_service_config_version_and_stop_new_sessions_before_recovery"
+      },
+      "rejectionConditions": [
+        "An endpoint accepts a service outside the signed allowlist.",
+        "Certificate, hostname, configuration signature, version, or expiry failure falls back to an unauthenticated service.",
+        "Rendezvous, STUN, or TURN receives backend credentials or application payloads."
+      ],
+      "requiredEvidence": [
+        "Certificate and signed-configuration rotation tests, including overlap, rollback, expiry, and clock-skew cases.",
+        "Service outage and revoked-configuration tests proving fail-closed behavior and the approved rollback path.",
+        "Operator retention, access-control, abuse-response, and incident-runbook review."
+      ]
+    },
+    {
+      "decisionId": "pair-authorization-and-retention",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["capability_issuer_owner", "retention_owner", "revocation_slo_owner"],
+      "question": "How are pair-scoped publish, fetch, and relay capabilities issued, rotated, revoked, retained, and deleted without exposing a stable pair identifier?",
+      "recommendedOptionId": "opaque-generation-scoped-capabilities",
+      "options": [
+        {
+          "optionId": "opaque-generation-scoped-capabilities",
+          "disposition": "recommended",
+          "tradeoff": "Limits replay and service linkability while requiring transactional issuance, generation rotation, and deletion."
+        },
+        {
+          "optionId": "stable-pair-service-account",
+          "disposition": "rejected",
+          "tradeoff": "Operationally simple but exposes a durable cross-session pair identifier and widens revocation impact."
+        },
+        {
+          "optionId": "per-request-capabilities",
+          "disposition": "deferred",
+          "tradeoff": "Minimizes lifetime but adds issuance dependency and request amplification to every exchange."
+        }
+      ],
+      "proposedContract": {
+        "capabilityKinds": ["candidate_publish", "candidate_fetch", "turn_allocate"],
+        "bindingFields": ["pair_binding_digest", "endpoint_role", "generation", "service_digest", "expiry", "quota", "nonce"],
+        "maximumLifetimeSeconds": 600,
+        "maximumClockSkewSeconds": 30,
+        "rotationRule": "new_generation_invalidates_prior_generation_for_new_operations",
+        "revocationRule": "deny_new_operations_immediately_and_close_retained_state_within_30_seconds",
+        "retentionRule": "sealed_records_and_live_authorization_state_removed_no_later_than_expiry_plus_30_seconds",
+        "identifierRule": "no_stable_pair_identifier_in_service_logs_or_metrics"
+      },
+      "rejectionConditions": [
+        "A capability authorizes more than one pair, role, generation, service, or capability kind.",
+        "Revocation, replacement, or expiry leaves publish, fetch, or allocation authority usable beyond the closure bound.",
+        "A service-visible identifier links the pair across capability generations."
+      ],
+      "requiredEvidence": [
+        "Cross-pair, cross-role, cross-generation, replay, expiry, and clock-skew authorization tests.",
+        "Concurrent rotate, revoke, fetch, and allocation tests with a monotonic closure measurement.",
+        "Retention and logging audit proving bounded deletion and absence of stable pair identifiers."
+      ]
+    },
+    {
+      "decisionId": "candidate-privacy-and-scope",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["candidate_privacy_posture", "same_link_consent_owner", "nat64_support_scope"],
+      "question": "Is end-to-end candidate encryption mandatory, and which candidate kinds, address families, and private scopes are permitted?",
+      "recommendedOptionId": "e2e-limited-direct",
+      "options": [
+        {
+          "optionId": "e2e-limited-direct",
+          "disposition": "recommended",
+          "tradeoff": "Allows direct checks without exposing host candidates by default, at the cost of lower same-LAN direct success unless explicitly enabled."
+        },
+        {
+          "optionId": "relay-only-candidate-disclosure",
+          "disposition": "fallback",
+          "tradeoff": "Minimizes address disclosure but increases relay occupancy, latency, and service dependence."
+        },
+        {
+          "optionId": "all-host-candidates",
+          "disposition": "rejected",
+          "tradeoff": "Can improve direct success but exposes local topology and expands prohibited-target risk."
+        }
+      ],
+      "proposedContract": {
+        "candidateEnvelope": "end_to_end_authenticated_encryption_required",
+        "gatheredAndSignaledCandidateKinds": ["server_reflexive", "relay"],
+        "connectivityCheckDiscoveredCandidateKinds": ["peer_reflexive"],
+        "hostCandidatePolicy": "disabled_by_default_private_same_link_requires_explicit_per_session_consent",
+        "addressFamilies": ["ipv4", "ipv6"],
+        "nat64Policy": "discover_and_measure_but_do_not_signal_synthesized_ipv4_literals_as_ipv6_candidates",
+        "alwaysProhibited": ["unspecified", "loopback", "link_local", "multicast", "broadcast", "ipv4_mapped_ipv6"],
+        "maximumCandidatesPerEndpoint": 32,
+        "serviceVisibility": "ciphertext_size_timing_and_expiry_only"
+      },
+      "rejectionConditions": [
+        "Plaintext candidate addresses reach rendezvous storage, logs, metrics, or operator diagnostics.",
+        "A prohibited or unapproved private destination reaches candidate network I/O.",
+        "Candidate material is accepted as a route token, backend endpoint, or application authority."
+      ],
+      "requiredEvidence": [
+        "IPv4, IPv6, NAT64, VPN, private-scope, and prohibited-address policy vectors on both platforms.",
+        "Rendezvous storage and telemetry inspection proving candidate plaintext exclusion.",
+        "Same-link consent lifecycle tests proving default deny, one-session scope, and cleanup."
+      ]
+    },
+    {
+      "decisionId": "ice-and-consent-policy",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["ice_library_review", "mobility_scope", "consent_failure_product_behavior"],
+      "question": "Which roles, caps, nomination, trickle, restart, pacing, consent, and mobility rules define the first ICE profile?",
+      "recommendedOptionId": "full-ice-regular-nomination-runtime-initiator",
+      "options": [
+        {
+          "optionId": "full-ice-regular-nomination-runtime-initiator",
+          "disposition": "recommended",
+          "tradeoff": "Follows standards-based full ICE and deterministic initiation while requiring complete state and consent handling on both endpoints."
+        },
+        {
+          "optionId": "ice-lite-runtime",
+          "disposition": "rejected",
+          "tradeoff": "Reduces runtime logic but is unsuitable when both endpoints can be behind NAT and must initiate checks."
+        },
+        {
+          "optionId": "aggressive-nomination",
+          "disposition": "rejected",
+          "tradeoff": "May reduce setup time but conflicts with the first profile's single regular nomination and transition safety."
+        }
+      ],
+      "proposedContract": {
+        "iceMode": "full_ice_both_endpoints",
+        "initiatorRole": "macos_runtime_controlling_android_client_controlled",
+        "nomination": "regular_single_nominated_pair_per_component",
+        "maximumCandidatesPerEndpoint": 32,
+        "maximumTrickleBatchCandidates": 8,
+        "trickleRule": "ordered_idempotent_generation_scoped_with_explicit_end_of_candidates",
+        "restartRule": "new_credentials_new_generation_and_no_reuse_after_consent_loss",
+        "pacingRule": "rfc8445_checklist_and_triggered_check_pacing",
+        "consentIntervalSeconds": 5,
+        "consentIntervalJitter": "0.8_to_1.2",
+        "consentExpirySeconds": 30,
+        "consentFailureRule": "stop_application_traffic_on_the_affected_5_tuple_and_require_restart_or_relay_fallback",
+        "mobilityRule": "no_implicit_path_migration_new_path_requires_validation_identity_and_key_confirmation"
+      },
+      "rejectionConditions": [
+        "Application traffic is sent before nomination, path validation, identity verification, key confirmation, and consent.",
+        "Consent expiry or authenticated revocation leaves application traffic active on the affected 5-tuple.",
+        "An ICE restart reuses prior credentials, generation state, consent, or readiness."
+      ],
+      "requiredEvidence": [
+        "Role conflict, checklist, regular nomination, trickle ordering, end-of-candidates, and restart conformance tests.",
+        "Consent checks randomized to 4-6 seconds with 30-second expiry, loss, delayed-response, and immediate-revocation tests.",
+        "Suspend, resume, rebinding, interface change, and fallback tests proving no implicit ready path."
+      ]
+    },
+    {
+      "decisionId": "turn-credential-and-abuse-policy",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["turn_operator", "initial_region", "quota_and_capacity_owner"],
+      "question": "Which credential lifetime, allocation scope, permissions, quotas, regions, transport security, capacity, and outage rules define the first TURN profile?",
+      "recommendedOptionId": "short-lived-pair-scoped-turn",
+      "options": [
+        {
+          "optionId": "short-lived-pair-scoped-turn",
+          "disposition": "recommended",
+          "tradeoff": "Bounds credential theft and abuse while requiring a highly available authenticated issuer."
+        },
+        {
+          "optionId": "long-lived-user-turn-credentials",
+          "disposition": "rejected",
+          "tradeoff": "Simplifies issuance but widens theft, sharing, revocation, and billing exposure."
+        },
+        {
+          "optionId": "unscoped-anonymous-turn",
+          "disposition": "rejected",
+          "tradeoff": "Removes issuer dependence but provides no acceptable authorization or abuse boundary."
+        }
+      ],
+      "proposedContract": {
+        "credentialIssuance": "authenticated_pair_capability_channel_only",
+        "credentialLifetimeSeconds": 600,
+        "allocationLifetimeSeconds": 600,
+        "maximumActiveAllocationsPerPair": 2,
+        "permissionRule": "only_remote_candidate_addresses_authenticated_for_the_same_pair_generation",
+        "transportRule": "turn_service_authenticated_with_tls_1_3_for_tcp_or_tls_profiles_and_message_integrity_for_every_turn_transaction",
+        "initialRegionCount": 1,
+        "quotaRule": "explicit_bytes_packets_bandwidth_and_concurrent_allocation_limits_fail_closed",
+        "outageRule": "retain_an_already_authenticated_direct_path_or_report_unavailable_without_plaintext_or_legacy_turn_fallback",
+        "abuseTelemetry": "source_free_reason_codes_and_saturating_aggregate_counts_only"
+      },
+      "rejectionConditions": [
+        "A credential can allocate for another pair, role, generation, region, or service.",
+        "A TURN permission reaches an address not authenticated as the remote pair's candidate.",
+        "Quota, capacity, credential issuer, or regional outage silently disables authorization or transport security."
+      ],
+      "requiredEvidence": [
+        "Credential theft, replay, cross-pair, expiry, nonce/realm, refresh, permission, and channel-binding tests.",
+        "Allocation and permission quota tests under shared NAT, burst, reconnect, and regional outage conditions.",
+        "Measured capacity, relay occupancy, service bytes, false abuse rejection, and cleanup after client loss."
+      ]
+    },
+    {
+      "decisionId": "session-transition-semantics",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["non_idempotent_failure_contract", "user_retry_experience", "future_deduplication_scope"],
+      "question": "How do application requests behave when a direct or relay path fails or is replaced?",
+      "recommendedOptionId": "between-request-cutover-fail-inflight",
+      "options": [
+        {
+          "optionId": "between-request-cutover-fail-inflight",
+          "disposition": "recommended",
+          "tradeoff": "Prevents duplicate non-idempotent work with visible retry, but an active request does not survive path failure."
+        },
+        {
+          "optionId": "duplicate-safe-cutover-barrier",
+          "disposition": "deferred",
+          "tradeoff": "Can preserve active requests but requires end-to-end request deduplication, commit acknowledgement, and replay persistence."
+        },
+        {
+          "optionId": "transparent-replay",
+          "disposition": "rejected",
+          "tradeoff": "Appears seamless but can duplicate model generation, mutation, cancellation, and attachment effects."
+        }
+      ],
+      "proposedContract": {
+        "cutoverPoint": "between_application_requests_only",
+        "newRequestAdmission": "pause_until_replacement_path_is_fully_application_ready",
+        "inFlightRule": "fail_with_retryable_transport_error_without_automatic_replay",
+        "idempotentRetryRule": "caller_may_issue_a_new_request_id_after_readiness",
+        "nonIdempotentRetryRule": "explicit_user_or_caller_decision_required",
+        "oldPathRule": "stop_admission_then_close_after_inflight_failure_is_published",
+        "fallbackRule": "same_pair_newer_generation_and_fresh_identity_session_only"
+      },
+      "rejectionConditions": [
+        "One application request is delivered or committed on more than one path without a reviewed deduplication contract.",
+        "A replacement path receives new requests before application readiness.",
+        "A stale, cross-pair, or same-generation fallback inherits request or session readiness."
+      ],
+      "requiredEvidence": [
+        "Path-loss races at pre-write, partial-write, response-stream, cancellation, and completion boundaries.",
+        "Non-idempotent chat, mutation, attachment, and cancellation tests proving no transparent replay.",
+        "Same-pair newer-generation cutover tests with deterministic user-visible retry classification."
+      ]
+    },
+    {
+      "decisionId": "release-budgets",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "unresolvedApprovalInputs": ["required_device_matrix", "required_network_matrix", "release_budget_owner"],
+      "question": "Which measured security, traversal, latency, relay, resource, revocation, and abuse thresholds gate cohort expansion and release?",
+      "recommendedOptionId": "measured-matrix-with-hard-stop-budgets",
+      "options": [
+        {
+          "optionId": "measured-matrix-with-hard-stop-budgets",
+          "disposition": "recommended",
+          "tradeoff": "Creates an auditable release floor but requires representative devices, networks, services, and sustained measurement."
+        },
+        {
+          "optionId": "best-effort-observation",
+          "disposition": "rejected",
+          "tradeoff": "Speeds experimentation but cannot support cohort or production-readiness claims."
+        },
+        {
+          "optionId": "single-network-success-gate",
+          "disposition": "rejected",
+          "tradeoff": "Is easy to pass but hides NAT, mobility, IPv6, relay, battery, and outage failures."
+        }
+      ],
+      "proposedContract": {
+        "minimumCompletedSessions": 1000,
+        "requiredMatrix": ["home_nat", "carrier_nat", "enterprise_firewall", "vpn", "ipv4", "ipv6", "nat64", "mobility", "suspend_resume", "turn_outage"],
+        "authenticatedTraversalSuccessMinimum": 0.99,
+        "directAndRelaySuccessReportedSeparately": true,
+        "setupLatencyMilliseconds": {"p50": 1500, "p95": 5000, "p99": 10000},
+        "incrementalMemoryMiB": {"androidP95": 24, "macosP95": 24},
+        "androidBatteryPercentPerHourMaximum": {"idlePaired": 0.25, "activeSession": 2.0},
+        "revocationClosureMillisecondsP99": 30000,
+        "falseAbuseRejectionMaximum": 0.001,
+        "prohibitedDestinationAttemptsAllowed": 0,
+        "plaintextDowngradesAllowed": 0,
+        "duplicateNonIdempotentRequestsAllowed": 0,
+        "rollbackSuccessMinimum": 1.0,
+        "releaseRule": "every_hard_stop_budget_must_pass_in_each_applicable_matrix_cohort"
+      },
+      "rejectionConditions": [
+        "Aggregate success hides a failing required network, address-family, mobility, or outage cohort.",
+        "A security hard stop is averaged away by latency, direct-connect, or relay success.",
+        "Latency, memory, battery, service bytes, consent traffic, relay occupancy, revocation, abuse, or rollback is inferred rather than measured."
+      ],
+      "requiredEvidence": [
+        "Versioned raw and summarized measurements for every required matrix cohort with direct and relay outcomes separated.",
+        "Android and macOS resource traces plus service traffic, consent, allocation, and occupancy measurements.",
+        "Revocation, abuse-control, rollback, prohibited-destination, downgrade, and duplicate-request hard-stop reports."
+      ]
+    }
+  ],
+  "reviewOutcome": {
+    "allDecisionsSelected": false,
+    "networkSpikeAuthorized": false,
+    "nextHandoffCreated": false,
+    "requiredAction": "Explicitly approve this complete recommendation set, approve specified modifications, or reject it before a new versioned handoff can be created."
+  }
+}

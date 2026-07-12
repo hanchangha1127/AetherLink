@@ -317,6 +317,27 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
+    public func resolveSourceAttribution(
+        ownerDeviceID: String?,
+        sessionID: String,
+        assistantMessageID: String,
+        sourceIndex: Int
+    ) throws -> RuntimeChatResolvedSourceAttribution? {
+        try lock.withLock {
+            try withDatabase { database in
+                JSONLRuntimeChatEventStore.resolvedSourceAttribution(
+                    from: try readEventsUnlocked(
+                        database,
+                        matchingOwnerDeviceID: ownerDeviceID.sqliteNormalizedOwnerDeviceID
+                    ),
+                    sessionID: sessionID,
+                    assistantMessageID: assistantMessageID,
+                    sourceIndex: sourceIndex
+                )
+            }
+        }
+    }
+
     public func mutateSession(
         ownerDeviceID: String?,
         sessionID: String,

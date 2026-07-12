@@ -1,0 +1,39 @@
+{
+  "documentType": "aetherlink.p2p-nat-selection-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "production_p2p_nat_v1_approval_20260712",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "status": "closed",
+  "decision": "approved_for_bounded_handoff",
+  "approvalSource": "explicit_user_instruction",
+  "selectedOptions": {
+    "authenticated-rendezvous-and-candidate-protection": "authenticated-encrypted-ice-turn",
+    "identity-bound-traversal-and-relay-fallback": "transport-neutral-identity-session"
+  },
+  "mandatoryFallback": "relay-only-sealed-signaling",
+  "productionDesignStatus": "not_implemented",
+  "activeProtocolNamespace": [
+    "route.refresh"
+  ],
+  "authorization": {
+    "implementationAuthorized": true,
+    "explicitSelectionRequired": false,
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false
+  },
+  "handoffPath": "implementation/handoff-v1.json",
+  "openPreNetworkDecisionIds": [
+    "service-ownership-and-trust",
+    "pair-authorization-and-retention",
+    "candidate-privacy-and-scope",
+    "ice-and-consent-policy",
+    "turn-credential-and-abuse-policy",
+    "session-transition-semantics",
+    "release-budgets"
+  ],
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_decision"
+  }
+}

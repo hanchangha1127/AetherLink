@@ -426,6 +426,17 @@
     <string name="assistant_reasoning_show">Afficher la réflexion</string>
     <string name="assistant_reasoning_hide">Masquer la réflexion</string>
     <string name="copy_message">Copier le message</string>
+    <string name="chat_source_attributions_title">Sources fournies à la réponse</string>
+    <plurals name="chat_source_attributions_accessibility_summary">
+        <item quantity="one">%1$d source fournie à la réponse.</item>
+        <item quantity="other">%1$d sources fournies à la réponse.</item>
+    </plurals>
+    <string name="chat_source_attribution_item">%1$d. %2$s, %3$s, section %4$d</string>
+    <string name="chat_source_attribution_accessibility_summary">Source %1$d sur %2$d. %3$s. %4$s. Section %5$d.</string>
+    <string name="chat_source_attribution_open">Ouvrir la vérification de la source</string>
+    <string name="chat_source_attribution_state_ready">Prêt à ouvrir</string>
+    <string name="chat_source_attribution_state_loading">Ouverture de la vérification</string>
+    <string name="chat_source_attribution_state_unavailable">Vérification de la source indisponible</string>
     <string name="regenerate_response">Régénérer la réponse</string>
     <string name="regenerate_response_state_ready">Prêt à régénérer la dernière réponse.</string>
     <string name="reuse_message">Utiliser comme brouillon</string>
@@ -686,6 +697,7 @@
     <string name="error_document_catalog_load_failed">Impossible de charger le catalogue de documents depuis AetherLink Runtime.</string>
     <string name="error_document_search_failed">Impossible de rechercher des documents depuis AetherLink Runtime.</string>
     <string name="error_citation_resolve_failed">Impossible d’ouvrir la vérification de la source. Réessayez.</string>
+    <string name="error_source_attribution_resolve_failed">Impossible d’ouvrir cette vérification de source historique. Réessayez.</string>
     <string name="error_trusted_source_action_failed">Impossible de mettre à jour les sources fiables. Réessayez.</string>
     <string name="error_trusted_source_not_found">Cette source fiable n’est plus disponible. Actualisez les sources.</string>
     <string name="error_trusted_source_review_invalid">La vérification de la source a expiré ou changé. Ouvrez-la de nouveau.</string>

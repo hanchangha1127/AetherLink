@@ -3,6 +3,7 @@ package com.localagentbridge.android.runtime
 import android.content.Context
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
+import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
@@ -122,7 +123,17 @@ data class PersistedChatMessage(
     val content: String,
     val reasoning: String = "",
     val attachments: List<PersistedMessageAttachment> = emptyList(),
+    val sourceAttributions: List<PersistedChatSourceAttribution> = emptyList(),
+    val assistantMessageId: String? = null,
     val createdAtMillis: Long,
+)
+
+@Serializable
+data class PersistedChatSourceAttribution(
+    val sourceIndex: Int,
+    val documentName: String,
+    val mimeType: String,
+    val chunkIndex: Int,
 )
 
 @Serializable
@@ -1024,6 +1035,8 @@ internal fun PersistedRuntimeData.withRuntimeChatMessages(
                             index = attachmentIndex,
                         )
                     },
+                sourceAttributions = message.sourceAttributions.map { it.toPersistedChatSourceAttribution() },
+                assistantMessageId = message.assistantMessageId,
                 createdAtMillis = createdAt,
             )
         }
@@ -1276,6 +1289,8 @@ private fun PersistedChatMessage.toRuntimeChatMessage(): RuntimeChatMessage {
         content = content,
         reasoning = reasoning,
         attachments = attachments.map { it.toRuntimeMessageAttachment() },
+        sourceAttributions = sourceAttributions.map { it.toRuntimeChatSourceAttribution() },
+        assistantMessageId = assistantMessageId,
     )
 }
 
@@ -1286,16 +1301,77 @@ private fun RuntimeChatMessage.toPersistedChatMessage(nowMillis: Long): Persiste
         content = content,
         reasoning = reasoning,
         attachments = attachments.map { it.toPersistedMessageAttachment() },
+        sourceAttributions = sourceAttributions.map { it.toPersistedChatSourceAttribution() },
+        assistantMessageId = assistantMessageId,
         createdAtMillis = nowMillis,
     )
 }
 
+private fun ChatSourceAttributionPayload.toPersistedChatSourceAttribution() =
+    PersistedChatSourceAttribution(
+        sourceIndex = sourceIndex,
+        documentName = documentName,
+        mimeType = mimeType,
+        chunkIndex = chunkIndex,
+    )
+
+private fun RuntimeChatSourceAttribution.toPersistedChatSourceAttribution() =
+    PersistedChatSourceAttribution(
+        sourceIndex = sourceIndex,
+        documentName = documentName,
+        mimeType = mimeType,
+        chunkIndex = chunkIndex,
+    )
+
+private fun PersistedChatSourceAttribution.toRuntimeChatSourceAttribution() =
+    RuntimeChatSourceAttribution(
+        sourceIndex = sourceIndex,
+        documentName = documentName,
+        mimeType = mimeType,
+        chunkIndex = chunkIndex,
+    )
+
 private fun PersistedChatMessage.withCleanAttachments(): PersistedChatMessage {
+    val cleanSourceAttributions = if (role == "assistant") {
+        sourceAttributions.sanitizedChatSourceAttributions()
+    } else {
+        emptyList()
+    }
     return copy(
         attachments = attachments
             .mapNotNull { it.sanitizedOrNull() }
             .distinctBy { it.id },
+        sourceAttributions = cleanSourceAttributions,
+        assistantMessageId = assistantMessageId?.takeIf {
+            cleanSourceAttributions.isNotEmpty() && CHAT_ASSISTANT_MESSAGE_ID_PATTERN.matches(it)
+        },
     )
+}
+
+private fun List<PersistedChatSourceAttribution>.sanitizedChatSourceAttributions(): List<PersistedChatSourceAttribution> {
+    if (size > 8) return emptyList()
+    val clean = mapNotNull { attribution ->
+        attribution.takeIf {
+            it.sourceIndex in 1..8 &&
+                it.documentName.isSafePersistedSourceDocumentName() &&
+                it.mimeType.length <= 128 &&
+                CHAT_SOURCE_ATTRIBUTION_MIME_TYPE_PATTERN.matches(it.mimeType) &&
+                it.chunkIndex >= 0
+        }
+    }
+    return clean.takeIf {
+        it.size == size && it.map(PersistedChatSourceAttribution::sourceIndex) == (1..size).toList()
+    }.orEmpty()
+}
+
+private fun String.isSafePersistedSourceDocumentName(): Boolean {
+    if (isBlank() || codePointCount(0, length) > 256) return false
+    return none { character ->
+        character == '/' ||
+            character == '\\' ||
+            character.code in 0x00..0x1F ||
+            character.code in 0x7F..0x9F
+    }
 }
 
 private fun ChatStoredAttachmentPayload.toPersistedMessageAttachment(
@@ -1500,6 +1576,14 @@ private fun stableRuntimeMessageId(
                 attachment.text.orEmpty(),
             ).joinToString(separator = "\u001D")
         },
+        message.sourceAttributions.joinToString(separator = "\u001E") { attribution ->
+            listOf(
+                attribution.sourceIndex.toString(),
+                attribution.documentName,
+                attribution.mimeType,
+                attribution.chunkIndex.toString(),
+            ).joinToString(separator = "\u001D")
+        },
     ).joinToString(separator = "\u001F")
     return UUID.nameUUIDFromBytes(seed.encodeToByteArray()).toString()
 }
@@ -1519,6 +1603,9 @@ private fun titleForMessages(messages: List<RuntimeChatMessage>): String {
 }
 
 private val CHAT_STORAGE_ROLES = setOf("user", "assistant")
+private val CHAT_SOURCE_ATTRIBUTION_MIME_TYPE_PATTERN =
+    Regex("^[a-z0-9!#\$%&'*+.^_`|~-]+/[a-z0-9!#\$%&'*+.^_`|~-]+$")
+private val CHAT_ASSISTANT_MESSAGE_ID_PATTERN = Regex("^assistant_message_[0-9a-f]{32}$")
 private const val DEFAULT_CHAT_TITLE = ""
 private const val LEGACY_DEFAULT_CHAT_TITLE = "New chat"
 private const val MAX_TITLE_LENGTH = 48

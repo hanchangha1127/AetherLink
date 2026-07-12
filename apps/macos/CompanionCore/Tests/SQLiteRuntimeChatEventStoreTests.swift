@@ -336,6 +336,532 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertTrue(try reopenedStore.listMessages(sessionID: "sqlite-session", limit: 0).isEmpty)
     }
 
+    func testSQLiteStorePersistsSourceAttributionsAndRegeneratePrefixRewindsAssistant() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let firstAssistantMessageID = "assistant_message_11111111111111111111111111111111"
+        let secondAssistantMessageID = "assistant_message_22222222222222222222222222222222"
+        let firstAttribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "old.md",
+            mimeType: "text/markdown",
+            chunkIndex: 0
+        )
+        let secondAttribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "new.md",
+            mimeType: "text/markdown",
+            chunkIndex: 3
+        )
+        let firstBinding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_1111111111111111",
+            documentID: "doc-old",
+            sourceRevision: String(repeating: "1", count: 64)
+        )
+        let secondBinding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_2222222222222222",
+            documentID: "doc-new",
+            sourceRevision: String(repeating: "2", count: 64)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "turn-1",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Regenerate this answer.")]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .assistantDelta,
+            requestID: "turn-1",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            delta: "Old answer"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .done,
+            requestID: "turn-1",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            sourceAttributions: [firstAttribution],
+            assistantMessageID: firstAssistantMessageID,
+            sourceAttributionBindings: [firstBinding]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 103),
+            kind: .request,
+            requestID: "turn-2",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Regenerate this answer.")]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 104),
+            kind: .assistantDelta,
+            requestID: "turn-2",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            delta: "New answer"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 105),
+            kind: .done,
+            requestID: "turn-2",
+            sessionID: "regenerate-session",
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            sourceAttributions: [secondAttribution],
+            assistantMessageID: secondAssistantMessageID,
+            sourceAttributionBindings: [secondBinding]
+        ))
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let messages = try reopenedStore.listMessages(sessionID: "regenerate-session", limit: 10)
+        XCTAssertEqual(messages.map(\.content), ["Regenerate this answer.", "New answer"])
+        XCTAssertEqual(messages.last?.sourceAttributions, [secondAttribution])
+        XCTAssertEqual(messages.last?.assistantMessageID, secondAssistantMessageID)
+        XCTAssertNil(try reopenedStore.resolveSourceAttribution(
+            ownerDeviceID: nil,
+            sessionID: "regenerate-session",
+            assistantMessageID: firstAssistantMessageID,
+            sourceIndex: 1
+        ))
+        XCTAssertEqual(
+            try reopenedStore.resolveSourceAttribution(
+                ownerDeviceID: nil,
+                sessionID: "regenerate-session",
+                assistantMessageID: secondAssistantMessageID,
+                sourceIndex: 1
+            )?.binding,
+            secondBinding
+        )
+    }
+
+    func testSQLiteStoreResolvesOnlyOwnerScopedBoundCanonicalAssistantAttribution() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let assistantMessageID = "assistant_message_0123456789abcdef0123456789abcdef"
+        let attribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "source.md",
+            mimeType: "text/markdown",
+            chunkIndex: 0
+        )
+        let binding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_0123456789abcdef",
+            documentID: "doc-source",
+            sourceRevision: String(repeating: "a", count: 64)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1),
+            kind: .request,
+            requestID: "request",
+            sessionID: "session",
+            model: "model",
+            messages: [ChatMessage(role: "user", content: "Question")],
+            ownerDeviceID: "device-a"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 2),
+            kind: .assistantDelta,
+            requestID: "request",
+            sessionID: "session",
+            model: "model",
+            delta: "Answer",
+            ownerDeviceID: "device-a"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 3),
+            kind: .done,
+            requestID: "request",
+            sessionID: "session",
+            model: "model",
+            finishReason: "stop",
+            ownerDeviceID: "device-a",
+            sourceAttributions: [attribution],
+            assistantMessageID: assistantMessageID,
+            sourceAttributionBindings: [binding]
+        ))
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        XCTAssertEqual(
+            try reopenedStore.listMessages(
+                ownerDeviceID: "device-a",
+                sessionID: "session",
+                limit: 10
+            ).last?.assistantMessageID,
+            assistantMessageID
+        )
+        XCTAssertEqual(
+            try reopenedStore.resolveSourceAttribution(
+                ownerDeviceID: "device-a",
+                sessionID: "session",
+                assistantMessageID: assistantMessageID,
+                sourceIndex: 1
+            )?.binding,
+            binding
+        )
+        XCTAssertNil(try reopenedStore.resolveSourceAttribution(
+            ownerDeviceID: "device-b",
+            sessionID: "session",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 1
+        ))
+        XCTAssertNil(try reopenedStore.resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "wrong-session",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 1
+        ))
+        XCTAssertNil(try reopenedStore.resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "session",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 2
+        ))
+
+        _ = try reopenedStore.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "session",
+            requestID: "archive-session",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 4)
+        )
+        _ = try reopenedStore.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "session",
+            requestID: "delete-session",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 5)
+        )
+        XCTAssertNil(try reopenedStore.resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "session",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 1
+        ))
+        let pruneResult = try reopenedStore.pruneDeletedSessions(
+            ownerDeviceID: "device-a",
+            deletedBefore: Date(timeIntervalSince1970: 6)
+        )
+        XCTAssertEqual(pruneResult.prunedSessionIDs, ["session"])
+        XCTAssertNil(try SQLiteRuntimeChatEventStore(databaseURL: databaseURL).resolveSourceAttribution(
+            ownerDeviceID: "device-a",
+            sessionID: "session",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 1
+        ))
+
+        let legacyStore = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        try legacyStore.append(RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "legacy",
+            sessionID: "legacy",
+            model: "model",
+            finishReason: "stop",
+            sourceAttributions: [attribution]
+        ))
+        XCTAssertNil(try legacyStore.resolveSourceAttribution(
+            ownerDeviceID: nil,
+            sessionID: "legacy",
+            assistantMessageID: assistantMessageID,
+            sourceIndex: 1
+        ))
+    }
+
+    func testSQLiteStoreRejectsNoncanonicalOrMisplacedSourceAttributions() throws {
+        let valid = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "source.md",
+            mimeType: "text/markdown",
+            chunkIndex: 0
+        )
+        let invalidEvents = [
+            RuntimeChatStoredEvent(
+                kind: .cancelled,
+                requestID: "wrong-kind",
+                sessionID: "session",
+                model: "model",
+                finishReason: "cancelled",
+                sourceAttributions: [valid]
+            ),
+            RuntimeChatStoredEvent(
+                kind: .done,
+                requestID: "wrong-finish",
+                sessionID: "session",
+                model: "model",
+                finishReason: "length",
+                sourceAttributions: [valid]
+            ),
+            RuntimeChatStoredEvent(
+                kind: .done,
+                requestID: "noncontiguous",
+                sessionID: "session",
+                model: "model",
+                finishReason: "stop",
+                sourceAttributions: [RuntimeChatSourceAttribution(
+                    sourceIndex: 2,
+                    documentName: "source.md",
+                    mimeType: "text/markdown",
+                    chunkIndex: 0
+                )]
+            ),
+            RuntimeChatStoredEvent(
+                kind: .done,
+                requestID: "unsafe-fields",
+                sessionID: "session",
+                model: "model",
+                finishReason: "stop",
+                sourceAttributions: [RuntimeChatSourceAttribution(
+                    sourceIndex: 1,
+                    documentName: "/private/source.md",
+                    mimeType: "TEXT/PLAIN",
+                    chunkIndex: -1
+                )]
+            ),
+        ]
+
+        for event in invalidEvents {
+            let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+            XCTAssertThrowsError(try store.append(event))
+        }
+    }
+
+    func testJSONLStoreRejectsForbiddenSourceAttributionFieldsAndAcceptsLegacyEvents() throws {
+        let fileURL = try temporaryJSONLURL()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let event = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "forbidden-field",
+            sessionID: "session",
+            model: "model",
+            finishReason: "stop",
+            sourceAttributions: [RuntimeChatSourceAttribution(
+                sourceIndex: 1,
+                documentName: "source.md",
+                mimeType: "text/markdown",
+                chunkIndex: 0
+            )]
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoder.encode(event)) as? [String: Any]
+        )
+        var attributions = try XCTUnwrap(object["source_attributions"] as? [[String: Any]])
+        attributions[0]["text"] = "forbidden source text"
+        object["source_attributions"] = attributions
+        let forbiddenData = try JSONSerialization.data(withJSONObject: object)
+        try (forbiddenData + Data([0x0A])).write(to: fileURL)
+
+        XCTAssertThrowsError(
+            try JSONLRuntimeChatEventStore(fileURL: fileURL).listMessages(
+                sessionID: "session",
+                limit: 10
+            )
+        )
+
+        let legacyURL = try temporaryJSONLURL()
+        let legacyEvent = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "legacy",
+            sessionID: "legacy-session",
+            model: "model",
+            finishReason: "stop"
+        )
+        try (encoder.encode(legacyEvent) + Data([0x0A])).write(to: legacyURL)
+        XCTAssertNoThrow(
+            try JSONLRuntimeChatEventStore(fileURL: legacyURL).listMessages(
+                sessionID: "legacy-session",
+                limit: 10
+            )
+        )
+    }
+
+    func testJSONLStoreRejectsUnknownInternalSourceAttributionBindingFields() throws {
+        let fileURL = try temporaryJSONLURL()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let event = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "unknown-binding-field",
+            sessionID: "session",
+            model: "model",
+            finishReason: "stop",
+            sourceAttributions: [RuntimeChatSourceAttribution(
+                sourceIndex: 1,
+                documentName: "source.md",
+                mimeType: "text/markdown",
+                chunkIndex: 0
+            )],
+            assistantMessageID: "assistant_message_33333333333333333333333333333333",
+            sourceAttributionBindings: [RuntimeChatSourceAttributionBinding(
+                sourceIndex: 1,
+                sourceAnchorID: "source_anchor_3333333333333333",
+                documentID: "doc-source",
+                sourceRevision: String(repeating: "3", count: 64)
+            )]
+        )
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoder.encode(event)) as? [String: Any]
+        )
+        var bindings = try XCTUnwrap(object["source_attribution_bindings"] as? [[String: Any]])
+        bindings[0]["future_internal_locator"] = "must fail closed"
+        object["source_attribution_bindings"] = bindings
+        let data = try JSONSerialization.data(withJSONObject: object)
+        try (data + Data([0x0A])).write(to: fileURL)
+
+        XCTAssertThrowsError(
+            try JSONLRuntimeChatEventStore(fileURL: fileURL).listMessages(
+                sessionID: "session",
+                limit: 10
+            )
+        ) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog(let line, _) = error else {
+                return XCTFail("Expected corrupt event log, got \(error)")
+            }
+            XCTAssertEqual(line, 1)
+        }
+    }
+
+    func testSourceAttributionResolverRejectsDuplicateRequestBoundaryAfterJSONLAndSQLiteReopen() throws {
+        let canonicalAssistantMessageID = "assistant_message_44444444444444444444444444444444"
+        let duplicateAssistantMessageID = "assistant_message_55555555555555555555555555555555"
+        let attribution = RuntimeChatSourceAttribution(
+            sourceIndex: 1,
+            documentName: "source.md",
+            mimeType: "text/markdown",
+            chunkIndex: 0
+        )
+        let binding = RuntimeChatSourceAttributionBinding(
+            sourceIndex: 1,
+            sourceAnchorID: "source_anchor_4444444444444444",
+            documentID: "doc-source",
+            sourceRevision: String(repeating: "4", count: 64)
+        )
+
+        func appendFixtures(to store: any RuntimeChatEventStore) throws {
+            for event in [
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    kind: .request,
+                    requestID: "canonical-request",
+                    sessionID: "canonical-session",
+                    model: "model",
+                    messages: [ChatMessage(role: "user", content: "Canonical question")]
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 2),
+                    kind: .assistantDelta,
+                    requestID: "canonical-request",
+                    sessionID: "canonical-session",
+                    model: "model",
+                    delta: "Canonical answer"
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 3),
+                    kind: .done,
+                    requestID: "canonical-request",
+                    sessionID: "canonical-session",
+                    model: "model",
+                    finishReason: "stop",
+                    sourceAttributions: [attribution],
+                    assistantMessageID: canonicalAssistantMessageID,
+                    sourceAttributionBindings: [binding]
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 10),
+                    kind: .request,
+                    requestID: "client-duplicate-request",
+                    sessionID: "duplicate-session",
+                    model: "model",
+                    messages: [ChatMessage(role: "user", content: "First request")]
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 11),
+                    kind: .assistantDelta,
+                    requestID: "client-duplicate-request",
+                    sessionID: "duplicate-session",
+                    model: "model",
+                    delta: "Output before duplicate boundary"
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 12),
+                    kind: .request,
+                    requestID: "client-duplicate-request",
+                    sessionID: "duplicate-session",
+                    model: "model",
+                    messages: [ChatMessage(role: "user", content: "Second request")]
+                ),
+                RuntimeChatStoredEvent(
+                    timestamp: Date(timeIntervalSince1970: 13),
+                    kind: .done,
+                    requestID: "client-duplicate-request",
+                    sessionID: "duplicate-session",
+                    model: "model",
+                    finishReason: "stop",
+                    sourceAttributions: [attribution],
+                    assistantMessageID: duplicateAssistantMessageID,
+                    sourceAttributionBindings: [binding]
+                ),
+            ] {
+                try store.append(event)
+            }
+        }
+
+        func assertResolutionAfterReopen(_ store: any RuntimeChatEventStore) throws {
+            XCTAssertEqual(
+                try store.resolveSourceAttribution(
+                    ownerDeviceID: nil,
+                    sessionID: "canonical-session",
+                    assistantMessageID: canonicalAssistantMessageID,
+                    sourceIndex: 1
+                )?.binding,
+                binding
+            )
+            XCTAssertNil(try store.resolveSourceAttribution(
+                ownerDeviceID: nil,
+                sessionID: "duplicate-session",
+                assistantMessageID: duplicateAssistantMessageID,
+                sourceIndex: 1
+            ))
+        }
+
+        let jsonlURL = try temporaryJSONLURL()
+        try appendFixtures(to: JSONLRuntimeChatEventStore(fileURL: jsonlURL))
+        try assertResolutionAfterReopen(JSONLRuntimeChatEventStore(fileURL: jsonlURL))
+
+        let sqliteURL = try temporaryDatabaseURL()
+        try appendFixtures(to: SQLiteRuntimeChatEventStore(databaseURL: sqliteURL))
+        try assertResolutionAfterReopen(SQLiteRuntimeChatEventStore(databaseURL: sqliteURL))
+    }
+
+    func testJSONLAppendRejectsInvalidAttributionBeforeCreatingEventLog() throws {
+        let fileURL = try temporaryJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        let invalidEvent = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "invalid-attribution-append",
+            sessionID: "session",
+            model: "model",
+            finishReason: "stop",
+            sourceAttributions: [RuntimeChatSourceAttribution(
+                sourceIndex: 2,
+                documentName: "source.md",
+                mimeType: "text/markdown",
+                chunkIndex: 0
+            )]
+        )
+
+        XCTAssertThrowsError(try store.append(invalidEvent))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
     func testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt() throws {
         let databaseURL = try temporaryDatabaseURL()
         let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)

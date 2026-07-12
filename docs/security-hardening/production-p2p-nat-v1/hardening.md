@@ -21,11 +21,11 @@ signaling confidentiality, endpoint key confirmation, or a production data
 transport. The threat model and standards map therefore label those properties
 reserved rather than active.
 
-This is a selection-gated design portfolio, not remediation evidence. The
-recommendations below do not select an option or authorize source changes. No `implementation/`
-directory should exist until the user selects an option and asks for an
-implementation handoff. No production design has been selected, and the
-recommended protocol behavior is not implemented.
+This remains design evidence, not remediation evidence. The recommended profile
+is explicitly approved only for the bounded handoff recorded in
+`selection-decision.json` and `implementation/handoff-v1.json`. The production
+protocol behavior is not implemented, and no networking library, network I/O,
+or deployment is authorized.
 
 ## Constraints
 
@@ -59,8 +59,8 @@ recommended protocol behavior is not implemented.
 
 | Opportunity | Evidence | Options | Recommendation | Proposal |
 | --- | --- | --- | --- | --- |
-| `authenticated-rendezvous-and-candidate-protection` | Opaque route preparation and connector gap (`E001`, `E003`-`E005`, `E007`, `E011`-`E013`) | 1. relay-only sealed signaling baseline; 2. authenticated encrypted ICE signaling with TURN fallback; 3. decentralized rendezvous | Recommend `authenticated-encrypted-ice-turn`; **not selected** | [Authenticate rendezvous and protect candidate exchange](proposals/authenticated-rendezvous-and-candidate-protection.md) |
-| `identity-bound-traversal-and-relay-fallback` | Pinned pair identity and common transport seams lack one nominated-path transcript (`E001`, `E004`, `E006`-`E010`, `E012`) | 1. transport-neutral secure session over nominated path; 2. ICE bootstrap plus QUIC session spike; 3. relay-first session then direct promotion | Recommend `transport-neutral-identity-session`, with the QUIC option contingent; **not selected** | [Bind identity across traversal and relay fallback](proposals/identity-bound-traversal-and-relay-fallback.md) |
+| `authenticated-rendezvous-and-candidate-protection` | Opaque route preparation and connector gap (`E001`, `E003`-`E005`, `E007`, `E011`-`E013`) | 1. relay-only sealed signaling baseline; 2. authenticated encrypted ICE signaling with TURN fallback; 3. decentralized rendezvous | `authenticated-encrypted-ice-turn` selected for the approved bounded profile | [Authenticate rendezvous and protect candidate exchange](proposals/authenticated-rendezvous-and-candidate-protection.md) |
+| `identity-bound-traversal-and-relay-fallback` | Pinned pair identity and common transport seams lack one nominated-path transcript (`E001`, `E004`, `E006`-`E010`, `E012`) | 1. transport-neutral secure session over nominated path; 2. ICE bootstrap plus QUIC session spike; 3. relay-first session then direct promotion | `transport-neutral-identity-session` selected for the approved bounded profile; QUIC remains deferred | [Bind identity across traversal and relay fallback](proposals/identity-bound-traversal-and-relay-fallback.md) |
 
 **Opportunity 1: Authenticated rendezvous and candidate protection**
 
@@ -150,9 +150,10 @@ consume those bounds rather than reinterpret opaque legacy material as ICE.
 
 ## Recommendation Summary
 
-I recommend Option 2 for the first opportunity and Option 1 for the second under
-the current constraints, while keeping both recommendations explicitly
-unselected. First, we should design
+The approved `production_p2p_nat_v1_recommended` profile selects Option 2 for
+the first opportunity and Option 1 for the second under the current constraints.
+This bounded handoff authorizes canonical contracts and no-network conformance
+only; a controlled network spike remains separately unselected. The selected design is
 authenticated encrypted ICE signaling with standards-conformant STUN checks and
 TURN fallback. Service TLS, endpoint authorization, generation-scoped replay
 state, candidate limits, consent freshness, short-lived TURN credentials, and
@@ -176,24 +177,49 @@ the endpoint trust model. Conversely, relay-only candidate privacy could move
 earlier if threat-model review concludes that exposing host or reflexive
 addresses to signaling is unacceptable.
 
+The recommendations are assembled into the explicitly approved bounded
+[production P2P/NAT v1 profile](selection-profile.md), with the exact machine
+boundary in [selection-profile.json](selection-profile.json). The selected
+combination is `authenticated-encrypted-ice-turn` plus
+`transport-neutral-identity-session`, with `relay-only-sealed-signaling` as the
+mandatory rollback. It is `approved_for_bounded_handoff`, with
+`implementationAuthorized=true` and `explicitSelectionRequired=false`, while all
+three handoff packages stay at `networkIOAllowed=false`. The selection scope
+covers canonical contracts and dependency-gated no-network conformance;
+`handoff-v1` initially authorized execution of canonical contracts only;
+`handoff-v2` records canonical contracts and no-network conformance as completed.
+The immutable [pre-network approval decision](pre-network/decision-v1.md)
+selects all seven recommended policies, and `handoff-v3` supersedes
+`handoff-v2` to record that selection. It does not select a production library,
+authorize sockets or deployment, or provide network implementation evidence.
+
 No recommendation closes a security gap until the selected protocol is
 implemented and revalidated on real networks and devices.
+The explicit selection authorizes only the bounded handoff scope.
 
 ## Next Decisions
 
-Review or refine the recommended protocol profiles before a separate explicit
-selection authorizes implementation.
+Preserve the completed canonical-contract and no-network conformance evidence and
+keep the network gate closed until the separate library and isolated-harness
+review is explicitly selected. The closed
+[controlled-spike review v1](controlled-network-spike/review-v1.md) is the
+decision-ready source packet for that step; it proposes four recommendations,
+selects zero, and authorizes no source acquisition, implementation, or socket.
 
-- **Selection gate:** explicitly select, refine, combine, or reject the options
-  for each opportunity. A recommendation is not selection.
-- Choose signaling ownership and endpoint authorization semantics, including
+The [pre-network review v1](pre-network/review-v1.md) remains the immutable
+`proposed_not_selected` source packet. The separate closed approval decision
+selects every recommendation without rewriting that proposal, and `handoff-v3`
+keeps network, library, socket, and deployment authorization false.
+
+- **Selection record:** preserve the closed approval of
+  `production_p2p_nat_v1_recommended` and its exact selected options.
+- Implement the selected signaling ownership and endpoint authorization semantics only after the next review, including
   pair/session ids, roles, generations, sequence/idempotency, retention, deletion,
   service trust roots, rotation, and outage behavior.
-- Choose candidate privacy modes and whether end-to-end candidate encryption is
-  mandatory, optional, or replaced by relay-only operation for sensitive users.
-- Define the ICE profile: roles, candidate types/caps/priorities, trickle policy,
+- Preserve the selected end-to-end limited-direct candidate privacy mode and its relay-only fallback.
+- Implement the selected ICE profile only after library and harness review: roles, candidate types/caps/priorities, trickle policy,
   restart semantics, pacing, consent, IPv4/IPv6, mobility, and failure reasons.
-- Define TURN credential issuance, scope, lifetime, permissions, quotas,
+- Implement the selected TURN credential issuance, scope, lifetime, permissions, quotas,
   transport security, regions, abuse controls, capacity targets, and outage
   fallback. Do not treat the current development relay as TURN compliance.
 - Freeze the transport-neutral secure-session inputs, canonical transcript,
@@ -206,7 +232,7 @@ selection authorizes implementation.
   restrictive NAT, carrier NAT, VPN, IPv4, IPv6, NAT64, Wi-Fi/cellular changes,
   suspend/resume, consent loss, TURN outage, signaling replay, and service
   compromise simulations.
-- After selection only, create an implementation handoff with phased work,
-  acceptance criteria, rollback, fixed cross-platform vectors, negative tests,
-  packet-level review, and no-downgrade migration. Do not create
-  `implementation/` or select a concrete library before that gate.
+- Keep `implementation/` limited to the three closed versioned handoff pairs:
+  `handoff-v1`, its `handoff-v2` completion record, and the policy-selected
+  `handoff-v3`. Do not select a concrete
+  production library or add executable implementation code under that directory.

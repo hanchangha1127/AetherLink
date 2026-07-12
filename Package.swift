@@ -14,6 +14,15 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "P2PNATContracts",
+            path: "apps/macos/P2PNATContracts/Sources"
+        ),
+        .target(
+            name: "P2PNATConformance",
+            dependencies: ["P2PNATContracts"],
+            path: "apps/macos/P2PNATConformance/Sources"
+        ),
+        .target(
             name: "RelayServerCore",
             dependencies: ["BridgeProtocol"],
             path: "apps/macos/RelayServerCore/Sources"
@@ -84,6 +93,16 @@ let package = Package(
             name: "AetherLinkRelay",
             dependencies: ["RelayServerCore"],
             path: "apps/macos/AetherLinkRelay/Sources"
+        ),
+        .testTarget(
+            name: "P2PNATContractsTests",
+            dependencies: ["P2PNATContracts"],
+            path: "apps/macos/P2PNATContracts/Tests"
+        ),
+        .testTarget(
+            name: "P2PNATConformanceTests",
+            dependencies: ["P2PNATConformance", "P2PNATContracts"],
+            path: "apps/macos/P2PNATConformance/Tests"
         ),
         .testTarget(
             name: "RelayServerCoreTests",

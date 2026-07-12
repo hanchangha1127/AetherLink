@@ -744,6 +744,11 @@ private fun LocalAgentBridgeApp(
                                     onToggleTrustedSource = viewModel::toggleTrustedSourceSelection,
                                     onRemoveTrustedSource = viewModel::removeTrustedSourceSelection,
                                     onRefreshTrustedSources = viewModel::refreshTrustedSources,
+                                    onReviewHistoricalSourceAttribution =
+                                        viewModel::reviewHistoricalSourceAttribution,
+                                    onApproveTrustedSource = { viewModel.approveTrustedSource() },
+                                    onDismissTrustedSource = { viewModel.dismissTrustedSource() },
+                                    onRevokeTrustedSource = viewModel::revokeTrustedSource,
                                     onScanLatestQr = scanPairingQr,
                                     onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
                                     onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,

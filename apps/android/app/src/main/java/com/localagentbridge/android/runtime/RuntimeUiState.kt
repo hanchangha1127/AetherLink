@@ -59,6 +59,8 @@ data class RuntimeUiState(
     val selectedTrustedSourceAnchorIds: List<String> = emptyList(),
     val hasLoadedTrustedSources: Boolean = false,
     val isResolvingCitation: Boolean = false,
+    val resolvingSourceAttributionMessageId: String? = null,
+    val resolvingSourceAttributionIndex: Int? = null,
     val isApprovingTrustedSource: Boolean = false,
     val isDismissingTrustedSource: Boolean = false,
     val isLoadingTrustedSources: Boolean = false,
@@ -224,6 +226,15 @@ data class RuntimeChatMessage(
     val isReasoningOpen: Boolean = false,
     val inlineReasoningPendingTag: String = "",
     val attachments: List<RuntimeMessageAttachment> = emptyList(),
+    val sourceAttributions: List<RuntimeChatSourceAttribution> = emptyList(),
+    val assistantMessageId: String? = null,
+)
+
+data class RuntimeChatSourceAttribution(
+    val sourceIndex: Int,
+    val documentName: String,
+    val mimeType: String,
+    val chunkIndex: Int,
 )
 
 data class RuntimePendingAttachment(

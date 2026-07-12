@@ -1,0 +1,382 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-network-spike-review",
+  "schemaVersion": "1.0",
+  "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceHandoffPath": "../implementation/handoff-v3.json",
+  "sourceHandoffId": "production_p2p_nat_v1_handoff_v3",
+  "status": "proposed_not_selected",
+  "measurementStatus": "not_started",
+  "approvalRequired": {
+    "decisionIds": [
+      "networking_library_selection",
+      "session_cryptography_library_selection",
+      "isolated_harness_design",
+      "socket_destination_and_egress_controls"
+    ],
+    "approvalBoundary": "separate_versioned_decision_before_socket_execution"
+  },
+  "authorization": {
+    "librarySelectionAuthorized": false,
+    "harnessImplementationAuthorized": false,
+    "networkIOAllowed": false,
+    "socketExecutionAuthorized": false,
+    "productionDeploymentAuthorized": false,
+    "nextHandoffAuthorized": false
+  },
+  "securityFloors": [
+    {
+      "floorId": "route_token_separation",
+      "contract": "routeToken is never candidate, ICE, STUN, TURN, endpoint, transcript, capability, traffic-key, allowlist, or application authority."
+    },
+    {
+      "floorId": "endpoint_identity_before_application_readiness",
+      "contract": "Both paired endpoint identities and the ALP1 transcript are authenticated before any path becomes application-ready."
+    },
+    {
+      "floorId": "no_plaintext_or_unauthenticated_downgrade",
+      "contract": "Failure of identity, key confirmation, authenticated encryption, consent, or service trust closes the path without plaintext, anonymous, legacy, or lower-suite fallback."
+    },
+    {
+      "floorId": "default_deny_destination",
+      "contract": "Candidate policy and an immutable per-run numeric endpoint allowlist must both authorize the exact protocol, address, and port before socket creation."
+    },
+    {
+      "floorId": "no_dns_or_proxy",
+      "contract": "Hostnames, DNS resolution, DNS rebinding, HTTP proxies, SOCKS proxies, environment proxies, PAC, URL fetches, and redirects are prohibited."
+    },
+    {
+      "floorId": "no_application_payload_before_identity_and_key_confirmation",
+      "contract": "No application payload byte is admitted before path validation, endpoint identity verification, ALP1 transcript binding, and bidirectional key confirmation complete."
+    },
+    {
+      "floorId": "exact_resource_and_time_ceilings",
+      "contract": {
+        "agentProcessCount": 2,
+        "maximumLocalServiceProcessCount": 2,
+        "maximumRunSeconds": 600,
+        "maximumSetupSeconds": 120,
+        "maximumSessionEstablishmentSeconds": 60,
+        "maximumConsentObservationSeconds": 45,
+        "maximumCpuCoresPerProcess": 1,
+        "maximumResidentMemoryMiBPerProcess": 256,
+        "maximumFileDescriptorsPerProcess": 64,
+        "maximumSocketsPerProcess": 16,
+        "maximumCapturedPacketsPerRun": 10000,
+        "maximumCapturedBytesPerRun": 16777216
+      }
+    },
+    {
+      "floorId": "content_free_logs",
+      "contract": "Logs contain only bounded reason codes, counters, durations, numeric test endpoint labels, and redacted digests; no secrets, keys, tokens, credentials, candidates, packet payloads, or application content."
+    },
+    {
+      "floorId": "kill_on_policy_drift",
+      "contract": "Any allowlist mutation, unexpected route, DNS or proxy attempt, witness failure, ceiling breach, or packet outside the approved tuple set kills all harness processes and marks the run invalid."
+    }
+  ],
+  "decisionOrder": [
+    "networking_library_selection",
+    "session_cryptography_library_selection",
+    "isolated_harness_design",
+    "socket_destination_and_egress_controls"
+  ],
+  "decisions": [
+    {
+      "decisionId": "networking_library_selection",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "question": "Which pinned networking library may be evaluated against the selected full-ICE, regular-nomination, consent-freshness, STUN, and TURN contracts on Android and macOS?",
+      "unresolvedApprovalInputs": [
+        "exact_upstream_source_tag_and_commit_sha",
+        "android_and_macos_compile_only_results",
+        "regular_nomination_source_and_behavior_audit",
+        "consent_freshness_source_and_behavior_audit",
+        "license_and_transitive_dependency_review"
+      ],
+      "recommendedOptionId": "libjuice-1.7.2-static-c-abi",
+      "options": [
+        {
+          "optionId": "libjuice-1.7.2-static-c-abi",
+          "disposition": "recommended",
+          "tradeoff": "The upstream project states that its dependency-free MPL-2.0 C implementation supports Android and macOS and implements RFC 8445, RFC 8489, RFC 8656, and RFC 7675, but regular nomination, consent behavior, and the exact source tag and commit SHA remain unproven until an approved compile-only and source-audit phase."
+        },
+        {
+          "optionId": "libnice-0.1.23-glib-c-abi",
+          "disposition": "fallback",
+          "tradeoff": "The documented NiceAgent API exposes regular nomination and consent-freshness controls and is the mandatory fallback if libjuice fails audit, but GLib integration and platform packaging add dependency and lifecycle complexity."
+        },
+        {
+          "optionId": "libdatachannel-0.24.3-datachannel-stack",
+          "disposition": "alternative",
+          "tradeoff": "Provides a broader WebRTC data-channel stack and native C API, but its crypto, SCTP, ICE-backend, and media-related dependency surface is substantially larger than the spike requires."
+        }
+      ],
+      "proposedContract": {
+        "candidateOptionId": "libjuice-1.7.2-static-c-abi",
+        "integrationShape": "static_library_through_versioned_c_abi_adapter",
+        "targetPlatforms": ["android_min_sdk_26", "macos"],
+        "requiredProtocolClaimsToAudit": ["rfc8445", "rfc8489", "rfc8656", "rfc7675"],
+        "requiredIceBehavior": "full_ice_regular_nomination_single_component_udp",
+        "requiredConsentBehavior": "authenticated_consent_freshness_with_fail_closed_traffic_stop",
+        "sourceAcquisition": "prohibited_by_this_review_separate_bounded_compile_only_source_audit_authorization_required",
+        "sourcePinAfterSelection": "exact_release_tag_and_commit_sha_required_before_compile_only_work",
+        "networkExecutionDuringSelection": false,
+        "fallbackRule": "reject_libjuice_and_open_a_new_versioned_review_for_libnice_0_1_23_if_compile_only_or_source_audit_fails"
+      },
+      "rejectionConditions": [
+        "The exact upstream tag, commit SHA, archive digest, license, or dependency closure cannot be independently fixed and reviewed.",
+        "Android minSdk 26 or macOS compile-only integration cannot use the same bounded C ABI without unreviewed platform forks.",
+        "Source audit cannot establish explicit regular nomination and RFC 7675 consent-freshness behavior with fail-closed traffic stop.",
+        "The library can resolve hostnames, use proxies, follow redirects, or open sockets outside the caller-enforced candidate policy and numeric allowlist.",
+        "A callback or state transition can expose application readiness before endpoint identity and key confirmation."
+      ],
+      "requiredEvidence": [
+        "A separately authorized, bounded pre-selection source audit producing a manifest that fixes the upstream release tag, commit SHA, archive SHA-256, license files, build flags, generated files, and complete transitive dependency list; this review itself authorizes no acquisition.",
+        "Reproducible Android minSdk 26 and macOS compile-only logs for the static C ABI adapter with socket and network tests disabled.",
+        "A line-referenced source audit of regular nomination, role handling, consent request cadence, consent expiry, TURN authentication, parser limits, and shutdown behavior.",
+        "ABI, symbol-visibility, callback-threading, cancellation, allocator, and error-mapping review on both platforms.",
+        "A documented libnice fallback review trigger showing that audit failure creates a new versioned proposal and does not silently select or download the fallback."
+      ]
+    },
+    {
+      "decisionId": "session_cryptography_library_selection",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "question": "Which platform cryptography implementation preserves the existing transport-neutral ALP1 transcript and P-256, HKDF-SHA-256, and AES-256-GCM suite without creating a lower Android API dependency?",
+      "unresolvedApprovalInputs": [
+        "android_provider_matrix_owner",
+        "cross_platform_vector_review",
+        "ephemeral_key_lifecycle_review",
+        "cryptographic_error_and_zeroization_policy",
+        "provider_substitution_and_fips_posture"
+      ],
+      "recommendedOptionId": "platform-native-p256-hkdf-sha256-aes256gcm",
+      "options": [
+        {
+          "optionId": "platform-native-p256-hkdf-sha256-aes256gcm",
+          "disposition": "recommended",
+          "tradeoff": "Uses macOS CryptoKit and Android provider-neutral JCA primitives while preserving the existing ALP1 suite; Android must generate ephemeral P-256 keys without relying on AndroidKeyStore API 31 functionality because the project minSdk is 26."
+        },
+        {
+          "optionId": "pinned-boringssl-native",
+          "disposition": "alternative",
+          "tradeoff": "Could provide one native implementation across platforms, but adds a large pinned native dependency, patch ownership, JNI or C interop, and independent supply-chain review."
+        },
+        {
+          "optionId": "libdatachannel-dtls-session",
+          "disposition": "alternative",
+          "tradeoff": "Offers a mature DTLS-backed data-channel session, but replacing the transport-neutral ALP1 transcript would expand scope and require a new identity-binding and downgrade analysis."
+        }
+      ],
+      "proposedContract": {
+        "candidateOptionId": "platform-native-p256-hkdf-sha256-aes256gcm",
+        "transcript": "existing_canonical_ALP1_transport_neutral_identity_session_transcript",
+        "keyAgreement": "ephemeral_p256_ecdh",
+        "keyDerivation": "hkdf_sha256_rfc5869_with_role_and_transcript_bound_info",
+        "trafficProtection": "aes_256_gcm_with_unique_96_bit_nonce_and_authenticated_ALP1_context",
+        "keyConfirmation": "bidirectional_transcript_bound_hmac_sha256_before_application_readiness",
+        "macosImplementation": "CryptoKit_P256_HKDF_SHA256_AES_GCM",
+        "androidImplementation": "provider_neutral_JCA_EC_secp256r1_KeyAgreement_ECDH_Mac_HmacSHA256_Cipher_AES_GCM_NoPadding",
+        "androidMinimumSdk": 26,
+        "androidEphemeralKeyRule": "in_memory_provider_neutral_keypair_generation_no_dependency_on_AndroidKeyStore_API_31_ephemeral_ECDH",
+        "downgradeRule": "no_alternate_curve_hash_kdf_cipher_dtls_or_plaintext_fallback",
+        "networkExecutionDuringSelection": false
+      },
+      "rejectionConditions": [
+        "Any platform changes the canonical ALP1 transcript bytes, role binding, pair binding, generation binding, path binding, or key-confirmation order.",
+        "Android ephemeral ECDH depends on an API newer than minSdk 26, a named non-system provider, or AndroidKeyStore API 31 behavior.",
+        "Nonce reuse, unauthenticated metadata, invalid-curve acceptance, provider fallback, or decryption failure can produce application readiness.",
+        "A proposed implementation introduces plaintext, anonymous, DTLS-only identity, lower-suite, or relay-specific session downgrade.",
+        "Cross-platform fixed vectors do not match for ECDH normalization, HKDF inputs and outputs, AES-GCM ciphertext and tag, and key confirmation."
+      ],
+      "requiredEvidence": [
+        "Android minSdk 26 provider-matrix compile-only tests and macOS compile-only tests with no socket creation.",
+        "Swift and Kotlin fixed vectors for P-256 public-key validation, ECDH shared-secret handling, RFC 5869 HKDF, AES-256-GCM, nonce uniqueness, and bidirectional key confirmation.",
+        "Negative vectors for off-curve keys, malformed encodings, transcript substitution, role reflection, generation replay, nonce reuse, bad tags, and provider errors.",
+        "A key-lifecycle review covering entropy, ephemeral generation, memory lifetime, cancellation, failure cleanup, persistence prohibition, and content-free diagnostics.",
+        "An explicit compatibility record proving that direct and relay paths retain the same ALP1 endpoint-identity and cryptographic floor."
+      ]
+    },
+    {
+      "decisionId": "isolated_harness_design",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "question": "Which isolated, bounded harness can first prove compile-only platform integration and later, after separate approval, run two agents against local-only STUN and TURN without external egress?",
+      "unresolvedApprovalInputs": [
+        "linux_runner_and_namespace_owner",
+        "local_stun_turn_fixture_owner",
+        "resource_ceiling_owner",
+        "packet_capture_and_evidence_retention_owner",
+        "phase_b_socket_execution_approver"
+      ],
+      "recommendedOptionId": "linux-netns-twin-agent-local-services",
+      "options": [
+        {
+          "optionId": "linux-netns-twin-agent-local-services",
+          "disposition": "recommended",
+          "tradeoff": "Separates two agent processes and local STUN/TURN services with deterministic namespace routing, deny-all external egress, packet observation, and fixed ceilings, but Phase B requires a Linux runner and an explicit later socket-execution decision."
+        },
+        {
+          "optionId": "macos-pf-host-harness",
+          "disposition": "alternative",
+          "tradeoff": "Exercises a native macOS host but depends on privileged PF configuration, offers weaker process and route isolation, and does not directly represent Android integration."
+        },
+        {
+          "optionId": "android-emulator-first-harness",
+          "disposition": "alternative",
+          "tradeoff": "Exercises Android runtime packaging early but adds emulator NAT opacity and timing variability before the network policy and cross-platform adapter are independently bounded."
+        }
+      ],
+      "proposedContract": {
+        "candidateOptionId": "linux-netns-twin-agent-local-services",
+        "phaseA": {
+          "name": "android_macos_compile_only",
+          "socketCreationAllowed": false,
+          "networkIOAllowed": false,
+          "sourceDownloadAllowed": false,
+          "outputs": ["compiler_diagnostics", "linker_symbol_manifest", "abi_manifest", "static_policy_results"]
+        },
+        "phaseB": {
+          "name": "later_approved_linux_namespace_execution",
+          "status": "blocked_on_separate_versioned_decision",
+          "agentProcessCount": 2,
+          "serviceScope": "local_stun_and_turn_only",
+          "externalEgressPolicy": "deny_all",
+          "namespaceRule": "one_network_namespace_per_agent_plus_local_service_namespace",
+          "hostNetworkAccess": false,
+          "internetAccess": false,
+          "wallClockTimeoutSeconds": 600,
+          "setupTimeoutSeconds": 120,
+          "sessionEstablishmentTimeoutSeconds": 60,
+          "consentObservationSeconds": 45,
+          "maximumLocalServiceProcessCount": 2,
+          "maximumCpuCoresPerProcess": 1,
+          "maximumResidentMemoryMiBPerProcess": 256,
+          "maximumFileDescriptorsPerProcess": 64,
+          "maximumSocketsPerProcess": 16,
+          "maximumCapturedPacketsPerRun": 10000,
+          "maximumCapturedBytesPerRun": 16777216
+        },
+        "failureRule": "kill_all_processes_and_discard_measurement_on_timeout_ceiling_breach_route_drift_policy_drift_or_witness_failure"
+      },
+      "rejectionConditions": [
+        "Phase A creates a socket, downloads source, resolves a hostname, or performs any network I/O.",
+        "Phase B can reach a host interface, default route, public address, DNS resolver, proxy, redirect target, metadata service, or service outside the local numeric allowlist.",
+        "The two agent processes are not isolated from each other except through explicitly modeled namespace links and local services.",
+        "Any process exceeds an exact time, CPU, memory, file-descriptor, socket, packet, or capture-byte ceiling without immediate termination.",
+        "A run can continue or report valid measurements after firewall, namespace, witness, packet-capture, or policy drift."
+      ],
+      "requiredEvidence": [
+        "Phase A Android minSdk 26 and macOS compile-only evidence proving zero socket creation and zero network I/O.",
+        "A reviewed namespace and routing manifest showing two agent processes, local-only STUN/TURN, no host-network attachment, and no default external route.",
+        "Independent deny-all egress witness tests using forbidden numeric IPv4 and IPv6 destinations, DNS, proxy, redirect, metadata-service, and route-mutation attempts.",
+        "Resource-limit tests proving deterministic kill behavior at every process, time, descriptor, socket, packet, byte, CPU, and memory ceiling.",
+        "Packet-capture assertions proving that every emitted packet matches the immutable per-run numeric protocol-address-port allowlist and contains no application payload."
+      ]
+    },
+    {
+      "decisionId": "socket_destination_and_egress_controls",
+      "status": "proposed_not_selected",
+      "resolution": null,
+      "approvalSource": null,
+      "question": "Which independent controls ensure that a later-approved harness can create sockets only for pre-authorized numeric endpoints and cannot use DNS, proxies, redirects, or external egress?",
+      "unresolvedApprovalInputs": [
+        "numeric_endpoint_manifest_owner",
+        "os_egress_witness_implementation_owner",
+        "candidate_policy_adapter_review",
+        "packet_capture_assertion_owner",
+        "redaction_and_evidence_retention_owner"
+      ],
+      "recommendedOptionId": "numeric-endpoint-allowlist-plus-os-egress-witness",
+      "options": [
+        {
+          "optionId": "numeric-endpoint-allowlist-plus-os-egress-witness",
+          "disposition": "recommended",
+          "tradeoff": "Combines application candidate policy, an immutable numeric tuple allowlist, OS deny-all enforcement, and packet-capture assertions, adding setup complexity in exchange for independent and observable fail-closed layers."
+        },
+        {
+          "optionId": "library-config-only",
+          "disposition": "rejected",
+          "tradeoff": "Simple to configure but trusts one library boundary and cannot independently witness hidden DNS, proxy, redirect, or unexpected socket behavior."
+        },
+        {
+          "optionId": "firewall-only",
+          "disposition": "rejected",
+          "tradeoff": "Can block packets at the OS boundary but does not prevent prohibited candidate intent, unsafe library inputs, excess socket creation, or secret-bearing diagnostics."
+        }
+      ],
+      "proposedContract": {
+        "candidateOptionId": "numeric-endpoint-allowlist-plus-os-egress-witness",
+        "authorizationOrder": [
+          "parse_numeric_endpoint_without_resolution",
+          "apply_candidate_policy_before_library_call",
+          "match_immutable_per_run_protocol_address_port_allowlist",
+          "verify_os_deny_all_witness_is_armed",
+          "permit_single_bounded_socket_operation",
+          "assert_packet_capture_against_same_allowlist"
+        ],
+        "allowlistMutability": "immutable_after_run_manifest_signature",
+        "endpointSyntax": "numeric_ipv4_or_bracketed_numeric_ipv6_plus_explicit_protocol_and_port",
+        "prohibitedResolutionAndRouting": ["dns", "mdns", "doh", "dot", "http_proxy", "socks_proxy", "pac", "environment_proxy", "redirect", "url_fetch", "default_external_route"],
+        "osWitness": "deny_all_then_allow_exact_local_numeric_tuples_with_counter_and_kill_switch",
+        "packetCaptureAssertion": "every_packet_must_match_manifest_direction_protocol_numeric_address_and_port",
+        "secretHandling": "redact_tokens_credentials_keys_nonces_candidate_values_packet_payloads_and_application_content",
+        "policyDriftRule": "kill_all_processes_invalidate_run_and_preserve_content_free_reason_code_only",
+        "networkExecutionDuringSelection": false
+      },
+      "rejectionConditions": [
+        "A hostname, URL, redirect, proxy, resolver, interface-derived default, wildcard address, port range, or mutable endpoint enters the library configuration.",
+        "Candidate policy runs after a library call, DNS lookup, proxy lookup, socket creation, connect, bind, send, or allocation attempt.",
+        "The OS witness is not deny-all by default or cannot independently count and kill packets outside exact local numeric tuples.",
+        "Packet capture observes an address, port, protocol, direction, namespace, or payload class absent from the signed run manifest.",
+        "Logs, command lines, environment variables, packet evidence, or failure reports expose secrets, credentials, keys, tokens, raw candidates, or application content."
+      ],
+      "requiredEvidence": [
+        "Static and compile-only tests proving candidate policy and immutable numeric allowlist checks occur before every library or socket API boundary.",
+        "Forbidden-destination vectors for IPv4, IPv6, mapped addresses, loopback, link-local, multicast, broadcast, private scopes, metadata services, wildcards, port ranges, and malformed numeric syntax.",
+        "DNS, mDNS, DoH, DoT, proxy, PAC, environment-proxy, redirect, URL, and route-injection tests proving fail-before-I/O behavior.",
+        "OS witness and packet-capture tests proving deny-all external egress, exact tuple accounting, kill-on-drift, and no unobserved bypass path.",
+        "A redaction audit proving that diagnostics and retained evidence are content-free and contain no secrets or application payloads."
+      ]
+    }
+  ],
+  "officialSources": {
+    "verifiedAt": "2026-07-12",
+    "sources": [
+      {"sourceId": "libjuice_repository", "url": "https://github.com/paullouisageneau/libjuice"},
+      {"sourceId": "libjuice_v1_7_2_header", "url": "https://github.com/paullouisageneau/libjuice/blob/v1.7.2/include/juice/juice.h"},
+      {"sourceId": "libjuice_v1_7_2_release", "url": "https://github.com/paullouisageneau/libjuice/releases/tag/v1.7.2"},
+      {"sourceId": "libnice_site_and_0_1_23_release_index", "url": "https://libnice.freedesktop.org/"},
+      {"sourceId": "libnice_nice_agent_reference", "url": "https://libnice.freedesktop.org/libnice/NiceAgent.html"},
+      {"sourceId": "libdatachannel_repository", "url": "https://github.com/paullouisageneau/libdatachannel"},
+      {"sourceId": "libdatachannel_v0_24_3_release", "url": "https://github.com/paullouisageneau/libdatachannel/releases/tag/v0.24.3"},
+      {"sourceId": "libdatachannel_native_c_api_note", "url": "https://github.com/paullouisageneau/libdatachannel/blob/v0.24.3/DOC.md"},
+      {"sourceId": "android_cryptography", "url": "https://developer.android.com/privacy-and-security/cryptography"},
+      {"sourceId": "android_key_agreement", "url": "https://developer.android.com/reference/javax/crypto/KeyAgreement"},
+      {"sourceId": "android_key_gen_parameter_spec", "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec"},
+      {"sourceId": "apple_cryptokit_p256", "url": "https://developer.apple.com/documentation/cryptokit/p256"},
+      {"sourceId": "apple_cryptokit_hkdf", "url": "https://developer.apple.com/documentation/cryptokit/hkdf"},
+      {"sourceId": "apple_cryptokit_aes_gcm", "url": "https://developer.apple.com/documentation/cryptokit/aes/gcm"},
+      {"sourceId": "rfc8445", "url": "https://www.rfc-editor.org/rfc/rfc8445.html"},
+      {"sourceId": "rfc8489", "url": "https://www.rfc-editor.org/rfc/rfc8489.html"},
+      {"sourceId": "rfc8656", "url": "https://www.rfc-editor.org/rfc/rfc8656.html"},
+      {"sourceId": "rfc7675", "url": "https://www.rfc-editor.org/rfc/rfc7675.html"},
+      {"sourceId": "rfc5869", "url": "https://www.rfc-editor.org/rfc/rfc5869.html"}
+    ]
+  },
+  "reviewOutcome": {
+    "selectedDecisionCount": 0,
+    "recommendationCount": 4,
+    "controlledNetworkSpikeStatus": "blocked_on_explicit_selection",
+    "artifactCreated": false,
+    "handoffCreated": false
+  },
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_review"
+  }
+}

@@ -59,6 +59,7 @@ AetherLink v0.1 proves the smallest useful local loop: a client pairs with Aethe
 - Client can add, disable, and remove user-managed runtime memory notes through the trusted runtime; enabled notes are included only through the runtime-mediated `chat.send` path.
 - Runtime host streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Runtime host sends `chat.done` when generation completes.
+- Post-v0.1 hardening may add authenticated `chat.source_attribution.resolve` for attribution-bearing completed answers. Its server-generated assistant locator is non-authorizing, source display metadata remains four fields, and current approval plus the exact historical revision must be revalidated before the existing source-review dialog can open. Source text and internal authority bindings remain absent from ordinary completion/history payloads.
 - Client can send `chat.cancel`; the runtime host cancels the active generation abstraction.
 - Runtime errors are returned as structured `error` messages and shown in the client UI.
 - Untrusted clients receive `pairing_required` or `authentication_required` before runtime commands execute.

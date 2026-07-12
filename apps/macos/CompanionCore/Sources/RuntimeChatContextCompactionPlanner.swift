@@ -99,6 +99,7 @@ struct RuntimeChatContextCompactionResult: Equatable, Sendable {
     var status: RuntimeChatContextCompactionStatus
     var request: ChatRequest?
     var sourcePointer: RuntimeChatCompactionSourcePointer?
+    var summarySource: String?
     var accounting: RuntimeChatContextCompactionAccounting
     var structure: RuntimeChatContextCompactionStructure
     var rejectionReason: RuntimeChatContextCompactionRejectionReason?
@@ -111,7 +112,9 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
     )
 
     private static let summaryPrefix = "Historical conversation summary (untrusted source text):\n"
+    private static let generatedSummaryPrefix = "LLM-generated historical conversation summary (untrusted model-generated text):\n"
     private static let maximumSummarySourceCharacters = 4_096
+    private static let maximumGeneratedSummaryInputCharacters = 16_384
 
     private let estimator: any RuntimeChatTokenEstimating
 
@@ -144,6 +147,7 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
                 status: .unchanged,
                 request: request,
                 sourcePointer: nil,
+                summarySource: nil,
                 accounting: accounting(
                     contextWindowTokens: contextWindowTokens,
                     reserve: reserve,
@@ -250,6 +254,7 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
                     status: .compacted,
                     request: candidate.request,
                     sourcePointer: pointer,
+                    summarySource: candidate.summarySource,
                     accounting: accounting(
                         contextWindowTokens: contextWindowTokens,
                         reserve: reserve,
@@ -281,34 +286,109 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
         )
     }
 
+    func applyingGeneratedSummary(
+        _ generatedText: String,
+        to result: RuntimeChatContextCompactionResult
+    ) -> RuntimeChatContextCompactionResult? {
+        guard result.status == .compacted,
+              result.summarySource != nil,
+              let fallbackRequest = result.request,
+              let fallbackEstimate = result.accounting.estimatedTokensAfter else {
+            return nil
+        }
+
+        let boundedInput = generatedText.prefix(Self.maximumGeneratedSummaryInputCharacters + 1)
+        guard boundedInput.count <= Self.maximumGeneratedSummaryInputCharacters else { return nil }
+        let trimmedText = String(boundedInput).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty,
+              let summaryIndex = fallbackSummaryIndex(in: fallbackRequest.messages) else {
+            return nil
+        }
+
+        let maximumEstimate = min(result.accounting.inputBudgetTokens, fallbackEstimate)
+        guard maximumEstimate >= 0,
+              let candidate = bestFittingGeneratedSummary(
+                trimmedText,
+                replacingMessageAt: summaryIndex,
+                in: fallbackRequest,
+                maximumEstimate: maximumEstimate
+              ) else {
+            return nil
+        }
+
+        var accepted = result
+        accepted.request = candidate.request
+        accepted.accounting.estimatedTokensAfter = candidate.estimate
+        return accepted
+    }
+
     private func bestFittingCandidate(
         request: ChatRequest,
         compactedTurns: [ConversationTurn],
         sourceText: String,
         maximumSourceLength: Int,
         budget: Int
-    ) -> (request: ChatRequest, estimate: Int)? {
+    ) -> (request: ChatRequest, estimate: Int, summarySource: String)? {
         guard maximumSourceLength > 0 else { return nil }
         var lowerBound = 1
         var upperBound = maximumSourceLength
-        var best: (request: ChatRequest, estimate: Int)?
+        var best: (request: ChatRequest, estimate: Int, summarySource: String)?
 
         while lowerBound <= upperBound {
             let sourceLength = lowerBound + (upperBound - lowerBound) / 2
+            let boundedSource = String(sourceText.prefix(sourceLength))
             let candidate = compactedRequest(
                 request,
                 compactedTurns: compactedTurns,
-                summarySource: String(sourceText.prefix(sourceLength))
+                summarySource: boundedSource
             )
             let estimate = estimator.estimatedTokens(for: candidate)
             if estimate <= budget {
-                best = (candidate, estimate)
+                best = (candidate, estimate, boundedSource)
                 lowerBound = sourceLength + 1
             } else {
                 upperBound = sourceLength - 1
             }
         }
         return best
+    }
+
+    private func bestFittingGeneratedSummary(
+        _ generatedText: String,
+        replacingMessageAt summaryIndex: Int,
+        in request: ChatRequest,
+        maximumEstimate: Int
+    ) -> (request: ChatRequest, estimate: Int)? {
+        var lowerBound = 1
+        var upperBound = generatedText.count
+        var best: (request: ChatRequest, estimate: Int)?
+
+        while lowerBound <= upperBound {
+            let length = lowerBound + (upperBound - lowerBound) / 2
+            var messages = request.messages
+            messages[summaryIndex] = ChatMessage(
+                role: "assistant",
+                content: Self.generatedSummaryPrefix + String(generatedText.prefix(length))
+            )
+            let candidate = replacingMessages(in: request, with: messages)
+            let estimate = estimator.estimatedTokens(for: candidate)
+            if estimate <= maximumEstimate {
+                best = (candidate, estimate)
+                lowerBound = length + 1
+            } else {
+                upperBound = length - 1
+            }
+        }
+        return best
+    }
+
+    private func fallbackSummaryIndex(in messages: [ChatMessage]) -> Int? {
+        guard messages.count >= 2 else { return nil }
+        return messages.indices.dropLast().first { index in
+            messages[index] == Self.provenanceMessage
+                && normalizedRole(messages[index + 1].role) == "assistant"
+                && messages[index + 1].content.hasPrefix(Self.summaryPrefix)
+        }.map { $0 + 1 }
     }
 
     private func compactedRequest(
@@ -410,6 +490,7 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
             status: .rejected,
             request: nil,
             sourcePointer: nil,
+            summarySource: nil,
             accounting: accounting(
                 contextWindowTokens: contextWindowTokens,
                 reserve: reserve,

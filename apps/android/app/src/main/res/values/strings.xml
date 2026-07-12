@@ -426,6 +426,17 @@
     <string name="assistant_reasoning_show">Show thinking</string>
     <string name="assistant_reasoning_hide">Hide thinking</string>
     <string name="copy_message">Copy message</string>
+    <string name="chat_source_attributions_title">Sources provided to the response</string>
+    <plurals name="chat_source_attributions_accessibility_summary">
+        <item quantity="one">Sources provided to the response. %1$d source.</item>
+        <item quantity="other">Sources provided to the response. %1$d sources.</item>
+    </plurals>
+    <string name="chat_source_attribution_item">%1$d. %2$s, %3$s, section %4$d</string>
+    <string name="chat_source_attribution_accessibility_summary">Source %1$d of %2$d. %3$s. %4$s. Section %5$d.</string>
+    <string name="chat_source_attribution_open">Open source review</string>
+    <string name="chat_source_attribution_state_ready">Ready to open</string>
+    <string name="chat_source_attribution_state_loading">Opening source review</string>
+    <string name="chat_source_attribution_state_unavailable">Source review unavailable</string>
     <string name="regenerate_response">Regenerate response</string>
     <string name="regenerate_response_state_ready">Ready to regenerate the latest response.</string>
     <string name="reuse_message">Use as draft</string>
@@ -686,6 +697,7 @@
     <string name="error_document_catalog_load_failed">Could not load document catalog from AetherLink Runtime.</string>
     <string name="error_document_search_failed">Could not search documents from AetherLink Runtime.</string>
     <string name="error_citation_resolve_failed">Could not open the source review. Try again.</string>
+    <string name="error_source_attribution_resolve_failed">Could not open this historical source review. Try again.</string>
     <string name="error_trusted_source_action_failed">Could not update trusted sources. Try again.</string>
     <string name="error_trusted_source_not_found">This trusted source is no longer available. Refresh sources.</string>
     <string name="error_trusted_source_review_invalid">This source review expired or changed. Open it again.</string>

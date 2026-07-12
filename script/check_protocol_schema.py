@@ -75,6 +75,9 @@ ALLOWED_RETRIEVAL_TYPES = {
 ALLOWED_CITATION_TYPES = {
     "citation.resolve",
 }
+ALLOWED_CHAT_SOURCE_ATTRIBUTION_TYPES = {
+    "chat.source_attribution.resolve",
+}
 ALLOWED_SOURCE_ANCHOR_TYPES = {
     "source_anchor.resolve",
 }
@@ -84,10 +87,15 @@ ALLOWED_TRUSTED_SOURCE_TYPES = {
     "trusted_source.list",
     "trusted_source.revoke",
 }
-SCHEMA_ONLY_MESSAGE_TYPES = ALLOWED_CITATION_TYPES | ALLOWED_TRUSTED_SOURCE_TYPES
+SCHEMA_ONLY_MESSAGE_TYPES = (
+    ALLOWED_CITATION_TYPES
+    | ALLOWED_CHAT_SOURCE_ATTRIBUTION_TYPES
+    | ALLOWED_TRUSTED_SOURCE_TYPES
+)
 ALLOWED_TOOL_TYPES = frozenset()
 ALLOWED_ROUTE_TYPES = {"route.refresh"}
 INDEX_DOCUMENT_MIME_TYPE_PATTERN = r"^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$"
+CHAT_SOURCE_DOCUMENT_NAME_PATTERN = r"^[^\u0000-\u001F\u007F-\u009F/\\]+$"
 REQUIRED_RELAY_QR_FIELDS = {
     "relay_host",
     "relay_port",
@@ -2556,6 +2564,10 @@ def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> l
 
     expected_defs: dict[str, dict[str, object]] = {
         "citationID": {"type": "string", "pattern": "^citation_[0-9a-f]{32}$"},
+        "assistantMessageID": {
+            "type": "string",
+            "pattern": "^assistant_message_[0-9a-f]{32}$",
+        },
         "sourceReviewID": {"type": "string", "pattern": "^source_review_[0-9a-f]{32}$"},
         "sourceConfirmationToken": {
             "type": "string",
@@ -2652,6 +2664,26 @@ def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> l
                     ),
                 ]
             },
+            "chatSourceAttributionResolvePayload": {
+                "oneOf": [
+                    closed_object(
+                        ["session_id", "assistant_message_id", "source_index"],
+                        {
+                            "session_id": {"$ref": "#/$defs/nonBlankString"},
+                            "assistant_message_id": {"$ref": "#/$defs/assistantMessageID"},
+                            "source_index": {"type": "integer", "minimum": 1, "maximum": 8},
+                        },
+                    ),
+                    closed_object(
+                        ["citation", "review"],
+                        {
+                            "citation": {"$ref": "#/$defs/citation"},
+                            "review": {"$ref": "#/$defs/sourceReview"},
+                            "trusted_source": {"$ref": "#/$defs/trustedSource"},
+                        },
+                    ),
+                ]
+            },
             "trustedSourceApprovePayload": {
                 "oneOf": [
                     closed_object(
@@ -2729,6 +2761,7 @@ def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> l
 
     expected_payload_refs = {
         "citation.resolve": "#/$defs/citationResolvePayload",
+        "chat.source_attribution.resolve": "#/$defs/chatSourceAttributionResolvePayload",
         "trusted_source.approve": "#/$defs/trustedSourceApprovePayload",
         "trusted_source.dismiss": "#/$defs/trustedSourceDismissPayload",
         "trusted_source.list": "#/$defs/trustedSourceListPayload",
@@ -2784,6 +2817,15 @@ def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> l
             {"citation": citation, "review": review},
             {"citation": citation, "review": review, "trusted_source": trusted_source},
         ],
+        "chatSourceAttributionResolvePayload": [
+            {
+                "session_id": "session-1",
+                "assistant_message_id": "assistant_message_" + "4" * 32,
+                "source_index": 1,
+            },
+            {"citation": citation, "review": review},
+            {"citation": citation, "review": review, "trusted_source": trusted_source},
+        ],
         "trustedSourceApprovePayload": [
             approve_request,
             {"trusted_source": trusted_source},
@@ -2829,6 +2871,38 @@ def check_trusted_source_payload_schema_contract(schema: dict[str, object]) -> l
             changed({"citation": citation, "review": review}, ("review", "approval_id"), "approval_1"),
             changed({"citation": citation, "review": review}, ("citation", "document", "path"), "/tmp/private"),
             changed({"citation": citation, "review": review, "trusted_source": trusted_source}, ("trusted_source", "grant_id"), "trusted_source_bad"),
+        ],
+        "chatSourceAttributionResolvePayload": [
+            {},
+            {
+                "session_id": "   ",
+                "assistant_message_id": "assistant_message_" + "4" * 32,
+                "source_index": 1,
+            },
+            {
+                "session_id": "session-1",
+                "assistant_message_id": "assistant_message_bad",
+                "source_index": 1,
+            },
+            {
+                "session_id": "session-1",
+                "assistant_message_id": "assistant_message_" + "4" * 32,
+                "source_index": 0,
+            },
+            {
+                "session_id": "session-1",
+                "assistant_message_id": "assistant_message_" + "4" * 32,
+                "source_index": 9,
+            },
+            {
+                "session_id": "session-1",
+                "assistant_message_id": "assistant_message_" + "4" * 32,
+                "source_index": 1,
+                "revision": 1,
+            },
+            {"citation": citation},
+            changed({"citation": citation, "review": review}, ("citation", "text"), "secret"),
+            changed({"citation": citation, "review": review}, ("review", "revision"), 1),
         ],
         "trustedSourceApprovePayload": [
             {"review_id": review["review_id"]},
@@ -4588,6 +4662,10 @@ def simple_schema_sample_failures(
     *,
     path: str,
 ) -> list[str]:
+    if schema_fragment is False:
+        return [f"{path} is forbidden by schema"]
+    if schema_fragment is True:
+        return []
     if not isinstance(schema_fragment, dict):
         return [f"{path} schema must be an object"]
 
@@ -4632,7 +4710,7 @@ def simple_schema_sample_failures(
         failures.append(f"{path} must be one of {enum_values!r}")
 
     value_type = schema_fragment.get("type")
-    if value_type == "object":
+    if value_type == "object" or "properties" in schema_fragment or "required" in schema_fragment:
         if not isinstance(value, dict):
             return failures + [f"{path} must be an object"]
         properties = schema_fragment.get("properties")
@@ -4657,7 +4735,9 @@ def simple_schema_sample_failures(
                 )
         return failures
 
-    if value_type == "array":
+    if value_type == "array" or any(
+        key in schema_fragment for key in ("minItems", "maxItems", "prefixItems", "items")
+    ):
         if not isinstance(value, list):
             return failures + [f"{path} must be an array"]
         minimum_items = schema_fragment.get("minItems")
@@ -4666,9 +4746,21 @@ def simple_schema_sample_failures(
         maximum_items = schema_fragment.get("maxItems")
         if isinstance(maximum_items, int) and len(value) > maximum_items:
             failures.append(f"{path} must contain at most {maximum_items} items")
+        prefix_items = schema_fragment.get("prefixItems", [])
+        if isinstance(prefix_items, list):
+            for index, item_schema in enumerate(prefix_items[:len(value)]):
+                failures.extend(
+                    simple_schema_sample_failures(
+                        value[index],
+                        item_schema,
+                        defs,
+                        path=f"{path}[{index}]",
+                    )
+                )
         item_schema = schema_fragment.get("items")
         if item_schema is not None:
-            for index, item in enumerate(value):
+            start_index = len(prefix_items) if isinstance(prefix_items, list) else 0
+            for index, item in enumerate(value[start_index:], start=start_index):
                 failures.extend(
                     simple_schema_sample_failures(
                         item,
@@ -5174,6 +5266,7 @@ def main() -> int:
         return 1
 
     failures.extend(check_chat_delta_schema(schema))
+    failures.extend(check_chat_source_attribution_schema(schema))
     failures.extend(check_locale_payload_schemas(schema))
     failures.extend(check_runtime_health_model_residency_schema(schema))
     failures.extend(check_memory_summary_draft_schema(schema))
@@ -5212,6 +5305,231 @@ def check_chat_delta_schema(schema: dict) -> list[str]:
     for field in ["delta", "text", "reasoning_delta", "thinking_delta"]:
         if (field,) not in required_options:
             failures.append(f"chat.delta payload schema must allow {field}-only deltas")
+    return failures
+
+
+def check_chat_source_attribution_schema(schema: dict) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if defs.get("assistantMessageID") != {
+        "type": "string",
+        "pattern": "^assistant_message_[0-9a-f]{32}$",
+    }:
+        failures.append("assistantMessageID must use the canonical 32-lowercase-hex shape")
+    attribution = defs.get("chatSourceAttribution", {})
+    if attribution.get("additionalProperties") is not False:
+        failures.append("chatSourceAttribution additionalProperties must be false")
+    required_attribution_fields = attribution.get("required")
+    expected_fields = {"source_index", "document_name", "mime_type", "chunk_index"}
+    if (
+        not isinstance(required_attribution_fields, list)
+        or len(required_attribution_fields) != len(expected_fields)
+        or set(required_attribution_fields) != expected_fields
+    ):
+        failures.append("chatSourceAttribution must require only the safe ordered attribution fields")
+    properties = attribution.get("properties", {})
+    if not isinstance(properties, dict) or set(properties) != expected_fields:
+        failures.append("chatSourceAttribution properties must stay limited to safe display metadata")
+        properties = {}
+    if properties.get("source_index") != {"type": "integer", "minimum": 1, "maximum": 8}:
+        failures.append("chatSourceAttribution source_index must stay bounded 1...8")
+    if schema_max_length(properties.get("document_name")) != 256:
+        failures.append("chatSourceAttribution document_name must stay bounded to 256 characters")
+    document_name = properties.get("document_name")
+    if not isinstance(document_name, dict) or not any(
+        isinstance(rule, dict) and rule.get("$ref") == "#/$defs/nonBlankString"
+        for rule in document_name.get("allOf", [])
+    ):
+        failures.append("chatSourceAttribution document_name must use nonBlankString")
+    if schema_pattern(document_name) != CHAT_SOURCE_DOCUMENT_NAME_PATTERN:
+        failures.append("chatSourceAttribution document_name must reject control characters")
+    mime_type = properties.get("mime_type")
+    if schema_max_length(mime_type) != 128 or schema_pattern(mime_type) != INDEX_DOCUMENT_MIME_TYPE_PATTERN:
+        failures.append("chatSourceAttribution mime_type must reuse the canonical bounded MIME shape")
+    if properties.get("chunk_index") != {"type": "integer", "minimum": 0}:
+        failures.append("chatSourceAttribution chunk_index must stay nonnegative")
+    forbidden_fields = {
+        "grant_id", "citation_id", "source_anchor_id", "source_revision", "approval_id",
+        "document_id", "content_fingerprint", "text", "snippet", "source_path",
+        "workspace_id", "project_id", "backend_url",
+    }
+    leaked_fields = sorted(set(properties) & forbidden_fields)
+    if leaked_fields:
+        failures.append(f"chatSourceAttribution exposes forbidden authority or source fields {leaked_fields}")
+
+    expected_array = {"$ref": "#/$defs/chatSourceAttributions"}
+    attribution_array = defs.get("chatSourceAttributions", {})
+    if not isinstance(attribution_array, dict):
+        failures.append("chatSourceAttributions must be a reusable array definition")
+        attribution_array = {}
+    if (
+        attribution_array.get("type") != "array"
+        or attribution_array.get("minItems") != 1
+        or attribution_array.get("maxItems") != 8
+    ):
+        failures.append("chatSourceAttributions must stay bounded to 1...8 entries")
+    array_options = attribution_array.get("oneOf", [])
+    if not isinstance(array_options, list) or len(array_options) != 8:
+        failures.append("chatSourceAttributions must define one contiguous-index shape per length")
+    else:
+        for length, option in enumerate(array_options, start=1):
+            prefix_items = option.get("prefixItems", []) if isinstance(option, dict) else []
+            if (
+                not isinstance(option, dict)
+                or option.get("minItems") != length
+                or option.get("maxItems") != length
+                or not isinstance(prefix_items, list)
+                or len(prefix_items) != length
+            ):
+                failures.append(f"chatSourceAttributions length {length} shape must be exact")
+                continue
+            for source_index, item in enumerate(prefix_items, start=1):
+                expected_item = {
+                    "allOf": [
+                        {"$ref": "#/$defs/chatSourceAttribution"},
+                        {"properties": {"source_index": {"const": source_index}}},
+                    ]
+                }
+                if item != expected_item:
+                    failures.append(
+                        f"chatSourceAttributions item {source_index} in length {length} must fix source_index"
+                    )
+    chat_done = defs.get("chatDonePayload", {})
+    done_properties = chat_done.get("properties", {})
+    if not isinstance(done_properties, dict) or done_properties.get("source_attributions") != expected_array:
+        failures.append("chatDonePayload source_attributions must use the bounded safe attribution array")
+    done_required = chat_done.get("required", [])
+    if "source_attributions" in done_required or "assistant_message_id" in done_required:
+        failures.append("chatDonePayload attribution fields must remain optional")
+    if not any(
+        isinstance(rule, dict)
+        and rule.get("if") == {"required": ["source_attributions"]}
+        and rule.get("then") == {
+            "required": ["finish_reason"],
+            "properties": {"finish_reason": {"const": "stop"}},
+        }
+        for rule in chat_done.get("allOf", [])
+    ):
+        failures.append("chatDonePayload attributions must require finish_reason stop")
+    if not isinstance(done_properties, dict) or done_properties.get("assistant_message_id") != {
+        "$ref": "#/$defs/assistantMessageID"
+    }:
+        failures.append("chatDonePayload assistant_message_id must use assistantMessageID")
+    if not any(
+        isinstance(rule, dict)
+        and rule.get("if") == {"required": ["assistant_message_id"]}
+        and rule.get("then") == {"required": ["source_attributions"]}
+        for rule in chat_done.get("allOf", [])
+    ):
+        failures.append(
+            "chatDonePayload assistant_message_id must require source_attributions"
+        )
+
+    stored_message = defs.get("chatStoredMessage", {})
+    stored_properties = stored_message.get("properties", {})
+    if not isinstance(stored_properties, dict) or stored_properties.get("source_attributions") != expected_array:
+        failures.append("chatStoredMessage source_attributions must use the bounded safe attribution array")
+    stored_required = stored_message.get("required", [])
+    if "source_attributions" in stored_required or "assistant_message_id" in stored_required:
+        failures.append("chatStoredMessage attribution fields must remain optional")
+    if not any(
+        isinstance(rule, dict)
+        and rule.get("if") == {"required": ["source_attributions"]}
+        and rule.get("then") == {"properties": {"role": {"const": "assistant"}}}
+        for rule in stored_message.get("allOf", [])
+    ):
+        failures.append("chatStoredMessage attributions must be assistant-only")
+    if not isinstance(stored_properties, dict) or stored_properties.get("assistant_message_id") != {
+        "$ref": "#/$defs/assistantMessageID"
+    }:
+        failures.append("chatStoredMessage assistant_message_id must use assistantMessageID")
+    if not any(
+        isinstance(rule, dict)
+        and rule.get("if") == {"required": ["assistant_message_id"]}
+        and rule.get("then") == {
+            "required": ["source_attributions"],
+            "properties": {"role": {"const": "assistant"}},
+        }
+        for rule in stored_message.get("allOf", [])
+    ):
+        failures.append(
+            "chatStoredMessage assistant_message_id must be limited to attribution-bearing assistant items"
+        )
+
+    attribution_sample = {
+        "source_index": 1,
+        "document_name": "source.txt",
+        "mime_type": "text/plain",
+        "chunk_index": 0,
+    }
+    legacy_samples = (
+        ("legacy chat.done", {"finish_reason": "stop"}, chat_done),
+        ("legacy chat history", {"role": "assistant", "content": "Answer"}, stored_message),
+    )
+    for label, sample, sample_schema in legacy_samples:
+        sample_failures = simple_schema_sample_failures(sample, sample_schema, defs, path=label)
+        if sample_failures:
+            failures.append(f"{label} sample rejected: {sample_failures}")
+
+    valid_attributions = [
+        {**attribution_sample, "source_index": source_index}
+        for source_index in range(1, 9)
+    ]
+    for length in range(1, 9):
+        sample_failures = simple_schema_sample_failures(
+            valid_attributions[:length],
+            attribution_array,
+            defs,
+            path=f"valid source_attributions length {length}",
+        )
+        if sample_failures:
+            failures.append(f"valid contiguous attribution sample length {length} rejected: {sample_failures}")
+    unicode_boundary_attribution = {
+        **attribution_sample,
+        "document_name": "\U0001f4c4" * 256,
+    }
+    if simple_schema_sample_failures(
+        [unicode_boundary_attribution],
+        attribution_array,
+        defs,
+        path="valid 256-code-point source_attributions sample",
+    ):
+        failures.append("source attribution schema must accept a safe 256-code-point document_name")
+    invalid_attribution_samples = (
+        [],
+        [{**attribution_sample, "source_index": 2}],
+        [attribution_sample, {**attribution_sample, "source_index": 1}],
+        [attribution_sample, {**attribution_sample, "source_index": 3}],
+        valid_attributions + [{**attribution_sample, "source_index": 8}],
+        [{**attribution_sample, "document_name": "\U0001f4c4" * 257}],
+        [{**attribution_sample, "document_name": "folder/source.txt"}],
+        [{**attribution_sample, "document_name": "folder\\source.txt"}],
+        [{**attribution_sample, "document_name": "source\u0000name.txt"}],
+        [{**attribution_sample, "document_name": "source\u0085name.txt"}],
+        [{**attribution_sample, "document_name": "source\u009fname.txt"}],
+    )
+    for index, sample in enumerate(invalid_attribution_samples):
+        if not simple_schema_sample_failures(
+            sample,
+            attribution_array,
+            defs,
+            path=f"invalid source_attributions sample {index}",
+        ):
+            failures.append(f"contiguous attribution schema unexpectedly accepts invalid sample {index}")
+
+    try:
+        android_models = ANDROID_PROTOCOL_MODELS_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        failures.append("Android protocol models missing for source attribution capability check")
+    else:
+        expected_capability = (
+            'const val CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY = '
+            '"chat.source_attribution.resolve.v1"'
+        )
+        if expected_capability not in android_models:
+            failures.append(
+                "Android protocol models must declare chat.source_attribution.resolve.v1 capability"
+            )
     return failures
 
 
@@ -5677,6 +5995,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "document_index_unavailable",
         "source_anchor_not_found",
         "citation_not_found",
+        "chat_source_attribution_not_found",
         "trusted_source_review_not_found",
         "trusted_source_review_expired",
         "trusted_source_review_stale",

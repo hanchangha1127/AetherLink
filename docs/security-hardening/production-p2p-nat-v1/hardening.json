@@ -5,13 +5,22 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink P2P route-preparation and transport source snapshot for production NAT traversal security design",
-    "collectionSha256": "2b2a44f2ac7a2f081a5fbc7856a5b3d7dbe1585cec59c871282c98c9d4e33cbd",
+    "collectionSha256": "3c957948ca16aec64ae941a1c0d1cb9a86697854eddb9c22473e4da8d7891424",
     "artifactCount": 13,
     "sourceDrift": "present"
   },
   "implementationBoundary": {
     "selectionGatedProductionDesign": "not_implemented",
     "activeProtocolNamespace": ["route.refresh"],
+    "selectionProfilePath": "selection-profile.json",
+    "selectionProfileStatus": "approved_for_bounded_handoff",
+    "selectionDecisionPath": "selection-decision.json",
+    "handoffPath": "implementation/handoff-v3.json",
+    "implementationAuthorized": true,
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false,
+    "controlledNetworkSpikeSocketExecutionAuthorized": false,
     "notImplemented": [
       "authenticated encrypted ICE candidate exchange",
       "authenticated TURN allocation and relay fallback",
@@ -149,7 +158,7 @@
         }
       ],
       "recommendedOptionId": "authenticated-encrypted-ice-turn",
-      "recommendation": "Recommend authenticated-encrypted-ice-turn for a future explicit selection, using a reviewed ICE engine, end-to-end protected signaling, and short-lived managed TURN credentials; retain the split-authority option as a later privacy and isolation improvement."
+      "recommendation": "The approved bounded profile selects authenticated-encrypted-ice-turn for its future network phase, subject to separate approval of a reviewed ICE engine, end-to-end protected signaling, and short-lived managed TURN credentials; retain the split-authority option as a later privacy and isolation improvement."
     },
     {
       "opportunityId": "identity-bound-traversal-and-relay-fallback",
@@ -246,7 +255,7 @@
         }
       ],
       "recommendedOptionId": "transport-neutral-identity-session",
-      "recommendation": "Recommend transport-neutral-identity-session for a future explicit selection so direct, TURN, and relay routes are path choices beneath one endpoint-authenticated transcript; defer multipath capabilities until single-path fallback is proven."
+      "recommendation": "The approved bounded profile selects transport-neutral-identity-session so future direct, TURN, and relay routes remain path choices beneath one endpoint-authenticated transcript; defer multipath capabilities until single-path fallback is proven."
     }
   ]
 }

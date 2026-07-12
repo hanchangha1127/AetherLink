@@ -781,6 +781,76 @@ public final class SQLiteRuntimeDocumentIndexStore: RuntimeDocumentSemanticSearc
         }
     }
 
+    public func prepareTrustedSourceReview(
+        sourceAnchorID: String,
+        documentID: String,
+        sourceRevision: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws -> RuntimeTrustedSourceReviewEnvelope {
+        guard runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) == sourceAnchorID,
+              runtimeDocumentIndexCanonicalDocumentID(documentID) == documentID,
+              runtimeDocumentCanonicalSourceRevision(sourceRevision) == sourceRevision,
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.citationNotFound
+        }
+        return try lock.withLock {
+            try withDatabase { database in
+                try withImmediateTransaction(database) {
+                    guard let approval = try sourceApprovalUnlocked(documentID: documentID, database: database),
+                          approval.scope == .runtimeShared,
+                          approval.sourceRevision == sourceRevision,
+                          let anchor = try sourceAnchorUnlocked(id: sourceAnchorID, database: database),
+                          anchor.document.id == documentID else {
+                        throw RuntimeTrustedSourceGovernanceError.citationNotFound
+                    }
+                    let citation = runtimeDocumentCitation(anchor: anchor, approval: approval)
+                    try upsertCitationUnlocked(
+                        citation,
+                        sourceRevision: sourceRevision,
+                        timestamp: timestamp,
+                        database: database
+                    )
+                    try deleteTrustedSourceReviewsUnlocked(actorDeviceID: actorDeviceID, database: database)
+                    let review = runtimeTrustedSourceReview(
+                        citationID: citation.citationID,
+                        actorDeviceID: actorDeviceID,
+                        timestamp: timestamp
+                    )
+                    try insertTrustedSourceReviewUnlocked(
+                        review,
+                        citationID: citation.citationID,
+                        actorDeviceID: actorDeviceID,
+                        database: database
+                    )
+                    for action in [RuntimeDocumentSourceAuditAction.citationResolved, .trustedSourceReviewPrepared] {
+                        try insertSourceAuditUnlocked(
+                            runtimeDocumentAuditEvent(
+                                action: action,
+                                approval: approval,
+                                actorDeviceID: actorDeviceID,
+                                sourceAnchorID: sourceAnchorID,
+                                resultCount: 1,
+                                timestamp: timestamp
+                            ),
+                            database: database
+                        )
+                    }
+                    return RuntimeTrustedSourceReviewEnvelope(
+                        citation: citation,
+                        review: review,
+                        trustedSource: try trustedSourceGrantUnlocked(
+                            actorDeviceID: actorDeviceID,
+                            documentID: documentID,
+                            sourceRevision: sourceRevision,
+                            database: database
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     public func approveTrustedSourceReview(
         reviewID: String,
         confirmationToken: String,
@@ -1591,6 +1661,7 @@ public final class SQLiteRuntimeDocumentIndexStore: RuntimeDocumentSemanticSearc
             grantID: grantID,
             citationID: storedGrant.grant.citationID,
             sourceAnchorID: storedGrant.grant.sourceAnchorID,
+            sourceRevision: approval.sourceRevision,
             document: document,
             chunkSummary: summary,
             text: text

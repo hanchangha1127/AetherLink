@@ -2,11 +2,14 @@ package com.localagentbridge.android.runtime
 
 import android.app.Application
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
+import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY
+import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
+import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
@@ -17,6 +20,7 @@ import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
+import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsListRequestPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayload
 import com.localagentbridge.android.core.protocol.IndexDocumentsQualityCountsPayload
@@ -93,6 +97,7 @@ import com.localagentbridge.android.core.transport.RuntimeTransportConnector
 import com.localagentbridge.android.core.transport.RuntimeTransportClient
 import com.localagentbridge.android.core.transport.TransportSecurityContext
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -117,6 +122,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -2620,16 +2626,560 @@ class RuntimeClientViewModelTest {
             assertEquals("relay-accepted.example.test", viewModel.state.value.trustedRuntime?.relayHost)
             assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)
             assertNull(viewModel.state.value.error)
-            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+            assertEquals("connected", viewModel.state.value.runtimeStatus)
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
             assertEquals(
                 transportBinding,
                 pairingRequest.payload["transport_binding"]?.let { (it as JsonPrimitive).content },
             )
+            val hello = channel.sentEnvelopes.single { it.type == MessageType.Hello }
+            val helloPayload = json.decodeFromJsonElement(HelloPayload.serializer(), hello.payload)
+            assertTrue(helloPayload.capabilities.contains(CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY))
+            assertEquals(transportBinding, helloPayload.transportBinding)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true, transportBinding = transportBinding),
+                    requestId = "stale-${hello.requestId}",
+                ),
+            )
+            runCurrent()
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true, transportBinding = transportBinding),
+                    requestId = hello.requestId,
+                ),
+            )
+            runCurrent()
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("connected", viewModel.state.value.runtimeStatus)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+
+            channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "post-pairing-auth",
+                    transportBinding = transportBinding,
+                ).copy(requestId = hello.requestId),
+            )
+            runCurrent()
+            val postPairingAuthResponse = channel.sentEnvelopes.single { it.type == MessageType.AuthResponse }
+            assertEquals(hello.requestId, postPairingAuthResponse.requestId)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true, transportBinding = transportBinding),
+                    requestId = hello.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("authenticated", viewModel.state.value.runtimeStatus)
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.RuntimeHealth })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.ChatSessionsList })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.MemoryList })
+            val postAuthRequestTypes = channel.sentEnvelopes
+                .dropWhile { it.type != MessageType.RouteRefresh }
+                .take(5)
+                .map { it.type }
+            assertEquals(
+                listOf(
+                    MessageType.RouteRefresh,
+                    MessageType.RuntimeHealth,
+                    MessageType.ChatSessionsList,
+                    MessageType.MemoryList,
+                    MessageType.MemorySummaryDraftsList,
+                ),
+                postAuthRequestTypes,
+            )
         } finally {
             runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun postPairingMalformedChallengeRetriesWithFreshHelloAndRejectsOldFinalResponse() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PostPairingAuthenticationFixture? = null
+        try {
+            fixture = postPairingAuthenticationFixture("malformed-challenge")
+            val firstHello = fixture.hello
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthChallenge,
+                    requestId = firstHello.requestId,
+                    payload = buildJsonObject {
+                        put("device_id", "client-1")
+                        put("nonce", "malformed-post-pair-challenge")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            runCurrent()
+
+            val hellos = fixture.channel.sentEnvelopes.filter { it.type == MessageType.Hello }
+            assertEquals(2, hellos.size)
+            val retryHello = hellos.last()
+            assertNotEquals(firstHello.requestId, retryHello.requestId)
+            assertTrue(
+                fixture.viewModel
+                    .privateField<MutableSet<String>>("closedRuntimeAuthenticationRequestIds")
+                    .orEmpty()
+                    .contains(firstHello.requestId),
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(
+                        accepted = true,
+                        transportBinding = fixture.transportBinding,
+                    ),
+                    requestId = firstHello.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(
+                        accepted = true,
+                        transportBinding = fixture.transportBinding,
+                    ),
+                    requestId = retryHello.requestId,
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+
+            fixture.channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "post-pair-retry",
+                    transportBinding = fixture.transportBinding,
+                ).copy(requestId = retryHello.requestId),
+            )
+            runCurrent()
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(
+                        accepted = true,
+                        transportBinding = fixture.transportBinding,
+                    ),
+                    requestId = retryHello.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("authenticated", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun postPairingMalformedFinalResponseClearsAttemptAndBoundsRetry() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PostPairingAuthenticationFixture? = null
+        try {
+            fixture = postPairingAuthenticationFixture("malformed-response")
+            fixture.channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "post-pair-malformed-response",
+                    transportBinding = fixture.transportBinding,
+                ).copy(requestId = fixture.hello.requestId),
+            )
+            runCurrent()
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthResponse,
+                    requestId = fixture.hello.requestId,
+                    payload = buildJsonObject {
+                        put("accepted", true)
+                        put("transport_binding", fixture.transportBinding)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            runCurrent()
+
+            val retryHello = fixture.channel.sentEnvelopes.filter { it.type == MessageType.Hello }.last()
+            assertNotEquals(fixture.hello.requestId, retryHello.requestId)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.AuthChallenge,
+                    requestId = retryHello.requestId,
+                    payload = buildJsonObject {
+                        put("device_id", "client-1")
+                        put("nonce", "second-malformed-challenge")
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            runCurrent()
+
+            assertEquals(2, fixture.channel.sentEnvelopes.count { it.type == MessageType.Hello })
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun postPairingRetryableRuntimeErrorClearsAttemptAndUsesFreshHello() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var fixture: PostPairingAuthenticationFixture? = null
+        try {
+            fixture = postPairingAuthenticationFixture("runtime-error")
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = fixture.hello.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_failed",
+                        message = "Retry post-pair authentication",
+                        retryable = true,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            val hellos = fixture.channel.sentEnvelopes.filter { it.type == MessageType.Hello }
+            assertEquals(2, hellos.size)
+            assertNotEquals(fixture.hello.requestId, hellos.last().requestId)
+            assertEquals("authentication_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                "Retry post-pair authentication",
+                fixture.viewModel.state.value.error?.technicalDetail,
+            )
+            assertTrue(
+                fixture.viewModel
+                    .privateField<MutableSet<String>>("closedRuntimeAuthenticationRequestIds")
+                    .orEmpty()
+                    .contains(fixture.hello.requestId),
+            )
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun challengeQueuedDuringSuspendedHelloSendIsAcceptedWithoutPhaseRollback() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val helloSendSuspended = CompletableDeferred<Unit>()
+            val releaseHelloSend = CompletableDeferred<Unit>()
+            channel.afterSend = { sent ->
+                if (sent.type == MessageType.Hello) {
+                    enqueue(
+                        signedRuntimeAuthChallenge(
+                            keyPair = initialPairingRuntimeKeyPair,
+                            nonce = "challenge-during-hello-send",
+                            transportBinding = null,
+                        ).copy(requestId = sent.requestId),
+                    )
+                    helloSendSuspended.complete(Unit)
+                    releaseHelloSend.await()
+                }
+            }
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                trustedRuntimeForViewModelTests().copy(
+                    fingerprint = initialPairingRuntimeFingerprint,
+                    publicKeyBase64 = initialPairingRuntimePublicKey,
+                ),
+            )
+            viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used by auth race tests")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            runCurrent()
+
+            assertTrue(helloSendSuspended.isCompleted)
+            val hello = channel.sentEnvelopes.single { it.type == MessageType.Hello }
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
+            assertEquals(hello.requestId, viewModel.pendingAuthenticationHelloRequestIdForTest())
+
+            releaseHelloSend.complete(Unit)
+            runCurrent()
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
+            assertEquals(hello.requestId, viewModel.pendingAuthenticationHelloRequestIdForTest())
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = hello.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("authenticated", viewModel.state.value.runtimeStatus)
+            assertNull(viewModel.privateField<Any>("pendingRuntimeAuthentication"))
+        } finally {
+            viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun staleSuspendedHelloFailureCannotClearReplacementAuthentication() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val firstChannel = ScriptedRuntimeProtocolChannel()
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            val firstHelloSuspended = CompletableDeferred<Unit>()
+            val releaseFirstHello = CompletableDeferred<Unit>()
+            firstChannel.afterSend = { sent ->
+                if (sent.type == MessageType.Hello) {
+                    firstHelloSuspended.complete(Unit)
+                    releaseFirstHello.await()
+                    error("stale hello send failed")
+                }
+            }
+            var connectionCount = 0
+            viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used by auth race tests")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        connectionCount += 1
+                        if (connectionCount == 1) firstChannel else replacementChannel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeEmittingTrustedRuntimeStore(
+                        trustedRuntimeForViewModelTests().copy(
+                            fingerprint = initialPairingRuntimeFingerprint,
+                            publicKeyBase64 = initialPairingRuntimePublicKey,
+                        ),
+                    ),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            runCurrent()
+            assertTrue(firstHelloSuspended.isCompleted)
+
+            viewModel.disconnect()
+            runCurrent()
+            viewModel.connectToTrustedRuntime()
+            runCurrent()
+            val replacementHello = replacementChannel.sentEnvelopes.single { it.type == MessageType.Hello }
+            assertEquals(replacementHello.requestId, viewModel.pendingAuthenticationHelloRequestIdForTest())
+
+            releaseFirstHello.complete(Unit)
+            runCurrent()
+            assertEquals(replacementHello.requestId, viewModel.pendingAuthenticationHelloRequestIdForTest())
+            assertNotEquals("authentication_failed", viewModel.state.value.error?.code)
+
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = replacementChannel,
+                requestId = replacementHello.requestId,
+            )
+            assertTrue(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("authenticated", viewModel.state.value.runtimeStatus)
+        } finally {
+            viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun delayedPostPairIdentityLoadCannotSendHelloOrAuthenticateAcrossReplacementConnection() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val transportBinding = "d".repeat(64)
+            val firstChannel = ScriptedRuntimeProtocolChannel(
+                transportSecurityContext = TransportSecurityContext(transportBinding),
+            )
+            val replacementChannel = ScriptedRuntimeProtocolChannel(
+                transportSecurityContext = TransportSecurityContext(transportBinding),
+            )
+            var relayConnectionCount = 0
+            val identityProvider = DelayedDeviceIdentityProvider(
+                identity = testDeviceIdentity(),
+                delayedCall = 2,
+            )
+            val runtimeDeviceId = "runtime-delayed-post-pair-auth"
+            val rawUri = "aetherlink://pair?v=1&n=nonce-delayed-auth&c=135790" +
+                "&rid=$runtimeDeviceId&rn=AetherLink%20Runtime&rf=$initialPairingRuntimeFingerprint" +
+                "&rk=$initialPairingRuntimePublicKey&rt=route-delayed-auth" +
+                "&rh=relay-delayed-auth.example.test&rp=443&ri=relay-delayed-auth" +
+                "&rs=secret-delayed-auth&rx=4102444800000" +
+                "&rrn=nonce-route-delayed-auth&rsc=remote"
+            val runtimeViewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for delayed post-pair authentication")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        if (relayConnectionCount++ == 0) firstChannel else replacementChannel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = identityProvider,
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            viewModel = runtimeViewModel
+
+            runtimeViewModel.trustRuntimeFromPairingQr(rawUri)
+            runCurrent()
+            val pairingRequest = firstChannel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
+            firstChannel.enqueue(signedAcceptedPairingResult(pairingRequest, runtimeDeviceId))
+            runCurrent()
+
+            assertTrue(identityProvider.delayedLoadStarted.isCompleted)
+            assertEquals(0, firstChannel.sentEnvelopes.count { it.type == MessageType.Hello })
+            val staleHelloRequestId = requireNotNull(
+                runtimeViewModel.pendingAuthenticationHelloRequestIdForTest(),
+            )
+
+            runtimeViewModel.disconnect()
+            runCurrent()
+            assertNull(runtimeViewModel.privateField<Any>("pendingRuntimeAuthentication"))
+
+            runtimeViewModel.connectToTrustedRuntime()
+            runCurrent()
+            val replacementHello = replacementChannel.sentEnvelopes.single { it.type == MessageType.Hello }
+
+            identityProvider.releaseDelayedLoad.complete(Unit)
+            runCurrent()
+            assertEquals(0, firstChannel.sentEnvelopes.count { it.type == MessageType.Hello })
+            assertEquals(1, replacementChannel.sentEnvelopes.count { it.type == MessageType.Hello })
+
+            listOf(staleHelloRequestId, replacementHello.requestId).forEach { staleRequestId ->
+                replacementChannel.enqueue(
+                    envelope(
+                        type = MessageType.AuthResponse,
+                        serializer = AuthResponsePayload.serializer(),
+                        payload = AuthResponsePayload(
+                            accepted = true,
+                            transportBinding = transportBinding,
+                        ),
+                        requestId = staleRequestId,
+                    ),
+                )
+            }
+            runCurrent()
+            assertFalse(runtimeViewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(0, replacementChannel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, replacementChannel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, replacementChannel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+
+            completeRuntimeAuthentication(
+                viewModel = runtimeViewModel,
+                channel = replacementChannel,
+                requestId = "replacement-auth-challenge",
+                transportBinding = transportBinding,
+            )
+            assertTrue(runtimeViewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("authenticated", runtimeViewModel.state.value.runtimeStatus)
+        } finally {
+            viewModel?.clearForTest()
             runCurrent()
             Dispatchers.resetMain()
         }
@@ -2729,6 +3279,27 @@ class RuntimeClientViewModelTest {
             assertNull(acceptedState.pendingPairingRuntimeName)
             assertFalse(acceptedState.isPairingAwaitingRoute)
             assertEquals("", acceptedState.pairingCode)
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
+            val hello = channel.sentEnvelopes.last { it.type == MessageType.Hello }
+            channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "post-pairing-legacy-compatible",
+                    transportBinding = null,
+                ).copy(requestId = hello.requestId),
+            )
+            advanceUntilIdle()
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = hello.requestId,
+                ),
+            )
+            advanceUntilIdle()
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.RuntimeHealth })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.ChatSessionsList })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.MemoryList })
@@ -3512,13 +4083,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -3882,13 +4449,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -3993,13 +4556,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -4287,13 +4846,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -4350,7 +4905,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning() = runTest {
+    fun malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -4436,44 +4991,19 @@ class RuntimeClientViewModelTest {
 
             channel.enqueue(
                 envelope(
-                    type = MessageType.AuthChallenge,
-                    serializer = com.localagentbridge.android.core.protocol.AuthChallengePayload.serializer(),
-                    payload = com.localagentbridge.android.core.protocol.AuthChallengePayload(
-                        deviceId = "client-1",
-                        nonce = "nonce-for-signing",
-                        transportBinding = "0".repeat(64),
-                    ),
-                    requestId = "auth-challenge",
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = "fresh-unsolicited-accepted",
                 ),
             )
             advanceUntilIdle()
 
-            assertEquals("runtime_authentication_failed", viewModel.state.value.error?.code)
-            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
-            assertEquals(sentCountBeforeRejectedChallenge, channel.sentEnvelopes.size)
-            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
-
-            channel.enqueue(
-                ProtocolEnvelope(
-                    type = MessageType.AuthChallenge,
-                    requestId = "auth-challenge",
-                    payload = buildJsonObject {
-                        put("device_id", "client-1")
-                        put("nonce", "nonce-for-signing")
-                    },
-                ),
-            )
-            advanceUntilIdle()
-
-            val authResponse = channel.sentEnvelopes.single { it.type == MessageType.AuthResponse }
-            val payload = json.decodeFromJsonElement(AuthResponsePayload.serializer(), authResponse.payload)
-            assertEquals("auth-challenge", authResponse.requestId)
-            assertEquals("client-1", payload.deviceId)
-            assertEquals("nonce-for-signing", payload.nonce)
-            assertNotNull(payload.signature)
-            assertNull(payload.transportBinding)
+            assertEquals("invalid_payload", viewModel.state.value.error?.code)
             assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
             assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+            assertNull(viewModel.privateField<Any>("pendingRuntimeAuthentication"))
         } finally {
             Dispatchers.resetMain()
         }
@@ -4511,6 +5041,27 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
+            val trustedBeforeAuthentication = requireNotNull(viewModel.state.value.trustedRuntime)
+            viewModel.replaceStateForTest { state ->
+                state.copy(
+                    trustedRuntime = trustedBeforeAuthentication.copy(
+                        fingerprint = initialPairingRuntimeFingerprint,
+                        publicKeyBase64 = initialPairingRuntimePublicKey,
+                    ),
+                )
+            }
+            channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "auth-response-metadata",
+                    transportBinding = null,
+                ).copy(requestId = "auth-accepted"),
+            )
+            advanceUntilIdle()
+            viewModel.replaceStateForTest { state ->
+                state.copy(trustedRuntime = trustedBeforeAuthentication)
+            }
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
             val sentCountBeforeRejectedAuth = channel.sentEnvelopes.size
             channel.enqueue(
                 ProtocolEnvelope(
@@ -4545,39 +5096,17 @@ class RuntimeClientViewModelTest {
                     payload = AuthResponsePayload(
                         deviceId = "client-1",
                         accepted = true,
-                        transportBinding = "0".repeat(64),
                     ),
-                    requestId = "auth-accepted",
+                    requestId = "fresh-auth-accepted",
                 ),
             )
             advanceUntilIdle()
 
-            assertEquals("runtime_authentication_failed", viewModel.state.value.error?.code)
+            assertEquals("invalid_payload", viewModel.state.value.error?.code)
             assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
             assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
             assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
-
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(
-                        deviceId = "client-1",
-                        accepted = true,
-                    ),
-                    requestId = "auth-accepted",
-                ),
-            )
-            advanceUntilIdle()
-
-            val acceptedState = viewModel.state.value
-            assertNull(acceptedState.error)
-            assertEquals("authenticated", acceptedState.runtimeStatus)
-            assertTrue(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
-            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
-            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
-            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
-            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList })
+            assertNull(viewModel.privateField<Any>("pendingRuntimeAuthentication"))
         } finally {
             Dispatchers.resetMain()
         }
@@ -4643,28 +5172,23 @@ class RuntimeClientViewModelTest {
             )
             assertEquals(transportBinding, helloPayload.transportBinding)
 
-            channel.enqueue(
-                signedRuntimeAuthChallenge(
-                    keyPair = runtimeKeyPair,
-                    nonce = "nonce-downgrade",
-                    transportBinding = null,
-                ),
-            )
+            listOf(null, oldTransportBinding).forEachIndexed { index, replayedBinding ->
+                channel.enqueue(
+                    envelope(
+                        type = MessageType.AuthResponse,
+                        serializer = AuthResponsePayload.serializer(),
+                        payload = AuthResponsePayload(
+                            deviceId = "client-1",
+                            accepted = true,
+                            transportBinding = replayedBinding,
+                        ),
+                        requestId = "unsolicited-binding-replay-$index",
+                    ),
+                )
+            }
             advanceUntilIdle()
 
-            assertEquals("runtime_authentication_failed", viewModel.state.value.error?.code)
-            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
-            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
-
-            channel.enqueue(
-                signedRuntimeAuthChallenge(
-                    keyPair = runtimeKeyPair,
-                    nonce = "nonce-old-binding",
-                    transportBinding = oldTransportBinding,
-                ),
-            )
-            advanceUntilIdle()
-
+            assertNull(viewModel.state.value.error)
             assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.AuthResponse })
             assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
 
@@ -4692,28 +5216,6 @@ class RuntimeClientViewModelTest {
                 )
             )
 
-            listOf(null, oldTransportBinding).forEach { rejectedBinding ->
-                channel.enqueue(
-                    envelope(
-                        type = MessageType.AuthResponse,
-                        serializer = AuthResponsePayload.serializer(),
-                        payload = AuthResponsePayload(
-                            deviceId = "client-1",
-                            accepted = true,
-                            transportBinding = rejectedBinding,
-                        ),
-                        requestId = "auth-accepted",
-                    ),
-                )
-                advanceUntilIdle()
-
-                assertEquals("runtime_authentication_failed", viewModel.state.value.error?.code)
-                assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
-                assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
-                assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
-                assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.MemoryList })
-            }
-
             channel.enqueue(
                 envelope(
                     type = MessageType.AuthResponse,
@@ -4723,7 +5225,7 @@ class RuntimeClientViewModelTest {
                         accepted = true,
                         transportBinding = transportBinding,
                     ),
-                    requestId = "auth-accepted",
+                    requestId = authResponse.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -4796,13 +5298,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -4908,13 +5406,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5007,13 +5501,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5112,13 +5602,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5225,13 +5711,9 @@ class RuntimeClientViewModelTest {
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
             val schedulerTimeBeforeAuthResponse = testScheduler.currentTime
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5353,13 +5835,9 @@ class RuntimeClientViewModelTest {
             assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)
 
             val schedulerTimeBeforeAuthResponse = testScheduler.currentTime
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5503,13 +5981,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5630,13 +6104,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5736,13 +6206,9 @@ class RuntimeClientViewModelTest {
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
             val schedulerTimeBeforeAuthResponse = testScheduler.currentTime
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5840,13 +6306,9 @@ class RuntimeClientViewModelTest {
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
             val schedulerTimeBeforeAuthResponse = testScheduler.currentTime
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -5941,13 +6403,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -6087,13 +6545,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -6218,13 +6672,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -6320,13 +6770,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -6409,13 +6855,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             runCurrent()
 
@@ -13120,6 +13562,463 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun chatDoneAttributionsRequireSafeMetadataPreserveMalformedStreamsAndPersistOnlyProjection() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+            )
+            fixture.viewModel.updateChatInput("Summarize the release notes")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+            val sendRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            assertFalse(sendRequest.payload.toString().contains("source_attributions"))
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = sendRequest.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "The release is ready."),
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "finish_reason": "stop",
+                              "source_attributions": [
+                                {
+                                  "source_index": 1,
+                                  "document_name": "release-notes.md",
+                                  "mime_type": "text/markdown",
+                                  "chunk_index": 2,
+                                  "path": "/private/release-notes.md"
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isStreaming)
+            assertEquals(sendRequest.requestId, fixture.viewModel.state.value.activeRequestId)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.state.value.messages.last().sourceAttributions.isEmpty())
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "finish_reason": "stop",
+                              "source_attributions": [
+                                {
+                                  "source_index": 2,
+                                  "document_name": "release-notes.md",
+                                  "mime_type": "text/markdown",
+                                  "chunk_index": 2
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isStreaming)
+            assertEquals(sendRequest.requestId, fixture.viewModel.state.value.activeRequestId)
+            assertTrue(fixture.viewModel.state.value.messages.last().sourceAttributions.isEmpty())
+
+            val assistantMessageId = "assistant_message_11223344556677889900aabbccddeeff"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatDone,
+                    requestId = sendRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "finish_reason": "stop",
+                              "assistant_message_id": "$assistantMessageId",
+                              "source_attributions": [{
+                                "source_index": 1,
+                                "document_name": "release-notes.md",
+                                "mime_type": "text/markdown",
+                                "chunk_index": 2
+                              }]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val completed = fixture.viewModel.state.value
+            assertFalse(completed.isStreaming)
+            assertNull(completed.activeRequestId)
+            assertEquals("release-notes.md", completed.messages.last().sourceAttributions.single().documentName)
+            assertEquals(assistantMessageId, completed.messages.last().assistantMessageId)
+            val persistedAttribution = fixture.localStore.data.sessions.single()
+                .messages.last().sourceAttributions.single()
+            assertEquals(1, persistedAttribution.sourceIndex)
+            assertEquals("release-notes.md", persistedAttribution.documentName)
+            assertEquals("text/markdown", persistedAttribution.mimeType)
+            assertEquals(2, persistedAttribution.chunkIndex)
+            assertEquals(assistantMessageId, fixture.localStore.data.sessions.single().messages.last().assistantMessageId)
+            val persistedJson = json.encodeToString(fixture.localStore.data)
+            assertTrue(persistedJson.contains("sourceAttributions"))
+            listOf("/private/release-notes.md", "source_anchor", "citation_id", "grant_id").forEach {
+                assertFalse(persistedJson.contains(it))
+            }
+
+            val titleRequest = fixture.channel.sentEnvelopes.lastOrNull { it.type == MessageType.ChatTitleRequest }
+            assertNotNull(titleRequest)
+            assertFalse(requireNotNull(titleRequest).payload.toString().contains("source_attributions"))
+
+            fixture.viewModel.updateChatInput("What changed next?")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+            val nextSend = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            assertFalse(nextSend.payload.toString().contains("source_attributions"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun historicalSourceAttributionResolveCorrelatesCanonicalLocatorAndReusesTrustedReviewTokens() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val assistantMessageId = "assistant_message_0123456789abcdef0123456789abcdef"
+            val localMessageId = "local-assistant-message"
+            val attribution = PersistedChatSourceAttribution(
+                sourceIndex = 1,
+                documentName = "Trusted Source.md",
+                mimeType = "text/markdown",
+                chunkIndex = 2,
+            )
+            val initialData = PersistedRuntimeData(
+                activeSessionId = "history-session",
+                selectedModelId = textChatModel().id,
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "history-session",
+                        title = "History",
+                        createdAtMillis = 1L,
+                        updatedAtMillis = 1L,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = localMessageId,
+                                role = "assistant",
+                                content = "Historical answer",
+                                sourceAttributions = listOf(attribution),
+                                assistantMessageId = assistantMessageId,
+                                createdAtMillis = 1L,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.reviewHistoricalSourceAttribution(localMessageId, 1)
+            runCurrent()
+
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == "chat.source_attribution.resolve"
+            }
+            assertEquals("history-session", request.payload["session_id"]?.jsonPrimitive?.content)
+            assertEquals(assistantMessageId, request.payload["assistant_message_id"]?.jsonPrimitive?.content)
+            assertEquals(1, request.payload["source_index"]?.jsonPrimitive?.int)
+            assertEquals(localMessageId, fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            assertEquals(1, fixture.viewModel.state.value.resolvingSourceAttributionIndex)
+
+            val anchorId = "source_anchor_0123456789abcdef"
+            val citationId = "citation_0123456789abcdef0123456789abcdef"
+            val reviewId = "source_review_0123456789abcdef0123456789abcdef"
+            val confirmationToken = "source_confirmation_${"a".repeat(64)}"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = "chat.source_attribution.resolve",
+                    requestId = request.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = anchorId,
+                        citationId = citationId,
+                        reviewId = reviewId,
+                        confirmationToken = confirmationToken,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            val review = requireNotNull(fixture.viewModel.state.value.sourceReview)
+            assertEquals("Trusted Source.md", review.document.displayName)
+            assertEquals("text/markdown", review.document.mimeType)
+            assertEquals(2, review.chunkIndex)
+            assertNull(fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            fixture.viewModel.approveTrustedSource()
+            runCurrent()
+            val approveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceApprove
+            }
+            assertEquals(reviewId, approveRequest.payload["review_id"]?.jsonPrimitive?.content)
+            assertEquals(
+                confirmationToken,
+                approveRequest.payload["confirmation_token"]?.jsonPrimitive?.content,
+            )
+            val persisted = json.encodeToString(fixture.localStore.data)
+            assertTrue(persisted.contains(assistantMessageId))
+            listOf(anchorId, citationId, reviewId, confirmationToken).forEach { opaqueValue ->
+                assertFalse(persisted.contains(opaqueValue))
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun historicalSourceAttributionResolveRejectsMismatchedProjectionAndCleansUpOnSessionChange() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val assistantMessageId = "assistant_message_fedcba9876543210fedcba9876543210"
+            val initialData = PersistedRuntimeData(
+                activeSessionId = "history-session",
+                selectedModelId = textChatModel().id,
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "history-session",
+                        title = "History",
+                        createdAtMillis = 1L,
+                        updatedAtMillis = 1L,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = "assistant-local",
+                                role = "assistant",
+                                content = "Answer",
+                                sourceAttributions = listOf(
+                                    PersistedChatSourceAttribution(1, "Trusted Source.md", "text/markdown", 2),
+                                ),
+                                assistantMessageId = assistantMessageId,
+                                createdAtMillis = 1L,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+            fixture.viewModel.reviewHistoricalSourceAttribution("assistant-local", 1)
+            runCurrent()
+            val firstRequest = fixture.channel.sentEnvelopes.last {
+                it.type == "chat.source_attribution.resolve"
+            }
+            val mismatched = citationResolveResultJson(
+                anchorId = "source_anchor_abcdef0123456789",
+                citationId = "citation_abcdef0123456789abcdef0123456789",
+                reviewId = "source_review_abcdef0123456789abcdef0123456789",
+                confirmationToken = "source_confirmation_${"b".repeat(64)}",
+            ).toMutableMap().let { values ->
+                val citation = requireNotNull(values["citation"]).jsonObject.toMutableMap()
+                val document = requireNotNull(citation["document"]).jsonObject.toMutableMap()
+                document["display_name"] = JsonPrimitive("Different.md")
+                citation["document"] = JsonObject(document)
+                values["citation"] = JsonObject(citation)
+                JsonObject(values)
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = "chat.source_attribution.resolve",
+                    requestId = firstRequest.requestId,
+                    payload = mismatched,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.sourceReview)
+            assertEquals("source_attribution_resolve_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.reviewHistoricalSourceAttribution("assistant-local", 1)
+            runCurrent()
+            fixture.viewModel.startNewChat()
+            runCurrent()
+            assertNull(fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            assertNull(fixture.viewModel.privateField<Any>("pendingHistoricalSourceAttributionResolve"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun backgroundHistoryReplacementRebindsInFlightSourceResolveAndAcceptsResponse() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val sessionId = "history-race-session"
+            val assistantMessageId = "assistant_message_00112233445566778899aabbccddeeff"
+            val attribution = PersistedChatSourceAttribution(1, "Trusted Source.md", "text/markdown", 2)
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = persistedRuntimeHistoryWithAttribution(
+                    sessionId = sessionId,
+                    localMessageId = "stale-local-id",
+                    assistantMessageId = assistantMessageId,
+                    attribution = attribution,
+                ),
+            )
+
+            fixture.viewModel.reviewHistoricalSourceAttribution("stale-local-id", 1)
+            runCurrent()
+            val resolveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSourceAttributionResolve
+            }
+            val sessionsRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(runtimeHistorySummary(sessionId, messageCount = 1)),
+                    ),
+                    requestId = sessionsRequest.requestId,
+                ),
+            )
+            runCurrent()
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Replacement answer",
+                                sourceAttributions = listOf(attribution.toProtocolPayload()),
+                                assistantMessageId = assistantMessageId,
+                            ),
+                        ),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            val replacementMessageId = fixture.viewModel.state.value.messages.single().id
+            assertNotEquals("stale-local-id", replacementMessageId)
+            assertEquals(replacementMessageId, fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            assertEquals(
+                replacementMessageId,
+                fixture.viewModel.pendingHistoricalResolveLocalMessageIdForTest(),
+            )
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSourceAttributionResolve,
+                    requestId = resolveRequest.requestId,
+                    payload = citationResolveResultJson(
+                        anchorId = "source_anchor_0123456789abcdef",
+                        citationId = "citation_0123456789abcdef0123456789abcdef",
+                        reviewId = "source_review_0123456789abcdef0123456789abcdef",
+                        confirmationToken = "source_confirmation_${"a".repeat(64)}",
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNotNull(fixture.viewModel.state.value.sourceReview)
+            assertNull(fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            assertNull(fixture.viewModel.privateField<Any>("pendingHistoricalSourceAttributionResolve"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun backgroundHistoryReplacementCancelsInFlightSourceResolveOnAttributionMismatch() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val sessionId = "history-mismatch-session"
+            val assistantMessageId = "assistant_message_fedcba9876543210fedcba9876543210"
+            val attribution = PersistedChatSourceAttribution(1, "expected.md", "text/markdown", 1)
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = persistedRuntimeHistoryWithAttribution(
+                    sessionId = sessionId,
+                    localMessageId = "mismatch-local-id",
+                    assistantMessageId = assistantMessageId,
+                    attribution = attribution,
+                ),
+            )
+
+            fixture.viewModel.reviewHistoricalSourceAttribution("mismatch-local-id", 1)
+            runCurrent()
+            val sessionsRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(runtimeHistorySummary(sessionId, messageCount = 1)),
+                    ),
+                    requestId = sessionsRequest.requestId,
+                ),
+            )
+            runCurrent()
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Mismatched replacement",
+                                sourceAttributions = listOf(
+                                    ChatSourceAttributionPayload(1, "different.md", "text/markdown", 1),
+                                ),
+                                assistantMessageId = assistantMessageId,
+                            ),
+                        ),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertNull(fixture.viewModel.state.value.resolvingSourceAttributionMessageId)
+            assertNull(fixture.viewModel.privateField<Any>("pendingHistoricalSourceAttributionResolve"))
+            assertNull(fixture.viewModel.state.value.sourceReview)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun trustedSourceSelectionCapsAtEightCurrentListedSources() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -13213,15 +14112,28 @@ class RuntimeClientViewModelTest {
                     type = MessageType.ChatDone,
                     requestId = firstSend.requestId,
                     serializer = ChatDonePayload.serializer(),
-                    payload = ChatDonePayload(),
+                    payload = ChatDonePayload(
+                        finishReason = "stop",
+                        sourceAttributions = listOf(
+                            ChatSourceAttributionPayload(
+                                sourceIndex = 1,
+                                documentName = "first-source.txt",
+                                mimeType = "text/plain",
+                                chunkIndex = 0,
+                            ),
+                        ),
+                    ),
                 ),
             )
             advanceUntilIdle()
+            assertEquals("first-source.txt", fixture.viewModel.state.value.messages.last().sourceAttributions.single().documentName)
 
             fixture.viewModel.regenerateLatestResponse()
             advanceUntilIdle()
             val unselectedRegenerate = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
             assertFalse(unselectedRegenerate.payload.containsKey("trusted_source_grant_ids"))
+            assertFalse(unselectedRegenerate.payload.toString().contains("source_attributions"))
+            assertTrue(fixture.viewModel.state.value.messages.last().sourceAttributions.isEmpty())
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.ChatDelta,
@@ -17459,13 +18371,9 @@ class RuntimeClientViewModelTest {
 
             viewModel.connectToTrustedRuntime()
             advanceUntilIdle()
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             advanceUntilIdle()
             channel.enqueue(
@@ -18158,10 +19066,20 @@ class RuntimeClientViewModelTest {
 
     @Test
     fun staleChatDeltaAndDoneForDifferentRequestIdAreIgnored() {
+        val existingAttribution = RuntimeChatSourceAttribution(
+            sourceIndex = 1,
+            documentName = "existing.txt",
+            mimeType = "text/plain",
+            chunkIndex = 0,
+        )
         val state = RuntimeUiState(
             messages = listOf(
                 RuntimeChatMessage(role = "user", content = "Hello"),
-                RuntimeChatMessage(role = "assistant", content = "Partial"),
+                RuntimeChatMessage(
+                    role = "assistant",
+                    content = "Partial",
+                    sourceAttributions = listOf(existingAttribution),
+                ),
             ),
             isStreaming = true,
             activeRequestId = "active-request",
@@ -18191,6 +19109,7 @@ class RuntimeClientViewModelTest {
         assertTrue(afterDone.isStreaming)
         assertEquals("active-request", afterDone.activeRequestId)
         assertEquals("Partial", afterDone.messages.last().content)
+        assertEquals(listOf(existingAttribution), afterDone.messages.last().sourceAttributions)
     }
 
     @Test
@@ -18777,10 +19696,41 @@ class RuntimeClientViewModelTest {
                     payload = ChatMessagesListResultPayload(
                         sessionId = "runtime-session",
                         messages = listOf(
-                            ChatStoredMessagePayload(role = "user", content = "Runtime prompt"),
-                            ChatStoredMessagePayload(role = "assistant", content = "Runtime answer"),
+                            ChatStoredMessagePayload(role = "assistant", content = "Unsolicited answer"),
                         ),
                     ),
+                    requestId = "unsolicited-${messagesRequest.requestId}",
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("runtime-session", fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+
+            val historyAssistantMessageId = "assistant_message_aabbccddeeff00112233445566778899"
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "session_id": "runtime-session",
+                              "messages": [
+                                {"role": "user", "content": "Runtime prompt"},
+                                {
+                                  "role": "assistant",
+                                  "content": "Runtime answer",
+                                  "assistant_message_id": "$historyAssistantMessageId",
+                                  "source_attributions": [{
+                                    "source_index": 1,
+                                    "document_name": "history-source.pdf",
+                                    "mime_type": "application/pdf",
+                                    "chunk_index": 4
+                                  }]
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
                     requestId = messagesRequest.requestId,
                 )
             )
@@ -18792,6 +19742,40 @@ class RuntimeClientViewModelTest {
                 listOf("Runtime prompt", "Runtime answer"),
                 fixture.viewModel.state.value.messages.map { it.content },
             )
+            assertEquals(
+                "history-source.pdf",
+                fixture.viewModel.state.value.messages.last().sourceAttributions.single().documentName,
+            )
+            assertEquals(
+                historyAssistantMessageId,
+                fixture.viewModel.state.value.messages.last().assistantMessageId,
+            )
+            assertEquals(
+                "history-source.pdf",
+                fixture.localStore.data.sessions.single { it.id == "runtime-session" }
+                    .messages.last().sourceAttributions.single().documentName,
+            )
+            assertEquals(
+                historyAssistantMessageId,
+                fixture.localStore.data.sessions.single { it.id == "runtime-session" }
+                    .messages.last().assistantMessageId,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-session",
+                        messages = listOf(
+                            ChatStoredMessagePayload(role = "assistant", content = "Stale replacement"),
+                        ),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("Runtime answer", fixture.viewModel.state.value.messages.last().content)
         } finally {
             Dispatchers.resetMain()
         }
@@ -18996,6 +19980,50 @@ class RuntimeClientViewModelTest {
                 fixture.localStore.data.sessions.single { it.id == "runtime-session" }.messages.map { it.content },
             )
             assertFalse(json.encodeToString(fixture.localStore.data).contains("Leaky message transcript"))
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            val attributionMetadataRequest =
+                fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = attributionMetadataRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """
+                            {
+                              "session_id": "runtime-session",
+                              "messages": [
+                                {
+                                  "role": "assistant",
+                                  "content": "Leaky attribution transcript",
+                                  "source_attributions": [
+                                    {
+                                      "source_index": 1,
+                                      "document_name": "source.txt",
+                                      "mime_type": "text/plain",
+                                      "chunk_index": 0,
+                                      "source_anchor_id": "source_anchor_aabbccddeeff0011"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                        """.trimIndent(),
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val attributionRejectedState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", attributionRejectedState.error?.code)
+            assertTrue(
+                attributionRejectedState.error?.technicalDetail.orEmpty()
+                    .contains("messages[0].source_attributions[0].source_anchor_id"),
+            )
+            assertEquals(listOf("Existing prompt"), attributionRejectedState.messages.map { it.content })
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("source_anchor_aabbccddeeff0011"))
 
             fixture.viewModel.openPreviousChat("runtime-session")
             advanceUntilIdle()
@@ -19390,8 +20418,23 @@ class RuntimeClientViewModelTest {
         assertNull(afterError.error?.detail)
         assertEquals("Backend failed", afterError.error?.technicalDetail)
 
-        val partialAssistant = blankAssistant.copy(content = "Partial")
-        val reasoningAssistant = blankAssistant.copy(reasoning = "Thinking")
+        val priorAttribution = RuntimeChatSourceAttribution(
+            sourceIndex = 1,
+            documentName = "prior.txt",
+            mimeType = "text/plain",
+            chunkIndex = 1,
+        )
+        val partialAssistant = blankAssistant.copy(
+            content = "Partial",
+            sourceAttributions = listOf(priorAttribution),
+            assistantMessageId = "assistant_message_00112233445566778899aabbccddeeff",
+        )
+        val reasoningAssistant = blankAssistant.copy(
+            reasoning = "Thinking",
+            sourceAttributions = listOf(priorAttribution),
+            assistantMessageId = "assistant_message_ffeeddccbbaa99887766554433221100",
+        )
+        val partialState = blankState.copy(messages = listOf(userMessage, partialAssistant))
         val afterPartialError = blankState.copy(messages = listOf(userMessage, partialAssistant))
             .withRuntimeError(
                 envelope(
@@ -19411,6 +20454,15 @@ class RuntimeClientViewModelTest {
                 ),
                 pendingModelPullRequestId = null,
             )
+        val afterPartialCancel = partialState.withChatCancelAck(
+            envelope(
+                type = MessageType.ChatCancel,
+                requestId = "cancel-request",
+                serializer = ChatCancelPayload.serializer(),
+                payload = ChatCancelPayload(targetRequestId = "active-request"),
+            ),
+            ChatCancelPayload(targetRequestId = "active-request"),
+        )
         val afterReasoningDone = blankState.copy(messages = listOf(userMessage, reasoningAssistant))
             .withChatDone(
                 envelope(
@@ -19422,8 +20474,18 @@ class RuntimeClientViewModelTest {
                 ChatDonePayload(),
             )
 
-        assertEquals(partialAssistant, afterPartialError.messages.last())
-        assertEquals(reasoningAssistant, afterReasoningDone.messages.last())
+        assertEquals(
+            partialAssistant.copy(sourceAttributions = emptyList(), assistantMessageId = null),
+            afterPartialError.messages.last(),
+        )
+        assertEquals(
+            partialAssistant.copy(sourceAttributions = emptyList(), assistantMessageId = null),
+            afterPartialCancel.messages.last(),
+        )
+        assertEquals(
+            reasoningAssistant.copy(sourceAttributions = emptyList(), assistantMessageId = null),
+            afterReasoningDone.messages.last(),
+        )
     }
 
     @Test
@@ -20148,15 +21210,12 @@ class RuntimeClientViewModelTest {
             assertTrue(viewModel.state.value.messages.isEmpty())
             assertEquals(2, viewModel.state.value.chatSessions.single().messageCount)
 
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = com.localagentbridge.android.core.protocol.AuthResponsePayload.serializer(),
-                    payload = com.localagentbridge.android.core.protocol.AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
-            )
             viewModel.connectToTrustedRuntime()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
+            )
             advanceUntilIdle()
 
             assertEquals("relay.example.test", requireNotNull(capturedRelayRoute).host)
@@ -20307,13 +21366,9 @@ class RuntimeClientViewModelTest {
             assertEquals("ollama:nomic-embed-text", viewModel.state.value.selectedEmbeddingModelId)
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.Hello })
 
-            channel.enqueue(
-                envelope(
-                    type = MessageType.AuthResponse,
-                    serializer = AuthResponsePayload.serializer(),
-                    payload = AuthResponsePayload(accepted = true),
-                    requestId = "auth-accepted",
-                ),
+            completeRuntimeAuthentication(
+                viewModel = viewModel,
+                channel = channel,
             )
             advanceUntilIdle()
 
@@ -22789,6 +23844,123 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun persistedChatSourceAttributionSanitizerUsesProtocolSafeCodePointAndPathBoundaries() {
+        val validSupplementaryName = "\uD83D\uDCC4".repeat(256)
+        val invalidNames = listOf(
+            "report\u0000.pdf",
+            "report\u0085.pdf",
+            "folder/report.pdf",
+            "folder\\report.pdf",
+            "\uD83D\uDCC4".repeat(257),
+        )
+        val sanitized = PersistedRuntimeData(
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "session-1",
+                    title = "Session",
+                    modelId = "ollama:qwen3:8b",
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 1L,
+                    messages = listOf(
+                        PersistedChatMessage(
+                            id = "assistant-1",
+                            role = "assistant",
+                            content = "Answer",
+                            sourceAttributions = listOf(
+                                PersistedChatSourceAttribution(
+                                    sourceIndex = 1,
+                                    documentName = validSupplementaryName,
+                                    mimeType = "application/pdf",
+                                    chunkIndex = 0,
+                                ),
+                            ),
+                            createdAtMillis = 1L,
+                        ),
+                    ) + invalidNames.mapIndexed { index, invalidName ->
+                        PersistedChatMessage(
+                            id = "assistant-invalid-$index",
+                            role = "assistant",
+                            content = "Invalid answer",
+                            sourceAttributions = listOf(
+                                PersistedChatSourceAttribution(
+                                    sourceIndex = 1,
+                                    documentName = invalidName,
+                                    mimeType = "application/pdf",
+                                    chunkIndex = 0,
+                                ),
+                            ),
+                            createdAtMillis = 1L,
+                        )
+                    } + listOf(
+                        PersistedChatMessage(
+                            id = "user-1",
+                            role = "user",
+                            content = "Prompt",
+                            sourceAttributions = listOf(
+                                PersistedChatSourceAttribution(
+                                    sourceIndex = 1,
+                                    documentName = "valid.pdf",
+                                    mimeType = "application/pdf",
+                                    chunkIndex = 0,
+                                ),
+                            ),
+                            createdAtMillis = 1L,
+                        ),
+                    ),
+                ),
+            ),
+        ).sanitized()
+
+        val messages = sanitized.sessions.single().messages
+        assertEquals(validSupplementaryName, messages.first().sourceAttributions.single().documentName)
+        assertTrue(messages.drop(1).all { it.sourceAttributions.isEmpty() })
+    }
+
+    @Test
+    fun persistedChatAttributionKeepsOnlyCanonicalAssistantLocatorWithoutPrivateReviewMaterial() {
+        val assistantMessageId = "assistant_message_00112233445566778899aabbccddeeff"
+        val sanitized = PersistedRuntimeData(
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "session-1",
+                    title = "Session",
+                    createdAtMillis = 1L,
+                    updatedAtMillis = 1L,
+                    messages = listOf(
+                        PersistedChatMessage(
+                            id = "assistant-1",
+                            role = "assistant",
+                            content = "Answer",
+                            sourceAttributions = listOf(
+                                PersistedChatSourceAttribution(1, "source.pdf", "application/pdf", 0),
+                            ),
+                            assistantMessageId = assistantMessageId,
+                            createdAtMillis = 1L,
+                        ),
+                        PersistedChatMessage(
+                            id = "assistant-2",
+                            role = "assistant",
+                            content = "Invalid locator",
+                            sourceAttributions = listOf(
+                                PersistedChatSourceAttribution(1, "source.pdf", "application/pdf", 0),
+                            ),
+                            assistantMessageId = "source_anchor_0011223344556677",
+                            createdAtMillis = 1L,
+                        ),
+                    ),
+                ),
+            ),
+        ).sanitized()
+
+        assertEquals(assistantMessageId, sanitized.sessions.single().messages[0].assistantMessageId)
+        assertNull(sanitized.sessions.single().messages[1].assistantMessageId)
+        val encoded = json.encodeToString(sanitized)
+        assertTrue(encoded.contains(assistantMessageId))
+        listOf("source_anchor_", "citation_", "source_review_", "source_confirmation_", "trusted_source_")
+            .forEach { forbidden -> assertFalse(encoded.contains(forbidden)) }
+    }
+
+    @Test
     fun persistedRuntimeDataStoresSelectedChatAndEmbeddingModelsSeparately() {
         val data = PersistedRuntimeData()
             .withSelectedModelId("  ollama:qwen3:8b  ")
@@ -23306,6 +24478,8 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftApprove))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(MessageType.MemorySummaryDraftDismiss))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains("chat.attachments"))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY))
     }
 
     @Test
@@ -23427,6 +24601,55 @@ class RuntimeClientViewModelTest {
         ).jsonObject
     }
 
+    private fun persistedRuntimeHistoryWithAttribution(
+        sessionId: String,
+        localMessageId: String,
+        assistantMessageId: String,
+        attribution: PersistedChatSourceAttribution,
+    ) = PersistedRuntimeData(
+        activeSessionId = sessionId,
+        selectedModelId = textChatModel().id,
+        trustedRuntimeAutoReconnectEnabled = false,
+        sessions = listOf(
+            PersistedChatSession(
+                id = sessionId,
+                title = "History",
+                modelId = textChatModel().id,
+                createdAtMillis = 1L,
+                updatedAtMillis = 1L,
+                runtimeOwned = true,
+                runtimeMessageCount = 1,
+                messages = listOf(
+                    PersistedChatMessage(
+                        id = localMessageId,
+                        role = "assistant",
+                        content = "Original answer",
+                        sourceAttributions = listOf(attribution),
+                        assistantMessageId = assistantMessageId,
+                        createdAtMillis = 1L,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    private fun runtimeHistorySummary(sessionId: String, messageCount: Int) = ChatSessionSummaryPayload(
+        sessionId = sessionId,
+        title = "History",
+        model = textChatModel().id,
+        lastActivityAt = "2026-07-12T00:00:00Z",
+        messageCount = messageCount,
+        status = "active",
+        lastEvent = "done",
+    )
+
+    private fun PersistedChatSourceAttribution.toProtocolPayload() = ChatSourceAttributionPayload(
+        sourceIndex = sourceIndex,
+        documentName = documentName,
+        mimeType = mimeType,
+        chunkIndex = chunkIndex,
+    )
+
     private fun trustedSourceApproveResultJson(
         anchorId: String,
         citationId: String,
@@ -23496,6 +24719,61 @@ class RuntimeClientViewModelTest {
                     )
                 }
             ),
+        )
+    }
+
+    private data class PostPairingAuthenticationFixture(
+        val viewModel: RuntimeClientViewModel,
+        val channel: ScriptedRuntimeProtocolChannel,
+        val hello: ProtocolEnvelope,
+        val transportBinding: String,
+    )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.postPairingAuthenticationFixture(
+        suffix: String,
+    ): PostPairingAuthenticationFixture {
+        val runtimeDeviceId = "runtime-post-pair-auth-$suffix"
+        val transportBinding = "c".repeat(64)
+        val rawUri = "aetherlink://pair?v=1&n=nonce-$suffix&c=135790" +
+            "&rid=$runtimeDeviceId&rn=AetherLink%20Runtime&rf=$initialPairingRuntimeFingerprint" +
+            "&rk=$initialPairingRuntimePublicKey&rt=route-$suffix" +
+            "&rh=relay-$suffix.example.test&rp=443&ri=relay-$suffix&rs=secret-$suffix" +
+            "&rx=4102444800000&rrn=nonce-route-$suffix&rsc=remote"
+        val channel = ScriptedRuntimeProtocolChannel(
+            transportSecurityContext = TransportSecurityContext(transportBinding),
+        )
+        val viewModel = RuntimeClientViewModel(
+            application = Application(),
+            dependencies = RuntimeClientViewModelDependencies(
+                json = json,
+                transportClient = RuntimeTransportClient(),
+                transportConnector = RuntimeTransportConnector { _, _, _ ->
+                    error("Direct TCP should not be used for post-pair authentication")
+                },
+                relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                discovery = EmptyRuntimeDiscoverySource,
+                trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                localDataStore = FakeRuntimeLocalDataStore(
+                    initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+                ),
+                lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                currentTimeMillis = { 1_000L },
+            ),
+        )
+
+        viewModel.trustRuntimeFromPairingQr(rawUri)
+        runCurrent()
+        val pairingRequest = channel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
+        channel.enqueue(signedAcceptedPairingResult(pairingRequest, runtimeDeviceId))
+        runCurrent()
+
+        return PostPairingAuthenticationFixture(
+            viewModel = viewModel,
+            channel = channel,
+            hello = channel.sentEnvelopes.single { it.type == MessageType.Hello },
+            transportBinding = transportBinding,
         )
     }
 
@@ -23661,18 +24939,12 @@ class RuntimeClientViewModelTest {
         runCurrent()
         viewModel.connectToTrustedRuntime()
         runCurrent()
-        channel.enqueue(
-            envelope(
-                type = MessageType.AuthResponse,
-                serializer = AuthResponsePayload.serializer(),
-                payload = AuthResponsePayload(
-                    accepted = true,
-                    transportBinding = if (secureChannel) binding else null,
-                ),
-                requestId = "paired-auth-accepted",
-            )
+        completeRuntimeAuthentication(
+            viewModel = viewModel,
+            channel = channel,
+            requestId = "paired-auth-accepted",
+            transportBinding = if (secureChannel) binding else null,
         )
-        runCurrent()
         val delayMillis = runtimeRouteRefreshLeaseDelayMillis(
             nowEpochMillis = clock.nowEpochMillis,
             remoteRouteExpiresAtEpochMillis = relayExpiresAtEpochMillis,
@@ -23961,6 +25233,7 @@ class RuntimeClientViewModelTest {
     ) : RuntimeProtocolChannel {
         val sentEnvelopes = mutableListOf<ProtocolEnvelope>()
         var sendFailure: Throwable? = null
+        var afterSend: (suspend ScriptedRuntimeProtocolChannel.(ProtocolEnvelope) -> Unit)? = null
         private val incoming = Channel<ProtocolEnvelope>(Channel.UNLIMITED)
         private var closed = false
 
@@ -23970,6 +25243,7 @@ class RuntimeClientViewModelTest {
         override suspend fun send(envelope: ProtocolEnvelope) {
             sendFailure?.let { throw it }
             sentEnvelopes += envelope
+            afterSend?.invoke(this, envelope)
         }
 
         override suspend fun receive(): ProtocolEnvelope = incoming.receive()
@@ -24070,6 +25344,24 @@ class RuntimeClientViewModelTest {
         override suspend fun loadOrCreate(): DeviceIdentity = identity
     }
 
+    private class DelayedDeviceIdentityProvider(
+        private val identity: DeviceIdentity,
+        private val delayedCall: Int,
+    ) : RuntimeDeviceIdentityProvider {
+        val delayedLoadStarted = CompletableDeferred<Unit>()
+        val releaseDelayedLoad = CompletableDeferred<Unit>()
+        private var callCount = 0
+
+        override suspend fun loadOrCreate(): DeviceIdentity {
+            callCount += 1
+            if (callCount == delayedCall) {
+                delayedLoadStarted.complete(Unit)
+                releaseDelayedLoad.await()
+            }
+            return identity
+        }
+    }
+
     private class FakeRuntimeAttachmentReader(
         private val files: Map<String, RuntimeAttachmentFile>,
     ) : RuntimeAttachmentReader {
@@ -24162,13 +25454,9 @@ class RuntimeClientViewModelTest {
 
         viewModel.connectToTrustedRuntime()
         advanceUntilIdle()
-        channel.enqueue(
-            envelope(
-                type = MessageType.AuthResponse,
-                serializer = AuthResponsePayload.serializer(),
-                payload = AuthResponsePayload(accepted = true),
-                requestId = "auth-accepted",
-            ),
+        completeRuntimeAuthentication(
+            viewModel = viewModel,
+            channel = channel,
         )
         advanceUntilIdle()
         channel.enqueue(
@@ -24234,6 +25522,20 @@ class RuntimeClientViewModelTest {
         val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
         field.isAccessible = true
         return field.get(this) as T?
+    }
+
+    private fun RuntimeClientViewModel.pendingAuthenticationHelloRequestIdForTest(): String? {
+        val pending = privateField<Any>("pendingRuntimeAuthentication") ?: return null
+        val field = pending.javaClass.getDeclaredField("helloRequestId")
+        field.isAccessible = true
+        return field.get(pending) as String
+    }
+
+    private fun RuntimeClientViewModel.pendingHistoricalResolveLocalMessageIdForTest(): String? {
+        val pending = privateField<Any>("pendingHistoricalSourceAttributionResolve") ?: return null
+        val field = pending.javaClass.getDeclaredField("localMessageId")
+        field.isAccessible = true
+        return field.get(pending) as String
     }
 
     private fun RuntimeClientViewModel.setPrivateField(name: String, value: Any?) {
@@ -24398,6 +25700,56 @@ class RuntimeClientViewModelTest {
             ),
             requestId = "auth-$nonce",
         )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.completeRuntimeAuthentication(
+        viewModel: RuntimeClientViewModel,
+        channel: ScriptedRuntimeProtocolChannel,
+        requestId: String = "auth-accepted",
+        transportBinding: String? = channel.transportSecurityContext?.bindingId,
+    ) {
+        val trustedBeforeAuthentication = viewModel.state.value.trustedRuntime
+        if (trustedBeforeAuthentication != null) {
+            viewModel.replaceStateForTest { state ->
+                state.copy(
+                    trustedRuntime = trustedBeforeAuthentication.copy(
+                        fingerprint = initialPairingRuntimeFingerprint,
+                        publicKeyBase64 = initialPairingRuntimePublicKey,
+                    ),
+                )
+            }
+        }
+        val authResponseCount = channel.sentEnvelopes.count { it.type == MessageType.AuthResponse }
+        channel.enqueue(
+            signedRuntimeAuthChallenge(
+                keyPair = initialPairingRuntimeKeyPair,
+                nonce = "nonce-$requestId",
+                transportBinding = transportBinding,
+            ).copy(requestId = requestId),
+        )
+        runCurrent()
+        assertEquals(
+            authResponseCount + 1,
+            channel.sentEnvelopes.count { it.type == MessageType.AuthResponse },
+        )
+        if (trustedBeforeAuthentication != null) {
+            viewModel.replaceStateForTest { state ->
+                state.copy(trustedRuntime = trustedBeforeAuthentication)
+            }
+        }
+        channel.enqueue(
+            envelope(
+                type = MessageType.AuthResponse,
+                serializer = AuthResponsePayload.serializer(),
+                payload = AuthResponsePayload(
+                    accepted = true,
+                    transportBinding = transportBinding,
+                ),
+                requestId = requestId,
+            ),
+        )
+        runCurrent()
     }
 
     private fun verifyAuthenticationSignature(

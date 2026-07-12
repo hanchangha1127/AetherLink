@@ -38099,8 +38099,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     required_chat_stream_app_path_protocol_doc_snippets = (
         "chat.delta.payload` accepts only `delta`, `text`, `reasoning_delta`, and `thinking_delta`",
         "Runtime streaming deltas must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material",
-        "chat.done.payload` accepts only `finish_reason` and `usage`; nested `usage` accepts only `input_tokens` and `output_tokens`",
-        "Runtime stream completion payloads must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-provider route material",
+        "chat.done.payload` accepts only `finish_reason`, `usage`, optional `source_attributions`, and the capability-gated optional `assistant_message_id`; nested `usage` accepts only `input_tokens` and `output_tokens`",
+        "Grant, citation, source-anchor, document, fingerprint, revision, approval, source text, snippet, offset, path, workspace, project, backend, route, credential, and tool metadata are forbidden",
     )
     for snippet in required_chat_stream_app_path_protocol_doc_snippets:
         if snippet not in docs_protocol_text:
@@ -38893,12 +38893,12 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             )
 
     required_auth_challenge_app_path_test_snippets = (
-        "authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning",
+        "malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate",
         'put("backend_url", "http://127.0.0.1:11434")',
         "sentCountBeforeRejectedChallenge",
         "MessageType.AuthResponse",
         "nonce-for-signing",
-        "assertNotNull(payload.signature)",
+        "requireNotNull(authResponsePayload.signature)",
     )
     for snippet in required_auth_challenge_app_path_test_snippets:
         if snippet not in android_viewmodel_test_text:
@@ -38908,9 +38908,9 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             )
 
     required_auth_challenge_app_path_no_device_snippets = (
-        "RuntimeClientViewModelTest.authChallengeRejectsUnknownMetadataBeforeAuthResponseSigning",
+        "RuntimeClientViewModelTest.malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate",
         "Android auth.challenge closed-payload app-path addendum",
-        "rejects unknown auth.challenge response metadata before device identity loading, runtime proof verification, auth.response signing/sending, authenticated session state, route-refresh scheduling, or authenticated refresh fanout",
+        "rejects unknown auth.challenge response metadata before runtime proof verification or auth.response signing/sending, closes the authentication attempt, and rejects a later unsolicited accepted response",
     )
     for snippet in required_auth_challenge_app_path_no_device_snippets:
         if snippet not in no_device_text:
@@ -40579,19 +40579,25 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         "source_manager_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentSourceManagerTests.swift",
         "citation_tests": ROOT / "apps/macos/CompanionCore/Tests/RuntimeDocumentCitationGovernanceTests.swift",
         "router_tests": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "chat_store_tests": ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift",
         "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
         "android_protocol": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
         "android_protocol_tests": ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt",
         "android_state": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt",
         "android_viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
         "android_viewmodel_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "android_store": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt",
         "android_ui": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
         "android_ui_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
+        "android_strings": ROOT / "apps/android/app/src/main/res/values/strings.xml",
         "android_relay_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelRelayIntegrationTest.kt",
         "runtime_smoke": ROOT / "script/runtime_authenticated_mock_smoke.swift",
         "no_device": ROOT / "script/check_no_device_quality.sh",
         "schema_checker": ROOT / "script/check_protocol_schema.py",
         "protocol_docs": ROOT / "docs/protocol.md",
+        "architecture_docs": ROOT / "docs/architecture.md",
+        "security_docs": ROOT / "docs/security.md",
+        "mvp_docs": ROOT / "docs/mvp-v0.1.md",
         "roadmap": ROOT / "docs/roadmap.md",
         "progress": ROOT / "docs/progress.md",
         "qa_evidence": ROOT / "docs/qa-evidence.md",
@@ -40687,9 +40693,22 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("router_tests", "testChatSendTrustedSourceContextFailsClosedWhenAuditPersistenceFails", "Router tests must fail closed before backend dispatch when trusted-source consumption audit persistence fails."),
         ("router_tests", "testChatSendTrustedSourceContextRespectsModelWindowWithoutPersistingContext", "Router tests must apply model-window limits after source injection without persisting source context."),
         ("router_tests", "testChatSendRejectsMalformedOrWrongDeviceTrustedSourceGrantsBeforeBackend", "Router tests must reject malformed, excessive, duplicate, and unavailable grants before backend dispatch."),
+        ("schema_checker", "check_chat_source_attribution_schema", "Protocol schema checker must pin the safe structured answer attribution contract."),
+        ("router", 'private static let chatSourceAttributionsCapability = "chat.source_attributions.v1"', "Runtime must gate structured answer attribution by an explicit client capability."),
+        ("router", "claimChatTerminal", "Runtime must linearize competing stop and cancel terminals before storage and wire delivery."),
+        ("router_tests", "testConcurrentStopAndCancelClaimsExactlyOneStoredAndWireTerminal", "Router tests must prove stop and cancel cannot both become terminal."),
+        ("router_tests", "testDelayedCancelCapturedBeforeStopCannotClaimSecondTerminal", "Router tests must cover a cancel that resumes after stop and unregister."),
+        ("router_tests", "testConnectionCloseNotFoundDoesNotSuppressConcurrentStopTerminal", "Router tests must preserve a concurrent successful stop when connection-close cancellation reports not found."),
+        ("router_tests", "testChatCancelPersistenceFailureReturnsStoreErrorsWithoutSuccessOrDuplicateTerminal", "Router tests must fail cancel closed when terminal persistence is unavailable."),
+        ("router_tests", "testDevelopmentPathProjectsStoredSourceAttributionsWithoutHelloCapability", "Router tests must preserve the explicit no-auth development attribution path."),
         ("schema", '"trusted_source_grant_ids"', "Shared chat.send schema must include the optional bounded grant-id array."),
+        ("schema", '"chatSourceAttribution"', "Shared schema must define the safe structured answer attribution object."),
+        ("schema", '"source_attributions"', "Shared chat completion and history schemas must expose optional structured answer attribution."),
         ("schema_checker", "trusted_source_grant_ids must be an optional unique array of 1 through 8 canonical grant ids", "Protocol schema checker must pin trusted-source grant bounds and uniqueness."),
         ("android_protocol", '@SerialName("trusted_source_grant_ids") val trustedSourceGrantIds', "Android chat.send DTO must encode the reviewed grant-id authorization field."),
+        ("android_protocol", 'const val CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY = "chat.source_attributions.v1"', "Android must advertise structured answer attribution support."),
+        ("android_protocol", "data class ChatSourceAttributionPayload", "Android protocol must decode only the safe structured attribution projection."),
+        ("android_protocol_tests", "chatSourceAttributionsRejectInvalidBoundsOrderFinishReasonAndForbiddenMetadata", "Android protocol tests must reject malformed and forbidden attribution metadata."),
         ("android_protocol_tests", "chatSendPayloadCarriesUniqueCanonicalTrustedSourceGrantIds", "Android protocol tests must cover canonical grant-id serialization."),
         ("android_viewmodel", "trustedSourceGrantIdsForSelection", "Android ViewModel must fail closed when transient selection and private grant lookup diverge."),
         ("android_viewmodel_tests", "trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection", "Android tests must prove trusted-source selection is transient and one-shot."),
@@ -40698,10 +40717,20 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("android_viewmodel_tests", "trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling", "Android tests must prioritize authentication loss over operation-specific trusted-source errors."),
         ("android_viewmodel_tests", "trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities", "Android tests must remove terminal review and revoke capabilities."),
         ("android_viewmodel_tests", "malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry", "Android tests must clear malformed trusted-source operation state and allow retry."),
+        ("android_viewmodel_tests", "chatDoneAttributionsRequireSafeMetadataPreserveMalformedStreamsAndPersistOnlyProjection", "Android tests must keep malformed completion metadata from ending or contaminating a stream."),
+        ("android_viewmodel_tests", "postPairingMalformedChallengeRetriesWithFreshHelloAndRejectsOldFinalResponse", "Android tests must reject stale post-pair authentication responses after a malformed challenge."),
+        ("android_viewmodel_tests", "postPairingMalformedFinalResponseClearsAttemptAndBoundsRetry", "Android tests must bound post-pair authentication retries and clear failed attempts."),
+        ("android_viewmodel_tests", "postPairingRetryableRuntimeErrorClearsAttemptAndUsesFreshHello", "Android tests must correlate post-pair runtime errors and retry with a fresh hello."),
+        ("android_viewmodel_tests", "delayedPostPairIdentityLoadCannotSendHelloOrAuthenticateAcrossReplacementConnection", "Android tests must keep delayed hello preparation on its initiating connection generation."),
+        ("android_viewmodel_tests", "malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate", "Android tests must reject unsolicited accepted responses after a failed challenge."),
+        ("android_store", "sanitizedChatSourceAttributions", "Android persistence must revalidate structured answer attribution before restoring it."),
         ("no_device", "RuntimeTransportClientTest.queuedSendDoesNotCrossReconnectOnSameClientObject", "Default no-device gate must prove a queued direct send cannot cross a same-client reconnect."),
         ("android_ui", "CHAT_COMPOSER_SOURCE_ACTION_TEST_TAG", "Android chat composer must expose a source picker control."),
         ("android_ui_tests", "chatTrustedSourcePickerUsesCheckboxesCapsSelectionAndRemovesSafeDocumentChips", "Android Compose tests must cover bounded source selection without opaque UI leakage."),
         ("android_ui_tests", "chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback", "Android Compose tests must render actionable trusted-source errors instead of the unknown fallback."),
+        ("android_ui", "ChatSourceAttributionList", "Android chat UI must render structured answer attribution separately from answer text."),
+        ("android_ui_tests", "chatScreenSourceAttributionsRenderBetweenAnswerAndActionsWithLocalizedTalkBackSummaries", "Android Compose tests must cover attribution ordering and localized accessibility summaries."),
+        ("android_strings", '<string name="chat_source_attributions_title">Sources provided to the response</string>', "Default Android copy must describe historical provided sources without claiming verified citation entailment."),
         ("runtime_smoke", 'requestID: "smoke-trusted-source-chat-context"', "RuntimeDevServer smoke must consume an approved grant through chat.send."),
         ("runtime_smoke", "trusted-source backend-only context entered stored chat history", "RuntimeDevServer smoke must fail if source context enters stored transcript history."),
         ("no_device", "trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection", "Default no-device gate must run Android one-shot source-selection coverage."),
@@ -40709,6 +40738,70 @@ def document_retrieval_source_anchor_guard_failures() -> list[str]:
         ("no_device", "trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling", "Default no-device gate must run trusted-source authentication-loss cleanup coverage."),
         ("no_device", "trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities", "Default no-device gate must run terminal trusted-source capability cleanup coverage."),
         ("no_device", "malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry", "Default no-device gate must run malformed trusted-source error recovery coverage."),
+        ("no_device", "chatSourceAttributionsRejectInvalidBoundsOrderFinishReasonAndForbiddenMetadata", "Default no-device gate must run strict Android attribution protocol coverage."),
+        ("no_device", "chatDoneAttributionsRequireSafeMetadataPreserveMalformedStreamsAndPersistOnlyProjection", "Default no-device gate must run Android attribution stream and persistence coverage."),
+        ("no_device", "testConcurrentStopAndCancelClaimsExactlyOneStoredAndWireTerminal", "Default no-device gate must run runtime terminal linearization coverage."),
+        ("no_device", "testDelayedCancelCapturedBeforeStopCannotClaimSecondTerminal", "Default no-device gate must run delayed-cancel terminal ownership coverage."),
+        ("no_device", "testConnectionCloseNotFoundDoesNotSuppressConcurrentStopTerminal", "Default no-device gate must run connection-close stop preservation coverage."),
+        ("no_device", "testChatCancelPersistenceFailureReturnsStoreErrorsWithoutSuccessOrDuplicateTerminal", "Default no-device gate must run cancel persistence failure coverage."),
+        ("no_device", "postPairingMalformedChallengeRetriesWithFreshHelloAndRejectsOldFinalResponse", "Default no-device gate must run post-pair stale-auth rejection coverage."),
+        ("no_device", "postPairingRetryableRuntimeErrorClearsAttemptAndUsesFreshHello", "Default no-device gate must run post-pair correlated-error retry coverage."),
+        ("no_device", "delayedPostPairIdentityLoadCannotSendHelloOrAuthenticateAcrossReplacementConnection", "Default no-device gate must run delayed hello connection-replacement isolation."),
+        ("no_device", "malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate", "Default no-device gate must run unsolicited auth-response rejection coverage."),
+        ("no_device", "chatScreenSourceAttributionsRenderBetweenAnswerAndActionsWithLocalizedTalkBackSummaries", "Default no-device gate must run localized attribution UI coverage."),
+        ("no_device", "Covered structured answer source attribution addendum", "Default no-device summary must state the safe historical attribution and proof boundary."),
+        ("protocol_docs", "## Authenticated Historical Chat Source Attribution Review Contract", "Protocol docs must define the authenticated historical attribution review contract."),
+        ("protocol_docs", "`chat.source_attribution.resolve`", "Protocol docs must name the authenticated historical attribution resolver."),
+        ("protocol_docs", "`assistant_message_id` is a server-generated opaque locator, not an authorization handle", "Protocol docs must keep the assistant locator non-authorizing."),
+        ("protocol_docs", "`source_attributions` remains exactly the four safe display fields", "Protocol docs must preserve the four-field display-only attribution shape."),
+        ("protocol_docs", "revalidates current `runtime_shared` approval and the exact historical revision", "Protocol docs must require current approval and exact historical revision revalidation."),
+        ("protocol_docs", "exactly `source_index`, `source_anchor_id`, `document_id`, and `source_revision`", "Protocol docs must pin the exact internal attribution binding fields."),
+        ("protocol_docs", "Approval state and a separate chunk identifier are not binding fields", "Protocol docs must not invent approval or a separate chunk field in the internal binding."),
+        ("architecture_docs", "bindings containing only `source_index`, `source_anchor_id`, `document_id`, and `source_revision`", "Architecture docs must pin the exact internal attribution binding fields."),
+        ("security_docs", "binding containing only `source_index`, `source_anchor_id`, `document_id`, and `source_revision`", "Security docs must pin the exact internal attribution binding fields."),
+        ("mvp_docs", "Post-v0.1 hardening may add authenticated `chat.source_attribution.resolve`", "The v0.1 MVP must describe the post-v0.1 resolver as a possible addition, not a v0.1 guarantee."),
+        ("schema", '"chat.source_attribution.resolve"', "Shared schema must register the authenticated historical attribution resolver."),
+        ("schema", '"assistantMessageID"', "Shared schema must define the non-authorizing assistant locator shape."),
+        ("android_protocol", 'const val CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY = "chat.source_attribution.resolve.v1"', "Android protocol must advertise historical attribution review explicitly."),
+        ("android_protocol", "data class ChatSourceAttributionResolveRequestPayload", "Android protocol must encode the exact historical attribution request."),
+        ("android_protocol_tests", "chatSourceAttributionResolvePayloadsRoundTripExactExistingSourceShapes", "Android protocol tests must pin exact request and existing response envelope shapes."),
+        ("android_protocol_tests", "chatSourceAttributionResolvePayloadsRejectUnknownMalformedAndMismatchedValues", "Android protocol tests must reject malformed, unknown, and mismatched attribution review payloads."),
+        ("router_tests", "testChatSendConsumesCurrentDeviceGrantAsBackendOnlyTrustedSourceContext", "Router tests must cover the authenticated historical attribution resolver and exact happy response."),
+        ("router_tests", 'clientCapabilities: ["chat.source_attributions.v1"]', "Router tests must retain attribution-only partial-capability evidence."),
+        ("router_tests", 'XCTAssertEqual(Set(legacyDone?.payload.keys.map { $0 } ?? []), ["finish_reason", "usage"])', "Router tests must keep legacy capability omission on the old completion key set."),
+        ("router_tests", 'XCTAssertEqual(Set(legacyAssistant.keys), ["role", "content", "created_at"])', "Router tests must keep legacy capability omission on the old history key set."),
+        ("chat_store_tests", "testSQLiteStoreResolvesOnlyOwnerScopedBoundCanonicalAssistantAttribution", "SQLite tests must pin owner-scoped canonical historical attribution binding resolution."),
+        ("runtime_smoke", '"smoke-unauthenticated-chat-source-attribution-resolve"', "Runtime smoke must reject the resolver before authentication."),
+        ("runtime_smoke", 'requestID: "smoke-chat-source-attribution-resolve"', "Runtime smoke must send the exact authenticated historical attribution request."),
+        ("runtime_smoke", "chat.source_attribution.resolve did not return the current exact review envelope", "Runtime smoke must require the exact happy response envelope."),
+        ("runtime_smoke", '"smoke-chat-source-attribution-resolve-malformed"', "Runtime smoke must reject a malformed authenticated resolver tuple."),
+        ("runtime_smoke", '"smoke-chat-source-attribution-resolve-unknown-field"', "Runtime smoke must reject unknown resolver request metadata."),
+        ("runtime_smoke", '"smoke-chat-source-attribution-resolve-not-found"', "Runtime smoke must reject a canonical unresolved tuple."),
+        ("runtime_smoke", '"chat_source_attribution_not_found"', "Runtime smoke must require the exact unresolved historical attribution error code."),
+        ("runtime_smoke", '"invalid_payload"', "Runtime smoke must require the exact malformed historical attribution error code."),
+        ("runtime_smoke", 'context: "\\(failureCase.context) connection survival"', "Runtime smoke must prove the authenticated connection survives resolver errors."),
+        ("runtime_smoke", "chat.source_attribution.resolve exposed forbidden source or internal binding metadata", "Runtime smoke must preserve happy-response forbidden metadata checks."),
+        ("android_viewmodel_tests", "historicalSourceAttributionResolveCorrelatesCanonicalLocatorAndReusesTrustedReviewTokens", "Android ViewModel tests must cover canonical locator correlation and review reuse."),
+        ("android_viewmodel_tests", "historicalSourceAttributionResolveRejectsMismatchedProjectionAndCleansUpOnSessionChange", "Android ViewModel tests must cover mismatched resolver projection and cleanup."),
+        ("android_ui_tests", "historicalSourceAttributionRowOpensReviewAndKeepsStableLoadingDimensions", "Android Compose tests must cover attribution review interaction and stable loading layout."),
+        ("no_device", "ProtocolCodecTest.chatSourceAttributionResolvePayloadsRoundTripExactExistingSourceShapes", "Default no-device gate must run exact historical attribution review codec coverage."),
+        ("no_device", "ProtocolCodecTest.chatSourceAttributionResolvePayloadsRejectUnknownMalformedAndMismatchedValues", "Default no-device gate must run fail-closed historical attribution review codec coverage."),
+        ("no_device", "RuntimeClientViewModelTest.historicalSourceAttributionResolveCorrelatesCanonicalLocatorAndReusesTrustedReviewTokens", "Default no-device gate must run Android historical attribution correlation coverage."),
+        ("no_device", "RuntimeClientViewModelTest.historicalSourceAttributionResolveRejectsMismatchedProjectionAndCleansUpOnSessionChange", "Default no-device gate must run Android historical attribution cleanup coverage."),
+        ("no_device", "ClientScreensNoDeviceComposeTest.historicalSourceAttributionRowOpensReviewAndKeepsStableLoadingDimensions", "Default no-device gate must run Android historical attribution Compose coverage."),
+        ("no_device", "LocalRuntimeMessageRouterTests/testChatSendConsumesCurrentDeviceGrantAsBackendOnlyTrustedSourceContext", "Default no-device gate must run the Swift historical attribution resolver path."),
+        ("no_device", "SQLiteRuntimeChatEventStoreTests/testSQLiteStoreResolvesOnlyOwnerScopedBoundCanonicalAssistantAttribution", "Default no-device gate must run focused SQLite historical attribution resolution."),
+        ("no_device", "./script/runtime_authenticated_mock_smoke.swift --default-mock-routing-only", "Default no-device gate must run the direct authenticated RuntimeDevServer mock smoke."),
+        ("roadmap", "## Authenticated Historical Chat Source Attribution Review", "Roadmap must track the historical attribution review slice."),
+        ("progress", "## 2026-07-12 Authenticated Historical Chat Source Attribution Review Integration", "Progress must record contract and completed gate integration."),
+        ("qa_evidence", "## 2026-07-12 Authenticated Historical Chat Source Attribution Review No-Device Checklist", "QA evidence must keep the completed slice explicitly no-device."),
+        ("roadmap", "check-no-device-quality-historical-source-attribution-review-final-reviewed-20260712.log", "Roadmap must record the final aggregate evidence path."),
+        ("progress", "48 fresh relay connections, 761 encrypted frame bodies", "Progress must record the measured final relay evidence."),
+        ("qa_evidence", "48 fresh relay connections, 761 encrypted frame bodies", "QA evidence must record the measured final relay evidence."),
+        ("qa_evidence", "Capability omission and partial-capability projection remain router-unit evidence rather than live-smoke evidence", "QA must distinguish router compatibility evidence from the fully capable live smoke."),
+        ("no_device", "Covered authenticated historical chat source attribution review addendum", "Default no-device summary must record the completed historical attribution review checkpoint."),
+        ("no_device", "Capability omission and partial capability compatibility are router-unit evidence", "Default no-device summary must not imply legacy or partial-capability live-smoke coverage."),
+        ("no_device", "does not claim physical Android", "Default no-device summary must preserve the physical-device proof boundary."),
         ("no_device", "chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback", "Default no-device gate must run trusted-source error-copy coverage."),
         ("no_device", "testChatSendConsumesCurrentDeviceGrantAsBackendOnlyTrustedSourceContext", "Default no-device gate must run backend-only source-context router coverage."),
         ("no_device", "testChatSendTrustedSourceContextFailsClosedWhenAuditPersistenceFails", "Default no-device gate must run trusted-source audit failure coverage."),
@@ -43296,12 +43389,30 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
     design_root = ROOT / "docs/security-hardening/production-p2p-nat-v1"
     paths = {
         "validator": ROOT / "script/check_p2p_nat_security_design.py",
+        "contract_validator": ROOT / "script/check_p2p_nat_contract_vectors.py",
+        "pre_network_validator": ROOT / "script/check_p2p_nat_pre_network_review.py",
+        "pre_network_tests": ROOT / "script/test_p2p_nat_pre_network_review.py",
+        "spike_review_validator": ROOT / "script/check_p2p_nat_controlled_spike_review.py",
+        "spike_review_tests": ROOT / "script/test_p2p_nat_controlled_spike_review.py",
         "gate": ROOT / "script/check_no_device_quality.sh",
         "context": design_root / "context.md",
         "threat_model": design_root / "threat-model.md",
         "standards": design_root / "standards.md",
         "portfolio": design_root / "hardening.md",
         "analysis": design_root / "hardening.json",
+        "selection_profile": design_root / "selection-profile.md",
+        "selection_profile_json": design_root / "selection-profile.json",
+        "selection_decision": design_root / "selection-decision.json",
+        "handoff_v1": design_root / "implementation/handoff-v1.json",
+        "handoff_v2": design_root / "implementation/handoff-v2.json",
+        "handoff_v3": design_root / "implementation/handoff-v3.json",
+        "pre_network_review_json": design_root / "pre-network/review-v1.json",
+        "pre_network_review_md": design_root / "pre-network/review-v1.md",
+        "pre_network_decision_json": design_root / "pre-network/decision-v1.json",
+        "pre_network_decision_md": design_root / "pre-network/decision-v1.md",
+        "spike_review_json": design_root / "controlled-network-spike/review-v1.json",
+        "spike_review_md": design_root / "controlled-network-spike/review-v1.md",
+        "vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-vectors.json",
         "manifest": design_root / "evidence.sha256",
         "roadmap": ROOT / "docs/roadmap.md",
         "progress": ROOT / "docs/progress.md",
@@ -43322,12 +43433,84 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "EVIDENCE_COLLECTION_SHA256",
             '"authenticated-rendezvous-and-candidate-protection": "authenticated-encrypted-ice-turn"',
             '"identity-bound-traversal-and-relay-fallback": "transport-neutral-identity-session"',
+            "validate_selection_profile",
+            "validate_completion_handoff",
+            "reject_duplicate_names",
+            "object_pairs_hook=reject_duplicate_names",
+            "validate_current_pre_network_handoff",
+            "EXPECTED_PRE_NETWORK_DECISION_RESOLUTIONS",
+            '"controlled-network-spike"',
             'DESIGN_ROOT / "implementation"',
         ),
+        "contract_validator": (
+            "production-p2p-nat-v1-vectors.json",
+            "P2P/NAT contract vectors passed",
+            "forbidden = {",
+            "SocketFactory",
+            "CFStreamCreatePairWithSocket",
+        ),
+        "pre_network_validator": (
+            "production_p2p_nat_v1_pre_network_review_v1",
+            "DECISION_ORDER",
+            "SECURITY_FLOORS",
+            "IMMUTABLE_SOURCE_SHA256",
+            "GENERATED_ARTIFACT_SHA256",
+            "resolution and approvalSource must remain null",
+            "7 recommendations approved; handoff-v3 closed; network gate closed",
+            "validate_approval",
+            "validate_handoff_v3",
+        ),
+        "pre_network_tests": (
+            "test_missing_duplicate_unknown_and_reordered_decisions_fail",
+            "test_unauthorized_state_transitions_fail",
+            "test_weakened_security_floors_fail",
+            "test_release_results_cannot_be_claimed_before_measurement",
+            "test_approval_missing_unknown_duplicate_and_order_fail",
+            "test_approval_recommendation_source_and_authorization_fail",
+            "test_handoff_resolution_and_closed_gates_fail",
+            "test_security_design_parser_rejects_duplicate_names",
+        ),
+        "spike_review_validator": (
+            "production_p2p_nat_v1_controlled_network_spike_review_v1",
+            "DECISION_ORDER",
+            "RECOMMENDATIONS",
+            "REQUIRED_SECURITY_FLOORS",
+            "REQUIRED_SOURCE_URLS",
+            "GENERATED_ARTIFACT_SHA256",
+            "validate_source_handoff",
+            "4 recommendations proposed; 0 selected; socket gate closed",
+        ),
+        "spike_review_tests": (
+            "test_missing_unknown_and_duplicate_names_fail",
+            "test_decision_order_and_completeness_fail",
+            "test_implicit_selection_and_approval_fail",
+            "test_contract_security_floors_cannot_weaken",
+            "test_official_source_set_and_verification_date_fail",
+            "test_measurement_and_outcome_claims_fail",
+            "test_markdown_claim_and_heading_drift_fail",
+        ),
         "gate": (
+            "script/check_p2p_nat_contract_vectors.py",
+            "script/check_p2p_nat_pre_network_review.py",
+            "script/test_p2p_nat_pre_network_review.py",
+            "script/check_p2p_nat_controlled_spike_review.py",
+            "script/test_p2p_nat_controlled_spike_review.py",
             "script/check_p2p_nat_security_design.py",
-            "Covered production P2P/NAT security design addendum:",
-            "This validates static design artifacts only; it does not claim a concrete P2P connector",
+            "Covered production P2P/NAT bounded no-network handoff addendum:",
+            "Covered production P2P/NAT pre-network approval addendum:",
+            "Covered production P2P/NAT controlled-spike review addendum:",
+            "Handoff-v2 records canonical-contracts and no-network-conformance completed",
+            "controlled-network-spike remains blocked",
+            "decision-v1 resolves all seven",
+            "closed handoff-v3 supersedes handoff-v2",
+            "com.localagentbridge.android.core.protocol.p2pnat.*",
+            "com.localagentbridge.android.core.transport.p2pnat.*",
+            "P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests",
+            "15-test mutation suite",
+            "handoff-v3 hash-pins Android P2pNatContract.kt",
+            "the security-design validator directly verifies canonical handoff closure",
+            "10-test mutation suite",
+            "librarySelectionAuthorized, harnessImplementationAuthorized, networkIOAllowed",
         ),
         "analysis": (
             '"analysisId": "production_p2p_nat_v1_20260711"',
@@ -43335,6 +43518,124 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"recommendedOptionId": "transport-neutral-identity-session"',
             "paired long-term endpoint identities",
             "Consent freshness",
+            '"selectionProfileStatus": "approved_for_bounded_handoff"',
+            '"implementationAuthorized": true',
+            '"networkIOAllowed": false',
+            '"librarySelectionAuthorized": false',
+            '"productionDeploymentAuthorized": false',
+            '"controlledNetworkSpikeSocketExecutionAuthorized": false',
+            '"handoffPath": "implementation/handoff-v3.json"',
+        ),
+        "selection_profile": (
+            "explicitly approved for a bounded handoff",
+            "production_p2p_nat_v1_recommended",
+            "authenticated-encrypted-ice-turn",
+            "transport-neutral-identity-session",
+            "relay-only-sealed-signaling",
+            "Open Decisions Before Network I/O",
+            "handoff v2",
+            "does not add production P2P code",
+        ),
+        "selection_profile_json": (
+            '"status": "approved_for_bounded_handoff"',
+            '"implementationAuthorized": true',
+            '"networkIOAllowed": false',
+            '"explicitSelectionRequired": false',
+            '"requiredPreNetworkDecisions"',
+        ),
+        "selection_decision": (
+            '"status": "closed"',
+            '"decision": "approved_for_bounded_handoff"',
+            '"productionDesignStatus": "not_implemented"',
+            '"networkIOAllowed": false',
+        ),
+        "handoff_v1": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v1"',
+            '"canonical-contracts"',
+            '"blocked_on_dependency"',
+        ),
+        "handoff_v2": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v2"',
+            '"supersedesPath": "handoff-v1.json"',
+            '"executionStatus": "completed"',
+            '"blocked_on_separate_review"',
+        ),
+        "handoff_v3": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v3"',
+            '"supersedesPath": "handoff-v2.json"',
+            '"approvalDecisionPath": "../pre-network/decision-v1.json"',
+            '"controlledNetworkSpikeSocketExecutionAuthorized": false',
+            '"networkIOAllowed": false',
+            '"blocked_on_separate_review"',
+            '"evidenceSha256"',
+            '"networking_library_selection"',
+            '"session_cryptography_library_selection"',
+            '"isolated_harness_design"',
+            '"socket_destination_and_egress_controls"',
+            'P2pNatContract.kt',
+        ),
+        "pre_network_review_json": (
+            '"reviewId": "production_p2p_nat_v1_pre_network_review_v1"',
+            '"status": "proposed_not_selected"',
+            '"measurementStatus": "unmeasured_proposal"',
+            '"networkIOAllowed": false',
+            '"resolution": null',
+            '"approvalSource": null',
+            '"allDecisionsSelected": false',
+            '"networkSpikeAuthorized": false',
+            '"nextHandoffCreated": false',
+        ),
+        "pre_network_review_md": (
+            "Production P2P/NAT V1 Pre-Network Review V1",
+            "proposed_not_selected",
+            "Recommended Decision Set",
+            "Required Evidence Before A Network Handoff",
+            "networkIOAllowed=false",
+            "controlled-network-spike",
+        ),
+        "pre_network_decision_json": (
+            '"decisionId": "production_p2p_nat_v1_pre_network_decision_v1"',
+            '"approvalSource": "explicit_user_instruction"',
+            '"handoffV3CreationAuthorized": true',
+            '"networkIOAllowed": false',
+            '"nextStep": "separate_networking_library_and_isolated_harness_review"',
+        ),
+        "pre_network_decision_md": (
+            "Production P2P/NAT V1 Pre-Network Approval Decision V1",
+            "all seven recommended options",
+            "explicit_user_instruction",
+            "network I/O",
+            "separate review",
+        ),
+        "spike_review_json": (
+            '"reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1"',
+            '"status": "proposed_not_selected"',
+            '"measurementStatus": "not_started"',
+            '"recommendedOptionId": "libjuice-1.7.2-static-c-abi"',
+            '"recommendedOptionId": "platform-native-p256-hkdf-sha256-aes256gcm"',
+            '"recommendedOptionId": "linux-netns-twin-agent-local-services"',
+            '"recommendedOptionId": "numeric-endpoint-allowlist-plus-os-egress-witness"',
+            '"selectedDecisionCount": 0',
+            '"librarySelectionAuthorized": false',
+            '"harnessImplementationAuthorized": false',
+            '"networkIOAllowed": false',
+            '"socketExecutionAuthorized": false',
+            '"handoffCreated": false',
+        ),
+        "spike_review_md": (
+            "Production P2P/NAT V1 Controlled-Network Spike Review V1",
+            "proposed_not_selected",
+            "Official Evidence",
+            "Required Evidence Before Selection",
+            "librarySelectionAuthorized=false",
+            "networkIOAllowed=false",
+            "socketExecutionAuthorized=false",
+            "separate_versioned_decision_before_socket_execution",
+        ),
+        "vectors": (
+            '"schema": "aetherlink-production-p2p-nat-v1-vectors"',
+            '"expectedCanonicalHex"',
+            '"expectedHmacSha256"',
         ),
         "threat_model": (
             "Candidate disclosure and IP correlation",
@@ -43355,7 +43656,9 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "portfolio": (
             "authenticated encrypted ICE",
             "transport-neutral identity-bound secure session",
-            "selection authorizes implementation.",
+            "approved_for_bounded_handoff",
+            "selection-profile.json",
+            "handoff-v3",
         ),
     }
     for name, snippets in required_snippets.items():
@@ -43368,7 +43671,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
     if len(manifest_lines) != 13:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
-    expected_manifest_hash = "2b2a44f2ac7a2f081a5fbc7856a5b3d7dbe1585cec59c871282c98c9d4e33cbd"
+    expected_manifest_hash = "3c957948ca16aec64ae941a1c0d1cb9a86697854eddb9c22473e4da8d7891424"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -43412,6 +43715,97 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             failures.append(
                 f"{paths[name].relative_to(ROOT)} section {heading!r} must preserve the not implemented boundary."
             )
+
+    current_sections = {
+        "roadmap": "Production P2P/NAT Approved Bounded Handoff (No Network)",
+        "progress": "2026-07-12 Production P2P/NAT Approved Bounded Handoff (No Network)",
+        "qa": "2026-07-12 Production P2P/NAT Approved Bounded Handoff No-Device Checklist",
+    }
+    for name, heading in current_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "production_p2p_nat_v1_recommended",
+            "approved_for_bounded_handoff",
+            "implementationAuthorized=true",
+            "networkIOAllowed=false",
+            "route.refresh",
+            expected_manifest_hash,
+            "handoff-v2",
+            "production-p2p-nat-v1-vectors.json",
+            "check_p2p_nat_contract_vectors.py",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+        if "not_implemented" not in section:
+            failures.append(
+                f"{paths[name].relative_to(ROOT)} section {heading!r} must preserve the not_implemented boundary."
+            )
+
+    review_sections = {
+        "roadmap": "Production P2P/NAT Pre-Network Decision Review (Historical Proposal)",
+        "progress": "2026-07-12 Production P2P/NAT Pre-Network Decision Review (Historical Proposal)",
+        "qa": "2026-07-12 Production P2P/NAT Pre-Network Review Historical Checklist",
+    }
+    for name, heading in review_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "pre-network/review-v1.json",
+            "proposed_not_selected",
+            "networkIOAllowed=false",
+            "seven",
+            "controlled-network-spike",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+
+    approval_sections = {
+        "roadmap": "Production P2P/NAT Pre-Network Recommendations Approved (No Network)",
+        "progress": "2026-07-12 Production P2P/NAT Pre-Network Recommendations Approved (No Network)",
+        "qa": "2026-07-12 Production P2P/NAT Pre-Network Approval No-Device Checklist",
+    }
+    for name, heading in approval_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "pre-network/decision-v1.json",
+            "handoff-v3",
+            "explicit_user_instruction",
+            "networkIOAllowed=false",
+            "librarySelectionAuthorized=false",
+            "15",
+            "evidence",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    spike_review_sections = {
+        "roadmap": "Production P2P/NAT Controlled-Spike Review (Selection Pending)",
+        "progress": "2026-07-12 Production P2P/NAT Controlled-Spike Review (Selection Pending)",
+        "qa": "2026-07-12 Production P2P/NAT Controlled-Spike Review No-Device Checklist",
+    }
+    for name, heading in spike_review_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "controlled-network-spike/review-v1.json",
+            "proposed_not_selected",
+            "libjuice-1.7.2-static-c-abi",
+            "selectedDecisionCount=0" if name == "qa" else "zero",
+            "librarySelectionAuthorized=false",
+            "networkIOAllowed=false",
+            "socketExecutionAuthorized=false",
+            "10",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
     return failures
 
 

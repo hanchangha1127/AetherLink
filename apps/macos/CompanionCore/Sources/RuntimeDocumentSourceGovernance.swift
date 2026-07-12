@@ -74,6 +74,13 @@ public protocol RuntimeDocumentSourceGovernance {
         actorDeviceID: String?,
         timestamp: Date
     ) throws -> RuntimeTrustedSourceReviewEnvelope
+    func prepareTrustedSourceReview(
+        sourceAnchorID: String,
+        documentID: String,
+        sourceRevision: String,
+        actorDeviceID: String?,
+        timestamp: Date
+    ) throws -> RuntimeTrustedSourceReviewEnvelope
     func approveTrustedSourceReview(
         reviewID: String,
         confirmationToken: String,
@@ -115,6 +122,15 @@ public protocol RuntimeDocumentSourceGovernance {
 }
 
 public extension RuntimeDocumentSourceGovernance {
+    func prepareTrustedSourceReview(
+        sourceAnchorID: String,
+        documentID: String,
+        sourceRevision: String,
+        actorDeviceID: String?,
+        timestamp: Date
+    ) throws -> RuntimeTrustedSourceReviewEnvelope {
+        throw RuntimeTrustedSourceGovernanceError.citationNotFound
+    }
     func prepareTrustedSourceReview(
         sourceAnchorID: String,
         actorDeviceID: String?,
@@ -243,6 +259,14 @@ func runtimeDocumentCanonicalAuditActor(_ actorDeviceID: String?) -> String? {
           !value.isEmpty,
           value.count <= runtimeDocumentSourceActorCharacterLimit,
           !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+        return nil
+    }
+    return value
+}
+
+func runtimeDocumentCanonicalSourceRevision(_ value: String?) -> String? {
+    guard let value, value.count == 64,
+          value.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }) else {
         return nil
     }
     return value

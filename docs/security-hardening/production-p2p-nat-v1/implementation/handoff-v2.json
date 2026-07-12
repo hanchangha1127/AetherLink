@@ -1,0 +1,82 @@
+{
+  "documentType": "aetherlink.p2p-nat-bounded-handoff",
+  "schemaVersion": "1.0",
+  "handoffId": "production_p2p_nat_v1_handoff_v2",
+  "supersedesPath": "handoff-v1.json",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "selectionDecisionPath": "../selection-decision.json",
+  "status": "closed",
+  "productionDesignStatus": "not_implemented",
+  "activeProtocolNamespace": [
+    "route.refresh"
+  ],
+  "authorization": {
+    "implementationAuthorized": true,
+    "networkIOAllowed": false,
+    "librarySelectionAuthorized": false,
+    "productionDeploymentAuthorized": false
+  },
+  "packages": [
+    {
+      "packageId": "canonical-contracts",
+      "authorizationStatus": "authorized",
+      "executionStatus": "completed",
+      "executionAuthorized": false,
+      "networkIOAllowed": false,
+      "evidencePaths": [
+        "../../../../shared/protocol/fixtures/production-p2p-nat-v1-vectors.json",
+        "../../../../script/check_p2p_nat_contract_vectors.py",
+        "../../../../apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatCanonicalCodec.kt",
+        "../../../../apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSharedVectorTest.kt",
+        "../../../../apps/macos/P2PNATContracts/Sources/P2PNATContracts.swift",
+        "../../../../apps/macos/P2PNATContracts/Tests/P2PNATSharedVectorTests.swift"
+      ]
+    },
+    {
+      "packageId": "no-network-conformance",
+      "authorizationStatus": "authorized",
+      "executionStatus": "completed",
+      "executionAuthorized": false,
+      "networkIOAllowed": false,
+      "evidencePaths": [
+        "../../../../apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/p2pnat/CandidatePolicy.kt",
+        "../../../../apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/p2pnat/ReplayWindow.kt",
+        "../../../../apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/p2pnat/ReadinessStateMachine.kt",
+        "../../../../apps/macos/P2PNATConformance/Sources/P2PNATConformance.swift",
+        "../../../../apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/p2pnat/CandidatePolicyTest.kt",
+        "../../../../apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/p2pnat/ReplayWindowTest.kt",
+        "../../../../apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/p2pnat/ReadinessStateMachineTest.kt",
+        "../../../../apps/macos/P2PNATConformance/Tests/P2PNATConformanceTests.swift"
+      ]
+    },
+    {
+      "packageId": "controlled-network-spike",
+      "authorizationStatus": "blocked_on_separate_review",
+      "executionStatus": "not_started",
+      "executionAuthorized": false,
+      "networkIOAllowed": false,
+      "blockedOnDecisionIds": [
+        "service-ownership-and-trust",
+        "pair-authorization-and-retention",
+        "candidate-privacy-and-scope",
+        "ice-and-consent-policy",
+        "turn-credential-and-abuse-policy",
+        "session-transition-semantics",
+        "release-budgets"
+      ]
+    }
+  ],
+  "preNetworkDecisions": [
+    {"decisionId": "service-ownership-and-trust", "status": "open"},
+    {"decisionId": "pair-authorization-and-retention", "status": "open"},
+    {"decisionId": "candidate-privacy-and-scope", "status": "open"},
+    {"decisionId": "ice-and-consent-policy", "status": "open"},
+    {"decisionId": "turn-credential-and-abuse-policy", "status": "open"},
+    {"decisionId": "session-transition-semantics", "status": "open"},
+    {"decisionId": "release-budgets", "status": "open"}
+  ],
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_handoff"
+  }
+}

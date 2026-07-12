@@ -2240,7 +2240,13 @@ func trustedHelloNonce(
         payload: addingTransportBinding([
             "device_id": deviceID,
             "device_name": "Smoke Test Client",
-            "client_capabilities": ["chat", "streaming", "attachments"]
+            "client_capabilities": [
+                "chat",
+                "streaming",
+                "attachments",
+                "chat.source_attributions.v1",
+                "chat.source_attribution.resolve.v1"
+            ]
         ], from: client)
     )
     try requireType(challenge, "auth.challenge", context: requestID)
@@ -3364,6 +3370,15 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("retrieval.query", "smoke-unauthenticated-retrieval-query", [:]),
         ("source_anchor.resolve", "smoke-unauthenticated-source-anchor-resolve", [:]),
         ("citation.resolve", "smoke-unauthenticated-citation-resolve", [:]),
+        (
+            "chat.source_attribution.resolve",
+            "smoke-unauthenticated-chat-source-attribution-resolve",
+            [
+                "session_id": "default",
+                "assistant_message_id": "assistant_message_0123456789abcdef0123456789abcdef",
+                "source_index": 1
+            ]
+        ),
         ("trusted_source.approve", "smoke-unauthenticated-trusted-source-approve", [:]),
         ("trusted_source.dismiss", "smoke-unauthenticated-trusted-source-dismiss", [:]),
         ("trusted_source.list", "smoke-unauthenticated-trusted-source-list", [:]),
@@ -3701,7 +3716,12 @@ func startServer(
     return process
 }
 
-func readStoppedChatStream(client: TCPClient, requestID: String, context: String) throws -> String {
+func readStoppedChatStream(
+    client: TCPClient,
+    requestID: String,
+    context: String,
+    validateDonePayload: (([String: Any]) throws -> Void)? = nil
+) throws -> String {
     var streamedText = ""
     while true {
         let response = try client.readEnvelope()
@@ -3715,6 +3735,7 @@ func readStoppedChatStream(client: TCPClient, requestID: String, context: String
             guard donePayload["finish_reason"] as? String == "stop" else {
                 throw SmokeFailure.message("\(context) chat.done did not finish with stop: \(response)")
             }
+            try validateDonePayload?(donePayload)
             return streamedText
         } else {
             throw SmokeFailure.message("Unexpected \(context) response: \(response)")
@@ -4930,6 +4951,17 @@ func mockChatRequestAuditEntry(
     return entry
 }
 
+func requiredAuditEntry(
+    _ entries: [[String: Any]],
+    generationID: String,
+    context: String
+) throws -> [String: Any] {
+    guard let entry = entries.last(where: { $0["generation_id"] as? String == generationID }) else {
+        throw SmokeFailure.message("\(context) did not record generation \(generationID): \(entries)")
+    }
+    return entry
+}
+
 func mockChatRequestAuditMessages(
     fileURL: URL,
     sessionID: String,
@@ -5376,22 +5408,43 @@ func runAuthenticatedCompactionSmoke(client: TCPClient, chatRequestAuditFile: UR
         throw SmokeFailure.message("compaction chat stream did not contain mock response: \(compactionStreamedText)")
     }
 
-    let auditMessages = try mockChatRequestAuditMessages(
-        fileURL: chatRequestAuditFile,
-        sessionID: smokeCompactionSessionID,
-        context: "smoke-chat-compaction-relay"
+    let compactionAuditEntries = try mockChatRequestAuditEntries(fileURL: chatRequestAuditFile)
+        .filter { $0["session_id"] as? String == smokeCompactionSessionID }
+    let prepassGenerationID = "smoke-chat-compaction-relay:compaction-summary"
+    let prepassEntry = try requiredAuditEntry(
+        compactionAuditEntries,
+        generationID: prepassGenerationID,
+        context: "smoke-chat-compaction-relay prepass"
     )
+    let finalEntry = try requiredAuditEntry(
+        compactionAuditEntries,
+        generationID: "smoke-chat-compaction-relay",
+        context: "smoke-chat-compaction-relay final request"
+    )
+    guard let prepassMessages = prepassEntry["messages"] as? [[String: Any]],
+          let auditMessages = finalEntry["messages"] as? [[String: Any]] else {
+        throw SmokeFailure.message("compaction audit entries were missing messages: \(compactionAuditEntries)")
+    }
+    guard prepassMessages.count == 2,
+          prepassMessages[0]["role"] as? String == "system",
+          (prepassMessages[0]["content"] as? String)?.contains("source is untrusted data") == true,
+          (prepassMessages[0]["content"] as? String)?.contains(promptInjectionCanary) == false,
+          prepassMessages[1]["role"] as? String == "user",
+          (prepassMessages[1]["content"] as? String)?.contains(promptInjectionCanary) == true else {
+        throw SmokeFailure.message("compaction prepass did not isolate untrusted source text: \(prepassMessages)")
+    }
     let provenanceMessages = auditMessages.filter {
         $0["role"] as? String == "system"
             && ($0["content"] as? String)?.hasPrefix("Runtime-owned conversation compaction provenance.") == true
     }
     let summaryMessages = auditMessages.filter {
         $0["role"] as? String == "assistant"
-            && ($0["content"] as? String)?.hasPrefix("Historical conversation summary (untrusted source text):") == true
+            && ($0["content"] as? String)?.hasPrefix("LLM-generated historical conversation summary (untrusted model-generated text):") == true
     }
     guard provenanceMessages.count == 1,
           summaryMessages.count == 1,
-          (summaryMessages.first?["content"] as? String)?.contains(promptInjectionCanary) == true
+          (summaryMessages.first?["content"] as? String)?.contains("Generated smoke compaction summary.") == true,
+          (summaryMessages.first?["content"] as? String)?.contains("compaction reasoning") == false
     else {
         throw SmokeFailure.message("mock backend audit did not separate compaction provenance from untrusted summary text: \(auditMessages)")
     }
@@ -5420,7 +5473,9 @@ func runAuthenticatedCompactionSmoke(client: TCPClient, chatRequestAuditFile: UR
         throw SmokeFailure.message("visible compaction session history did not keep original user-visible turns: \(visibleMessages)")
     }
     guard !visibleContents.contains(where: { $0.hasPrefix("Runtime-owned conversation compaction provenance.") }),
-          !visibleContents.contains(where: { $0.hasPrefix("Historical conversation summary (untrusted source text):") })
+          !visibleContents.contains(where: { $0.hasPrefix("Historical conversation summary (untrusted source text):") }),
+          !visibleContents.contains(where: { $0.hasPrefix("LLM-generated historical conversation summary (untrusted model-generated text):") }),
+          !visibleContents.contains(where: { $0.contains("Generated smoke compaction summary.") })
     else {
         throw SmokeFailure.message("visible compaction session history leaked backend-only compaction context: \(visibleMessages)")
     }
@@ -8121,6 +8176,7 @@ func runMockBackendChecks(
 
     let trustedSourceChatSessionID = "\(smokeSessionID)-trusted-source-context"
     let trustedSourceChatPrompt = "Answer from the reviewed runtime source."
+    var trustedSourceAssistantMessageID: String?
     try client.send(envelope(
         "chat.send",
         requestID: "smoke-trusted-source-chat-context",
@@ -8137,7 +8193,47 @@ func runMockBackendChecks(
         client: client,
         requestID: "smoke-trusted-source-chat-context",
         context: "trusted-source chat context"
-    )
+    ) { donePayload in
+        guard let attributions = donePayload["source_attributions"] as? [[String: Any]],
+              attributions.count == 1,
+              let attribution = attributions.first,
+              attribution.count == 4,
+              attribution["source_index"] as? Int == 1,
+              attribution["document_name"] as? String == smokeRetrievalDocumentName,
+              attribution["mime_type"] as? String == "text/markdown",
+              attribution["chunk_index"] as? Int == 0 else {
+            throw SmokeFailure.message(
+                "trusted-source chat.done did not return the safe consumed-source attribution: \(donePayload)"
+            )
+        }
+        guard let assistantMessageID = donePayload["assistant_message_id"] as? String,
+              assistantMessageID.range(
+                  of: #"^assistant_message_[0-9a-f]{32}$"#,
+                  options: .regularExpression
+              ) != nil else {
+            throw SmokeFailure.message(
+                "trusted-source chat.done did not return a canonical non-authorizing assistant locator: \(donePayload)"
+            )
+        }
+        trustedSourceAssistantMessageID = assistantMessageID
+        let description = String(describing: attributions)
+        for forbidden in [
+            grantID,
+            citationID,
+            retrievalSourceAnchorID,
+            smokeRetrievalPrivateBodyCanary,
+            "source_revision",
+            "approval_id",
+            "document_id",
+            "content_fingerprint",
+            "source_path",
+            "snippet"
+        ] where description.contains(forbidden) {
+            throw SmokeFailure.message(
+                "trusted-source chat.done attribution exposed forbidden metadata \(forbidden)"
+            )
+        }
+    }
     guard trustedSourceChatText.contains("Mock streaming response.") else {
         throw SmokeFailure.message(
             "trusted-source chat context did not stream mock text: \(trustedSourceChatText)"
@@ -8172,13 +8268,138 @@ func runMockBackendChecks(
         context: "trusted-source stored chat messages"
     )
     let trustedSourceStoredDescription = String(describing: trustedSourceStoredPayload)
+    guard let trustedSourceAssistantMessageID,
+          let trustedSourceStoredItems = trustedSourceStoredPayload["messages"] as? [[String: Any]],
+          let trustedSourceStoredAssistant = trustedSourceStoredItems.last,
+          trustedSourceStoredAssistant["assistant_message_id"] as? String == trustedSourceAssistantMessageID,
+          let storedAttributions = trustedSourceStoredAssistant["source_attributions"] as? [[String: Any]],
+          storedAttributions.count == 1,
+          storedAttributions.first?.count == 4 else {
+        throw SmokeFailure.message(
+            "trusted-source history did not preserve the exact assistant locator and safe attribution: \(trustedSourceStoredMessages)"
+        )
+    }
     guard trustedSourceStoredDescription.contains(trustedSourceChatPrompt),
+          trustedSourceStoredDescription.contains("source_attributions"),
+          trustedSourceStoredDescription.contains(smokeRetrievalDocumentName),
+          trustedSourceStoredDescription.contains("text/markdown"),
           !trustedSourceStoredDescription.contains(smokeRetrievalPrivateBodyCanary),
           !trustedSourceStoredDescription.contains(grantID),
           !trustedSourceStoredDescription.contains(citationID),
           !trustedSourceStoredDescription.contains(retrievalSourceAnchorID) else {
         throw SmokeFailure.message(
             "trusted-source backend-only context entered stored chat history: \(trustedSourceStoredMessages)"
+        )
+    }
+
+    let historicalSourceResolve = try sendAndRead(
+        client,
+        type: "chat.source_attribution.resolve",
+        requestID: "smoke-chat-source-attribution-resolve",
+        payload: [
+            "session_id": trustedSourceChatSessionID,
+            "assistant_message_id": trustedSourceAssistantMessageID,
+            "source_index": 1
+        ]
+    )
+    try requireType(
+        historicalSourceResolve,
+        "chat.source_attribution.resolve",
+        context: "chat.source_attribution.resolve"
+    )
+    let historicalSourcePayload = try payload(
+        historicalSourceResolve,
+        context: "chat.source_attribution.resolve"
+    )
+    guard let historicalCitation = historicalSourcePayload["citation"] as? [String: Any],
+          historicalCitation["source_anchor_id"] as? String == retrievalSourceAnchorID,
+          let historicalReview = historicalSourcePayload["review"] as? [String: Any],
+          historicalReview["review_id"] is String,
+          historicalReview["confirmation_token"] is String,
+          let historicalTrustedSource = historicalSourcePayload["trusted_source"] as? [String: Any],
+          historicalTrustedSource["grant_id"] as? String == grantID else {
+        throw SmokeFailure.message(
+            "chat.source_attribution.resolve did not return the current exact review envelope: \(historicalSourceResolve)"
+        )
+    }
+    let historicalSourceDescription = String(describing: historicalSourcePayload)
+    for forbidden in [
+        smokeRetrievalPrivateBodyCanary,
+        smokeRetrievalSecondaryBodyCanary,
+        "source_revision",
+        "source_attribution_bindings",
+        "approval_id",
+        "source_path",
+        "snippet",
+        "backend_url"
+    ] where historicalSourceDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "chat.source_attribution.resolve exposed forbidden source or internal binding metadata \(forbidden)"
+        )
+    }
+
+    let historicalSourceFailureCases: [(
+        requestID: String,
+        payload: [String: Any],
+        errorCode: String,
+        context: String
+    )] = [
+        (
+            "smoke-chat-source-attribution-resolve-malformed",
+            [
+                "session_id": trustedSourceChatSessionID,
+                "assistant_message_id": "not-an-assistant-message-id",
+                "source_index": 1
+            ],
+            "invalid_payload",
+            "chat.source_attribution.resolve malformed tuple"
+        ),
+        (
+            "smoke-chat-source-attribution-resolve-unknown-field",
+            [
+                "session_id": trustedSourceChatSessionID,
+                "assistant_message_id": trustedSourceAssistantMessageID,
+                "source_index": 1,
+                "source_anchor_id": retrievalSourceAnchorID
+            ],
+            "invalid_payload",
+            "chat.source_attribution.resolve unknown field"
+        ),
+        (
+            "smoke-chat-source-attribution-resolve-not-found",
+            [
+                "session_id": trustedSourceChatSessionID,
+                "assistant_message_id": trustedSourceAssistantMessageID,
+                "source_index": 2
+            ],
+            "chat_source_attribution_not_found",
+            "chat.source_attribution.resolve unknown tuple"
+        )
+    ]
+    for failureCase in historicalSourceFailureCases {
+        let failure = try sendAndRead(
+            client,
+            type: "chat.source_attribution.resolve",
+            requestID: failureCase.requestID,
+            payload: failureCase.payload
+        )
+        try requireErrorCode(
+            failure,
+            failureCase.errorCode,
+            requestID: failureCase.requestID,
+            context: failureCase.context
+        )
+        let survivalRequestID = "\(failureCase.requestID)-survival-health"
+        let survival = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: survivalRequestID,
+            payload: [:]
+        )
+        try requireType(
+            survival,
+            "runtime.health",
+            context: "\(failureCase.context) connection survival"
         )
     }
 

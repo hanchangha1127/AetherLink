@@ -5,8 +5,22 @@ production P2P/NAT milestone. It is derived from current source, not a
 vulnerability scan, implementation plan, or claim that production NAT traversal
 exists.
 
-No production design has been selected. The recommended protocol behavior is
-not implemented.
+The recommended profile and its seven pre-network recommendations have explicit
+user approval for bounded design and policy handoffs. The production protocol
+behavior remains not implemented.
+`selection-profile.md`, `selection-profile.json`, and the closed immutable
+`selection-decision.json` pin the selected options and authorization boundary.
+The closed `implementation/handoff-v1.json` and `handoff-v1.md` authorized
+canonical-contract execution first. The immutable `handoff-v2` records both
+canonical contracts and no-network conformance as completed. The versioned
+`handoff-v3` records that all seven pre-network recommendations are selected
+while keeping socket execution, network I/O, library selection, and production
+deployment unauthorized. The closed
+`controlled-network-spike/review-v1` pair now proposes concrete choices for the
+four remaining blockers, but selects zero and keeps source acquisition, harness
+implementation, socket execution, and a next handoff unauthorized.
+`route.refresh` remains the only active
+traversal-related namespace.
 
 ## Source Identity
 
@@ -15,7 +29,7 @@ not implemented.
 - Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `2b2a44f2ac7a2f081a5fbc7856a5b3d7dbe1585cec59c871282c98c9d4e33cbd`
+  `3c957948ca16aec64ae941a1c0d1cb9a86697854eddb9c22473e4da8d7891424`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.

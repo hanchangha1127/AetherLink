@@ -573,6 +573,72 @@ public final class RuntimeDocumentIndexStore {
         }
     }
 
+    public func prepareTrustedSourceReview(
+        sourceAnchorID: String,
+        documentID: String,
+        sourceRevision: String,
+        actorDeviceID: String?,
+        timestamp: Date = Date()
+    ) throws -> RuntimeTrustedSourceReviewEnvelope {
+        guard runtimeDocumentIndexCanonicalSourceAnchorID(sourceAnchorID) == sourceAnchorID,
+              runtimeDocumentIndexCanonicalDocumentID(documentID) == documentID,
+              runtimeDocumentCanonicalSourceRevision(sourceRevision) == sourceRevision,
+              let actorDeviceID = runtimeDocumentCanonicalAuditActor(actorDeviceID) else {
+            throw RuntimeTrustedSourceGovernanceError.citationNotFound
+        }
+        return try lock.withLock {
+            guard let approval = approvalsByDocumentID[documentID],
+                  approval.scope == .runtimeShared,
+                  approval.sourceRevision == sourceRevision,
+                  let anchor = approvedSourceAnchorUnlocked(sourceAnchorID: sourceAnchorID),
+                  anchor.document.id == documentID else {
+                throw RuntimeTrustedSourceGovernanceError.citationNotFound
+            }
+            let citation = runtimeDocumentCitation(anchor: anchor, approval: approval)
+            citationsByID[citation.citationID] = RuntimeStoredDocumentCitation(
+                citation: citation,
+                documentID: documentID,
+                sourceRevision: sourceRevision,
+                issuedAt: timestamp,
+                staleAt: nil
+            )
+            trustedSourceReviewsByID = trustedSourceReviewsByID.filter {
+                $0.value.actorDeviceID != actorDeviceID
+            }
+            let review = runtimeTrustedSourceReview(
+                citationID: citation.citationID,
+                actorDeviceID: actorDeviceID,
+                timestamp: timestamp
+            )
+            trustedSourceReviewsByID[review.reviewID] = RuntimeStoredTrustedSourceReview(
+                review: review,
+                citationID: citation.citationID,
+                actorDeviceID: actorDeviceID
+            )
+            for action in [RuntimeDocumentSourceAuditAction.citationResolved, .trustedSourceReviewPrepared] {
+                appendSourceAuditEventUnlocked(runtimeDocumentAuditEvent(
+                    action: action,
+                    approval: approval,
+                    actorDeviceID: actorDeviceID,
+                    sourceAnchorID: sourceAnchorID,
+                    resultCount: 1,
+                    timestamp: timestamp
+                ))
+            }
+            let existingGrant = trustedSourceGrantsByID.values.first {
+                $0.actorDeviceID == actorDeviceID
+                    && $0.documentID == documentID
+                    && $0.sourceRevision == sourceRevision
+                    && $0.revokedAt == nil
+            }?.grant
+            return RuntimeTrustedSourceReviewEnvelope(
+                citation: citation,
+                review: review,
+                trustedSource: existingGrant
+            )
+        }
+    }
+
     public func approveTrustedSourceReview(
         reviewID: String,
         confirmationToken: String,
@@ -774,6 +840,7 @@ public final class RuntimeDocumentIndexStore {
                     grantID: grantID,
                     citationID: storedGrant.grant.citationID,
                     sourceAnchorID: storedGrant.grant.sourceAnchorID,
+                    sourceRevision: approval.sourceRevision,
                     document: document,
                     chunkSummary: anchor.chunkSummary,
                     text: text

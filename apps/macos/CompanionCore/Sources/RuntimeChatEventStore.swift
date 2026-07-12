@@ -74,6 +74,101 @@ public struct RuntimeChatStoredError: Codable, Equatable, Sendable {
     }
 }
 
+public struct RuntimeChatSourceAttribution: Codable, Equatable, Sendable {
+    public var sourceIndex: Int
+    public var documentName: String
+    public var mimeType: String
+    public var chunkIndex: Int
+
+    public init(sourceIndex: Int, documentName: String, mimeType: String, chunkIndex: Int) {
+        self.sourceIndex = sourceIndex
+        self.documentName = documentName
+        self.mimeType = mimeType
+        self.chunkIndex = chunkIndex
+    }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case sourceIndex = "source_index"
+        case documentName = "document_name"
+        case mimeType = "mime_type"
+        case chunkIndex = "chunk_index"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let allKeys = try decoder.container(keyedBy: RuntimeChatSourceAttributionAnyCodingKey.self).allKeys
+        let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+        guard allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported chat source attribution field")
+            )
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sourceIndex = try container.decode(Int.self, forKey: .sourceIndex)
+        documentName = try container.decode(String.self, forKey: .documentName)
+        mimeType = try container.decode(String.self, forKey: .mimeType)
+        chunkIndex = try container.decode(Int.self, forKey: .chunkIndex)
+    }
+}
+
+public struct RuntimeChatSourceAttributionBinding: Codable, Equatable, Sendable {
+    public var sourceIndex: Int
+    public var sourceAnchorID: String
+    public var documentID: String
+    public var sourceRevision: String
+
+    public init(sourceIndex: Int, sourceAnchorID: String, documentID: String, sourceRevision: String) {
+        self.sourceIndex = sourceIndex
+        self.sourceAnchorID = sourceAnchorID
+        self.documentID = documentID
+        self.sourceRevision = sourceRevision
+    }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case sourceIndex = "source_index"
+        case sourceAnchorID = "source_anchor_id"
+        case documentID = "document_id"
+        case sourceRevision = "source_revision"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let allKeys = try decoder.container(keyedBy: RuntimeChatSourceAttributionAnyCodingKey.self).allKeys
+        let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+        guard allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Unsupported chat source attribution binding field"
+                )
+            )
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sourceIndex = try container.decode(Int.self, forKey: .sourceIndex)
+        sourceAnchorID = try container.decode(String.self, forKey: .sourceAnchorID)
+        documentID = try container.decode(String.self, forKey: .documentID)
+        sourceRevision = try container.decode(String.self, forKey: .sourceRevision)
+    }
+}
+
+public struct RuntimeChatResolvedSourceAttribution: Equatable, Sendable {
+    public var assistantMessageID: String
+    public var binding: RuntimeChatSourceAttributionBinding
+}
+
+private struct RuntimeChatSourceAttributionAnyCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
 public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
     public var sourceKind: String
     public var sessionID: String
@@ -182,6 +277,9 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
     public var error: RuntimeChatStoredError?
     public var ownerDeviceID: String?
     public var compactionMetadata: RuntimeChatCompactionMetadata?
+    public var sourceAttributions: [RuntimeChatSourceAttribution]?
+    public var assistantMessageID: String?
+    public var sourceAttributionBindings: [RuntimeChatSourceAttributionBinding]?
 
     public init(
         id: String = UUID().uuidString,
@@ -198,7 +296,10 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         usage: RuntimeChatStoredUsage? = nil,
         error: RuntimeChatStoredError? = nil,
         ownerDeviceID: String? = nil,
-        compactionMetadata: RuntimeChatCompactionMetadata? = nil
+        compactionMetadata: RuntimeChatCompactionMetadata? = nil,
+        sourceAttributions: [RuntimeChatSourceAttribution]? = nil,
+        assistantMessageID: String? = nil,
+        sourceAttributionBindings: [RuntimeChatSourceAttributionBinding]? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -215,6 +316,9 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         self.error = error
         self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
         self.compactionMetadata = compactionMetadata
+        self.sourceAttributions = sourceAttributions
+        self.assistantMessageID = assistantMessageID
+        self.sourceAttributionBindings = sourceAttributionBindings
     }
 
     enum CodingKeys: String, CodingKey {
@@ -233,6 +337,9 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         case error
         case ownerDeviceID = "owner_device_id"
         case compactionMetadata = "compaction_metadata"
+        case sourceAttributions = "source_attributions"
+        case assistantMessageID = "assistant_message_id"
+        case sourceAttributionBindings = "source_attribution_bindings"
     }
 }
 
@@ -294,19 +401,25 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
     public var reasoning: String?
     public var attachments: [ChatAttachment]
     public var createdAt: Date?
+    public var sourceAttributions: [RuntimeChatSourceAttribution]
+    public var assistantMessageID: String?
 
     public init(
         role: String,
         content: String,
         reasoning: String? = nil,
         attachments: [ChatAttachment] = [],
-        createdAt: Date? = nil
+        createdAt: Date? = nil,
+        sourceAttributions: [RuntimeChatSourceAttribution] = [],
+        assistantMessageID: String? = nil
     ) {
         self.role = role
         self.content = content
         self.reasoning = reasoning
         self.attachments = attachments
         self.createdAt = createdAt
+        self.sourceAttributions = sourceAttributions
+        self.assistantMessageID = assistantMessageID
     }
 }
 
@@ -390,6 +503,12 @@ public protocol RuntimeChatEventStore: Sendable {
         if shouldCommit: @Sendable () -> Bool
     ) throws
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
+    func resolveSourceAttribution(
+        ownerDeviceID: String?,
+        sessionID: String,
+        assistantMessageID: String,
+        sourceIndex: Int
+    ) throws -> RuntimeChatResolvedSourceAttribution?
     func mutateSession(
         ownerDeviceID: String?,
         sessionID: String,
@@ -469,6 +588,14 @@ public enum RuntimeChatEventStoreDefaults {
 }
 
 public extension RuntimeChatEventStore {
+    func resolveSourceAttribution(
+        ownerDeviceID: String?,
+        sessionID: String,
+        assistantMessageID: String,
+        sourceIndex: Int
+    ) throws -> RuntimeChatResolvedSourceAttribution? {
+        nil
+    }
     func cachedSemanticEmbeddings(
         for keys: [RuntimeChatSemanticEmbeddingKey]
     ) throws -> [RuntimeChatSemanticEmbeddingRecord] {
@@ -730,6 +857,22 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
+    public func resolveSourceAttribution(
+        ownerDeviceID: String?,
+        sessionID: String,
+        assistantMessageID: String,
+        sourceIndex: Int
+    ) throws -> RuntimeChatResolvedSourceAttribution? {
+        try lock.withLock {
+            Self.resolvedSourceAttribution(
+                from: try readEvents(ownerDeviceID: ownerDeviceID),
+                sessionID: sessionID,
+                assistantMessageID: assistantMessageID,
+                sourceIndex: sourceIndex
+            )
+        }
+    }
+
     public func mutateSession(
         ownerDeviceID: String?,
         sessionID: String,
@@ -845,6 +988,58 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 )
             }
             try validateCompactionMetadata(compactionMetadata, event: event, line: line)
+        }
+        if let sourceAttributions = event.sourceAttributions {
+            guard event.kind == .done, event.finishReason == "stop" else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat source attributions are only valid on stop completion events"
+                )
+            }
+            guard !sourceAttributions.isEmpty,
+                  sourceAttributions.count <= runtimeTrustedSourceChatContextGrantLimitCeiling else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat source attribution count is invalid"
+                )
+            }
+            for (offset, attribution) in sourceAttributions.enumerated() {
+                guard attribution.sourceIndex == offset + 1,
+                      runtimeDocumentIndexCanonicalDisplayName(attribution.documentName) == attribution.documentName,
+                      runtimeDocumentIndexCanonicalMimeType(attribution.mimeType) == attribution.mimeType,
+                      attribution.chunkIndex >= 0 else {
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: line,
+                        reason: "chat source attribution is not canonical"
+                    )
+                }
+            }
+        }
+        let hasResolutionMetadata = event.assistantMessageID != nil
+            || event.sourceAttributionBindings != nil
+        if hasResolutionMetadata {
+            guard let sourceAttributions = event.sourceAttributions,
+                  let assistantMessageID = event.assistantMessageID,
+                  runtimeChatCanonicalAssistantMessageID(assistantMessageID) == assistantMessageID,
+                  let bindings = event.sourceAttributionBindings,
+                  bindings.count == sourceAttributions.count else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat source attribution bindings are incomplete"
+                )
+            }
+            for (offset, binding) in bindings.enumerated() {
+                guard binding.sourceIndex == offset + 1,
+                      binding.sourceIndex == sourceAttributions[offset].sourceIndex,
+                      runtimeDocumentIndexCanonicalSourceAnchorID(binding.sourceAnchorID) == binding.sourceAnchorID,
+                      runtimeDocumentIndexCanonicalDocumentID(binding.documentID) == binding.documentID,
+                      runtimeDocumentCanonicalSourceRevision(binding.sourceRevision) == binding.sourceRevision else {
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: line,
+                        reason: "chat source attribution binding is not canonical"
+                    )
+                }
+            }
         }
 
         switch event.kind {
@@ -1019,7 +1214,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private func appendUnlocked(_ event: RuntimeChatStoredEvent) throws {
-        let data = try encoder.encode(event.sanitizedForStorage())
+        let sanitized = event.sanitizedForStorage()
+        try Self.validateStoredEvent(sanitized, line: 0)
+        let data = try encoder.encode(sanitized)
         let line = data + Data([0x0A])
         try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
     }
@@ -1101,11 +1298,14 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 .joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !answer.isEmpty || !reasoning.isEmpty {
+                let completion = responseEvents.last { $0.kind == .done && $0.finishReason == "stop" }
                 messages.append(RuntimeChatStoredMessage(
                     role: "assistant",
                     content: answer,
                     reasoning: reasoning.isEmpty ? nil : reasoning,
-                    createdAt: responseEvents.last?.timestamp
+                    createdAt: responseEvents.last?.timestamp,
+                    sourceAttributions: completion?.sourceAttributions ?? [],
+                    assistantMessageID: completion?.assistantMessageID
                 ))
             }
         }
@@ -1119,6 +1319,13 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     ) -> [RuntimeChatStoredMessage] {
         guard !requestMessages.isEmpty else { return existing }
         guard !existing.isEmpty else { return requestMessages }
+
+        if requestMessages.count <= existing.count,
+           zip(existing.prefix(requestMessages.count), requestMessages).allSatisfy({
+               sameMessageContent($0, $1)
+           }) {
+            return requestMessages
+        }
 
         let maxOverlap = min(existing.count, requestMessages.count)
         let overlap = stride(from: maxOverlap, through: 1, by: -1).first { count in
@@ -1206,6 +1413,81 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private static let defaultSessionTitle = "New chat"
+}
+
+extension JSONLRuntimeChatEventStore {
+    static func resolvedSourceAttribution(
+        from events: [RuntimeChatStoredEvent],
+        sessionID: String,
+        assistantMessageID: String,
+        sourceIndex: Int
+    ) -> RuntimeChatResolvedSourceAttribution? {
+        guard runtimeChatCanonicalAssistantMessageID(assistantMessageID) == assistantMessageID,
+              (1...runtimeTrustedSourceChatContextGrantLimitCeiling).contains(sourceIndex) else { return nil }
+        let sessionEvents = events
+            .enumerated()
+            .filter { $0.element.sessionID == sessionID }
+            .sorted { lhs, rhs in
+                if lhs.element.timestamp == rhs.element.timestamp {
+                    return lhs.offset < rhs.offset
+                }
+                return lhs.element.timestamp < rhs.element.timestamp
+            }
+            .map(\.element)
+        let completionOffsets = sessionEvents.indices.filter { offset in
+            let event = sessionEvents[offset]
+            return event.kind == .done
+                && event.finishReason == "stop"
+                && event.assistantMessageID == assistantMessageID
+        }
+        guard lifecycleState(from: sessionEvents) != .deleted,
+              messages(from: events, sessionID: sessionID, limit: Int.max).contains(where: {
+                  $0.assistantMessageID == assistantMessageID
+              }),
+              completionOffsets.count == 1,
+              let completionOffset = completionOffsets.first else { return nil }
+        let completion = sessionEvents[completionOffset]
+        let matchingRequestOffsets = sessionEvents.indices.filter { offset in
+            let event = sessionEvents[offset]
+            return event.kind == .request && event.requestID == completion.requestID
+        }
+        guard matchingRequestOffsets.count == 1,
+              let requestOffset = matchingRequestOffsets.first,
+              requestOffset < completionOffset,
+              sessionEvents[..<completionOffset].lastIndex(where: { $0.kind == .request }) == requestOffset else {
+            return nil
+        }
+        let request = sessionEvents[requestOffset]
+        let responseEvents = sessionEvents[(requestOffset + 1)...completionOffset]
+        guard request.requestID == completion.requestID,
+              responseEvents.contains(where: {
+                  $0.requestID == completion.requestID
+                      && (($0.delta?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                          || ($0.reasoningDelta?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false))
+              }),
+              completion.sourceAttributions?.contains(where: { $0.sourceIndex == sourceIndex }) == true,
+              let binding = completion.sourceAttributionBindings?.first(where: {
+                  $0.sourceIndex == sourceIndex
+              }) else { return nil }
+        return RuntimeChatResolvedSourceAttribution(
+            assistantMessageID: assistantMessageID,
+            binding: binding
+        )
+    }
+}
+
+let runtimeChatAssistantMessageIDPrefix = "assistant_message_"
+
+func runtimeChatAssistantMessageID() -> String {
+    runtimeChatAssistantMessageIDPrefix + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+}
+
+func runtimeChatCanonicalAssistantMessageID(_ value: String?) -> String? {
+    guard let value, value.hasPrefix(runtimeChatAssistantMessageIDPrefix) else { return nil }
+    let suffix = value.dropFirst(runtimeChatAssistantMessageIDPrefix.count)
+    guard suffix.count == 32,
+          suffix.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102) }) else { return nil }
+    return value
 }
 
 private enum RuntimeChatSessionLifecycleState: String {

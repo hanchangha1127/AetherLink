@@ -388,6 +388,7 @@ class ProtocolCodecTest {
             "document_index_unavailable",
             "source_anchor_not_found",
             "citation_not_found",
+            "chat_source_attribution_not_found",
             "trusted_source_review_not_found",
             "trusted_source_review_expired",
             "trusted_source_review_stale",
@@ -2195,6 +2196,78 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun chatSourceAttributionResolvePayloadsRoundTripExactExistingSourceShapes() {
+        val request = ChatSourceAttributionResolveRequestPayload(
+            sessionId = "session-1",
+            assistantMessageId = canonicalAssistantMessageId,
+            sourceIndex = 8,
+        )
+        val result = ChatSourceAttributionResolveResultPayload(
+            citation = canonicalCitationPayload(),
+            review = canonicalSourceReviewPayload(),
+            trustedSource = canonicalTrustedSourcePayload(),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultEncoded = Json.encodeToString(result)
+        val resultJson = Json.parseToJsonElement(resultEncoded).jsonObject
+
+        assertEquals(setOf("session_id", "assistant_message_id", "source_index"), requestJson.keys)
+        assertEquals(setOf("citation", "review", "trusted_source"), resultJson.keys)
+        assertEquals(result, Json.decodeFromString<ChatSourceAttributionResolveResultPayload>(resultEncoded))
+        assertEquals("chat.source_attribution.resolve", MessageType.ChatSourceAttributionResolve)
+        assertEquals("chat.source_attribution.resolve.v1", CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY)
+        listOf("text", "snippet", "revision", "source_revision").forEach { forbiddenField ->
+            assertFalse(resultEncoded.contains("\"$forbiddenField\""))
+        }
+    }
+
+    @Test
+    fun chatSourceAttributionResolvePayloadsRejectUnknownMalformedAndMismatchedValues() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val validRequest =
+            """{"session_id":"session-1","assistant_message_id":"$canonicalAssistantMessageId","source_index":1}"""
+        listOf(
+            validRequest.replace("}", ",\"revision\":1}") to "unknown field",
+            validRequest.replace("session-1", "   ") to "session_id",
+            validRequest.replace(canonicalAssistantMessageId, "assistant_message_${"A".repeat(32)}") to
+                "assistant_message_id",
+            validRequest.replace("\"source_index\":1", "\"source_index\":0") to "source_index",
+            validRequest.replace("\"source_index\":1", "\"source_index\":9") to "source_index",
+        ).forEach { (json, expected) ->
+            val error = assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ChatSourceAttributionResolveRequestPayload>(json)
+            }
+            assertTrue(error.message.orEmpty().contains(expected))
+        }
+
+        val resultJson = Json.encodeToString(
+            ChatSourceAttributionResolveResultPayload(
+                canonicalCitationPayload(),
+                canonicalSourceReviewPayload(),
+            ),
+        )
+        listOf(
+            resultJson.dropLast(1) + ",\"revision\":1}",
+            resultJson.replace("\"schema_version\":1", "\"schema_version\":1,\"text\":\"secret\""),
+            resultJson.replace("\"expires_at\"", "\"revision\":1,\"expires_at\""),
+        ).forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ChatSourceAttributionResolveResultPayload>(json)
+            }
+            assertTrue(error.message.orEmpty().contains("unknown field"))
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatSourceAttributionResolveResultPayload(
+                canonicalCitationPayload(),
+                canonicalSourceReviewPayload(),
+                canonicalTrustedSourcePayload().copy(citationId = "citation_${"f".repeat(32)}"),
+            )
+        }
+    }
+
+    @Test
     fun trustedSourceOperationPayloadsRoundTripCanonicalWireShapes() {
         val approveRequest = TrustedSourceApproveRequestPayload(
             reviewId = canonicalReviewId,
@@ -2395,6 +2468,15 @@ class ProtocolCodecTest {
                             text = "Saved context",
                         ),
                     ),
+                    sourceAttributions = listOf(
+                        ChatSourceAttributionPayload(
+                            sourceIndex = 1,
+                            documentName = "context.txt",
+                            mimeType = "text/plain",
+                            chunkIndex = 3,
+                        ),
+                    ),
+                    assistantMessageId = canonicalAssistantMessageId,
                     createdAt = "2026-06-23T09:02:06Z",
                 ),
             ),
@@ -2417,8 +2499,203 @@ class ProtocolCodecTest {
         assertEquals("context.txt", attachment?.get("name")?.jsonPrimitive?.content)
         assertEquals("Saved context", attachment?.get("text")?.jsonPrimitive?.content)
         assertFalse(attachment?.containsKey("data_base64") ?: true)
+        val attribution = message?.get("source_attributions")?.jsonArray?.first()?.jsonObject
+        assertEquals(
+            setOf("source_index", "document_name", "mime_type", "chunk_index"),
+            attribution?.keys,
+        )
+        assertEquals("1", attribution?.get("source_index")?.jsonPrimitive?.content)
+        assertEquals("context.txt", attribution?.get("document_name")?.jsonPrimitive?.content)
+        assertEquals("text/plain", attribution?.get("mime_type")?.jsonPrimitive?.content)
+        assertEquals("3", attribution?.get("chunk_index")?.jsonPrimitive?.content)
+        assertEquals(canonicalAssistantMessageId, message?.get("assistant_message_id")?.jsonPrimitive?.content)
         assertEquals("2026-06-23T09:02:06Z", message?.get("created_at")?.jsonPrimitive?.content)
         assertEquals("Short thought", decoded.messages.first().reasoning)
+        assertEquals("context.txt", decoded.messages.first().sourceAttributions.single().documentName)
+        assertEquals(canonicalAssistantMessageId, decoded.messages.first().assistantMessageId)
+    }
+
+    @Test
+    fun chatSourceAttributionsUseExactSafeWireShapeAndRemainOptional() {
+        val codec = ProtocolCodec()
+        val attribution = ChatSourceAttributionPayload(
+            sourceIndex = 1,
+            documentName = "release-notes.md",
+            mimeType = "text/markdown",
+            chunkIndex = 2,
+        )
+        val doneJson = codec.envelope(
+            MessageType.ChatDone,
+            ChatDonePayload.serializer(),
+            ChatDonePayload(
+                finishReason = "stop",
+                sourceAttributions = listOf(attribution),
+            ),
+        ).payload
+        val attributionJson = doneJson.getValue("source_attributions").jsonArray.single().jsonObject
+
+        assertEquals(setOf("finish_reason", "source_attributions"), doneJson.keys)
+        assertEquals(
+            setOf("source_index", "document_name", "mime_type", "chunk_index"),
+            attributionJson.keys,
+        )
+        assertEquals(
+            emptyList<ChatSourceAttributionPayload>(),
+            Json.decodeFromString<ChatDonePayload>("""{"finish_reason":"stop"}""").sourceAttributions,
+        )
+        val legacyDonePayload = codec.envelope(
+            MessageType.ChatDone,
+            ChatDonePayload.serializer(),
+            ChatDonePayload(finishReason = "stop"),
+        ).payload
+        assertFalse(legacyDonePayload.containsKey("source_attributions"))
+        assertFalse(legacyDonePayload.containsKey("assistant_message_id"))
+        val legacyStoredPayload = codec.envelope(
+            MessageType.ChatMessagesList,
+            ChatMessagesListResultPayload.serializer(),
+            ChatMessagesListResultPayload(
+                sessionId = "session-1",
+                messages = listOf(ChatStoredMessagePayload(role = "assistant", content = "Legacy answer")),
+            ),
+        ).payload.getValue("messages").jsonArray.single().jsonObject
+        assertFalse(legacyStoredPayload.containsKey("source_attributions"))
+        assertFalse(legacyStoredPayload.containsKey("assistant_message_id"))
+        val doneWithMessageId = codec.envelope(
+            MessageType.ChatDone,
+            ChatDonePayload.serializer(),
+            ChatDonePayload(
+                finishReason = "stop",
+                sourceAttributions = listOf(attribution),
+                assistantMessageId = canonicalAssistantMessageId,
+            ),
+        ).payload
+        assertEquals(canonicalAssistantMessageId, doneWithMessageId["assistant_message_id"]?.jsonPrimitive?.content)
+        assertEquals(
+            emptyList<ChatSourceAttributionPayload>(),
+            Json.decodeFromString<ChatStoredMessagePayload>(
+                """{"role":"assistant","content":"Legacy answer"}""",
+            ).sourceAttributions,
+        )
+    }
+
+    @Test
+    fun chatSourceAttributionsRejectInvalidBoundsOrderFinishReasonAndForbiddenMetadata() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val validAttribution =
+            """{"source_index":1,"document_name":"source.txt","mime_type":"text/plain","chunk_index":0}"""
+        val invalidAttributions = listOf(
+            validAttribution.replace("\"source_index\":1", "\"source_index\":0") to "source_index",
+            validAttribution.replace("\"source_index\":1", "\"source_index\":9") to "source_index",
+            validAttribution.replace("source.txt", "   ") to "document_name",
+            validAttribution.replace("source.txt", "x".repeat(257)) to "document_name",
+            validAttribution.replace("source.txt", "source\\u0000name.txt") to "document_name",
+            validAttribution.replace("source.txt", "source\\u0085name.txt") to "document_name",
+            validAttribution.replace("source.txt", "folder/name.txt") to "document_name",
+            validAttribution.replace("source.txt", "folder\\\\name.txt") to "document_name",
+            validAttribution.replace("text/plain", "Text/Plain") to "mime_type",
+            validAttribution.replace("text/plain", "text/${"x".repeat(124)}") to "mime_type",
+            validAttribution.replace("\"chunk_index\":0", "\"chunk_index\":-1") to "chunk_index",
+        )
+        invalidAttributions.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSourceAttributionPayload>(json)
+            }
+            assertTrue(error.message.orEmpty().contains(expectedField))
+        }
+
+        val outOfOrder = """[$validAttribution,${validAttribution.replace("\"source_index\":1", "\"source_index\":3")}]"""
+        val tooMany = (1..9).joinToString(",", prefix = "[", postfix = "]") { index ->
+            validAttribution.replace("\"source_index\":1", "\"source_index\":$index")
+        }
+        listOf(
+            """{"finish_reason":"stop","source_attributions":[]}""" to "source_attributions",
+            """{"finish_reason":"cancelled","source_attributions":[$validAttribution]}""" to "finish_reason",
+            """{"finish_reason":"error","source_attributions":[$validAttribution]}""" to "finish_reason",
+            """{"finish_reason":"stop","source_attributions":$outOfOrder}""" to "source_index",
+            """{"finish_reason":"stop","source_attributions":$tooMany}""" to "source_index",
+        ).forEach { (json, expected) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatDonePayload>(json)
+            }
+            assertTrue(error.message.orEmpty().contains(expected))
+        }
+        val emptyStoredAttributionsError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ChatStoredMessagePayload>(
+                """{"role":"assistant","content":"Answer","source_attributions":[]}""",
+            )
+        }
+        assertTrue(emptyStoredAttributionsError.message.orEmpty().contains("source_attributions"))
+
+        val forbiddenFields = listOf(
+            "text",
+            "document_id",
+            "document_fingerprint",
+            "fingerprint",
+            "content_fingerprint",
+            "grant_id",
+            "citation_id",
+            "source_anchor_id",
+            "revision",
+            "start_offset",
+            "end_offset",
+            "start_character_offset",
+            "end_character_offset",
+            "offset",
+            "path",
+        )
+        forbiddenFields.forEach { field ->
+            val unsafe = validAttribution.dropLast(1) + ",\"$field\":\"secret\"}"
+            assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ChatSourceAttributionPayload>(unsafe)
+            }
+        }
+        assertThrows(Exception::class.java) {
+            Json.decodeFromString<ChatStoredMessagePayload>(
+                """{"role":"user","content":"Prompt","source_attributions":[$validAttribution]}""",
+            )
+        }
+        listOf(
+            """{"finish_reason":"stop","assistant_message_id":"assistant_message_bad"}""",
+            """{"finish_reason":"stop","assistant_message_id":"$canonicalAssistantMessageId"}""",
+            """{"role":"assistant","content":"Answer","assistant_message_id":"$canonicalAssistantMessageId"}""",
+            """{"role":"user","content":"Prompt","source_attributions":[$validAttribution],"assistant_message_id":"$canonicalAssistantMessageId"}""",
+        ).forEach { json ->
+            assertThrows(Exception::class.java) {
+                if (json.contains("finish_reason")) {
+                    Json.decodeFromString<ChatDonePayload>(json)
+                } else {
+                    Json.decodeFromString<ChatStoredMessagePayload>(json)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun chatSourceAttributionDocumentNameUsesUnicodeCodePointAndSafePathBoundaries() {
+        val supplementaryCodePoint = "\uD83D\uDCC4"
+        val validName = supplementaryCodePoint.repeat(256)
+        val valid = ChatSourceAttributionPayload(
+            sourceIndex = 1,
+            documentName = validName,
+            mimeType = "text/plain",
+            chunkIndex = 0,
+        )
+
+        assertEquals(256, valid.documentName.codePointCount(0, valid.documentName.length))
+        listOf(
+            supplementaryCodePoint.repeat(257),
+            "folder/name.txt",
+            "folder\\name.txt",
+            "source\u0000name.txt",
+            "source\u001Fname.txt",
+            "source\u007Fname.txt",
+            "source\u0085name.txt",
+            "source\u009Fname.txt",
+        ).forEach { documentName ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ChatSourceAttributionPayload(1, documentName, "text/plain", 0)
+            }
+        }
     }
 
     @Test
@@ -3537,6 +3814,7 @@ class ProtocolCodecTest {
 
     private val canonicalSourceAnchorId = "source_anchor_0123456789abcdef"
     private val canonicalCitationId = "citation_${"0".repeat(32)}"
+    private val canonicalAssistantMessageId = "assistant_message_${"4".repeat(32)}"
     private val canonicalReviewId = "source_review_${"1".repeat(32)}"
     private val canonicalConfirmationToken = "source_confirmation_${"2".repeat(64)}"
     private val canonicalGrantId = "trusted_source_${"3".repeat(32)}"

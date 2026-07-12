@@ -1,0 +1,105 @@
+{
+  "documentType": "aetherlink.p2p-nat-selection-profile",
+  "schemaVersion": "1.0",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "status": "approved_for_bounded_handoff",
+  "implementationAuthorized": true,
+  "selectedOptions": {
+    "authenticated-rendezvous-and-candidate-protection": "authenticated-encrypted-ice-turn",
+    "identity-bound-traversal-and-relay-fallback": "transport-neutral-identity-session"
+  },
+  "mandatoryFallback": "relay-only-sealed-signaling",
+  "deferredOptions": [
+    "decentralized-rendezvous",
+    "ice-quic-identity-session",
+    "relay-first-direct-promotion"
+  ],
+  "activeProtocolNamespaceBeforeSelection": [
+    "route.refresh"
+  ],
+  "selectionEffect": {
+    "authorizes": [
+      "a versioned implementation handoff for canonical sealed records and the transport-neutral identity transcript",
+      "cross-language fixed vectors and a no-network transport conformance harness",
+      "parse-only candidate policy work that performs no candidate network I/O"
+    ],
+    "doesNotAuthorize": [
+      "production deployment or production readiness claims",
+      "public rendezvous, STUN, TURN, candidate exchange, hole punching, or direct payload traffic",
+      "a concrete networking or cryptography library",
+      "QUIC, decentralized rendezvous, relay-first promotion, or plaintext downgrade",
+      "physical Android, optical QR, live-network, performance, battery, or interoperability claims"
+    ]
+  },
+  "rolloutFloors": [
+    "The relay-only sealed profile is the mandatory rollback and emergency fallback.",
+    "Direct and relayed paths use the same paired-identity transcript and key-confirmation floor.",
+    "A connected path never becomes an application-ready RuntimeProtocolChannel before endpoint identity verification.",
+    "routeToken is never reused as candidate, ICE, TURN, signaling, transcript, or traffic-key material.",
+    "Rollback disables direct traversal without enabling plaintext signaling, anonymous peers, or weaker session cryptography."
+  ],
+  "initialHandoffPackages": [
+    {
+      "packageId": "canonical-contracts",
+      "scope": "Freeze sealed-record, candidate, relay-capability, transcript, suite, key-confirmation, replay, expiry, and error encodings with explicit byte and count limits.",
+      "networkIOAllowed": false,
+      "exitCriteria": [
+        "Swift and Kotlin fixed vectors match for every canonical encoding and transcript digest.",
+        "Unknown, duplicate, reordered, non-canonical, expired, replayed, and lower-suite inputs fail closed.",
+        "No route token, application payload, backend credential, raw candidate, or traffic key enters logs or persisted chat state."
+      ]
+    },
+    {
+      "packageId": "no-network-conformance",
+      "scope": "Build bounded in-memory candidate-policy, generation, replay, transcript, and fallback state-machine conformance tests without opening sockets or selecting a library.",
+      "networkIOAllowed": false,
+      "exitCriteria": [
+        "Prohibited destination classes and arbitrary URL, hostname, redirect, DNS-rebinding, port-fanout, and payload forms fail before network I/O.",
+        "Identity substitution, cross-pair or cross-role replay, stale generation, downgrade, and fallback races never produce an application-ready channel.",
+        "Every state collection has explicit count, byte, time, retry, and concurrency ceilings."
+      ]
+    },
+    {
+      "packageId": "controlled-network-spike",
+      "scope": "After the first two packages pass and a separate network-spike review approves service and credential semantics, exercise authenticated candidate exchange, direct checks, consent, and relay fallback in a non-production harness.",
+      "networkIOAllowed": false,
+      "exitCriteria": [
+        "A separate review changes this package networkIOAllowed gate before any socket-based spike begins.",
+        "The NAT and mobility matrix reports direct and relay success separately with p50, p95, and p99 setup time.",
+        "Memory, CPU, battery, service bytes, consent traffic, relay occupancy, revocation closure, and false abuse rejection are measured rather than inferred."
+      ]
+    }
+  ],
+  "requiredPreNetworkDecisions": [
+    {
+      "decisionId": "service-ownership-and-trust",
+      "question": "Who operates rendezvous, STUN, and TURN, and which explicit TLS trust roots, rotation, outage, and incident rules authenticate each service?"
+    },
+    {
+      "decisionId": "pair-authorization-and-retention",
+      "question": "How are pair-scoped publish, fetch, and relay capabilities issued, rotated, revoked, retained, and deleted without exposing a stable pair identifier?"
+    },
+    {
+      "decisionId": "candidate-privacy-and-scope",
+      "question": "Is end-to-end candidate encryption mandatory, and which host, server-reflexive, peer-reflexive, relay, IPv4, IPv6, NAT64, and private-scope candidates are permitted?"
+    },
+    {
+      "decisionId": "ice-and-consent-policy",
+      "question": "Which roles, caps, priorities, trickle and restart rules, pacing, consent interval, failure threshold, and mobility behavior define the first ICE profile?"
+    },
+    {
+      "decisionId": "turn-credential-and-abuse-policy",
+      "question": "Which lifetime, scope, permissions, quotas, regions, transport security, capacity, and outage rules define the first TURN profile?"
+    },
+    {
+      "decisionId": "session-transition-semantics",
+      "question": "Do in-flight non-idempotent application requests fail during path replacement, or is a duplicate-safe cutover barrier required before any transition support?"
+    },
+    {
+      "decisionId": "release-budgets",
+      "question": "Which measured traversal success, setup latency, relay ratio, memory, battery, revocation closure, and false-abuse-rejection thresholds gate cohort expansion and release?"
+    }
+  ],
+  "explicitSelectionRequired": false,
+  "selectionInstruction": "Profile production_p2p_nat_v1_recommended was initially approved for the bounded handoff recorded by selection-decision.json and implementation/handoff-v1.json; pre-network/decision-v1.json and implementation/handoff-v3.json are the current policy-selection records and keep network, library, socket, and deployment authorization closed."
+}

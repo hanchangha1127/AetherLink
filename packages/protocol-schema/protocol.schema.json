@@ -24,6 +24,7 @@
         "chat.send",
         "chat.delta",
         "chat.done",
+        "chat.source_attribution.resolve",
         "chat.cancel",
         "chat.sessions.list",
         "chat.messages.list",
@@ -115,6 +116,10 @@
     {
       "if": { "properties": { "type": { "const": "chat.done" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatDonePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.source_attribution.resolve" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSourceAttributionResolvePayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "chat.cancel" } }, "required": ["type"] },
@@ -277,6 +282,10 @@
     "citationID": {
       "type": "string",
       "pattern": "^citation_[0-9a-f]{32}$"
+    },
+    "assistantMessageID": {
+      "type": "string",
+      "pattern": "^assistant_message_[0-9a-f]{32}$"
     },
     "sourceReviewID": {
       "type": "string",
@@ -847,6 +856,8 @@
       "type": "object",
       "properties": {
         "finish_reason": { "enum": ["stop", "cancelled", "error"] },
+        "assistant_message_id": { "$ref": "#/$defs/assistantMessageID" },
+        "source_attributions": { "$ref": "#/$defs/chatSourceAttributions" },
         "usage": {
           "type": "object",
           "properties": {
@@ -856,7 +867,58 @@
           "additionalProperties": false
         }
       },
+      "allOf": [
+        {
+          "if": { "required": ["source_attributions"] },
+          "then": {
+            "required": ["finish_reason"],
+            "properties": { "finish_reason": { "const": "stop" } }
+          }
+        },
+        {
+          "if": { "required": ["assistant_message_id"] },
+          "then": { "required": ["source_attributions"] }
+        }
+      ],
       "additionalProperties": false
+    },
+    "chatSourceAttribution": {
+      "type": "object",
+      "required": ["source_index", "document_name", "mime_type", "chunk_index"],
+      "properties": {
+        "source_index": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "document_name": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 },
+            { "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F/\\\\]+$" }
+          ]
+        },
+        "mime_type": {
+          "allOf": [
+            { "$ref": "#/$defs/nonEmptyString" },
+            { "maxLength": 128 },
+            { "pattern": "^[a-z0-9!#$%&'*+.^_`|~-]+/[a-z0-9!#$%&'*+.^_`|~-]+$" }
+          ]
+        },
+        "chunk_index": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "chatSourceAttributions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "oneOf": [
+        { "minItems": 1, "maxItems": 1, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }] },
+        { "minItems": 2, "maxItems": 2, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }] },
+        { "minItems": 3, "maxItems": 3, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }] },
+        { "minItems": 4, "maxItems": 4, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 4 } } }] }] },
+        { "minItems": 5, "maxItems": 5, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 4 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 5 } } }] }] },
+        { "minItems": 6, "maxItems": 6, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 4 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 5 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 6 } } }] }] },
+        { "minItems": 7, "maxItems": 7, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 4 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 5 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 6 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 7 } } }] }] },
+        { "minItems": 8, "maxItems": 8, "prefixItems": [{ "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 1 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 2 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 3 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 4 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 5 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 6 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 7 } } }] }, { "allOf": [{ "$ref": "#/$defs/chatSourceAttribution" }, { "properties": { "source_index": { "const": 8 } } }] }] }
+      ]
     },
     "chatCancelPayload": {
       "oneOf": [
@@ -983,8 +1045,23 @@
           "type": "array",
           "items": { "$ref": "#/$defs/storedChatAttachment" }
         },
+        "source_attributions": { "$ref": "#/$defs/chatSourceAttributions" },
+        "assistant_message_id": { "$ref": "#/$defs/assistantMessageID" },
         "created_at": { "type": "string", "format": "date-time" }
       },
+      "allOf": [
+        {
+          "if": { "required": ["source_attributions"] },
+          "then": { "properties": { "role": { "const": "assistant" } } }
+        },
+        {
+          "if": { "required": ["assistant_message_id"] },
+          "then": {
+            "required": ["source_attributions"],
+            "properties": { "role": { "const": "assistant" } }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "storedChatAttachment": {
@@ -1438,6 +1515,30 @@
         }
       ]
     },
+    "chatSourceAttributionResolvePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["session_id", "assistant_message_id", "source_index"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonBlankString" },
+            "assistant_message_id": { "$ref": "#/$defs/assistantMessageID" },
+            "source_index": { "type": "integer", "minimum": 1, "maximum": 8 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["citation", "review"],
+          "properties": {
+            "citation": { "$ref": "#/$defs/citation" },
+            "review": { "$ref": "#/$defs/sourceReview" },
+            "trusted_source": { "$ref": "#/$defs/trustedSource" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "trustedSourceApprovePayload": {
       "oneOf": [
         {
@@ -1778,6 +1879,7 @@
             "document_index_unavailable",
             "source_anchor_not_found",
             "citation_not_found",
+            "chat_source_attribution_not_found",
             "trusted_source_review_not_found",
             "trusted_source_review_expired",
             "trusted_source_review_stale",
