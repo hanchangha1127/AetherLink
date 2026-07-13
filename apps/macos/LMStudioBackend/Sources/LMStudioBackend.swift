@@ -107,6 +107,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            registry.prepareForGeneration(id: request.generationID)
             let task = Task { [baseURL, session, encoder] in
                 do {
                     let availableModels = try await self.listModels()
@@ -120,6 +121,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                             baseURL: baseURL,
                             session: session,
                             encoder: encoder,
+                            registry: registry,
                             continuation: continuation
                         )
                     } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
@@ -129,31 +131,32 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                             baseURL: baseURL,
                             session: session,
                             encoder: encoder,
+                            registry: registry,
                             continuation: continuation
                         )
                     }
                     registry.remove(id: request.generationID)
                 } catch is CancellationError {
                     continuation.finish(throwing: LMStudioBackendError.generationCancelled(generationID: request.generationID))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as URLError where error.code == .cancelled {
                     continuation.finish(throwing: LMStudioBackendError.generationCancelled(generationID: request.generationID))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as LMStudioBackendError {
                     continuation.finish(throwing: error)
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as URLError {
                     continuation.finish(throwing: LMStudioBackendError.unavailable(
                         endpoint: "POST /api/v1/chat",
                         reason: error.localizedDescription
                     ))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch {
                     continuation.finish(throwing: LMStudioBackendError.transport(
                         endpoint: "POST /api/v1/chat",
                         reason: error.localizedDescription
                     ))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 }
             }
 
@@ -170,6 +173,10 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     @discardableResult
     public func cancel(generationID: String) -> GenerationCancellationResult {
         registry.cancel(id: generationID)
+    }
+
+    public func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        registry.takeUsageSource(id: generationID)
     }
 
     private func fetchReachabilityModelData() async throws -> Data {
@@ -255,6 +262,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         baseURL: URL,
         session: URLSession,
         encoder: JSONEncoder,
+        registry: LMStudioGenerationRegistry,
         continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
         let endpoint = "POST /api/v1/chat"
@@ -275,7 +283,14 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             try Task.checkCancellation()
             let events = try parser.append(line)
             for event in events {
-                try handleNativeEvent(event, continuation: continuation, endpoint: endpoint)
+                try handleNativeEvent(
+                    event,
+                    providerModelID: request.model,
+                    generationID: request.generationID,
+                    registry: registry,
+                    continuation: continuation,
+                    endpoint: endpoint
+                )
                 if event.name == "chat.end" {
                     continuation.finish()
                     return
@@ -284,7 +299,14 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
 
         for event in parser.finish() {
-            try handleNativeEvent(event, continuation: continuation, endpoint: endpoint)
+            try handleNativeEvent(
+                event,
+                providerModelID: request.model,
+                generationID: request.generationID,
+                registry: registry,
+                continuation: continuation,
+                endpoint: endpoint
+            )
         }
         continuation.finish()
     }
@@ -294,6 +316,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         baseURL: URL,
         session: URLSession,
         encoder: JSONEncoder,
+        registry: LMStudioGenerationRegistry,
         continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
         let endpoint = "POST /v1/chat/completions"
@@ -301,7 +324,12 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try encode(
-            OpenAIChatCompletionsRequest(model: request.model, messages: request.messages, stream: true),
+            OpenAIChatCompletionsRequest(
+                model: request.model,
+                messages: request.messages,
+                stream: true,
+                streamOptions: OpenAIStreamOptions(includeUsage: true)
+            ),
             encoder: encoder,
             endpoint: endpoint
         )
@@ -311,9 +339,25 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 
         var inputTokens: Int?
         var outputTokens: Int?
+        var observedFinishReason = false
         for try await line in bytes.lines {
             try Task.checkCancellation()
-            guard let chunk = try decodeOpenAIStreamLine(line, endpoint: endpoint) else { continue }
+            guard let streamLine = try decodeOpenAIStreamLine(line, endpoint: endpoint) else { continue }
+            if case .done = streamLine {
+                if observedFinishReason {
+                    yieldOpenAICompletion(
+                        inputTokens: inputTokens,
+                        outputTokens: outputTokens,
+                        providerModelID: request.model,
+                        generationID: request.generationID,
+                        registry: registry,
+                        continuation: continuation
+                    )
+                }
+                continuation.finish()
+                return
+            }
+            guard case .chunk(let chunk) = streamLine else { continue }
             if let reasoning = chunk.choices.first?.delta.reasoningText, !reasoning.isEmpty {
                 continuation.yield(.reasoningDelta(reasoning))
             }
@@ -325,16 +369,48 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                 outputTokens = usage.completionTokens
             }
             if chunk.choices.contains(where: { $0.finishReason != nil }) {
-                continuation.yield(.done(inputTokens: inputTokens, outputTokens: outputTokens))
-                continuation.finish()
-                return
+                observedFinishReason = true
             }
+        }
+        if observedFinishReason {
+            yieldOpenAICompletion(
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                providerModelID: request.model,
+                generationID: request.generationID,
+                registry: registry,
+                continuation: continuation
+            )
         }
         continuation.finish()
     }
 
+    private static func yieldOpenAICompletion(
+        inputTokens: Int?,
+        outputTokens: Int?,
+        providerModelID: String,
+        generationID: String,
+        registry: LMStudioGenerationRegistry,
+        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
+    ) {
+        if inputTokens != nil || outputTokens != nil {
+            registry.storeUsageSource(
+                ChatProviderUsageSource(
+                    provider: .lmStudio,
+                    providerModelID: providerModelID,
+                    wireMode: .lmStudioOpenAICompatible
+                ),
+                id: generationID
+            )
+        }
+        continuation.yield(.done(inputTokens: inputTokens, outputTokens: outputTokens))
+    }
+
     private static func handleNativeEvent(
         _ event: ServerSentEvent,
+        providerModelID: String,
+        generationID: String,
+        registry: LMStudioGenerationRegistry,
         continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation,
         endpoint: String
     ) throws {
@@ -355,10 +431,19 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             throw LMStudioBackendError.badResponse(endpoint: endpoint, reason: payload.error.message)
         case "chat.end":
             let end = try decode(LMStudioChatEnd.self, from: data, endpoint: endpoint, line: event.data)
-            continuation.yield(.done(
-                inputTokens: end.result.stats?.inputTokens,
-                outputTokens: end.result.stats?.totalOutputTokens
-            ))
+            let inputTokens = end.result.stats?.inputTokens
+            let outputTokens = end.result.stats?.totalOutputTokens
+            if end.result.stats != nil {
+                registry.storeUsageSource(
+                    ChatProviderUsageSource(
+                        provider: .lmStudio,
+                        providerModelID: providerModelID,
+                        wireMode: .lmStudioNative
+                    ),
+                    id: generationID
+                )
+            }
+            continuation.yield(.done(inputTokens: inputTokens, outputTokens: outputTokens))
         default:
             break
         }
@@ -430,7 +515,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private static func decodeOpenAIStreamLine(_ line: String, endpoint: String) throws -> OpenAIChatChunk? {
+    private static func decodeOpenAIStreamLine(_ line: String, endpoint: String) throws -> OpenAIStreamLine? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -441,13 +526,14 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             jsonLine = trimmed
         }
 
-        guard !jsonLine.isEmpty, jsonLine != "[DONE]" else { return nil }
+        guard !jsonLine.isEmpty else { return nil }
+        if jsonLine == "[DONE]" { return .done }
         guard let data = jsonLine.data(using: .utf8) else {
             throw LMStudioBackendError.streamDecoding(line: line, reason: "Line is not valid UTF-8")
         }
 
         do {
-            return try JSONDecoder().decode(OpenAIChatChunk.self, from: data)
+            return .chunk(try JSONDecoder().decode(OpenAIChatChunk.self, from: data))
         } catch {
             throw LMStudioBackendError.streamDecoding(line: line, reason: error.localizedDescription)
         }
@@ -468,8 +554,18 @@ private extension LMStudioBackendError {
 }
 
 private final class LMStudioGenerationRegistry: @unchecked Sendable {
+    private static let maximumCompletedUsageSources = 128
+
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var usageSources: [String: ChatProviderUsageSource] = [:]
+    private var usageSourceOrder: [String] = []
+
+    func prepareForGeneration(id: String) {
+        lock.withLock {
+            removeUsageSourceLocked(id: id)
+        }
+    }
 
     func register(id: String, task: Task<Void, Never>) {
         lock.withLock {
@@ -479,6 +575,7 @@ private final class LMStudioGenerationRegistry: @unchecked Sendable {
 
     func cancel(id: String) -> GenerationCancellationResult {
         lock.withLock {
+            removeUsageSourceLocked(id: id)
             guard let task = tasks.removeValue(forKey: id) else {
                 return .notFound(generationID: id)
             }
@@ -487,10 +584,38 @@ private final class LMStudioGenerationRegistry: @unchecked Sendable {
         }
     }
 
-    func remove(id: String) {
+    func remove(id: String, discardingUsageSource: Bool = false) {
         lock.withLock {
             tasks[id] = nil
+            if discardingUsageSource {
+                removeUsageSourceLocked(id: id)
+            }
         }
+    }
+
+    func storeUsageSource(_ source: ChatProviderUsageSource, id: String) {
+        lock.withLock {
+            removeUsageSourceLocked(id: id)
+            usageSources[id] = source
+            usageSourceOrder.append(id)
+            while usageSourceOrder.count > Self.maximumCompletedUsageSources {
+                let oldestID = usageSourceOrder.removeFirst()
+                usageSources[oldestID] = nil
+            }
+        }
+    }
+
+    func takeUsageSource(id: String) -> ChatProviderUsageSource? {
+        lock.withLock {
+            let source = usageSources[id]
+            removeUsageSourceLocked(id: id)
+            return source
+        }
+    }
+
+    private func removeUsageSourceLocked(id: String) {
+        usageSources[id] = nil
+        usageSourceOrder.removeAll { $0 == id }
     }
 }
 
@@ -669,11 +794,28 @@ private struct OpenAIChatCompletionsRequest: Encodable {
     var model: String
     var messages: [OpenAIChatMessage]
     var stream: Bool
+    var streamOptions: OpenAIStreamOptions
 
-    init(model: String, messages: [ChatMessage], stream: Bool) {
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case stream
+        case streamOptions = "stream_options"
+    }
+
+    init(model: String, messages: [ChatMessage], stream: Bool, streamOptions: OpenAIStreamOptions) {
         self.model = model
         self.messages = messages.map(OpenAIChatMessage.init(message:))
         self.stream = stream
+        self.streamOptions = streamOptions
+    }
+}
+
+private struct OpenAIStreamOptions: Encodable {
+    var includeUsage: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case includeUsage = "include_usage"
     }
 }
 
@@ -812,6 +954,11 @@ private struct LMStudioChatStats: Decodable {
 private struct OpenAIChatChunk: Decodable {
     var choices: [OpenAIChatChoice]
     var usage: OpenAIUsage?
+}
+
+private enum OpenAIStreamLine {
+    case chunk(OpenAIChatChunk)
+    case done
 }
 
 private struct OpenAIChatChoice: Decodable {

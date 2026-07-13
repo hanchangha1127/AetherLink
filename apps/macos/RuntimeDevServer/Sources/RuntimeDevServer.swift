@@ -47,6 +47,9 @@ struct RuntimeDevServer {
         let pairingCoordinator = PairingCoordinator()
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
         let runtimeChatEventStore = Self.runtimeChatEventStore(environment: environment)
+        let runtimeChatCompactionSummaryCache = Self.runtimeChatCompactionSummaryCache(
+            environment: environment
+        )
         let runtimeMemoryStore = Self.runtimeMemoryStore(environment: environment)
         let runtimeDocumentIndexStore = Self.runtimeDocumentIndexStore(environment: environment)
         let runtimeMemorySummaryPolicy = Self.runtimeMemorySummaryPolicy(environment: environment)
@@ -114,6 +117,7 @@ struct RuntimeDevServer {
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
+            chatCompactionSummaryCache: runtimeChatCompactionSummaryCache,
             memoryStore: runtimeMemoryStore,
             documentIndexStore: runtimeDocumentIndexStore,
             memorySummaryPolicy: runtimeMemorySummaryPolicy,
@@ -212,6 +216,22 @@ struct RuntimeDevServer {
             databaseURL: URL(fileURLWithPath: sqlitePath),
             legacyJSONLFileURL: legacyJSONLFileURL
         )
+    }
+
+    private static func runtimeChatCompactionSummaryCache(
+        environment: [String: String]
+    ) -> any RuntimeChatCompactionSummaryCaching {
+        if let path = environment["AETHERLINK_DEV_RUNTIME_CHAT_COMPACTION_CACHE_SQLITE_FILE"]?
+            .takeIfNotEmpty {
+            return SQLiteRuntimeChatCompactionSummaryCache(databaseURL: URL(fileURLWithPath: path))
+        }
+        if let chatPath = environment["AETHERLINK_DEV_RUNTIME_CHAT_SQLITE_FILE"]?.takeIfNotEmpty {
+            let chatURL = URL(fileURLWithPath: chatPath)
+            let cacheURL = chatURL.deletingPathExtension()
+                .appendingPathExtension("compaction-summary-cache.sqlite")
+            return SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        }
+        return SQLiteRuntimeChatCompactionSummaryCache()
     }
 
     private static func runtimeMemoryStore(environment: [String: String]) -> any RuntimeMemoryStore {

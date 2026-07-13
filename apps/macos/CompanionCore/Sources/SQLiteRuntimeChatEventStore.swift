@@ -401,6 +401,13 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private func appendUnlocked(_ event: RuntimeChatStoredEvent, database: OpaquePointer) throws {
         let sanitized = event.sanitizedForStorage()
         try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: 0)
+        if sanitized.compactionResolution != nil {
+            let existingEvents = try readEventsUnlocked(database)
+            try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
+                existingEvents.enumerated().map { (line: $0.offset + 1, event: $0.element) }
+                    + [(line: 0, event: sanitized)]
+            )
+        }
         if try eventExistsUnlocked(database, eventID: sanitized.id) {
             throw SQLiteRuntimeChatEventStoreError("Runtime chat SQLite event already exists: \(sanitized.id)")
         }
@@ -521,6 +528,9 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 throw RuntimeChatEventStoreError.corruptEventLog(line: line, reason: "decode failed")
             }
         }
+        try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
+            events.enumerated().map { (line: $0.offset + 1, event: $0.element) }
+        )
         return events
     }
 

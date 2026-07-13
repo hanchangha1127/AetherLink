@@ -284,6 +284,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            registry.prepareForGeneration(id: request.generationID)
             let task = Task { [baseURL, session, encoder] in
                 let endpoint = "POST /api/chat"
                 do {
@@ -309,6 +310,16 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                             continuation.yield(.delta(content))
                         }
                         if chunk.done == true {
+                            if chunk.promptEvalCount != nil || chunk.evalCount != nil {
+                                registry.storeUsageSource(
+                                    ChatProviderUsageSource(
+                                        provider: .ollama,
+                                        providerModelID: request.model,
+                                        wireMode: .ollamaChat
+                                    ),
+                                    id: request.generationID
+                                )
+                            }
                             continuation.yield(.done(inputTokens: chunk.promptEvalCount, outputTokens: chunk.evalCount))
                             continuation.finish()
                             registry.remove(id: request.generationID)
@@ -317,26 +328,26 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     }
 
                     continuation.finish()
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch is CancellationError {
                     continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as URLError where error.code == .cancelled {
                     continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as OllamaBackendError {
                     continuation.finish(throwing: error)
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch let error as URLError {
                     continuation.finish(throwing: OllamaBackendError.unreachable(
                         endpoint: endpoint,
                         baseURL: baseURL.absoluteString,
                         reason: error.localizedDescription
                     ))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 } catch {
                     continuation.finish(throwing: OllamaBackendError.transport(endpoint: endpoint, reason: error.localizedDescription))
-                    registry.remove(id: request.generationID)
+                    registry.remove(id: request.generationID, discardingUsageSource: true)
                 }
             }
 
@@ -353,6 +364,10 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     @discardableResult
     public func cancel(generationID: String) -> GenerationCancellationResult {
         registry.cancel(id: generationID)
+    }
+
+    public func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        registry.takeUsageSource(id: generationID)
     }
 
     private static func encodeChatRequest(
@@ -444,8 +459,18 @@ private extension String {
 }
 
 private final class GenerationRegistry: @unchecked Sendable {
+    private static let maximumCompletedUsageSources = 128
+
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var usageSources: [String: ChatProviderUsageSource] = [:]
+    private var usageSourceOrder: [String] = []
+
+    func prepareForGeneration(id: String) {
+        lock.withLock {
+            removeUsageSourceLocked(id: id)
+        }
+    }
 
     func register(id: String, task: Task<Void, Never>) {
         lock.withLock {
@@ -455,6 +480,7 @@ private final class GenerationRegistry: @unchecked Sendable {
 
     func cancel(id: String) -> GenerationCancellationResult {
         lock.withLock {
+            removeUsageSourceLocked(id: id)
             guard let task = tasks.removeValue(forKey: id) else {
                 return .notFound(generationID: id)
             }
@@ -463,10 +489,38 @@ private final class GenerationRegistry: @unchecked Sendable {
         }
     }
 
-    func remove(id: String) {
+    func remove(id: String, discardingUsageSource: Bool = false) {
         lock.withLock {
             tasks[id] = nil
+            if discardingUsageSource {
+                removeUsageSourceLocked(id: id)
+            }
         }
+    }
+
+    func storeUsageSource(_ source: ChatProviderUsageSource, id: String) {
+        lock.withLock {
+            removeUsageSourceLocked(id: id)
+            usageSources[id] = source
+            usageSourceOrder.append(id)
+            while usageSourceOrder.count > Self.maximumCompletedUsageSources {
+                let oldestID = usageSourceOrder.removeFirst()
+                usageSources[oldestID] = nil
+            }
+        }
+    }
+
+    func takeUsageSource(id: String) -> ChatProviderUsageSource? {
+        lock.withLock {
+            let source = usageSources[id]
+            removeUsageSourceLocked(id: id)
+            return source
+        }
+    }
+
+    private func removeUsageSourceLocked(id: String) {
+        usageSources[id] = nil
+        usageSourceOrder.removeAll { $0 == id }
     }
 }
 

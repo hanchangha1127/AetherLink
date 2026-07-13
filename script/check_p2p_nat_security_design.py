@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-p2p-nat-v1"
 CURRENT_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v3.json"
-EVIDENCE_COLLECTION_SHA256 = "3c957948ca16aec64ae941a1c0d1cb9a86697854eddb9c22473e4da8d7891424"
+EVIDENCE_COLLECTION_SHA256 = "b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",

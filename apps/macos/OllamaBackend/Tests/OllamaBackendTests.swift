@@ -3,6 +3,10 @@ import OllamaBackend
 import XCTest
 
 final class OllamaBackendTests: XCTestCase {
+    func testOllamaChatUsageWireModeRawValue() {
+        XCTAssertEqual(ChatProviderWireMode.ollamaChat.rawValue, "ollama_chat")
+    }
+
     override func tearDown() {
         MockURLProtocol.handler = nil
         SuspendingURLProtocol.onStart = nil
@@ -425,6 +429,15 @@ final class OllamaBackendTests: XCTestCase {
             .delta("there"),
             .done(inputTokens: 3, outputTokens: 4)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .ollama,
+                providerModelID: "llama3.1:8b",
+                wireMode: .ollamaChat
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatStreamsThinkingSeparatelyFromContent() async throws {
@@ -463,6 +476,15 @@ final class OllamaBackendTests: XCTestCase {
             .delta(" there"),
             .done(inputTokens: 5, outputTokens: 6)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .ollama,
+                providerModelID: "qwen3:8b",
+                wireMode: .ollamaChat
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatStreamsServerSentEventLines() async throws {
@@ -493,6 +515,15 @@ final class OllamaBackendTests: XCTestCase {
             .delta("Hello"),
             .done(inputTokens: 1, outputTokens: 2)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .ollama,
+                providerModelID: "llama3.1:8b",
+                wireMode: .ollamaChat
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testHTTPStatusReturnsStructuredError() async {

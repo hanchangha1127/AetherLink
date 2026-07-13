@@ -15,6 +15,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let pairingCoordinator: PairingCoordinator
     private let trustedDeviceStore: TrustedDeviceStore
     private let chatEventStore: any RuntimeChatEventStore
+    private let chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching
     private let memoryStore: any RuntimeMemoryStore
     private let documentIndexStore: any RuntimeDocumentIndexReading
     private let memorySummaryPolicy: @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy
@@ -31,7 +32,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let chatStorageLock = NSLock()
     private var activeChatStorageStates: [String: RuntimeActiveChatStorageState] = [:]
     private var activeChatRequestIDsByConnection: [UUID: Set<String>] = [:]
+    private var activeChatBackendGenerationIDs = Set<String>()
     private var activeChatCompactionSummaryRequestIDs = Set<String>()
+    private let chatCompactionSummaryCacheCoordinationLock = NSLock()
     private let memorySummaryGenerationCoordinator = RuntimeMemorySummaryGenerationCoordinator()
     private let requestTaskLock = NSLock()
     private var requestTasksByConnection: [UUID: [UUID: TrackedRuntimeRequestTask]] = [:]
@@ -44,6 +47,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         pairingCoordinator: PairingCoordinator = PairingCoordinator(),
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
+        chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching = NullRuntimeChatCompactionSummaryCache(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
         documentIndexStore: any RuntimeDocumentIndexReading = SQLiteRuntimeDocumentIndexStore(),
         memorySummaryPolicy: @escaping @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy = {
@@ -59,6 +63,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.pairingCoordinator = pairingCoordinator
         self.trustedDeviceStore = trustedDeviceStore
         self.chatEventStore = chatEventStore
+        self.chatCompactionSummaryCache = chatCompactionSummaryCache
         self.memoryStore = memoryStore
         self.documentIndexStore = documentIndexStore
         self.memorySummaryPolicy = memorySummaryPolicy
@@ -977,38 +982,111 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             do {
                 compactionResult = try Self.chatRequestWithRuntimeConversationCompaction(
                     contextualRequest,
-                    contextWindowTokens: model.contextWindowTokens
+                    contextWindowTokens: model.contextWindowTokens,
+                    storageMessages: storedMessages
                 )
             } catch {
                 try recordRequest(compactionMetadata: nil)
                 throw error
             }
-            try recordChatRequestAndRegisterActiveStorageContext(storageContext) {
-                try recordRequest(compactionMetadata: compactionResult.compactionMetadata)
+            do {
+                try recordChatRequestAndRegisterActiveStorageContext(
+                    storageContext,
+                    adaptivePlan: compactionResult.adaptivePlan
+                ) {
+                    try recordRequest(compactionMetadata: compactionResult.compactionMetadata)
+                }
+            } catch {
+                storageContext = nil
+                throw error
             }
             try Task.checkCancellation()
             guard !isCancelledChatRequest(storageContext) else { return }
             var backendRequest = compactionResult.request
+            var compactionSelection = compactionResult.adaptivePlan.flatMap {
+                RuntimeChatCompactionDispatchSelection(
+                    plan: $0,
+                    summaryMethod: "deterministic_preview_v1"
+                )
+            }
+            var pendingCompactionSummaryCacheRecord: RuntimeChatCompactionSummaryCacheRecord?
             if let adaptivePlan = compactionResult.adaptivePlan,
-               let summarySource = adaptivePlan.summarySource,
-               let generatedSummary = try await generatedChatCompactionSummary(
-                   source: summarySource,
-                   request: contextualRequest
-               ) {
-                try Task.checkCancellation()
-                guard !isCancelledChatRequest(storageContext) else { return }
-                if let generatedPlan = RuntimeChatContextCompactionPlanner()
-                    .applyingGeneratedSummary(generatedSummary, to: adaptivePlan),
-                   let generatedRequest = generatedPlan.request {
-                    backendRequest = generatedRequest
+               let summarySource = adaptivePlan.summarySource {
+                let planner = RuntimeChatContextCompactionPlanner()
+                let cacheContext = Self.chatCompactionSummaryCacheContext(
+                    source: summarySource,
+                    request: contextualRequest,
+                    model: model,
+                    ownerDeviceID: ownerDeviceID,
+                    adaptivePlan: adaptivePlan,
+                    storageMessages: storedMessages
+                )
+                let summary: String?
+                let generatedForCache: Bool
+                if let cacheContext,
+                   let cachedSummary = try? chatCompactionSummaryCache.cachedSummary(
+                       for: cacheContext.key
+                   ) {
+                    summary = cachedSummary
+                    generatedForCache = false
+                } else {
+                    let generationSource: String
+                    if let cacheContext,
+                       let prefixRecord = try? chatCompactionSummaryCache.newestStrictPrefixRecord(
+                           for: cacheContext.key,
+                           currentPrefixFingerprints: cacheContext.prefixFingerprints
+                       ),
+                       prefixRecord.key.compactedTurnCount < cacheContext.compactedMessages.count,
+                       let incrementalSource = planner.incrementalSummarySource(
+                           previousSummary: prefixRecord.summary,
+                           newlyCompactedMessages: Array(
+                               cacheContext.compactedMessages.dropFirst(
+                                   prefixRecord.key.compactedTurnCount
+                               )
+                           )
+                       ) {
+                        generationSource = incrementalSource
+                    } else {
+                        generationSource = summarySource
+                    }
+                    summary = try await generatedChatCompactionSummary(
+                        source: generationSource,
+                        request: contextualRequest
+                    )
+                    generatedForCache = summary != nil
+                }
+                if let summary {
+                    try Task.checkCancellation()
+                    guard !isCancelledChatRequest(storageContext) else { return }
+                    if let generatedPlan = planner
+                        .applyingGeneratedSummary(summary, to: adaptivePlan),
+                       let generatedRequest = generatedPlan.request {
+                        backendRequest = generatedRequest
+                        compactionSelection = RuntimeChatCompactionDispatchSelection(
+                            plan: generatedPlan,
+                            summaryMethod: "llm_summary_v1"
+                        )
+                        if generatedForCache, let cacheContext {
+                            pendingCompactionSummaryCacheRecord = RuntimeChatCompactionSummaryCacheRecord(
+                                key: cacheContext.key,
+                                summary: summary
+                            )
+                        }
+                    }
                 }
             }
             try Task.checkCancellation()
             guard !isCancelledChatRequest(storageContext) else { return }
             try validateAttachments(in: backendRequest, for: model)
+            guard let primaryDispatch = primaryChatStreamIfActive(
+                request: backendRequest,
+                context: storageContext,
+                resolvedModel: model,
+                compactionSelection: compactionSelection
+            ) else { return }
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             var hasNonBlankOutput = false
-            for try await event in backend.chat(request: backendRequest) {
+            for try await event in primaryDispatch.events {
                 guard !isCancelledChatRequest(storageContext) else { return }
                 switch event {
                 case .delta(let text):
@@ -1051,6 +1129,22 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     let hasSourceAttributions = hasNonBlankOutput
                         && !sourceAttributionSnapshot.attributions.isEmpty
                     let assistantMessageID = hasSourceAttributions ? runtimeChatAssistantMessageID() : nil
+                    let reportedProviderUsageSource = backend.takeProviderUsageSource(
+                        generationID: backendRequest.generationID
+                    )
+                    let terminalProviderUsageSource = reportedProviderUsageSource.flatMap { source in
+                        Self.providerUsageSource(
+                            source,
+                            matches: primaryDispatch.providerUsageBinding
+                        ) ? source : nil
+                    }
+                    let terminalProviderUsageInvalid = reportedProviderUsageSource != nil
+                        && terminalProviderUsageSource == nil
+                    let terminalCompactionResolution = Self.compactionResolution(
+                        primaryDispatch.compactionResolution,
+                        applyingInputTokens: inputTokens,
+                        providerUsageSource: terminalProviderUsageSource
+                    )
                     let stopEvent = RuntimeChatStoredEvent(
                         kind: .done,
                         requestID: envelope.requestID,
@@ -1059,6 +1153,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         finishReason: "stop",
                         usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: outputTokens),
                         ownerDeviceID: ownerDeviceID,
+                        compactionResolution: terminalCompactionResolution,
                         sourceAttributions: hasSourceAttributions
                             ? sourceAttributionSnapshot.attributions
                             : nil,
@@ -1068,6 +1163,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             : nil
                     )
                     guard try recordStopChatEventIfPossible(stopEvent, context: storageContext) else { return }
+                    if let pendingCompactionSummaryCacheRecord,
+                       let storageContext {
+                        cacheCompletedChatCompactionSummaryIfEligible(
+                            pendingCompactionSummaryCacheRecord,
+                            context: storageContext,
+                            compactionResolution: terminalCompactionResolution,
+                            providerUsageInvalid: terminalProviderUsageInvalid
+                        )
+                    }
                     var donePayload: [String: JSONValue] = [
                         "finish_reason": .string("stop"),
                         "usage": .object([
@@ -1191,13 +1295,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         mutation: RuntimeChatSessionMutation
     ) throws -> RuntimeChatSessionMutationResult {
         do {
-            return try chatEventStore.mutateSession(
-                ownerDeviceID: ownerDeviceID,
-                sessionID: sessionID,
-                requestID: requestID,
-                mutation: mutation,
-                timestamp: Date()
-            )
+            return try chatCompactionSummaryCacheCoordinationLock.withLock {
+                if mutation == .delete {
+                    try chatCompactionSummaryCache.deleteSummaries(
+                        ownerDeviceID: ownerDeviceID,
+                        sessionID: sessionID
+                    )
+                }
+                return try chatEventStore.mutateSession(
+                    ownerDeviceID: ownerDeviceID,
+                    sessionID: sessionID,
+                    requestID: requestID,
+                    mutation: mutation,
+                    timestamp: Date()
+                )
+            }
         } catch RuntimeChatEventStoreError.sessionNotFound {
             throw LocalRuntimeRouterError.chatSessionNotFound(sessionID)
         } catch RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete {
@@ -1205,6 +1317,119 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         } catch {
             throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
         }
+    }
+
+    private func cacheCompletedChatCompactionSummaryIfEligible(
+        _ record: RuntimeChatCompactionSummaryCacheRecord,
+        context: RuntimeChatStorageContext,
+        compactionResolution: RuntimeChatCompactionResolution?,
+        providerUsageInvalid: Bool
+    ) {
+        guard !providerUsageInvalid,
+              compactionResolution?.providerUsageCalibration?.relation != .exceededInputBudget else {
+            return
+        }
+        chatCompactionSummaryCacheCoordinationLock.withLock {
+            try? chatCompactionSummaryCache.upsert(record) { [weak self] in
+                self?.canCommitChatCompactionSummary(context: context) == true
+            }
+        }
+    }
+
+    private static func providerUsageSource(
+        _ source: ChatProviderUsageSource,
+        matches binding: RuntimeChatProviderUsageBinding
+    ) -> Bool {
+        let canonicalProviderModelID = canonicalModelName(
+            source.providerModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard source.provider == binding.provider,
+              canonicalProviderModelID == binding.providerModelID else {
+            return false
+        }
+        switch binding.provider {
+        case .ollama:
+            return source.wireMode == .ollamaChat
+        case .lmStudio:
+            return source.wireMode == .lmStudioNative
+                || source.wireMode == .lmStudioOpenAICompatible
+        case .aggregate:
+            return false
+        }
+    }
+
+    private static func compactionResolution(
+        _ resolution: RuntimeChatCompactionResolution?,
+        applyingInputTokens inputTokens: Int?,
+        providerUsageSource: ChatProviderUsageSource?
+    ) -> RuntimeChatCompactionResolution? {
+        guard var resolution,
+              let inputTokens,
+              inputTokens >= 0,
+              let providerUsageSource,
+              providerUsageSource.provider == .ollama || providerUsageSource.provider == .lmStudio else {
+            return resolution
+        }
+        let canonicalProviderModelID = canonicalModelName(
+            providerUsageSource.providerModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard !canonicalProviderModelID.isEmpty,
+              ModelProvider.splitQualifiedModelID(canonicalProviderModelID) == nil else {
+            return resolution
+        }
+        let wireModeMatchesProvider: Bool
+        switch providerUsageSource.provider {
+        case .ollama:
+            wireModeMatchesProvider = providerUsageSource.wireMode == .ollamaChat
+        case .lmStudio:
+            wireModeMatchesProvider = providerUsageSource.wireMode == .lmStudioNative
+                || providerUsageSource.wireMode == .lmStudioOpenAICompatible
+        case .aggregate:
+            wireModeMatchesProvider = false
+        }
+        guard wireModeMatchesProvider,
+              let estimatedInputTokensAfter = resolution.estimatedInputTokensAfter else {
+            return resolution
+        }
+        let relation: RuntimeChatProviderTokenRelation
+        if inputTokens <= estimatedInputTokensAfter {
+            relation = .withinConservativeEstimate
+        } else if inputTokens <= resolution.inputBudgetTokens {
+            relation = .exceededConservativeEstimateWithinBudget
+        } else {
+            relation = .exceededInputBudget
+        }
+        resolution.providerUsageCalibration = RuntimeChatProviderUsageCalibration(
+            provider: providerUsageSource.provider.rawValue,
+            providerModelID: canonicalProviderModelID,
+            wireMode: providerUsageSource.wireMode.rawValue,
+            inputTokens: inputTokens,
+            relation: relation
+        )
+        return resolution
+    }
+
+    private func canCommitChatCompactionSummary(context: RuntimeChatStorageContext) -> Bool {
+        let stopped = chatStorageLock.withLock { () -> Bool in
+            guard let state = activeChatStorageStates[context.requestID],
+                  state.context.epoch == context.epoch else {
+                return false
+            }
+            if case .stop? = state.terminalKind {
+                return true
+            }
+            return false
+        }
+        guard stopped,
+              let sessions = try? chatEventStore.listSessions(
+                  ownerDeviceID: context.ownerDeviceID,
+                  limit: Int.max,
+                  includeArchived: true
+              ),
+              let session = sessions.first(where: { $0.sessionID == context.sessionID }) else {
+            return false
+        }
+        return session.status != RuntimeChatSessionMutation.delete.rawValue
     }
 
     private func recordCancelledChatEventIfPossible(
@@ -1232,7 +1457,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sessionID: context.sessionID,
                 model: context.model,
                 finishReason: "cancelled",
-                ownerDeviceID: context.ownerDeviceID
+                ownerDeviceID: context.ownerDeviceID,
+                compactionResolution: activeChatCompactionResolution(for: context)
             ))
             return .recorded
         } catch {
@@ -1365,13 +1591,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 code: Self.chatStorePersistenceFailureCode,
                 message: Self.chatStorePersistenceFailureMessage
             ),
-            ownerDeviceID: context.ownerDeviceID
+            ownerDeviceID: context.ownerDeviceID,
+            compactionResolution: activeChatCompactionResolution(for: context)
         ))
         sink.send(chatStorePersistenceErrorEnvelope(requestID: context.requestID))
     }
 
     private func recordChatRequestAndRegisterActiveStorageContext(
         _ context: RuntimeChatStorageContext?,
+        adaptivePlan: RuntimeChatContextCompactionResult?,
         recordRequest: () throws -> Void
     ) throws {
         guard let context else {
@@ -1379,15 +1607,25 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             return
         }
         try chatStorageLock.withLock {
-            try recordRequest()
-            if let previousContext = activeChatStorageStates[context.requestID]?.context {
-                activeChatRequestIDsByConnection[previousContext.connectionID]?.remove(context.requestID)
-                if activeChatRequestIDsByConnection[previousContext.connectionID]?.isEmpty == true {
-                    activeChatRequestIDsByConnection[previousContext.connectionID] = nil
-                }
+            let generationIDs = Self.chatBackendGenerationIDs(for: context.requestID)
+            guard generationIDs.isDisjoint(with: activeChatBackendGenerationIDs) else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "request_id collides with an active chat generation"
+                )
             }
-            activeChatStorageStates[context.requestID] = RuntimeActiveChatStorageState(context: context)
+            try recordRequest()
+            activeChatStorageStates[context.requestID] = RuntimeActiveChatStorageState(
+                context: context,
+                compactionResolution: adaptivePlan.map {
+                    RuntimeChatCompactionResolution(
+                        primaryDispatched: false,
+                        estimatorIdentifier: $0.accounting.estimatorID,
+                        inputBudgetTokens: $0.accounting.inputBudgetTokens
+                    )
+                }
+            )
             activeChatRequestIDsByConnection[context.connectionID, default: []].insert(context.requestID)
+            activeChatBackendGenerationIDs.formUnion(generationIDs)
         }
     }
 
@@ -1439,12 +1677,25 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         if activeChatRequestIDsByConnection[context.connectionID]?.isEmpty == true {
             activeChatRequestIDsByConnection[context.connectionID] = nil
         }
+        activeChatBackendGenerationIDs.subtract(Self.chatBackendGenerationIDs(for: context.requestID))
         activeChatStorageStates[context.requestID] = nil
     }
 
-    private func activeChatStorageContext(for requestID: String) -> RuntimeChatStorageContext? {
+    private func claimOwnedChatCancellation(
+        for requestID: String,
+        connectionID: UUID
+    ) -> RuntimeOwnedChatCancellationClaim {
         chatStorageLock.withLock {
-            activeChatStorageStates[requestID]?.context
+            guard var state = activeChatStorageStates[requestID],
+                  state.context.connectionID == connectionID else {
+                return .notFound
+            }
+            guard !state.cancellationOperationInProgress else {
+                return .inProgress
+            }
+            state.cancellationOperationInProgress = true
+            activeChatStorageStates[requestID] = state
+            return .claimed(state.context)
         }
     }
 
@@ -1459,19 +1710,81 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func primaryChatStreamIfActive(
+        request: ChatRequest,
+        context: RuntimeChatStorageContext?,
+        resolvedModel: ResolvedRuntimeModel,
+        compactionSelection: RuntimeChatCompactionDispatchSelection?
+    ) -> RuntimePrimaryChatDispatch? {
+        guard let providerUsageBinding = RuntimeChatProviderUsageBinding(model: resolvedModel) else {
+            return nil
+        }
+        guard let context else { return nil }
+        let canRegister = chatStorageLock.withLock {
+            guard var state = activeChatStorageStates[context.requestID],
+                  state.context.epoch == context.epoch,
+                  state.terminalKind == nil,
+                  !state.primaryBackendRegistrationInProgress,
+                  (state.compactionResolution != nil) == (compactionSelection != nil) else {
+                return false
+            }
+            state.primaryBackendRegistrationInProgress = true
+            activeChatStorageStates[context.requestID] = state
+            return true
+        }
+        guard canRegister else { return nil }
+
+        let events = backend.chat(request: request)
+        var resolution = compactionSelection?.resolution
+        resolution?.resolvedProviderQualifiedModelID = providerUsageBinding.providerQualifiedModelID
+        let didRegister = chatStorageLock.withLock {
+            guard var state = activeChatStorageStates[context.requestID],
+                  state.context.epoch == context.epoch else {
+                return false
+            }
+            state.primaryBackendRegistrationInProgress = false
+            guard state.terminalKind == nil,
+                  (state.compactionResolution != nil) == (compactionSelection != nil) else {
+                activeChatStorageStates[context.requestID] = state
+                return false
+            }
+            state.compactionResolution = resolution
+            activeChatStorageStates[context.requestID] = state
+            return true
+        }
+        guard didRegister else {
+            _ = backend.cancel(generationID: request.generationID)
+            return nil
+        }
+        return RuntimePrimaryChatDispatch(
+            events: events,
+            compactionResolution: resolution,
+            providerUsageBinding: providerUsageBinding
+        )
+    }
+
+    private func activeChatCompactionResolution(
+        for context: RuntimeChatStorageContext
+    ) -> RuntimeChatCompactionResolution? {
+        chatStorageLock.withLock {
+            guard let state = activeChatStorageStates[context.requestID],
+                  state.context.epoch == context.epoch else {
+                return nil
+            }
+            return state.compactionResolution
+        }
+    }
+
     private func cancelActiveChats(for connectionID: UUID) {
         let contexts = activeChatStorageContexts(for: connectionID)
         for context in contexts {
-            let ownsCancellationOperation = beginChatCancellationOperation(context)
-            if case .cancelled = cancelChatBackendGeneration(requestID: context.requestID) {
-                _ = recordCancelledChatEventIfPossible(
-                    context: context,
-                    cancellationOperationOwner: ownsCancellationOperation
-                )
-            }
-            if ownsCancellationOperation {
-                endChatCancellationOperation(context)
-            }
+            guard beginChatCancellationOperation(context) else { continue }
+            _ = cancelChatBackendGeneration(requestID: context.requestID)
+            _ = recordCancelledChatEventIfPossible(
+                context: context,
+                cancellationOperationOwner: true
+            )
+            endChatCancellationOperation(context)
         }
     }
 
@@ -1500,7 +1813,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 code: errorCode(for: error),
                 message: error.localizedDescription
             ),
-            ownerDeviceID: context.ownerDeviceID
+            ownerDeviceID: context.ownerDeviceID,
+            compactionResolution: activeChatCompactionResolution(for: context)
         ))
     }
 
@@ -1521,11 +1835,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }) {
                 return try Self.resolvedChatModel(
                     provider: model.provider,
-                        kind: model.kind,
-                        capabilities: model.capabilities,
-                        requestedModel: requestedModel,
-                        contextWindowTokens: model.contextWindowTokens
-                    )
+                    providerModelID: model.providerModelID,
+                    kind: model.kind,
+                    capabilities: model.capabilities,
+                    requestedModel: requestedModel,
+                    contextWindowTokens: model.contextWindowTokens
+                )
                 }
             throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
         }
@@ -1543,6 +1858,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }) {
             return try Self.resolvedChatModel(
                 provider: model.provider,
+                providerModelID: model.providerModelID,
                 kind: model.kind,
                 capabilities: model.capabilities,
                 requestedModel: requestedModel,
@@ -1554,6 +1870,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private static func resolvedChatModel(
         provider: ModelProvider,
+        providerModelID: String,
         kind: ModelKind,
         capabilities: [String],
         requestedModel: String,
@@ -1564,6 +1881,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         return ResolvedRuntimeModel(
             provider: provider,
+            providerModelID: providerModelID,
             kind: kind,
             capabilities: capabilities,
             contextWindowTokens: contextWindowTokens
@@ -1590,21 +1908,55 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 throw LocalRuntimeRouterError.invalidPayload("chat.cancel payload contains unsupported field(s): \(fields)")
             }
             let targetRequestID = try requiredNonBlankString("target_request_id", in: envelope.payload)
-            let context = activeChatStorageContext(for: targetRequestID)
-            let ownsCancellationOperation = context.map(beginChatCancellationOperation) ?? false
-            defer {
-                if ownsCancellationOperation, let context {
-                    endChatCancellationOperation(context)
-                }
+            let context: RuntimeChatStorageContext
+            switch claimOwnedChatCancellation(
+                for: targetRequestID,
+                connectionID: sink.connectionID
+            ) {
+            case .claimed(let claimedContext):
+                context = claimedContext
+            case .notFound:
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "generation_not_found",
+                    message: "No active generation found for request id: \(targetRequestID)",
+                    retryable: false
+                ))
+                return
+            case .inProgress:
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "generation_cancel_in_progress",
+                    message: "Cancellation is already in progress for this generation.",
+                    retryable: true
+                ))
+                return
             }
-            switch cancelChatBackendGeneration(requestID: targetRequestID) {
-            case .cancelled:
-                let persistenceResult = recordCancelledChatEventIfPossible(
-                    context: context,
-                    cancellationOperationOwner: ownsCancellationOperation
-                )
-                switch persistenceResult {
-                case .recorded, .alreadyTerminated:
+            defer {
+                endChatCancellationOperation(context)
+            }
+            let backendCancellationResult = cancelChatBackendGeneration(requestID: targetRequestID)
+            let persistenceResult = recordCancelledChatEventIfPossible(
+                context: context,
+                cancellationOperationOwner: true
+            )
+            switch persistenceResult {
+            case .recorded:
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.chatCancel,
+                    requestID: envelope.requestID,
+                    payload: [
+                        "target_request_id": .string(targetRequestID),
+                        "cancelled": .bool(true)
+                    ]
+                ))
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.chatDone,
+                    requestID: context.requestID,
+                    payload: ["finish_reason": .string("cancelled")]
+                ))
+            case .alreadyTerminated:
+                if case .cancelled = backendCancellationResult {
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatCancel,
                         requestID: envelope.requestID,
@@ -1613,36 +1965,27 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             "cancelled": .bool(true)
                         ]
                     ))
-                case .storeUnavailable(let shouldSendTerminalError):
-                    sink.send(chatStorePersistenceErrorEnvelope(requestID: envelope.requestID))
-                    if let context {
-                        sendChatStorePersistenceTerminalIfNeeded(
-                            context: context,
-                            sink: sink,
-                            shouldSend: shouldSendTerminalError
-                        )
-                    }
-                case .cancellationPending:
+                } else {
                     sink.send(errorEnvelope(
                         requestID: envelope.requestID,
-                        code: "generation_cancel_in_progress",
-                        message: "Cancellation is already in progress for this generation.",
-                        retryable: true
+                        code: "generation_not_found",
+                        message: "No active generation found for request id: \(targetRequestID)",
+                        retryable: false
                     ))
                 }
-                if persistenceResult == .recorded, let context {
-                    sink.send(ProtocolEnvelope(
-                        type: MessageType.chatDone,
-                        requestID: context.requestID,
-                        payload: ["finish_reason": .string("cancelled")]
-                    ))
-                }
-            case .notFound:
+            case .storeUnavailable(let shouldSendTerminalError):
+                sink.send(chatStorePersistenceErrorEnvelope(requestID: envelope.requestID))
+                sendChatStorePersistenceTerminalIfNeeded(
+                    context: context,
+                    sink: sink,
+                    shouldSend: shouldSendTerminalError
+                )
+            case .cancellationPending:
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
-                    code: "generation_not_found",
-                    message: "No active generation found for request id: \(targetRequestID)",
-                    retryable: false
+                    code: "generation_cancel_in_progress",
+                    message: "Cancellation is already in progress for this generation.",
+                    retryable: true
                 ))
             }
         } catch {
@@ -5026,7 +5369,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private static func chatRequestWithRuntimeConversationCompaction(
         _ request: ChatRequest,
-        contextWindowTokens: Int? = nil
+        contextWindowTokens: Int? = nil,
+        storageMessages: [ChatMessage]? = nil
     ) throws -> RuntimeConversationCompactionResult {
         let messages = request.messages.filter { !$0.isRuntimeConversationCompactionContext }
         func result(
@@ -5070,17 +5414,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                       let estimatedTokensAfter = plan.accounting.estimatedTokensAfter else {
                     throw LocalRuntimeRouterError.chatContextWindowExceeded
                 }
+                let persistedSourcePointer = try sourceBoundAdaptiveCompactionPointer(
+                    sourcePointer,
+                    storageMessages: storageMessages
+                )
                 return RuntimeConversationCompactionResult(
                     request: plannedRequest,
                     compactionMetadata: RuntimeChatCompactionMetadata(
-                        strategy: "adaptive_backend_only_summary_v2",
-                        sourcePointers: [sourcePointer],
+                        strategy: "adaptive_backend_only_summary_v3",
+                        sourcePointers: [persistedSourcePointer],
                         estimatorIdentifier: plan.accounting.estimatorID,
                         contextWindowTokens: plan.accounting.contextWindowTokens,
                         outputReserveTokens: plan.accounting.outputReserveTokens,
                         inputBudgetTokens: plan.accounting.inputBudgetTokens,
                         estimatedInputTokensBefore: plan.accounting.estimatedTokensBefore,
-                        estimatedInputTokensAfter: estimatedTokensAfter
+                        estimatedInputTokensAfter: estimatedTokensAfter,
+                        estimateKind: "planned_upper_bound",
+                        summaryPolicy: chatCompactionSummaryPolicy
                     ),
                     adaptivePlan: plan
                 )
@@ -5146,6 +5496,75 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return result(
             messages: compactedRequestMessages,
             compactionMetadata: RuntimeChatCompactionMetadata(sourcePointers: [sourcePointer])
+        )
+    }
+
+    private static func sourceBoundAdaptiveCompactionPointer(
+        _ pointer: RuntimeChatCompactionSourcePointer,
+        storageMessages: [ChatMessage]?
+    ) throws -> RuntimeChatCompactionSourcePointer {
+        guard let storageMessages else {
+            throw LocalRuntimeRouterError.invalidPayload(
+                "adaptive chat compaction requires storage-safe source messages"
+            )
+        }
+        let conversationMessages = storageMessages
+            .filter { !$0.isRuntimeConversationCompactionContext }
+            .filter(\.isConversationTurn)
+        guard conversationMessages.count == pointer.totalTurns,
+              pointer.compactedTurnCount > 0,
+              pointer.compactedTurnCount <= conversationMessages.count else {
+            throw LocalRuntimeRouterError.invalidPayload(
+                "adaptive chat compaction source pointer does not match stored conversation turns"
+            )
+        }
+        let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(conversationMessages.prefix(pointer.compactedTurnCount))
+        )
+        var persisted = pointer
+        persisted.sourceFingerprintAlgorithm = fingerprint.algorithm
+        persisted.sourceFingerprint = fingerprint.digest
+        persisted.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+        return persisted
+    }
+
+    private static func chatCompactionSummaryCacheContext(
+        source: String,
+        request: ChatRequest,
+        model: ResolvedRuntimeModel,
+        ownerDeviceID: String?,
+        adaptivePlan: RuntimeChatContextCompactionResult,
+        storageMessages: [ChatMessage]
+    ) -> RuntimeChatCompactionSummaryCacheContext? {
+        guard let compactedTurnCount = adaptivePlan.sourcePointer?.compactedTurnCount,
+              compactedTurnCount > 0 else {
+            return nil
+        }
+        let conversationMessages = storageMessages
+            .filter { !$0.isRuntimeConversationCompactionContext }
+            .filter(\.isConversationTurn)
+        guard compactedTurnCount <= conversationMessages.count else { return nil }
+        let compactedMessages = Array(conversationMessages.prefix(compactedTurnCount))
+        let prefixFingerprints = RuntimeChatCompactionSummaryLineageFingerprinter
+            .prefixFingerprints(for: compactedMessages)
+        guard let lineageFingerprint = prefixFingerprints.last else { return nil }
+        let key = RuntimeChatCompactionSummaryCacheKey(
+            ownerDeviceID: ownerDeviceID,
+            sessionID: request.sessionID,
+            sourceFingerprint: RuntimeChatCompactionSummarySourceFingerprinter.fingerprint(
+                source: source
+            ),
+            lineageFingerprint: lineageFingerprint,
+            providerQualifiedModelID: model.provider.qualifiedModelID(
+                canonicalModelName(model.providerModelID)
+            ),
+            summaryPolicy: chatCompactionSummaryPolicy
+        )
+        return RuntimeChatCompactionSummaryCacheContext(
+            key: key,
+            prefixFingerprints: prefixFingerprints,
+            compactedMessages: compactedMessages
         )
     }
 
@@ -5222,6 +5641,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func cancelChatBackendGeneration(
         requestID: String
     ) -> GenerationCancellationResult {
+        let primaryRegistrationInProgress = chatStorageLock.withLock {
+            activeChatStorageStates[requestID]?.primaryBackendRegistrationInProgress == true
+        }
+        if primaryRegistrationInProgress {
+            return .cancelled(generationID: requestID)
+        }
         let primaryResult = backend.cancel(generationID: requestID)
         if case .cancelled = primaryResult {
             return primaryResult
@@ -5237,6 +5662,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private static func chatCompactionSummaryGenerationID(_ requestID: String) -> String {
         requestID + ":compaction-summary"
+    }
+
+    private static func chatBackendGenerationIDs(for requestID: String) -> Set<String> {
+        [requestID, chatCompactionSummaryGenerationID(requestID)]
     }
 
     private static func estimatedRuntimeContextCharacters(in messages: [ChatMessage]) -> Int {
@@ -5519,6 +5948,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static let chatSourceAttributionResolveMessageType = "chat.source_attribution.resolve"
     private static let chatStorePersistenceFailureCode = "chat_store_unavailable"
     private static let chatStorePersistenceFailureMessage = "The runtime could not persist chat history."
+    private static let chatCompactionSummaryPolicy = "llm_prepass_with_incremental_lineage_v2"
 }
 
 private enum AuthSessionState: Equatable {
@@ -5599,17 +6029,23 @@ private struct RuntimeActiveChatStorageState {
     var terminalKind: RuntimeChatTerminalKind?
     var cancellationOperationInProgress: Bool
     var unregisterRequested: Bool
+    var primaryBackendRegistrationInProgress: Bool
+    var compactionResolution: RuntimeChatCompactionResolution?
 
     init(
         context: RuntimeChatStorageContext,
         terminalKind: RuntimeChatTerminalKind? = nil,
         cancellationOperationInProgress: Bool = false,
-        unregisterRequested: Bool = false
+        unregisterRequested: Bool = false,
+        primaryBackendRegistrationInProgress: Bool = false,
+        compactionResolution: RuntimeChatCompactionResolution? = nil
     ) {
         self.context = context
         self.terminalKind = terminalKind
         self.cancellationOperationInProgress = cancellationOperationInProgress
         self.unregisterRequested = unregisterRequested
+        self.primaryBackendRegistrationInProgress = primaryBackendRegistrationInProgress
+        self.compactionResolution = compactionResolution
     }
 }
 
@@ -5633,6 +6069,12 @@ private enum RuntimeChatCancellationPersistenceResult: Equatable {
     case cancellationPending
 }
 
+private enum RuntimeOwnedChatCancellationClaim {
+    case claimed(RuntimeChatStorageContext)
+    case notFound
+    case inProgress
+}
+
 private struct RuntimeParsedChatRequest {
     var request: ChatRequest
     var storageMessages: [ChatMessage]
@@ -5643,6 +6085,71 @@ private struct RuntimeConversationCompactionResult {
     var request: ChatRequest
     var compactionMetadata: RuntimeChatCompactionMetadata?
     var adaptivePlan: RuntimeChatContextCompactionResult? = nil
+}
+
+private struct RuntimeChatCompactionSummaryCacheContext {
+    var key: RuntimeChatCompactionSummaryCacheKey
+    var prefixFingerprints: [RuntimeChatCompactionSummaryLineageFingerprint]
+    var compactedMessages: [ChatMessage]
+}
+
+private struct RuntimeChatCompactionDispatchSelection {
+    var summaryMethod: String
+    var estimatorIdentifier: String
+    var inputBudgetTokens: Int
+    var estimatedInputTokensAfter: Int
+
+    init?(plan: RuntimeChatContextCompactionResult, summaryMethod: String) {
+        guard plan.status == .compacted,
+              let estimatedInputTokensAfter = plan.accounting.estimatedTokensAfter else {
+            return nil
+        }
+        self.summaryMethod = summaryMethod
+        self.estimatorIdentifier = plan.accounting.estimatorID
+        self.inputBudgetTokens = plan.accounting.inputBudgetTokens
+        self.estimatedInputTokensAfter = estimatedInputTokensAfter
+    }
+
+    var resolution: RuntimeChatCompactionResolution {
+        RuntimeChatCompactionResolution(
+            primaryDispatched: true,
+            summaryMethod: summaryMethod,
+            estimatorIdentifier: estimatorIdentifier,
+            inputBudgetTokens: inputBudgetTokens,
+            estimatedInputTokensAfter: estimatedInputTokensAfter
+        )
+    }
+}
+
+private struct RuntimePrimaryChatDispatch {
+    var events: AsyncThrowingStream<ChatStreamEvent, Error>
+    var compactionResolution: RuntimeChatCompactionResolution?
+    var providerUsageBinding: RuntimeChatProviderUsageBinding
+}
+
+private struct RuntimeChatProviderUsageBinding {
+    var provider: ModelProvider
+    var providerModelID: String
+
+    init?(model: ResolvedRuntimeModel) {
+        guard model.provider == .ollama || model.provider == .lmStudio else {
+            return nil
+        }
+        let trimmedProviderModelID = model.providerModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let providerModelID = trimmedProviderModelID.hasSuffix(":latest")
+            ? String(trimmedProviderModelID.dropLast(":latest".count))
+            : trimmedProviderModelID
+        guard !providerModelID.isEmpty,
+              ModelProvider.splitQualifiedModelID(providerModelID) == nil else {
+            return nil
+        }
+        self.provider = model.provider
+        self.providerModelID = providerModelID
+    }
+
+    var providerQualifiedModelID: String {
+        provider.qualifiedModelID(providerModelID)
+    }
 }
 
 private struct RuntimeParsedChatMessage {
@@ -6392,6 +6899,7 @@ private extension ChatMessage {
 
 private struct ResolvedRuntimeModel {
     var provider: ModelProvider
+    var providerModelID: String
     var kind: ModelKind
     var capabilities: [String]
     var contextWindowTokens: Int?

@@ -6193,7 +6193,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)
         let metadata = try XCTUnwrap(requestEvent.compactionMetadata)
-        XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v2")
+        XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v3")
         let pointer = try XCTUnwrap(metadata.sourcePointers.first)
         XCTAssertEqual(metadata.sourcePointers.count, 1)
         XCTAssertEqual(pointer.sourceKind, "client_visible_conversation_turns")
@@ -6206,6 +6206,19 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(pointer.retainedStartTurn, pointer.compactedTurnCount + 1)
         XCTAssertEqual(pointer.retainedEndTurn, 18)
         XCTAssertEqual(pointer.retainedTurnCount, 18 - pointer.compactedTurnCount)
+        XCTAssertEqual(
+            pointer.sourceFingerprintAlgorithm,
+            RuntimeChatCompactionSourceFingerprinter.algorithm
+        )
+        XCTAssertEqual(pointer.sourceFingerprint?.count, 64)
+        XCTAssertGreaterThan(pointer.sourceCanonicalByteCount ?? 0, 0)
+        let storedConversationMessages = try XCTUnwrap(requestEvent.messages).filter(\.isConversationTurnForTests)
+        let recomputedFingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(storedConversationMessages.prefix(pointer.compactedTurnCount))
+        )
+        XCTAssertEqual(pointer.sourceFingerprint, recomputedFingerprint.digest)
+        XCTAssertEqual(pointer.sourceCanonicalByteCount, recomputedFingerprint.canonicalByteCount)
         XCTAssertEqual(metadata.estimatorIdentifier, "conservative_utf8_bytes_vision_framing_v2")
         XCTAssertEqual(metadata.contextWindowTokens, 8_192)
         XCTAssertEqual(metadata.outputReserveTokens, 1_024)
@@ -6247,6 +6260,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     .delta("Final answer."),
                     .done(inputTokens: 5, outputTokens: 6),
                 ],
+            ],
+            chatProviderUsageSources: [
+                nil,
+                ChatProviderUsageSource(
+                    provider: .ollama,
+                    providerModelID: "llama3.1:8b:latest",
+                    wireMode: .ollamaChat
+                ),
             ],
             onChatRequest: { request in
                 requests.value = requests.value + [request]
@@ -6292,14 +6313,767 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let storedJSON = String(data: try JSONEncoder().encode(storedRequest), encoding: .utf8)
         XCTAssertFalse(storedJSON?.contains("Concise generated history") == true)
         XCTAssertFalse(storedJSON?.contains("prepass reasoning") == true)
-        XCTAssertEqual(storedRequest.compactionMetadata?.strategy, "adaptive_backend_only_summary_v2")
+        XCTAssertEqual(storedRequest.compactionMetadata?.strategy, "adaptive_backend_only_summary_v3")
+        XCTAssertEqual(storedRequest.compactionMetadata?.estimateKind, "planned_upper_bound")
+        XCTAssertEqual(
+            storedRequest.compactionMetadata?.summaryPolicy,
+            "llm_prepass_with_incremental_lineage_v2"
+        )
+        let doneResolution = try XCTUnwrap(
+            chatEventStore.events.first { $0.kind == .done }?.compactionResolution
+        )
+        XCTAssertTrue(doneResolution.primaryDispatched)
+        XCTAssertEqual(doneResolution.summaryMethod, "llm_summary_v1")
+        XCTAssertEqual(doneResolution.estimatorIdentifier, "conservative_utf8_bytes_vision_framing_v2")
+        XCTAssertEqual(doneResolution.inputBudgetTokens, 7_168)
+        XCTAssertEqual(doneResolution.resolvedProviderQualifiedModelID, "ollama:llama3.1:8b")
+        XCTAssertEqual(
+            doneResolution.estimatedInputTokensAfter,
+            RuntimeChatConservativeTokenEstimator().estimatedTokens(for: finalRequest)
+        )
+        XCTAssertEqual(doneResolution.providerUsageCalibration, RuntimeChatProviderUsageCalibration(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            inputTokens: 5,
+            relation: .withinConservativeEstimate
+        ))
         XCTAssertEqual(chatEventStore.events.filter { $0.kind == .assistantDelta }.count, 1)
         XCTAssertEqual(chatEventStore.events.filter { $0.kind == .reasoningDelta }.count, 0)
+    }
+
+    func testProviderUsageAboveInputBudgetDoesNotCommitGeneratedCompactionSummary() async throws {
+        let sink = RecordingSink()
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        let cache = RecordingRuntimeChatCompactionSummaryCache()
+        let modelID = "llama3.1:8b"
+        let messages: [JSONValue] = (1...18).map { index in
+            .object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("provider calibration source \(index) " + String(repeating: "C", count: 1_600)),
+            ])
+        }
+        let backend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEventBatches: [
+                [.delta("Generated history."), .done(inputTokens: 3, outputTokens: 4)],
+                [
+                    .delta("Final answer."),
+                    .done(inputTokens: 8_000, outputTokens: 6),
+                ],
+            ],
+            chatProviderUsageSources: [
+                nil,
+                ChatProviderUsageSource(
+                    provider: .ollama,
+                    providerModelID: modelID,
+                    wireMode: .ollamaChat
+                ),
+            ]
+        )
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: chatEventStore,
+            chatCompactionSummaryCache: cache
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-provider-budget-exceeded",
+            payload: [
+                "session_id": .string("session-provider-budget-exceeded"),
+                "model": .string(modelID),
+                "messages": .array(messages),
+            ]
+        ), sink: sink)
+
+        _ = try await sink.waitForMessages(count: 2)
+        let resolution = try XCTUnwrap(
+            chatEventStore.events.first { $0.kind == .done }?.compactionResolution
+        )
+        XCTAssertEqual(resolution.providerUsageCalibration?.inputTokens, 8_000)
+        XCTAssertEqual(resolution.providerUsageCalibration?.relation, .exceededInputBudget)
+        XCTAssertEqual(cache.upsertAttempts, 0)
+    }
+
+    func testMismatchedProviderUsageDoesNotCalibrateOrCommitGeneratedCompactionSummary() async throws {
+        let sink = RecordingSink()
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        let cache = RecordingRuntimeChatCompactionSummaryCache()
+        let modelID = "llama3.1:8b"
+        let messages: [JSONValue] = (1...18).map { index in
+            .object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("provider binding source \(index) " + String(repeating: "B", count: 1_600)),
+            ])
+        }
+        let backend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEventBatches: [
+                [.delta("Generated history."), .done(inputTokens: 3, outputTokens: 4)],
+                [
+                    .delta("Final answer."),
+                    .done(inputTokens: 5, outputTokens: 6),
+                ],
+            ],
+            chatProviderUsageSources: [
+                nil,
+                ChatProviderUsageSource(
+                    provider: .lmStudio,
+                    providerModelID: modelID,
+                    wireMode: .lmStudioNative
+                ),
+            ]
+        )
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: chatEventStore,
+            chatCompactionSummaryCache: cache
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-provider-binding-mismatch",
+            payload: [
+                "session_id": .string("session-provider-binding-mismatch"),
+                "model": .string(modelID),
+                "messages": .array(messages),
+            ]
+        ), sink: sink)
+
+        _ = try await sink.waitForMessages(count: 2)
+        let resolution = try XCTUnwrap(
+            chatEventStore.events.first { $0.kind == .done }?.compactionResolution
+        )
+        XCTAssertEqual(resolution.resolvedProviderQualifiedModelID, "ollama:llama3.1:8b")
+        XCTAssertNil(resolution.providerUsageCalibration)
+        XCTAssertEqual(cache.upsertAttempts, 0)
+    }
+
+    func testChatSendReusesDurableGeneratedCompactionSummaryAfterCacheReopen() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cacheURL = directory.appendingPathComponent("compaction-summary-cache.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessionID = "session-durable-compaction-cache"
+        let modelID = "llama3.1:8b"
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Durable compaction cache",
+                model: modelID,
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 18
+            )
+        ])
+        var messagePayloads: [JSONValue] = []
+        for index in 1...18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("durable compaction source \(index) " + String(repeating: "D", count: 1_600)),
+            ]))
+        }
+
+        let firstRequests = LockedBox<[ChatRequest]>([])
+        let firstBackend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEventBatches: [
+                [.delta("Durable generated history."), .done(inputTokens: 1, outputTokens: 1)],
+                [.delta("First visible answer."), .done(inputTokens: 1, outputTokens: 1)],
+            ],
+            onChatRequest: { request in
+                firstRequests.value = firstRequests.value + [request]
+            }
+        )
+        let firstRouter = makeRouter(
+            backend: firstBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let firstSink = RecordingSink()
+        firstRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "durable-cache-request-01",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(messagePayloads),
+            ]
+        ), sink: firstSink)
+        _ = try await firstSink.waitForMessages(count: 2)
+        XCTAssertEqual(firstRequests.value.count, 2)
+
+        let secondRequests = LockedBox<[ChatRequest]>([])
+        let secondBackend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEvents: [
+                .delta("Second visible answer."),
+                .done(inputTokens: 1, outputTokens: 1),
+            ],
+            onChatRequest: { request in
+                secondRequests.value = secondRequests.value + [request]
+            }
+        )
+        let secondRouter = makeRouter(
+            backend: secondBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let secondSink = RecordingSink()
+        secondRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "durable-cache-request-02",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(messagePayloads),
+            ]
+        ), sink: secondSink)
+        _ = try await secondSink.waitForMessages(count: 2)
+
+        XCTAssertEqual(secondRequests.value.count, 1)
+        let reusedPrimary = try XCTUnwrap(secondRequests.value.first)
+        XCTAssertEqual(reusedPrimary.generationID, "durable-cache-request-02")
+        XCTAssertTrue(reusedPrimary.messages.contains {
+            $0.role == "assistant"
+                && $0.content.contains("Durable generated history.")
+                && $0.content.hasPrefix("LLM-generated historical conversation summary")
+        })
+        let secondDone = try XCTUnwrap(
+            store.events.last { $0.kind == .done && $0.requestID == "durable-cache-request-02" }
+        )
+        XCTAssertEqual(secondDone.compactionResolution?.summaryMethod, "llm_summary_v1")
+    }
+
+    func testChatSendEvolvesStrictlyExtendedCompactionSummaryAndCachesResult() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cacheURL = directory.appendingPathComponent("incremental-summary-cache.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessionID = "session-incremental-compaction-cache"
+        let modelID = "llama3.1:8b"
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Incremental compaction cache",
+                model: modelID,
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 20
+            )
+        ])
+        let allPayloads: [JSONValue] = (1...20).map { index in
+            .object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("incremental source turn \(index) " + String(repeating: "I", count: 1_600)),
+            ])
+        }
+        let model = ModelInfo(
+            id: modelID,
+            name: modelID,
+            installed: true,
+            contextWindowTokens: 8_192
+        )
+
+        let firstBackend = MockBackend(
+            models: [model],
+            chatEventBatches: [
+                [.delta("First durable historical summary."), .done(inputTokens: 1, outputTokens: 1)],
+                [.delta("First visible answer."), .done(inputTokens: 1, outputTokens: 1)],
+            ]
+        )
+        let firstRouter = makeRouter(
+            backend: firstBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let firstSink = RecordingSink()
+        firstRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "incremental-cache-request-01",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(Array(allPayloads.prefix(18))),
+            ]
+        ), sink: firstSink)
+        _ = try await firstSink.waitForMessages(count: 2)
+        let firstPointer = try XCTUnwrap(
+            store.events.first {
+                $0.kind == .request && $0.requestID == "incremental-cache-request-01"
+            }?.compactionMetadata?.sourcePointers.first
+        )
+
+        let secondRequests = LockedBox<[ChatRequest]>([])
+        let secondBackend = MockBackend(
+            models: [model],
+            chatEventBatches: [
+                [.delta("Evolved historical summary."), .done(inputTokens: 1, outputTokens: 1)],
+                [.delta("Second visible answer."), .done(inputTokens: 1, outputTokens: 1)],
+            ],
+            onChatRequest: { request in
+                secondRequests.value = secondRequests.value + [request]
+            }
+        )
+        let secondRouter = makeRouter(
+            backend: secondBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let secondSink = RecordingSink()
+        secondRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "incremental-cache-request-02",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(allPayloads),
+            ]
+        ), sink: secondSink)
+        _ = try await secondSink.waitForMessages(count: 2)
+
+        let secondPointer = try XCTUnwrap(
+            store.events.first {
+                $0.kind == .request && $0.requestID == "incremental-cache-request-02"
+            }?.compactionMetadata?.sourcePointers.first
+        )
+        XCTAssertGreaterThan(secondPointer.compactedTurnCount, firstPointer.compactedTurnCount)
+        let incrementalPrepass = try XCTUnwrap(secondRequests.value.first {
+            $0.generationID == "incremental-cache-request-02:compaction-summary"
+        })
+        let incrementalInput = try XCTUnwrap(incrementalPrepass.messages.last?.content)
+        XCTAssertTrue(incrementalInput.contains("First durable historical summary."))
+        XCTAssertTrue(incrementalInput.contains("Previous generated historical summary"))
+        XCTAssertTrue(incrementalInput.contains("Newly compacted conversation delta"))
+        XCTAssertTrue(incrementalInput.contains("incremental source turn \(firstPointer.compactedTurnCount + 1)"))
+        XCTAssertFalse(incrementalInput.contains("incremental source turn 1 "))
+        XCTAssertEqual(
+            store.events.first {
+                $0.kind == .request && $0.requestID == "incremental-cache-request-02"
+            }?.compactionMetadata?.summaryPolicy,
+            "llm_prepass_with_incremental_lineage_v2"
+        )
+
+        let thirdRequests = LockedBox<[ChatRequest]>([])
+        let thirdBackend = MockBackend(
+            models: [model],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                thirdRequests.value = thirdRequests.value + [request]
+            }
+        )
+        let thirdRouter = makeRouter(
+            backend: thirdBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let thirdSink = RecordingSink()
+        thirdRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "incremental-cache-request-03",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(allPayloads),
+            ]
+        ), sink: thirdSink)
+        _ = try await thirdSink.waitForMessages(count: 1)
+        XCTAssertEqual(thirdRequests.value.count, 1)
+        XCTAssertTrue(thirdRequests.value[0].messages.contains {
+            $0.content.contains("Evolved historical summary.")
+        })
+    }
+
+    func testChatSendDoesNotEvolveSummaryAfterCompactedPrefixEdit() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cacheURL = directory.appendingPathComponent("edited-prefix-cache.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessionID = "session-edited-prefix-cache"
+        let modelID = "llama3.1:8b"
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Edited prefix cache",
+                model: modelID,
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 20
+            )
+        ])
+        var payloads: [JSONValue] = (1...20).map { index in
+            .object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("editable source turn \(index) " + String(repeating: "Q", count: 1_600)),
+            ])
+        }
+        let model = ModelInfo(
+            id: modelID,
+            name: modelID,
+            installed: true,
+            contextWindowTokens: 8_192
+        )
+        let firstRouter = makeRouter(
+            backend: MockBackend(
+                models: [model],
+                chatEventBatches: [
+                    [.delta("Summary that must not cross an edit."), .done(inputTokens: 1, outputTokens: 1)],
+                    [.done(inputTokens: 1, outputTokens: 1)],
+                ]
+            ),
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let firstSink = RecordingSink()
+        firstRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "edited-prefix-request-01",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(Array(payloads.prefix(18))),
+            ]
+        ), sink: firstSink)
+        _ = try await firstSink.waitForMessages(count: 1)
+
+        payloads[0] = .object([
+            "role": .string("user"),
+            "content": .string("edited first source turn " + String(repeating: "Z", count: 1_600)),
+        ])
+        let requests = LockedBox<[ChatRequest]>([])
+        let secondRouter = makeRouter(
+            backend: MockBackend(
+                models: [model],
+                chatEventBatches: [
+                    [.delta("Independent summary after edit."), .done(inputTokens: 1, outputTokens: 1)],
+                    [.done(inputTokens: 1, outputTokens: 1)],
+                ],
+                onChatRequest: { request in
+                    requests.value = requests.value + [request]
+                }
+            ),
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let secondSink = RecordingSink()
+        secondRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "edited-prefix-request-02",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(payloads),
+            ]
+        ), sink: secondSink)
+        _ = try await secondSink.waitForMessages(count: 1)
+
+        let prepass = try XCTUnwrap(requests.value.first {
+            $0.generationID == "edited-prefix-request-02:compaction-summary"
+        })
+        let input = try XCTUnwrap(prepass.messages.last?.content)
+        XCTAssertTrue(input.contains("edited first source turn"))
+        XCTAssertFalse(input.contains("Summary that must not cross an edit."))
+        XCTAssertFalse(input.contains("Previous generated historical summary"))
+    }
+
+    func testFailedIncrementalPrimaryDoesNotPersistEvolvedCompactionSummary() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cacheURL = directory.appendingPathComponent("failed-incremental-summary-cache.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessionID = "session-failed-incremental-cache"
+        let modelID = "llama3.1:8b"
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Failed incremental compaction cache",
+                model: modelID,
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 20
+            )
+        ])
+        let payloads: [JSONValue] = (1...20).map { index in
+            .object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("failed incremental source turn \(index) " + String(repeating: "R", count: 1_600)),
+            ])
+        }
+        let model = ModelInfo(
+            id: modelID,
+            name: modelID,
+            installed: true,
+            contextWindowTokens: 8_192
+        )
+
+        let baselineRouter = makeRouter(
+            backend: MockBackend(
+                models: [model],
+                chatEventBatches: [
+                    [.delta("Committed baseline summary."), .done(inputTokens: 1, outputTokens: 1)],
+                    [.done(inputTokens: 1, outputTokens: 1)],
+                ]
+            ),
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let baselineSink = RecordingSink()
+        baselineRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "failed-incremental-request-01",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(Array(payloads.prefix(18))),
+            ]
+        ), sink: baselineSink)
+        _ = try await baselineSink.waitForMessages(count: 1)
+
+        let primaryStarted = expectation(description: "incremental primary started")
+        primaryStarted.expectedFulfillmentCount = 2
+        let failingBackend = MockBackend(
+            models: [model],
+            chatEventBatches: [
+                [.delta("Evolved summary that must not commit."), .done(inputTokens: 1, outputTokens: 1)],
+                [],
+            ],
+            finishChatStream: false,
+            onChatStreamReady: { primaryStarted.fulfill() }
+        )
+        let failingRouter = makeRouter(
+            backend: failingBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let failingSink = RecordingSink()
+        failingRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "failed-incremental-request-02",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(payloads),
+            ]
+        ), sink: failingSink)
+        await fulfillment(of: [primaryStarted], timeout: 1)
+        failingBackend.failChat(with: BackendError(
+            provider: .ollama,
+            code: "backend_unavailable",
+            message: "incremental primary failed",
+            retryable: true
+        ))
+        let failure = try await failingSink.waitForMessages(count: 1).first
+        XCTAssertEqual(failure?.type, MessageType.error)
+
+        let retryRequests = LockedBox<[ChatRequest]>([])
+        let retryRouter = makeRouter(
+            backend: MockBackend(
+                models: [model],
+                chatEventBatches: [
+                    [.delta("Fresh committed evolved summary."), .done(inputTokens: 1, outputTokens: 1)],
+                    [.done(inputTokens: 1, outputTokens: 1)],
+                ],
+                onChatRequest: { request in
+                    retryRequests.value = retryRequests.value + [request]
+                }
+            ),
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let retrySink = RecordingSink()
+        retryRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "failed-incremental-request-03",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(payloads),
+            ]
+        ), sink: retrySink)
+        _ = try await retrySink.waitForMessages(count: 1)
+
+        let retryPrepass = try XCTUnwrap(retryRequests.value.first {
+            $0.generationID == "failed-incremental-request-03:compaction-summary"
+        })
+        let retryInput = try XCTUnwrap(retryPrepass.messages.last?.content)
+        XCTAssertTrue(retryInput.contains("Committed baseline summary."))
+        XCTAssertTrue(retryInput.contains("Previous generated historical summary"))
+        XCTAssertFalse(retryInput.contains("Evolved summary that must not commit."))
+        XCTAssertEqual(retryRequests.value.count, 2)
+    }
+
+    func testChatSessionDeletePurgesDurableCompactionSummaries() async throws {
+        let cache = SQLiteRuntimeChatCompactionSummaryCache(
+            databaseURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                .appendingPathComponent("compaction-summary-cache.sqlite")
+        )
+        let sessionID = "session-delete-compaction-cache"
+        let key = RuntimeChatCompactionSummaryCacheKey(
+            ownerDeviceID: nil,
+            sessionID: sessionID,
+            sourceFingerprint: RuntimeChatCompactionSummarySourceFingerprinter.fingerprint(
+                source: "source to delete"
+            ),
+            lineageFingerprint: RuntimeChatCompactionSummaryLineageFingerprinter.fingerprint(
+                for: [ChatMessage(role: "user", content: "source to delete")]
+            ),
+            providerQualifiedModelID: "ollama:llama3.1:8b",
+            summaryPolicy: "llm_prepass_with_incremental_lineage_v2"
+        )
+        try cache.upsert(.init(key: key, summary: "derived summary to delete"), if: { true })
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Delete compaction cache",
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 2,
+                status: "archived",
+                archivedAt: Date(timeIntervalSince1970: 510)
+            )
+        ])
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: store,
+            chatCompactionSummaryCache: cache
+        )
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "delete-compaction-cache",
+            payload: ["session_id": .string(sessionID)]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatSessionDelete)
+        XCTAssertNil(try cache.cachedSummary(for: key))
+    }
+
+    func testFailedPrimaryDoesNotPersistGeneratedCompactionSummary() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let cacheURL = directory.appendingPathComponent("compaction-summary-cache.sqlite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessionID = "session-failed-compaction-cache"
+        let modelID = "llama3.1:8b"
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Failed compaction cache",
+                model: modelID,
+                lastActivityAt: Date(timeIntervalSince1970: 500),
+                messageCount: 18
+            )
+        ])
+        var messagePayloads: [JSONValue] = []
+        for index in 1...18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("failed compaction source \(index) " + String(repeating: "E", count: 1_600)),
+            ]))
+        }
+        let primaryStarted = expectation(description: "primary started after generated summary")
+        primaryStarted.expectedFulfillmentCount = 2
+        let failingBackend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEventBatches: [
+                [.delta("Generated but uncommitted history."), .done(inputTokens: 1, outputTokens: 1)],
+                [],
+            ],
+            finishChatStream: false,
+            onChatStreamReady: { primaryStarted.fulfill() }
+        )
+        let failingRouter = makeRouter(
+            backend: failingBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let failingSink = RecordingSink()
+        failingRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "failed-cache-request-01",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(messagePayloads),
+            ]
+        ), sink: failingSink)
+        await fulfillment(of: [primaryStarted], timeout: 1)
+        failingBackend.failChat(with: BackendError(
+            provider: .ollama,
+            code: "backend_unavailable",
+            message: "primary failed",
+            retryable: true
+        ))
+        let failure = try await failingSink.waitForMessages(count: 1).first
+        XCTAssertEqual(failure?.type, MessageType.error)
+
+        let retryRequests = LockedBox<[ChatRequest]>([])
+        let retryBackend = MockBackend(
+            models: [ModelInfo(
+                id: modelID,
+                name: modelID,
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            chatEventBatches: [
+                [.delta("Fresh generated history."), .done(inputTokens: 1, outputTokens: 1)],
+                [.done(inputTokens: 1, outputTokens: 1)],
+            ],
+            onChatRequest: { request in
+                retryRequests.value = retryRequests.value + [request]
+            }
+        )
+        let retryRouter = makeRouter(
+            backend: retryBackend,
+            chatEventStore: store,
+            chatCompactionSummaryCache: SQLiteRuntimeChatCompactionSummaryCache(databaseURL: cacheURL)
+        )
+        let retrySink = RecordingSink()
+        retryRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "failed-cache-request-02",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string(modelID),
+                "messages": .array(messagePayloads),
+            ]
+        ), sink: retrySink)
+        _ = try await retrySink.waitForMessages(count: 1)
+        XCTAssertEqual(retryRequests.value.count, 2)
+        XCTAssertTrue(retryRequests.value.contains {
+            $0.generationID == "failed-cache-request-02:compaction-summary"
+        })
     }
 
     func testChatSendOversizedGeneratedCompactionSummaryFallsBackDeterministically() async throws {
         let sink = RecordingSink()
         let requests = LockedBox<[ChatRequest]>([])
+        let store = RecordingRuntimeChatEventStore()
         var messagePayloads: [JSONValue] = []
         for index in 1...18 {
             messagePayloads.append(.object([
@@ -6325,7 +7099,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 requests.value = requests.value + [request]
             }
         )
-        let router = makeRouter(backend: backend)
+        let router = makeRouter(backend: backend, chatEventStore: store)
 
         router.handle(ProtocolEnvelope(
             type: MessageType.chatSend,
@@ -6347,6 +7121,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(finalRequest.messages.contains {
             $0.content.hasPrefix("LLM-generated historical conversation summary")
         })
+        let resolution = try XCTUnwrap(store.events.first { $0.kind == .done }?.compactionResolution)
+        XCTAssertTrue(resolution.primaryDispatched)
+        XCTAssertEqual(resolution.summaryMethod, "deterministic_preview_v1")
+        XCTAssertEqual(
+            resolution.estimatedInputTokensAfter,
+            RuntimeChatConservativeTokenEstimator().estimatedTokens(for: finalRequest)
+        )
     }
 
     func testGeneratedCompactionSummaryStaysAbsentAfterSQLiteReopenAndSearch() async throws {
@@ -6482,7 +7263,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 && $0.payload["finish_reason"] == .string("cancelled")
         })
         XCTAssertEqual(backend.cancelledGenerationIDs, [targetRequestID, prepassID])
-        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+        let cancelledEvent = try XCTUnwrap(store.events.first { $0.kind == .cancelled })
+        let cancellationResolution = try XCTUnwrap(cancelledEvent.compactionResolution)
+        XCTAssertFalse(cancellationResolution.primaryDispatched)
+        XCTAssertNil(cancellationResolution.summaryMethod)
+        XCTAssertNil(cancellationResolution.estimatedInputTokensAfter)
         XCTAssertEqual(store.events.filter { $0.kind == .assistantDelta }.count, 0)
         XCTAssertEqual(store.events.filter { $0.kind == .reasoningDelta }.count, 0)
     }
@@ -8161,7 +8946,30 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
     func testChatCancelReturnsCancelAcknowledgement() async throws {
         let sink = RecordingSink()
-        let router = makeRouter(backend: MockBackend(cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-1")))
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                finishChatStream: false,
+                cancelFinishesChatStream: true,
+                cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-1")
+            ),
+            chatEventStore: store
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-1",
+            payload: [
+                "session_id": .string("session-chat-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Cancel this active request."),
+                ])]),
+            ]
+        ), sink: sink)
+        _ = try await waitForRecordedEvents(in: store, count: 1)
+
         let envelope = ProtocolEnvelope(
             type: MessageType.chatCancel,
             requestID: "cancel-1",
@@ -8173,6 +8981,358 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let message = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(message?.type, MessageType.chatCancel)
         XCTAssertEqual(message?.payload["cancelled"], .bool(true))
+    }
+
+    func testChatCancelFromDifferentConnectionCannotCancelActiveGeneration() async throws {
+        let ownerSink = RecordingSink()
+        let otherSink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            cancelFinishesChatStream: true,
+            cancelResult: .cancelled(generationID: "owned-chat")
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "owned-chat",
+            payload: [
+                "session_id": .string("owned-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Keep this generation connection-bound."),
+                ])]),
+            ]
+        ), sink: ownerSink)
+        _ = try await waitForRecordedEvents(in: store, count: 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "foreign-cancel",
+            payload: ["target_request_id": .string("owned-chat")]
+        ), sink: otherSink)
+
+        let foreignResponse = try await otherSink.waitForMessages(count: 1).first
+        XCTAssertEqual(foreignResponse?.type, MessageType.error)
+        XCTAssertEqual(foreignResponse?.payload["code"], .string("generation_not_found"))
+        XCTAssertEqual(backend.cancelledGenerationIDs, [])
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 0)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "owner-cancel",
+            payload: ["target_request_id": .string("owned-chat")]
+        ), sink: ownerSink)
+        _ = try await ownerSink.waitForMessages(count: 2)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["owned-chat"])
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+    }
+
+    func testDuplicateActiveChatRequestIDIsRejectedWithoutReplacingOriginalContext() async throws {
+        let firstSink = RecordingSink()
+        let secondSink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let capturedRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            cancelFinishesChatStream: true,
+            cancelResult: .cancelled(generationID: "duplicate-active-chat"),
+            onChatRequest: { request in
+                capturedRequests.value = capturedRequests.value + [request]
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let firstEnvelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "duplicate-active-chat",
+            payload: [
+                "session_id": .string("first-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Original active request."),
+                ])]),
+            ]
+        )
+        router.handle(firstEnvelope, sink: firstSink)
+        _ = try await waitForRecordedEvents(in: store, count: 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "duplicate-active-chat",
+            payload: [
+                "session_id": .string("second-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Conflicting request."),
+                ])]),
+            ]
+        ), sink: secondSink)
+
+        let duplicateResponse = try await secondSink.waitForMessages(count: 1).first
+        XCTAssertEqual(duplicateResponse?.type, MessageType.error)
+        XCTAssertEqual(duplicateResponse?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(store.events.filter { $0.kind == .request }.map(\.sessionID), ["first-session"])
+        XCTAssertEqual(capturedRequests.value.map(\.sessionID), ["first-session"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-original-duplicate",
+            payload: ["target_request_id": .string("duplicate-active-chat")]
+        ), sink: firstSink)
+        _ = try await firstSink.waitForMessages(count: 2)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["duplicate-active-chat"])
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+    }
+
+    func testDerivedCompactionGenerationIDIsReservedAgainstPrimaryChatCollision() async throws {
+        let ownerSink = RecordingSink()
+        let collisionSink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let capturedRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            cancelFinishesChatStream: true,
+            cancelResult: .cancelled(generationID: "reserved-parent"),
+            onChatRequest: { request in
+                capturedRequests.value = capturedRequests.value + [request]
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "reserved-parent",
+            payload: [
+                "session_id": .string("reserved-parent-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Reserve the derived backend generation id."),
+                ])]),
+            ]
+        ), sink: ownerSink)
+        _ = try await waitForRecordedEvents(in: store, count: 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "reserved-parent:compaction-summary",
+            payload: [
+                "session_id": .string("collision-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Attempt a derived-id collision."),
+                ])]),
+            ]
+        ), sink: collisionSink)
+
+        let collisionResponse = try await collisionSink.waitForMessages(count: 1).first
+        XCTAssertEqual(collisionResponse?.type, MessageType.error)
+        XCTAssertEqual(collisionResponse?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(store.events.filter { $0.kind == .request }.map(\.sessionID), ["reserved-parent-session"])
+        XCTAssertEqual(capturedRequests.value.map(\.generationID), ["reserved-parent"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-reserved-parent",
+            payload: ["target_request_id": .string("reserved-parent")]
+        ), sink: ownerSink)
+        _ = try await ownerSink.waitForMessages(count: 2)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["reserved-parent"])
+    }
+
+    func testSecondChatCancelCannotReachBackendWhileOwnedCancellationIsInProgress() async throws {
+        let cancelStarted = DispatchSemaphore(value: 0)
+        let releaseCancel = DispatchSemaphore(value: 0)
+        let chatStarted = expectation(description: "chat generation started")
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            onChatStreamReady: { chatStarted.fulfill() },
+            cancelHandler: { generationID in
+                cancelStarted.signal()
+                _ = releaseCancel.wait(timeout: .now() + 2)
+                return .cancelled(generationID: generationID)
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "single-cancel-claim",
+            payload: [
+                "session_id": .string("single-cancel-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Allow only one backend cancellation owner."),
+                ])]),
+            ]
+        ), sink: sink)
+        await fulfillment(of: [chatStarted], timeout: 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "first-owned-cancel",
+            payload: ["target_request_id": .string("single-cancel-claim")]
+        ), sink: sink)
+        XCTAssertEqual(cancelStarted.wait(timeout: .now() + 1), .success)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "second-owned-cancel",
+            payload: ["target_request_id": .string("single-cancel-claim")]
+        ), sink: sink)
+        let inProgressMessages = try await sink.waitForMessages(count: 1)
+        XCTAssertTrue(inProgressMessages.contains {
+            $0.requestID == "second-owned-cancel"
+                && $0.type == MessageType.error
+                && $0.payload["code"] == .string("generation_cancel_in_progress")
+        })
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["single-cancel-claim"])
+
+        releaseCancel.signal()
+        let finalMessages = try await sink.waitForMessages(count: 3)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["single-cancel-claim"])
+        XCTAssertTrue(finalMessages.contains {
+            $0.requestID == "first-owned-cancel" && $0.type == MessageType.chatCancel
+        })
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+    }
+
+    func testChatCancelPersistsIntentWhenBackendGenerationHandoffReturnsNotFound() async throws {
+        let prepassStarted = expectation(description: "compaction prepass started")
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let capturedRequests = LockedBox<[ChatRequest]>([])
+        var messagePayloads: [JSONValue] = []
+        for index in 1...18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("handoff source \(index) " + String(repeating: "H", count: 1_600)),
+            ]))
+        }
+        let backend = MockBackend(
+            models: [ModelInfo(
+                id: "llama3.1:8b",
+                name: "llama3.1:8b",
+                installed: true,
+                contextWindowTokens: 8_192
+            )],
+            finishChatStream: false,
+            onChatRequest: { request in
+                capturedRequests.value = capturedRequests.value + [request]
+                if request.generationID == "handoff-cancel:compaction-summary" {
+                    prepassStarted.fulfill()
+                }
+            },
+            cancelHandler: { generationID in
+                .notFound(generationID: generationID)
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "handoff-cancel",
+            payload: [
+                "session_id": .string("handoff-cancel-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array(messagePayloads),
+            ]
+        ), sink: sink)
+        await fulfillment(of: [prepassStarted], timeout: 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-during-handoff",
+            payload: ["target_request_id": .string("handoff-cancel")]
+        ), sink: sink)
+
+        let cancellationMessages = try await sink.waitForMessages(count: 2)
+        XCTAssertTrue(cancellationMessages.contains {
+            $0.requestID == "cancel-during-handoff"
+                && $0.type == MessageType.chatCancel
+                && $0.payload["cancelled"] == .bool(true)
+        })
+        XCTAssertTrue(cancellationMessages.contains {
+            $0.requestID == "handoff-cancel"
+                && $0.type == MessageType.chatDone
+                && $0.payload["finish_reason"] == .string("cancelled")
+        })
+        XCTAssertEqual(
+            backend.cancelledGenerationIDs,
+            ["handoff-cancel", "handoff-cancel:compaction-summary"]
+        )
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+
+        backend.finishChat(with: [
+            .delta("Summary that must not reach a primary dispatch."),
+            .done(inputTokens: 1, outputTokens: 1),
+        ])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(capturedRequests.value.map(\.generationID), ["handoff-cancel:compaction-summary"])
+        XCTAssertEqual(store.events.filter { [.done, .cancelled].contains($0.kind) }.map(\.kind), [.cancelled])
+    }
+
+    func testChatCancelWaitsForAtomicPrimaryBackendRegistration() async throws {
+        let primaryDispatchEntered = DispatchSemaphore(value: 0)
+        let releasePrimaryRegistration = DispatchSemaphore(value: 0)
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            cancelFinishesChatStream: true,
+            cancelResult: .cancelled(generationID: "atomic-primary-dispatch"),
+            onChatRequest: { request in
+                guard request.generationID == "atomic-primary-dispatch" else { return }
+                primaryDispatchEntered.signal()
+                _ = releasePrimaryRegistration.wait(timeout: .now() + 2)
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "atomic-primary-dispatch",
+            payload: [
+                "session_id": .string("atomic-primary-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Cancel exactly while the primary backend stream is registering."),
+                ])]),
+            ]
+        ), sink: sink)
+        XCTAssertEqual(primaryDispatchEntered.wait(timeout: .now() + 1), .success)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-atomic-primary-dispatch",
+            payload: ["target_request_id": .string("atomic-primary-dispatch")]
+        ), sink: sink)
+        let cancellationMessages = try await sink.waitForMessages(count: 2)
+        XCTAssertTrue(cancellationMessages.contains {
+            $0.requestID == "cancel-atomic-primary-dispatch"
+                && $0.type == MessageType.chatCancel
+                && $0.payload["cancelled"] == .bool(true)
+        })
+        XCTAssertTrue(cancellationMessages.contains {
+            $0.requestID == "atomic-primary-dispatch"
+                && $0.type == MessageType.chatDone
+                && $0.payload["finish_reason"] == .string("cancelled")
+        })
+        XCTAssertEqual(backend.cancelledGenerationIDs, [])
+
+        releasePrimaryRegistration.signal()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["atomic-primary-dispatch"])
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
     }
 
     func testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch() async throws {
@@ -16735,6 +17895,7 @@ private func makeRouter(
             .appendingPathComponent("trusted-devices.json")
     ),
     chatEventStore: any RuntimeChatEventStore = NullRuntimeChatEventStore(),
+    chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching = NullRuntimeChatCompactionSummaryCache(),
     memoryStore: any RuntimeMemoryStore = NullRuntimeMemoryStore(),
     documentIndexStore: any RuntimeDocumentIndexReading = RuntimeDocumentIndexStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
@@ -16746,12 +17907,46 @@ private func makeRouter(
         requiresAuthentication: requiresAuthentication,
         trustedDeviceStore: trustedDeviceStore,
         chatEventStore: chatEventStore,
+        chatCompactionSummaryCache: chatCompactionSummaryCache,
         memoryStore: memoryStore,
         documentIndexStore: documentIndexStore,
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner,
         pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout
     )
+}
+
+private final class RecordingRuntimeChatCompactionSummaryCache:
+    RuntimeChatCompactionSummaryCaching,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedUpsertAttempts = 0
+
+    var upsertAttempts: Int {
+        lock.withLock { storedUpsertAttempts }
+    }
+
+    func cachedSummary(for key: RuntimeChatCompactionSummaryCacheKey) throws -> String? {
+        nil
+    }
+
+    func newestStrictPrefixRecord(
+        for key: RuntimeChatCompactionSummaryCacheKey,
+        currentPrefixFingerprints: [RuntimeChatCompactionSummaryLineageFingerprint]
+    ) throws -> RuntimeChatCompactionSummaryCacheRecord? {
+        nil
+    }
+
+    func upsert(
+        _ record: RuntimeChatCompactionSummaryCacheRecord,
+        if shouldCommit: @Sendable () -> Bool
+    ) throws {
+        lock.withLock {
+            storedUpsertAttempts += 1
+        }
+    }
+
+    func deleteSummaries(ownerDeviceID: String?, sessionID: String) throws {}
 }
 
 private func semanticEmbeddingModel(
@@ -18321,6 +19516,8 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let chatEvents: [ChatStreamEvent]
     private let chatEventBatchesLock = NSLock()
     private var chatEventBatches: [[ChatStreamEvent]]
+    private var chatProviderUsageSources: [ChatProviderUsageSource?]
+    private var completedProviderUsageSources: [String: ChatProviderUsageSource] = [:]
     private let chatContinuationsLock = NSLock()
     private var chatContinuations: [AsyncThrowingStream<ChatStreamEvent, Error>.Continuation] = []
     private let cancelledGenerationIDsLock = NSLock()
@@ -18351,6 +19548,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         ignoreEmbeddingCancellationAfterRelease: Bool = false,
         chatEvents: [ChatStreamEvent] = [],
         chatEventBatches: [[ChatStreamEvent]] = [],
+        chatProviderUsageSources: [ChatProviderUsageSource?] = [],
         finishChatStream: Bool = true,
         cancelFinishesChatStream: Bool = false,
         cancelResult: GenerationCancellationResult = .notFound(generationID: "missing"),
@@ -18374,6 +19572,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.ignoreEmbeddingCancellationAfterRelease = ignoreEmbeddingCancellationAfterRelease
         self.chatEvents = chatEvents
         self.chatEventBatches = chatEventBatches
+        self.chatProviderUsageSources = chatProviderUsageSources
         self.finishChatStream = finishChatStream
         self.cancelFinishesChatStream = cancelFinishesChatStream
         self.cancelResult = cancelResult
@@ -18427,6 +19626,15 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
+    func failChat(with error: Error) {
+        let continuations = chatContinuationsLock.withLock {
+            let continuations = chatContinuations
+            chatContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.finish(throwing: error) }
+    }
+
     func healthCheck() async -> BackendStatus {
         healthCheckCallCountLock.withLock {
             healthCheckCalls += 1
@@ -18458,7 +19666,14 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             onChatRequest?(request)
-            nextChatEvents().forEach { continuation.yield($0) }
+            let batch = nextChatBatch()
+            if batch.events.contains(where: { if case .done = $0 { true } else { false } }),
+               let source = batch.providerUsageSource {
+                chatEventBatchesLock.withLock {
+                    completedProviderUsageSources[request.generationID] = source
+                }
+            }
+            batch.events.forEach { continuation.yield($0) }
             if finishChatStream {
                 continuation.finish()
             } else {
@@ -18467,6 +19682,12 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
                 }
             }
             onChatStreamReady?()
+        }
+    }
+
+    func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        chatEventBatchesLock.withLock {
+            completedProviderUsageSources.removeValue(forKey: generationID)
         }
     }
 
@@ -18539,10 +19760,14 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         return cancelResult
     }
 
-    private func nextChatEvents() -> [ChatStreamEvent] {
+    private func nextChatBatch() -> (
+        events: [ChatStreamEvent],
+        providerUsageSource: ChatProviderUsageSource?
+    ) {
         chatEventBatchesLock.withLock {
-            guard !chatEventBatches.isEmpty else { return chatEvents }
-            return chatEventBatches.removeFirst()
+            let events = chatEventBatches.isEmpty ? chatEvents : chatEventBatches.removeFirst()
+            let source = chatProviderUsageSources.isEmpty ? nil : chatProviderUsageSources.removeFirst()
+            return (events, source)
         }
     }
 

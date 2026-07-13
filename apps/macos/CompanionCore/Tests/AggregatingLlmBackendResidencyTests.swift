@@ -84,6 +84,26 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         )
     }
 
+    func testProviderUsageSourceForwardsThroughAggregateAndIsConsumedOnce() async throws {
+        let source = ChatProviderUsageSource(
+            provider: .ollama,
+            providerModelID: "qwen-local",
+            wireMode: .ollamaChat
+        )
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            providerUsageSource: source
+        )
+        let backend = AggregatingLlmBackend([ollama])
+        let request = chatRequest(model: "ollama:qwen-local")
+
+        let events = try await collect(backend.chat(request: request))
+        XCTAssertEqual(events, [.done(inputTokens: 1, outputTokens: 1)])
+        XCTAssertEqual(backend.takeProviderUsageSource(generationID: request.generationID), source)
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
+    }
+
     func testManualUnloadClearsActiveResidentModelAndEmitsManualEvent() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -190,6 +210,83 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "qwen-local")
         chatTask.cancel()
         _ = await chatTask.result
+    }
+
+    func testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsModelListingOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let request = ChatRequest(
+            generationID: "cancel-before-route-resolution",
+            sessionID: "cancel-before-route-session",
+            model: "ollama:qwen-local",
+            messages: [ChatMessage(role: "user", content: "Cancel before provider routing completes.")]
+        )
+        let chatTask = Task {
+            try await collect(backend.chat(request: request))
+        }
+        XCTAssertTrue(ollama.waitForModelListStart())
+
+        XCTAssertEqual(
+            backend.cancel(generationID: request.generationID),
+            .cancelled(generationID: request.generationID)
+        )
+        ollama.releaseModelList()
+        _ = await chatTask.result
+
+        XCTAssertTrue(ollama.routedModels.isEmpty)
+        XCTAssertEqual(ollama.cancelCallCount, 0)
+        await eventually {
+            backend.modelResidencySnapshot().inFlightGenerations == 0
+        }
+    }
+
+    func testRejectedDuplicateGenerationCannotRemoveOriginalReservation() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsChatsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let request = ChatRequest(
+            generationID: "duplicate-reservation",
+            sessionID: "duplicate-reservation-session",
+            model: "ollama:qwen-local",
+            messages: [ChatMessage(role: "user", content: "Keep the original reservation active.")]
+        )
+        let originalTask = Task {
+            try await collect(backend.chat(request: request))
+        }
+        await eventually {
+            ollama.routedModels == ["qwen-local"]
+        }
+
+        for _ in 0..<2 {
+            do {
+                _ = try await collect(backend.chat(request: request))
+                XCTFail("Expected duplicate generation rejection.")
+            } catch let error as BackendError {
+                XCTAssertEqual(error.code, "generation_already_active")
+            }
+        }
+        XCTAssertEqual(ollama.routedModels, ["qwen-local"])
+        XCTAssertEqual(
+            backend.cancel(generationID: request.generationID),
+            .cancelled(generationID: request.generationID)
+        )
+        XCTAssertEqual(ollama.cancelCallCount, 1)
+
+        originalTask.cancel()
+        _ = await originalTask.result
     }
 
     func testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat() async throws {
@@ -558,10 +655,16 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let models: [ModelInfo]
     private let unloadErrors: [String: Error]
     private let holdsChatsOpen: Bool
+    private let holdsModelListingOpen: Bool
+    private let providerUsageSource: ChatProviderUsageSource?
+    private let modelListStarted = DispatchSemaphore(value: 0)
+    private var modelListReleased = false
+    private var modelListReleaseContinuations: [CheckedContinuation<Void, Never>] = []
     private var unloaded: [String] = []
     private var routed: [String] = []
     private var embedded: [EmbeddingRequest] = []
     private var cancellationCalls = 0
+    private var completedProviderUsageSources: [String: ChatProviderUsageSource] = [:]
 
     var unloadedModels: [String] {
         lock.withLock { unloaded }
@@ -583,12 +686,16 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         provider: ModelProvider,
         models: [ModelInfo] = [],
         unloadErrors: [String: Error] = [:],
-        holdsChatsOpen: Bool = false
+        holdsChatsOpen: Bool = false,
+        holdsModelListingOpen: Bool = false,
+        providerUsageSource: ChatProviderUsageSource? = nil
     ) {
         self.provider = provider
         self.models = models
         self.unloadErrors = unloadErrors
         self.holdsChatsOpen = holdsChatsOpen
+        self.holdsModelListingOpen = holdsModelListingOpen
+        self.providerUsageSource = providerUsageSource
     }
 
     func healthCheck() async -> BackendStatus {
@@ -596,7 +703,34 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     }
 
     func listModels() async throws -> [ModelInfo] {
-        models
+        if holdsModelListingOpen {
+            modelListStarted.signal()
+            await withCheckedContinuation { continuation in
+                lock.withLock {
+                    if modelListReleased {
+                        continuation.resume()
+                    } else {
+                        modelListReleaseContinuations.append(continuation)
+                    }
+                }
+            }
+            try Task.checkCancellation()
+        }
+        return models
+    }
+
+    func waitForModelListStart(timeout: TimeInterval = 1) -> Bool {
+        modelListStarted.wait(timeout: .now() + timeout) == .success
+    }
+
+    func releaseModelList() {
+        let continuations = lock.withLock {
+            modelListReleased = true
+            let continuations = modelListReleaseContinuations
+            modelListReleaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
     }
 
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
@@ -607,8 +741,19 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
             guard !holdsChatsOpen else {
                 return
             }
+            if let providerUsageSource {
+                lock.withLock {
+                    completedProviderUsageSources[request.generationID] = providerUsageSource
+                }
+            }
             continuation.yield(.done(inputTokens: 1, outputTokens: 1))
             continuation.finish()
+        }
+    }
+
+    func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        lock.withLock {
+            completedProviderUsageSources.removeValue(forKey: generationID)
         }
     }
 

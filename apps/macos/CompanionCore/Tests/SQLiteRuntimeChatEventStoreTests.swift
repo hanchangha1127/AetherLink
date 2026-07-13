@@ -953,6 +953,692 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         XCTAssertNil(storedMetadataObject["summary_text"])
     }
 
+    func testSQLiteStorePreservesAndRevalidatesAdaptiveV3SourceFingerprint() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let messages = [
+            ChatMessage(role: "user", content: "Bound source question."),
+            ChatMessage(
+                role: "assistant",
+                content: "Bound source answer.",
+                attachments: [ChatAttachment(
+                    type: "document",
+                    mimeType: "text/markdown",
+                    name: "source.md",
+                    text: "Stored attachment text."
+                )]
+            ),
+            ChatMessage(role: "user", content: "Retained question."),
+            ChatMessage(role: "assistant", content: "Retained answer."),
+        ]
+        var pointer = RuntimeChatCompactionSourcePointer(
+            sessionID: "sqlite-v3-compaction-session",
+            requestID: "sqlite-v3-compaction-request",
+            startTurn: 1,
+            endTurn: 2,
+            totalTurns: 4,
+            compactedTurnCount: 2,
+            retainedStartTurn: 3,
+            retainedEndTurn: 4,
+            retainedTurnCount: 2
+        )
+        let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(messages.prefix(2))
+        )
+        pointer.sourceFingerprintAlgorithm = fingerprint.algorithm
+        pointer.sourceFingerprint = fingerprint.digest
+        pointer.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+        let metadata = RuntimeChatCompactionMetadata(
+            strategy: "adaptive_backend_only_summary_v3",
+            sourcePointers: [pointer],
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            contextWindowTokens: 8_192,
+            outputReserveTokens: 1_024,
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensBefore: 8_500,
+            estimatedInputTokensAfter: 6_900,
+            estimateKind: "planned_upper_bound",
+            summaryPolicy: "llm_prepass_with_deterministic_fallback_v1"
+        )
+
+        try store.append(RuntimeChatStoredEvent(
+            kind: .request,
+            requestID: pointer.requestID,
+            sessionID: pointer.sessionID,
+            model: "ollama:llama3.1:8b",
+            messages: messages,
+            compactionMetadata: metadata
+        ))
+        let resolution = RuntimeChatCompactionResolution(
+            primaryDispatched: true,
+            summaryMethod: "llm_summary_v1",
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensAfter: 6_500
+        )
+        try store.append(RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: pointer.requestID,
+            sessionID: pointer.sessionID,
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            compactionResolution: resolution
+        ))
+
+        let reopened = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        XCTAssertEqual(
+            try rawSQLiteEvents(at: databaseURL).first?.compactionMetadata,
+            metadata
+        )
+        XCTAssertEqual(
+            try rawSQLiteEvents(at: databaseURL).first { $0.kind == .done }?.compactionResolution,
+            resolution
+        )
+        XCTAssertEqual(
+            try reopened.listMessages(sessionID: pointer.sessionID, limit: 10).map(\.content),
+            messages.map(\.content)
+        )
+        XCTAssertTrue(
+            try reopened.listSessions(
+                ownerDeviceID: nil,
+                limit: 10,
+                includeArchived: true,
+                query: fingerprint.digest
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            try reopened.listSessions(
+                ownerDeviceID: nil,
+                limit: 10,
+                includeArchived: true,
+                query: "llm_summary_v1"
+            ).isEmpty
+        )
+    }
+
+    func testJSONLStoreRevalidatesAdaptiveV3SourceFingerprintAfterReopen() throws {
+        let fileURL = try temporaryJSONLURL()
+        let messages = [
+            ChatMessage(role: "user", content: "JSONL bound source."),
+            ChatMessage(role: "assistant", content: "JSONL bound answer."),
+            ChatMessage(role: "user", content: "JSONL retained question."),
+        ]
+        var pointer = RuntimeChatCompactionSourcePointer(
+            sessionID: "jsonl-v3-session",
+            requestID: "jsonl-v3-request",
+            startTurn: 1,
+            endTurn: 2,
+            totalTurns: 3,
+            compactedTurnCount: 2,
+            retainedStartTurn: 3,
+            retainedEndTurn: 3,
+            retainedTurnCount: 1
+        )
+        let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(messages.prefix(2))
+        )
+        pointer.sourceFingerprintAlgorithm = fingerprint.algorithm
+        pointer.sourceFingerprint = fingerprint.digest
+        pointer.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+        let metadata = RuntimeChatCompactionMetadata(
+            strategy: "adaptive_backend_only_summary_v3",
+            sourcePointers: [pointer],
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            contextWindowTokens: 8_192,
+            outputReserveTokens: 1_024,
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensBefore: 8_500,
+            estimatedInputTokensAfter: 6_900,
+            estimateKind: "planned_upper_bound",
+            summaryPolicy: "llm_prepass_with_deterministic_fallback_v1"
+        )
+        let event = RuntimeChatStoredEvent(
+            kind: .request,
+            requestID: pointer.requestID,
+            sessionID: pointer.sessionID,
+            model: "ollama:llama3.1:8b",
+            messages: messages,
+            compactionMetadata: metadata
+        )
+        try JSONLRuntimeChatEventStore(fileURL: fileURL).append(event)
+        let resolution = RuntimeChatCompactionResolution(
+            primaryDispatched: true,
+            summaryMethod: "deterministic_preview_v1",
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensAfter: 6_600
+        )
+        try JSONLRuntimeChatEventStore(fileURL: fileURL).append(RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: pointer.requestID,
+            sessionID: pointer.sessionID,
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            compactionResolution: resolution
+        ))
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore(fileURL: fileURL)
+                .listMessages(sessionID: pointer.sessionID, limit: 10)
+                .map(\.content),
+            messages.map(\.content)
+        )
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore.events(from: fileURL)
+                .first { $0.kind == .done }?.compactionResolution,
+            resolution
+        )
+
+        let tamperedURL = try temporaryJSONLURL()
+        var tamperedEvent = event
+        tamperedEvent.messages?[0].content = "Tampered JSONL source."
+        try writeRawLegacyEvents([tamperedEvent], to: tamperedURL)
+        XCTAssertThrowsError(
+            try JSONLRuntimeChatEventStore(fileURL: tamperedURL)
+                .listMessages(sessionID: pointer.sessionID, limit: 10)
+        ) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatEventStoreError,
+                .corruptEventLog(
+                    line: 1,
+                    reason: "chat compaction source fingerprint does not match the request event"
+                )
+            )
+        }
+    }
+
+    func testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint() throws {
+        let messages = [
+            ChatMessage(role: "user", content: "Original source question."),
+            ChatMessage(role: "assistant", content: "Original source answer."),
+            ChatMessage(role: "user", content: "Retained question."),
+        ]
+        func validPointer() -> RuntimeChatCompactionSourcePointer {
+            var pointer = RuntimeChatCompactionSourcePointer(
+                sessionID: "sqlite-invalid-v3-session",
+                requestID: "sqlite-invalid-v3-request",
+                startTurn: 1,
+                endTurn: 2,
+                totalTurns: 3,
+                compactedTurnCount: 2,
+                retainedStartTurn: 3,
+                retainedEndTurn: 3,
+                retainedTurnCount: 1
+            )
+            let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+                pointer: pointer,
+                messages: Array(messages.prefix(2))
+            )
+            pointer.sourceFingerprintAlgorithm = fingerprint.algorithm
+            pointer.sourceFingerprint = fingerprint.digest
+            pointer.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+            return pointer
+        }
+        func event(
+            pointer: RuntimeChatCompactionSourcePointer,
+            messages eventMessages: [ChatMessage] = messages,
+            strategy: String = "adaptive_backend_only_summary_v3",
+            summaryPolicy: String? = nil
+        ) -> RuntimeChatStoredEvent {
+            RuntimeChatStoredEvent(
+                kind: .request,
+                requestID: "sqlite-invalid-v3-request",
+                sessionID: "sqlite-invalid-v3-session",
+                model: "ollama:llama3.1:8b",
+                messages: eventMessages,
+                compactionMetadata: RuntimeChatCompactionMetadata(
+                    strategy: strategy,
+                    sourcePointers: [pointer],
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    contextWindowTokens: 8_192,
+                    outputReserveTokens: 1_024,
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensBefore: 8_500,
+                    estimatedInputTokensAfter: 6_900,
+                    estimateKind: strategy == "adaptive_backend_only_summary_v3"
+                        ? "planned_upper_bound"
+                        : nil,
+                    summaryPolicy: strategy == "adaptive_backend_only_summary_v3"
+                        ? (summaryPolicy ?? "llm_prepass_with_deterministic_fallback_v1")
+                        : nil
+                )
+            )
+        }
+
+        for policy in [
+            "llm_prepass_with_deterministic_fallback_v1",
+            "llm_prepass_with_incremental_lineage_v2",
+        ] {
+            let databaseURL = try temporaryDatabaseURL()
+            let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+            let validEvent = event(pointer: validPointer(), summaryPolicy: policy)
+            XCTAssertNoThrow(try store.append(validEvent))
+            XCTAssertEqual(
+                try rawSQLiteEvents(at: databaseURL).first?.compactionMetadata?.summaryPolicy,
+                policy
+            )
+        }
+
+        var partial = validPointer()
+        partial.sourceCanonicalByteCount = nil
+        var unknownAlgorithm = validPointer()
+        unknownAlgorithm.sourceFingerprintAlgorithm = "sha256"
+        var uppercaseDigest = validPointer()
+        uppercaseDigest.sourceFingerprint = uppercaseDigest.sourceFingerprint?.uppercased()
+        var wrongByteCount = validPointer()
+        wrongByteCount.sourceCanonicalByteCount = (wrongByteCount.sourceCanonicalByteCount ?? 0) + 1
+        var wrongDigest = validPointer()
+        wrongDigest.sourceFingerprint = String(repeating: "0", count: 64)
+        var wrongTotal = validPointer()
+        wrongTotal.totalTurns = 4
+        wrongTotal.retainedEndTurn = 4
+        wrongTotal.retainedTurnCount = 2
+        let extremePointer = RuntimeChatCompactionSourcePointer(
+            sessionID: "sqlite-invalid-v3-session",
+            requestID: "sqlite-invalid-v3-request",
+            startTurn: 1,
+            endTurn: Int.max,
+            totalTurns: Int.max,
+            compactedTurnCount: Int.max,
+            retainedTurnCount: 0
+        )
+        let tamperedMessages = [
+            ChatMessage(role: "user", content: "Tampered source question."),
+            messages[1],
+            messages[2],
+        ]
+
+        let invalid: [(RuntimeChatStoredEvent, String)] = [
+            (event(pointer: partial), "chat compaction source fingerprint fields must be all present or all absent"),
+            (event(pointer: unknownAlgorithm), "chat compaction source fingerprint is invalid"),
+            (event(pointer: uppercaseDigest), "chat compaction source fingerprint is invalid"),
+            (event(pointer: wrongByteCount), "chat compaction source fingerprint does not match the request event"),
+            (event(pointer: wrongDigest), "chat compaction source fingerprint does not match the request event"),
+            (event(
+                pointer: wrongDigest,
+                strategy: "adaptive_backend_only_summary_v2"
+            ), "chat compaction source fingerprint does not match the request event"),
+            (event(pointer: wrongTotal), "chat compaction source turns do not match the request event"),
+            (event(pointer: extremePointer), "adaptive chat compaction source pointer is inconsistent with request event"),
+            (event(pointer: validPointer(), messages: tamperedMessages), "chat compaction source fingerprint does not match the request event"),
+            (event(
+                pointer: validPointer(),
+                summaryPolicy: "llm_prepass_with_unregistered_policy_v99"
+            ), "adaptive v3 chat compaction estimate policy is invalid"),
+        ]
+        for (invalidEvent, reason) in invalid {
+            let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+            XCTAssertThrowsError(try store.append(invalidEvent), reason) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+    }
+
+    func testStoresRejectInvalidCompactionResolutionShapes() throws {
+        func event(
+            kind: RuntimeChatStoredEventKind,
+            resolution: RuntimeChatCompactionResolution
+        ) -> RuntimeChatStoredEvent {
+            RuntimeChatStoredEvent(
+                kind: kind,
+                requestID: "invalid-resolution-request",
+                sessionID: "invalid-resolution-session",
+                model: "ollama:llama3.1:8b",
+                messages: kind == .request
+                    ? [ChatMessage(role: "user", content: "Visible request.")]
+                    : nil,
+                finishReason: kind == .done ? "stop" : (kind == .cancelled ? "cancelled" : nil),
+                compactionResolution: resolution
+            )
+        }
+        let validDispatched = RuntimeChatCompactionResolution(
+            primaryDispatched: true,
+            summaryMethod: "llm_summary_v1",
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            inputBudgetTokens: 7_168,
+            estimatedInputTokensAfter: 6_500
+        )
+        let invalid: [(RuntimeChatStoredEvent, String)] = [
+            (
+                event(kind: .request, resolution: validDispatched),
+                "chat compaction resolution is only valid on terminal events"
+            ),
+            (
+                event(kind: .done, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: true,
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensAfter: 6_500
+                )),
+                "dispatched chat compaction resolution is invalid"
+            ),
+            (
+                event(kind: .done, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: true,
+                    summaryMethod: "llm_summary_v1",
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensAfter: 7_169
+                )),
+                "dispatched chat compaction resolution is invalid"
+            ),
+            (
+                event(kind: .cancelled, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: false,
+                    summaryMethod: "deterministic_preview_v1",
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168
+                )),
+                "undispatched chat compaction resolution is invalid"
+            ),
+            (
+                event(kind: .done, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: false,
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168
+                )),
+                "undispatched chat compaction resolution is invalid"
+            ),
+            (
+                event(kind: .cancelled, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: false,
+                    estimatorIdentifier: "  ",
+                    inputBudgetTokens: 7_168
+                )),
+                "chat compaction resolution estimator identifier is empty"
+            ),
+            (
+                event(kind: .cancelled, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: false,
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 0
+                )),
+                "chat compaction resolution input budget is invalid"
+            ),
+            (
+                event(kind: .done, resolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: true,
+                    summaryMethod: "llm_summary_v1",
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensAfter: 6_500,
+                    resolvedProviderQualifiedModelID: "ollama:llama3.1:8b:latest"
+                )),
+                "chat compaction resolved provider model binding is invalid"
+            ),
+        ]
+        for (invalidEvent, reason) in invalid {
+            let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+            XCTAssertThrowsError(try store.append(invalidEvent), reason) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+    }
+
+    func testStoresRoundTripProviderUsageCalibration() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        var resolution = fixture.resolution
+        resolution.resolvedProviderQualifiedModelID = "ollama:llama3.1:8b"
+        resolution.providerUsageCalibration = RuntimeChatProviderUsageCalibration(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            inputTokens: 6_000,
+            relation: .withinConservativeEstimate
+        )
+        let terminal = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: fixture.request.requestID,
+            sessionID: fixture.request.sessionID,
+            model: fixture.request.model,
+            finishReason: "stop",
+            usage: RuntimeChatStoredUsage(inputTokens: 6_000, outputTokens: 320),
+            ownerDeviceID: fixture.request.ownerDeviceID,
+            compactionResolution: resolution
+        )
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()),
+            SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+        ]
+
+        for store in stores {
+            try store.append(fixture.request)
+            try store.append(terminal)
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(
+            RuntimeChatStoredEvent.self,
+            from: encoder.encode(terminal)
+        )
+        XCTAssertEqual(
+            decoded.compactionResolution?.providerUsageCalibration,
+            resolution.providerUsageCalibration
+        )
+    }
+
+    func testStoresRejectInvalidProviderUsageCalibrationShapes() throws {
+        func event(
+            kind: RuntimeChatStoredEventKind = .done,
+            usageInputTokens: Int? = 6_000,
+            calibration: RuntimeChatProviderUsageCalibration
+        ) -> RuntimeChatStoredEvent {
+            RuntimeChatStoredEvent(
+                kind: kind,
+                requestID: "invalid-calibration-request",
+                sessionID: "invalid-calibration-session",
+                model: "ollama:llama3.1:8b",
+                finishReason: kind == .done ? "stop" : "cancelled",
+                usage: RuntimeChatStoredUsage(inputTokens: usageInputTokens, outputTokens: 100),
+                compactionResolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: true,
+                    summaryMethod: "llm_summary_v1",
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensAfter: 6_500,
+                    resolvedProviderQualifiedModelID: "ollama:llama3.1:8b",
+                    providerUsageCalibration: calibration
+                )
+            )
+        }
+        let valid = RuntimeChatProviderUsageCalibration(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            inputTokens: 6_000,
+            relation: .withinConservativeEstimate
+        )
+        let invalid: [(RuntimeChatStoredEvent, String)] = [
+            (
+                event(kind: .cancelled, calibration: valid),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(usageInputTokens: 5_999, calibration: valid),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(calibration: RuntimeChatProviderUsageCalibration(
+                    provider: "ollama",
+                    providerModelID: "llama3.1:8b",
+                    wireMode: "lmstudio_native",
+                    inputTokens: 6_000,
+                    relation: .withinConservativeEstimate
+                )),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(calibration: RuntimeChatProviderUsageCalibration(
+                    provider: "lm_studio",
+                    providerModelID: "llama3.1:8b",
+                    wireMode: "lmstudio_native",
+                    inputTokens: 6_000,
+                    relation: .withinConservativeEstimate
+                )),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(calibration: RuntimeChatProviderUsageCalibration(
+                    provider: "ollama",
+                    providerModelID: "llama3.1:8b:latest",
+                    wireMode: "ollama_chat",
+                    inputTokens: 6_000,
+                    relation: .withinConservativeEstimate
+                )),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(calibration: RuntimeChatProviderUsageCalibration(
+                    countSource: "provider_usage_calibration_v0",
+                    provider: "ollama",
+                    providerModelID: "llama3.1:8b",
+                    wireMode: "ollama_chat",
+                    inputTokens: 6_000,
+                    relation: .withinConservativeEstimate
+                )),
+                "chat provider usage calibration is invalid"
+            ),
+            (
+                event(usageInputTokens: 6_600, calibration: RuntimeChatProviderUsageCalibration(
+                    provider: "ollama",
+                    providerModelID: "llama3.1:8b",
+                    wireMode: "ollama_chat",
+                    inputTokens: 6_600,
+                    relation: .withinConservativeEstimate
+                )),
+                "chat provider usage calibration relation does not match request accounting"
+            ),
+        ]
+
+        for (invalidEvent, reason) in invalid {
+            let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+            XCTAssertThrowsError(try store.append(invalidEvent), reason) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+    }
+
+    func testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        let terminal = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: fixture.request.requestID,
+            sessionID: fixture.request.sessionID,
+            model: fixture.request.model,
+            finishReason: "stop",
+            ownerDeviceID: fixture.request.ownerDeviceID,
+            compactionResolution: fixture.resolution
+        )
+        func stores() throws -> [any RuntimeChatEventStore] {
+            [
+                JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()),
+                SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+            ]
+        }
+        func assertRejected(
+            by store: any RuntimeChatEventStore,
+            event: RuntimeChatStoredEvent,
+            reason: String
+        ) {
+            XCTAssertThrowsError(try store.append(event), reason) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+
+        for store in try stores() {
+            assertRejected(
+                by: store,
+                event: terminal,
+                reason: "chat compaction resolution is not bound to an adaptive v3 request"
+            )
+        }
+
+        var nonCompactedRequest = fixture.request
+        nonCompactedRequest.compactionMetadata = nil
+        for store in try stores() {
+            try store.append(nonCompactedRequest)
+            assertRejected(
+                by: store,
+                event: terminal,
+                reason: "chat compaction resolution is not bound to an adaptive v3 request"
+            )
+        }
+
+        var wrongEstimator = terminal
+        wrongEstimator.compactionResolution?.estimatorIdentifier = "different-estimator-v1"
+        var wrongBudget = terminal
+        wrongBudget.compactionResolution?.inputBudgetTokens -= 1
+        for mismatchedTerminal in [wrongEstimator, wrongBudget] {
+            for store in try stores() {
+                try store.append(fixture.request)
+                assertRejected(
+                    by: store,
+                    event: mismatchedTerminal,
+                    reason: "chat compaction resolution does not match request accounting"
+                )
+            }
+        }
+    }
+
+    func testStoresRejectMismatchedCompactionResolutionAfterReopen() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        var mismatchedTerminal = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: fixture.request.requestID,
+            sessionID: fixture.request.sessionID,
+            model: fixture.request.model,
+            finishReason: "stop",
+            ownerDeviceID: fixture.request.ownerDeviceID,
+            compactionResolution: fixture.resolution
+        )
+        mismatchedTerminal.compactionResolution?.inputBudgetTokens -= 1
+        let reason = "chat compaction resolution does not match request accounting"
+
+        let jsonlURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents([fixture.request, mismatchedTerminal], to: jsonlURL)
+        XCTAssertThrowsError(try JSONLRuntimeChatEventStore.events(from: jsonlURL)) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatEventStoreError,
+                .corruptEventLog(line: 2, reason: reason)
+            )
+        }
+
+        let sqliteURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        try sqliteStore.append(fixture.request)
+        var validTerminal = mismatchedTerminal
+        validTerminal.compactionResolution = fixture.resolution
+        try sqliteStore.append(validTerminal)
+        try replaceRawSQLiteEventJSON(mismatchedTerminal, at: sqliteURL)
+        XCTAssertThrowsError(
+            try SQLiteRuntimeChatEventStore(databaseURL: sqliteURL).listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? RuntimeChatEventStoreError,
+                .corruptEventLog(line: 2, reason: reason)
+            )
+        }
+    }
+
     func testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting() throws {
         let databaseURL = try temporaryDatabaseURL()
         let legacyURL = try temporaryJSONLURL()
@@ -1137,7 +1823,9 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             outputReserveTokens: Int? = 1_024,
             inputBudgetTokens: Int? = 7_168,
             estimatedInputTokensBefore: Int? = 8_500,
-            estimatedInputTokensAfter: Int? = 6_900
+            estimatedInputTokensAfter: Int? = 6_900,
+            estimateKind: String? = nil,
+            summaryPolicy: String? = nil
         ) -> RuntimeChatCompactionMetadata {
             RuntimeChatCompactionMetadata(
                 strategy: strategy,
@@ -1147,7 +1835,9 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
                 outputReserveTokens: outputReserveTokens,
                 inputBudgetTokens: inputBudgetTokens,
                 estimatedInputTokensBefore: estimatedInputTokensBefore,
-                estimatedInputTokensAfter: estimatedInputTokensAfter
+                estimatedInputTokensAfter: estimatedInputTokensAfter,
+                estimateKind: estimateKind,
+                summaryPolicy: summaryPolicy
             )
         }
 
@@ -1196,6 +1886,24 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
                     )
                 ),
                 "adaptive chat compaction accounting is missing"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-partial-policy",
+                    metadata: accountingMetadata(estimateKind: "planned_upper_bound")
+                ),
+                "chat compaction estimate policy fields must be all present or all absent"
+            ),
+            (
+                invalidCompactionRequest(
+                    requestID: "sqlite-invalid-compaction-v3-policy",
+                    metadata: accountingMetadata(
+                        strategy: "adaptive_backend_only_summary_v3",
+                        estimateKind: "exact_effective_estimate",
+                        summaryPolicy: "llm_prepass_with_deterministic_fallback_v1"
+                    )
+                ),
+                "adaptive v3 chat compaction estimate policy is invalid"
             ),
             (
                 invalidCompactionRequest(
@@ -2390,6 +3098,68 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    private func adaptiveV3CompactionFixture() -> (
+        request: RuntimeChatStoredEvent,
+        resolution: RuntimeChatCompactionResolution
+    ) {
+        let requestID = "bound-resolution-request"
+        let sessionID = "bound-resolution-session"
+        let messages = [
+            ChatMessage(role: "user", content: "Original compacted question."),
+            ChatMessage(role: "assistant", content: "Original compacted answer."),
+            ChatMessage(role: "user", content: "Retained question."),
+        ]
+        var pointer = RuntimeChatCompactionSourcePointer(
+            sessionID: sessionID,
+            requestID: requestID,
+            startTurn: 1,
+            endTurn: 2,
+            totalTurns: 3,
+            compactedTurnCount: 2,
+            retainedStartTurn: 3,
+            retainedEndTurn: 3,
+            retainedTurnCount: 1
+        )
+        let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(messages.prefix(2))
+        )
+        pointer.sourceFingerprintAlgorithm = fingerprint.algorithm
+        pointer.sourceFingerprint = fingerprint.digest
+        pointer.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+        let estimatorIdentifier = "conservative_utf8_bytes_vision_framing_v2"
+        let inputBudgetTokens = 7_168
+        return (
+            request: RuntimeChatStoredEvent(
+                kind: .request,
+                requestID: requestID,
+                sessionID: sessionID,
+                model: "ollama:llama3.1:8b",
+                messages: messages,
+                ownerDeviceID: "device-a",
+                compactionMetadata: RuntimeChatCompactionMetadata(
+                    strategy: "adaptive_backend_only_summary_v3",
+                    sourcePointers: [pointer],
+                    estimatorIdentifier: estimatorIdentifier,
+                    contextWindowTokens: 8_192,
+                    outputReserveTokens: 1_024,
+                    inputBudgetTokens: inputBudgetTokens,
+                    estimatedInputTokensBefore: 8_500,
+                    estimatedInputTokensAfter: 6_900,
+                    estimateKind: "planned_upper_bound",
+                    summaryPolicy: "llm_prepass_with_deterministic_fallback_v1"
+                )
+            ),
+            resolution: RuntimeChatCompactionResolution(
+                primaryDispatched: true,
+                summaryMethod: "llm_summary_v1",
+                estimatorIdentifier: estimatorIdentifier,
+                inputBudgetTokens: inputBudgetTokens,
+                estimatedInputTokensAfter: 6_500
+            )
+        )
+    }
+
     private func temporaryDatabaseURL() throws -> URL {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -2453,6 +3223,49 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         return events
     }
 
+    private func replaceRawSQLiteEventJSON(
+        _ event: RuntimeChatStoredEvent,
+        at databaseURL: URL
+    ) throws {
+        let data = try legacyJSONLEncoder.encode(event)
+        let eventJSON = try XCTUnwrap(String(data: data, encoding: .utf8))
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 20)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "UPDATE runtime_chat_events SET event_json = ? WHERE event_id = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK,
+              let statement else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 21)
+        }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_text(
+            statement,
+            1,
+            eventJSON,
+            -1,
+            sqliteRuntimeChatTestTransient
+        ) == SQLITE_OK,
+              sqlite3_bind_text(
+                statement,
+                2,
+                event.id,
+                -1,
+                sqliteRuntimeChatTestTransient
+              ) == SQLITE_OK,
+              sqlite3_step(statement) == SQLITE_DONE else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 22)
+        }
+    }
+
     private func writeRawLegacyEvents(_ events: [RuntimeChatStoredEvent], to fileURL: URL) throws {
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
@@ -2485,3 +3298,5 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         return encoder
     }
 }
+
+private let sqliteRuntimeChatTestTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

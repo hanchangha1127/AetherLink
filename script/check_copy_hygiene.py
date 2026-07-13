@@ -32631,12 +32631,20 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     planner_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatContextCompactionPlanner.swift"
+    fingerprint_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatCompactionSourceFingerprint.swift"
+    summary_cache_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatCompactionSummaryCache.swift"
+    aggregate_backend_path = ROOT / "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift"
     tests_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    aggregate_backend_tests_path = ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift"
     planner_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeChatContextCompactionPlannerTests.swift"
+    fingerprint_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeChatCompactionSourceFingerprintTests.swift"
+    summary_cache_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatCompactionSummaryCacheTests.swift"
     sqlite_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
     llm_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
     ollama_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
     lmstudio_backend_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
+    ollama_backend_tests_path = ROOT / "apps/macos/OllamaBackend/Tests/OllamaBackendTests.swift"
+    lmstudio_backend_tests_path = ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift"
     android_protocol_path = ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
     android_protocol_test_path = ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
     android_compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
@@ -32652,12 +32660,20 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         store_path,
         router_path,
         planner_path,
+        fingerprint_path,
+        summary_cache_path,
+        aggregate_backend_path,
         tests_path,
+        aggregate_backend_tests_path,
         planner_tests_path,
+        fingerprint_tests_path,
+        summary_cache_tests_path,
         sqlite_tests_path,
         llm_backend_path,
         ollama_backend_path,
         lmstudio_backend_path,
+        ollama_backend_tests_path,
+        lmstudio_backend_tests_path,
         android_protocol_path,
         android_protocol_test_path,
         android_compose_test_path,
@@ -32675,12 +32691,20 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     store_text = store_path.read_text(encoding="utf-8", errors="replace")
     router_text = router_path.read_text(encoding="utf-8", errors="replace")
     planner_text = planner_path.read_text(encoding="utf-8", errors="replace")
+    fingerprint_text = fingerprint_path.read_text(encoding="utf-8", errors="replace")
+    summary_cache_text = summary_cache_path.read_text(encoding="utf-8", errors="replace")
+    aggregate_backend_text = aggregate_backend_path.read_text(encoding="utf-8", errors="replace")
     tests_text = tests_path.read_text(encoding="utf-8", errors="replace")
+    aggregate_backend_tests_text = aggregate_backend_tests_path.read_text(encoding="utf-8", errors="replace")
     planner_tests_text = planner_tests_path.read_text(encoding="utf-8", errors="replace")
+    fingerprint_tests_text = fingerprint_tests_path.read_text(encoding="utf-8", errors="replace")
+    summary_cache_tests_text = summary_cache_tests_path.read_text(encoding="utf-8", errors="replace")
     sqlite_tests_text = sqlite_tests_path.read_text(encoding="utf-8", errors="replace")
     llm_backend_text = llm_backend_path.read_text(encoding="utf-8", errors="replace")
     ollama_backend_text = ollama_backend_path.read_text(encoding="utf-8", errors="replace")
     lmstudio_backend_text = lmstudio_backend_path.read_text(encoding="utf-8", errors="replace")
+    ollama_backend_tests_text = ollama_backend_tests_path.read_text(encoding="utf-8", errors="replace")
+    lmstudio_backend_tests_text = lmstudio_backend_tests_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
     android_compose_test_text = android_compose_test_path.read_text(encoding="utf-8", errors="replace")
@@ -32736,6 +32760,74 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             '"context_window_tokens"',
             "models.list must expose optional context-window metadata without backend host details.",
         ),
+        (
+            "generatedChatCompactionSummary(",
+            "Adaptive compaction must retain the bounded backend-only LLM summary prepass.",
+        ),
+        (
+            "chatCompactionSummaryCache.cachedSummary(",
+            "Adaptive compaction must consult the exact-input durable summary cache before a new prepass.",
+        ),
+        (
+            "chatCompactionSummaryCache.newestStrictPrefixRecord(",
+            "Adaptive compaction must verify a reusable strict-prefix lineage before incremental evolution.",
+        ),
+        (
+            ".prefixFingerprints(for: compactedMessages)",
+            "Adaptive compaction must compute exact storage-safe lineage prefixes for cache lookup.",
+        ),
+        (
+            'private static let chatCompactionSummaryPolicy = "llm_prepass_with_incremental_lineage_v2"',
+            "New adaptive compaction requests must bind the incremental lineage summary policy.",
+        ),
+        (
+            "cacheCompletedChatCompactionSummaryIfEligible(",
+            "Generated summaries must commit only after successful primary completion.",
+        ),
+        (
+            "primaryBackendRegistrationInProgress",
+            "Primary backend registration must preserve cancellation intent without holding the router lock across backend.chat.",
+        ),
+        (
+            "canonicalModelName(model.providerModelID)",
+            "Compaction summary cache keys must bind the actually resolved provider model instead of a client alias.",
+        ),
+        (
+            "activeChatCompactionSummaryRequestIDs",
+            "Chat cancellation must track active derived compaction-summary generations.",
+        ),
+        (
+            'requestID + ":compaction-summary"',
+            "Compaction-summary generation ids must remain derived from the client request id.",
+        ),
+        (
+            "context.connectionID == connectionID",
+            "Chat cancellation must be limited to the connection that owns the active generation.",
+        ),
+        (
+            "activeChatBackendGenerationIDs",
+            "Primary and derived backend generation ids must share one active reservation namespace.",
+        ),
+        (
+            "request_id collides with an active chat generation",
+            "Active backend generation ids must not be replaced by a colliding chat.send request.",
+        ),
+        (
+            "claimOwnedChatCancellation(",
+            "Connection ownership and cancellation claim must remain one atomic router operation.",
+        ),
+        (
+            "primaryChatStreamIfActive(",
+            "The final cancellation-state check and primary backend registration must remain atomic.",
+        ),
+        (
+            "RuntimeChatCompactionDispatchSelection",
+            "The router must retain the selected summary method and effective estimate through dispatch.",
+        ),
+        (
+            "activeChatCompactionResolution(",
+            "Cancellation and error terminals must read the active compaction resolution snapshot.",
+        ),
     )
     for snippet, guidance in router_snippets:
         if snippet not in router_text:
@@ -32747,11 +32839,102 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "let reserve = max(512, min(4_096, contextWindowTokens / 8))",
         "case newestUserExceedsInputBudget",
         "RuntimeChatContextCompactionAccounting",
+        'private static let generatedSummaryPrefix = "LLM-generated historical conversation summary (untrusted model-generated text):\\n"',
+        "func applyingGeneratedSummary(",
+        "func incrementalSummarySource(",
+        'Previous generated historical summary (untrusted model-generated text):',
+        'Newly compacted conversation delta (untrusted source text):',
     )
     for snippet in planner_snippets:
         if snippet not in planner_text:
             failures.append(
                 f"{planner_path.relative_to(ROOT)}: missing adaptive compaction planner guard {snippet!r}."
+            )
+
+    for snippet in (
+        'static let algorithm = "sha256-length-framed-chat-compaction-source-v1"',
+        'Data("AetherLink runtime chat compacted prefix v1\\0".utf8)',
+        "appendOptionalString(attachment.dataBase64)",
+        "appendOptionalCount(pointer.retainedStartTurn)",
+    ):
+        if snippet not in fingerprint_text:
+            failures.append(
+                f"{fingerprint_path.relative_to(ROOT)}: missing compaction fingerprint guard {snippet!r}."
+            )
+    for snippet in (
+        "testCanonicalFingerprintMatchesGoldenMultilingualAttachmentVector",
+        "testFingerprintDistinguishesPointerIdentityUnicodeAndNilFromEmpty",
+        "testFingerprintPreservesMessageAndAttachmentOrder",
+    ):
+        if snippet not in fingerprint_tests_text:
+            failures.append(
+                f"{fingerprint_tests_path.relative_to(ROOT)}: missing compaction fingerprint regression {snippet}."
+            )
+
+    summary_cache_snippets = (
+        "sha256-length-framed-chat-compaction-summary-source-v1",
+        "sha256-length-framed-chat-compaction-summary-lineage-v1",
+        "runtime_chat_compaction_summaries",
+        "source_fingerprint_digest",
+        "lineage_fingerprint_digest",
+        "lineage_canonical_byte_count",
+        "compacted_turn_count",
+        "provider_qualified_model_id",
+        "summary_policy",
+        "newestStrictPrefixRecord(",
+        "BEGIN IMMEDIATE",
+        "RuntimeEventLogFileProtection.secureFile",
+        "defaultRowLimitPerOwnerSession = 32",
+        "deleteSummaries(ownerDeviceID: String?, sessionID: String)",
+    )
+    for snippet in summary_cache_snippets:
+        if snippet not in summary_cache_text:
+            failures.append(
+                f"{summary_cache_path.relative_to(ROOT)}: missing durable compaction summary cache guard {snippet!r}."
+            )
+    for snippet in (
+        "testLineageFingerprintGoldenAndCanonicalDistinctions",
+        "testExactKeyRequiresFullLineageEvenWhenBoundedSourceMatches",
+        "testSummaryPersistsAcrossReopenWithOwnerOnlyPermissions",
+        "testCommitCancellationRollsBackInsertedSummary",
+        "testCorruptExactAndPrefixRowsAreCacheMisses",
+        "testRowCapAndScopedDeleteRemainOwnerSessionBounded",
+        "testStrictExtensionReturnsNewestMatchingPrefixByCountThenWriteOrder",
+        "testStrictPrefixRejectsEditedReorderedAndUnrelatedLineages",
+        "testStrictPrefixScopeIsolatesOwnerSessionModelAndPolicy",
+        "testOldSchemaMigrationDropsRowsAndCreatesLineageColumns",
+    ):
+        if snippet not in summary_cache_tests_text:
+            failures.append(
+                f"{summary_cache_tests_path.relative_to(ROOT)}: missing durable compaction summary cache regression {snippet}."
+            )
+
+    aggregate_backend_snippets = (
+        "generationReservations",
+        "RuntimeAggregateGenerationReservation",
+        "waitUntilActivated()",
+        "reservation.task = task",
+        "reservation.activate()",
+        "providerChatStreamIfActive(",
+        "task.cancel()",
+        "generationReservations[generationID] === reservation",
+        "completedProviderUsageSources",
+        "backend.takeProviderUsageSource(",
+        "storeCompletedProviderUsageSource(",
+    )
+    for snippet in aggregate_backend_snippets:
+        if snippet not in aggregate_backend_text:
+            failures.append(
+                f"{aggregate_backend_path.relative_to(ROOT)}: missing aggregate cancellation guard {snippet!r}."
+            )
+    for snippet in (
+        "testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch",
+        "testRejectedDuplicateGenerationCannotRemoveOriginalReservation",
+        "testProviderUsageSourceForwardsThroughAggregateAndIsConsumedOnce",
+    ):
+        if snippet not in aggregate_backend_tests_text:
+            failures.append(
+                f"{aggregate_backend_tests_path.relative_to(ROOT)}: missing aggregate cancellation regression {snippet}."
             )
 
     planner_test_snippets = (
@@ -32764,6 +32947,10 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testOversizedNewestUserRequestIsRejected",
         "testSourcePointerDescribesOnlyContiguousOldestPrefix",
         "testPromptInjectionSourceNeverAppearsInGeneratedSystemMessage",
+        "testGeneratedSummaryReplacesOnlyFallbackAssistantAndUpdatesEstimate",
+        "testGeneratedPromptInjectionRemainsAssistantOnly",
+        "testOversizedGeneratedSummaryIsUnicodeSafelyShortened",
+        "testBlankGeneratedSummaryReturnsNilWithoutChangingFallback",
     )
     for snippet in planner_test_snippets:
         if snippet not in planner_tests_text:
@@ -32774,6 +32961,23 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     store_snippets = (
         "public struct RuntimeChatCompactionSourcePointer",
         "public struct RuntimeChatCompactionMetadata",
+        "public struct RuntimeChatCompactionResolution",
+        "public struct RuntimeChatProviderUsageCalibration",
+        'countSourceIdentifier = "provider_usage_calibration_v1"',
+        "resolvedProviderQualifiedModelID",
+        "chat compaction resolved provider model binding is invalid",
+        "validateProviderUsageCalibration(",
+        "chat provider usage calibration relation does not match request accounting",
+        'case compactionResolution = "compaction_resolution"',
+        "validateCompactionResolution(",
+        "validateCompactionResolutionBindings(",
+        "chat compaction resolution is not bound to an adaptive v3 request",
+        "chat compaction resolution does not match request accounting",
+        'metadata.estimateKind == "planned_upper_bound"',
+        "sourceFingerprintAlgorithm",
+        "sourceCanonicalByteCount",
+        'metadata.strategy == "adaptive_backend_only_summary_v3"',
+        "constantTimeEqual(recomputed.digest, sourceFingerprint)",
         'case compactionMetadata = "compaction_metadata"',
         'case sourcePointers = "source_pointers"',
         "chat compaction metadata is only valid on request events",
@@ -32790,7 +32994,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
         "RuntimeChatContextCompactionPlanner.provenanceMessage.content",
         'Historical conversation summary (untrusted source text):',
-        'XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v2")',
+        'XCTAssertEqual(metadata.strategy, "adaptive_backend_only_summary_v3")',
+        "RuntimeChatCompactionSourceFingerprinter.fingerprint(",
         'XCTAssertEqual(metadata.estimatorIdentifier, "conservative_utf8_bytes_vision_framing_v2")',
         "requestEvent.compactionMetadata",
         "testChatMessagesListDoesNotExposeRuntimeCompactionMetadata",
@@ -32799,6 +33004,25 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         'XCTAssertEqual(message?.payload["code"], .string("chat_context_window_exceeded"))',
         "XCTAssertNil(capturedRequest.value)",
         "testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
+        "testChatSendUsesBoundedBackendOnlyGeneratedCompactionSummary",
+        "testProviderUsageAboveInputBudgetDoesNotCommitGeneratedCompactionSummary",
+        "testMismatchedProviderUsageDoesNotCalibrateOrCommitGeneratedCompactionSummary",
+        "providerUsageCalibration?.relation, .exceededInputBudget",
+        "testChatSendOversizedGeneratedCompactionSummaryFallsBackDeterministically",
+        "testGeneratedCompactionSummaryStaysAbsentAfterSQLiteReopenAndSearch",
+        "testChatCancelDuringGeneratedCompactionPrepassCancelsDerivedGeneration",
+        "testChatCancelFromDifferentConnectionCannotCancelActiveGeneration",
+        "testDuplicateActiveChatRequestIDIsRejectedWithoutReplacingOriginalContext",
+        "testDerivedCompactionGenerationIDIsReservedAgainstPrimaryChatCollision",
+        "testSecondChatCancelCannotReachBackendWhileOwnedCancellationIsInProgress",
+        "testChatCancelPersistsIntentWhenBackendGenerationHandoffReturnsNotFound",
+        "testChatCancelWaitsForAtomicPrimaryBackendRegistration",
+        "testChatSendReusesDurableGeneratedCompactionSummaryAfterCacheReopen",
+        "testFailedPrimaryDoesNotPersistGeneratedCompactionSummary",
+        "testChatSessionDeletePurgesDurableCompactionSummaries",
+        'XCTAssertEqual(doneResolution.summaryMethod, "llm_summary_v1")',
+        'XCTAssertEqual(resolution.summaryMethod, "deterministic_preview_v1")',
+        "XCTAssertFalse(cancellationResolution.primaryDispatched)",
     )
     for snippet in test_snippets:
         if snippet not in tests_text:
@@ -32810,6 +33034,14 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testSQLiteStorePreservesRuntimeCompactionMetadataWithoutIndexingIt",
         "testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting",
         "testSQLiteStoreRejectsInvalidRuntimeCompactionMetadata",
+        "testSQLiteStorePreservesAndRevalidatesAdaptiveV3SourceFingerprint",
+        "testJSONLStoreRevalidatesAdaptiveV3SourceFingerprintAfterReopen",
+        "testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint",
+        "testStoresRejectInvalidCompactionResolutionShapes",
+        "testStoresRoundTripProviderUsageCalibration",
+        "testStoresRejectInvalidProviderUsageCalibrationShapes",
+        "testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting",
+        "testStoresRejectMismatchedCompactionResolutionAfterReopen",
         "rawSQLiteEvents(at: databaseURL)",
         "sourcepointerftssentinel9f31",
         "storedRequest.compactionMetadata",
@@ -32834,6 +33066,12 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             (
                 "public var contextWindowTokens: Int?",
                 "contextWindowTokens: Int? = nil",
+                "public enum ChatProviderWireMode",
+                'case ollamaChat = "ollama_chat"',
+                'case lmStudioNative = "lmstudio_native"',
+                'case lmStudioOpenAICompatible = "lmstudio_openai_compat"',
+                "case done(inputTokens: Int?, outputTokens: Int?)",
+                "func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource?",
             ),
         ),
         (
@@ -32843,6 +33081,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "contextWindowTokens: response.contextWindowTokens",
                 'case modelInfo = "model_info"',
                 '"llama.context_length"',
+                "registry.storeUsageSource(",
+                "wireMode: .ollamaChat",
                 'parameters.split(whereSeparator: \\.isNewline)',
             ),
         ),
@@ -32853,6 +33093,30 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 'case contextWindowTokens = "context_window_tokens"',
                 'case contextLength = "context_length"',
                 "contextWindowTokens: model.contextWindowTokens",
+                "wireMode: .lmStudioNative",
+                "wireMode: .lmStudioOpenAICompatible",
+                "streamOptions: OpenAIStreamOptions(includeUsage: true)",
+                'case includeUsage = "include_usage"',
+                "observedFinishReason",
+            ),
+        ),
+        (
+            ollama_backend_tests_path,
+            ollama_backend_tests_text,
+            (
+                "testOllamaChatUsageWireModeRawValue",
+                "testChatStreamsOllamaLineDelimitedJSON",
+                "backend.takeProviderUsageSource(generationID: request.generationID)",
+            ),
+        ),
+        (
+            lmstudio_backend_tests_path,
+            lmstudio_backend_tests_text,
+            (
+                "testChatStreamsNativeServerSentEvents",
+                "testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails",
+                "wireMode: .lmStudioNative",
+                "wireMode: .lmStudioOpenAICompatible",
             ),
         ),
         (
@@ -32934,6 +33198,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget",
                 "LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
                 "RuntimeChatContextCompactionPlannerTests",
+                "RuntimeChatCompactionSourceFingerprintTests",
                 "LocalRuntimeMessageRouterTests/testChatSendRejectsOversizedNewestMessageBeforeBackendDispatch",
                 "SQLiteRuntimeChatEventStoreTests/testSQLiteStoreImportsLegacyCompactionMetadataWithoutStructuralAccounting",
                 "ProtocolCodecTest.errorPayloadDecodesNonRetryableChatContextWindowExceeded",
@@ -32944,16 +33209,72 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "RuntimeDevServer adaptive compaction trust-boundary smoke addendum",
                 "durable source-pointer metadata",
                 "runtime compaction metadata validation addendum",
+                "adaptive v3 compaction source fingerprint addendum",
+                "adaptive compaction effective terminal accounting addendum",
+                "preceding owner/session/request-scoped adaptive v3 request with matching estimator and input budget on append and reopen",
+                "SQLiteRuntimeChatEventStoreTests/testSQLiteStorePreservesAndRevalidatesAdaptiveV3SourceFingerprint",
+                "SQLiteRuntimeChatEventStoreTests/testJSONLStoreRevalidatesAdaptiveV3SourceFingerprintAfterReopen",
+                "SQLiteRuntimeChatEventStoreTests/testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint",
+                "SQLiteRuntimeChatEventStoreTests/testStoresRejectInvalidCompactionResolutionShapes",
+                "SQLiteRuntimeChatEventStoreTests/testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting",
+                "SQLiteRuntimeChatEventStoreTests/testStoresRejectMismatchedCompactionResolutionAfterReopen",
                 "RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload",
                 "Android chat.messages.list compaction metadata projection addendum",
+                "backend-only LLM chat compaction summary addendum",
+                "durable chat compaction summary cache addendum",
+                "incremental chat compaction summary lineage addendum",
+                "provider usage calibration foundation addendum",
+                "OllamaBackendTests/testChatStreamsOllamaLineDelimitedJSON",
+                "LMStudioBackendTests/testChatStreamsNativeServerSentEvents",
+                "LMStudioBackendTests/testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails",
+                "LocalRuntimeMessageRouterTests/testProviderUsageAboveInputBudgetDoesNotCommitGeneratedCompactionSummary",
+                "LocalRuntimeMessageRouterTests/testMismatchedProviderUsageDoesNotCalibrateOrCommitGeneratedCompactionSummary",
+                "AggregatingLlmBackendResidencyTests/testProviderUsageSourceForwardsThroughAggregateAndIsConsumedOnce",
+                "SQLiteRuntimeChatEventStoreTests/testStoresRoundTripProviderUsageCalibration",
+                "SQLiteRuntimeChatEventStoreTests/testStoresRejectInvalidProviderUsageCalibrationShapes",
+                "SQLiteRuntimeChatCompactionSummaryCacheTests",
+                "LocalRuntimeMessageRouterTests/testChatSendReusesDurableGeneratedCompactionSummaryAfterCacheReopen",
+                "LocalRuntimeMessageRouterTests/testChatSendEvolvesStrictlyExtendedCompactionSummaryAndCachesResult",
+                "LocalRuntimeMessageRouterTests/testChatSendDoesNotEvolveSummaryAfterCompactedPrefixEdit",
+                "LocalRuntimeMessageRouterTests/testFailedIncrementalPrimaryDoesNotPersistEvolvedCompactionSummary",
+                "LocalRuntimeMessageRouterTests/testFailedPrimaryDoesNotPersistGeneratedCompactionSummary",
+                "LocalRuntimeMessageRouterTests/testChatSessionDeletePurgesDurableCompactionSummaries",
+                "LocalRuntimeMessageRouterTests/testChatSendUsesBoundedBackendOnlyGeneratedCompactionSummary",
+                "LocalRuntimeMessageRouterTests/testChatSendOversizedGeneratedCompactionSummaryFallsBackDeterministically",
+                "LocalRuntimeMessageRouterTests/testGeneratedCompactionSummaryStaysAbsentAfterSQLiteReopenAndSearch",
+                "LocalRuntimeMessageRouterTests/testChatCancelDuringGeneratedCompactionPrepassCancelsDerivedGeneration",
+                "LocalRuntimeMessageRouterTests/testChatCancelFromDifferentConnectionCannotCancelActiveGeneration",
+                "LocalRuntimeMessageRouterTests/testDuplicateActiveChatRequestIDIsRejectedWithoutReplacingOriginalContext",
+                "LocalRuntimeMessageRouterTests/testDerivedCompactionGenerationIDIsReservedAgainstPrimaryChatCollision",
+                "LocalRuntimeMessageRouterTests/testSecondChatCancelCannotReachBackendWhileOwnedCancellationIsInProgress",
+                "LocalRuntimeMessageRouterTests/testChatCancelPersistsIntentWhenBackendGenerationHandoffReturnsNotFound",
+                "LocalRuntimeMessageRouterTests/testChatCancelWaitsForAtomicPrimaryBackendRegistration",
+                "AggregatingLlmBackendResidencyTests/testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch",
+                "AggregatingLlmBackendResidencyTests/testRejectedDuplicateGenerationCannotRemoveOriginalReservation",
             ),
         ),
         (
             protocol_doc_path,
             protocol_doc_text,
             (
-                "Runtime event stores may persist `adaptive_backend_only_summary_v2` metadata",
+                "New adaptive request events use `adaptive_backend_only_summary_v3`",
+                "sha256-length-framed-chat-compaction-summary-source-v1",
+                "actually resolved provider-qualified model id",
+                "sha256-length-framed-chat-compaction-source-v1",
+                "planned_upper_bound",
+                "compaction_resolution",
                 "compaction metadata is not exposed through transcript reads or session search indexes",
+                "same selected runtime-host model",
+                "generated summary remains backend-only and outside the chat event log",
+                "connection that owns the active request id",
+                "Primary and derived generation ids share one active reservation namespace",
+                "ownership check and cancellation claim occur atomically",
+                "durable cancellation intent",
+                "primary backend stream registration is atomic",
+                "aggregate backend reserves the generation before async provider routing",
+                "provider_usage_calibration_v1",
+                "lmstudio_openai_compat",
+                "post-dispatch provider-reported calibration only",
             ),
         ),
     ):
@@ -43671,7 +43992,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
     if len(manifest_lines) != 13:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
-    expected_manifest_hash = "3c957948ca16aec64ae941a1c0d1cb9a86697854eddb9c22473e4da8d7891424"
+    expected_manifest_hash = "b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "

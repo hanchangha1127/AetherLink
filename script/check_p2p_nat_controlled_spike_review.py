@@ -34,6 +34,139 @@ RECOMMENDATIONS = {
     "isolated_harness_design": "linux-netns-twin-agent-local-services",
     "socket_destination_and_egress_controls": "numeric-endpoint-allowlist-plus-os-egress-witness",
 }
+EXPECTED_PROPOSED_CONTRACTS = {
+    "networking_library_selection": {
+        "candidateOptionId": "libjuice-1.7.2-static-c-abi",
+        "integrationShape": "static_library_through_versioned_c_abi_adapter",
+        "targetPlatforms": ["android_min_sdk_26", "macos"],
+        "requiredProtocolClaimsToAudit": ["rfc8445", "rfc8489", "rfc8656", "rfc7675"],
+        "requiredIceBehavior": "full_ice_regular_nomination_single_component_udp",
+        "requiredConsentBehavior": "authenticated_consent_freshness_with_fail_closed_traffic_stop",
+        "sourceAcquisition": "prohibited_by_this_review_separate_bounded_compile_only_source_audit_authorization_required",
+        "sourcePinAfterSelection": "exact_release_tag_and_commit_sha_required_before_compile_only_work",
+        "networkExecutionDuringSelection": False,
+        "fallbackRule": "reject_libjuice_and_open_a_new_versioned_review_for_libnice_0_1_23_if_compile_only_or_source_audit_fails",
+    },
+    "session_cryptography_library_selection": {
+        "candidateOptionId": "platform-native-p256-hkdf-sha256-aes256gcm",
+        "transcript": "existing_canonical_ALP1_transport_neutral_identity_session_transcript",
+        "keyAgreement": "ephemeral_p256_ecdh",
+        "keyDerivation": "hkdf_sha256_rfc5869_with_role_and_transcript_bound_info",
+        "trafficProtection": "aes_256_gcm_with_unique_96_bit_nonce_and_authenticated_ALP1_context",
+        "keyConfirmation": "bidirectional_transcript_bound_hmac_sha256_before_application_readiness",
+        "macosImplementation": "CryptoKit_P256_HKDF_SHA256_AES_GCM",
+        "androidImplementation": "provider_neutral_JCA_EC_secp256r1_KeyAgreement_ECDH_Mac_HmacSHA256_Cipher_AES_GCM_NoPadding",
+        "androidMinimumSdk": 26,
+        "androidEphemeralKeyRule": "in_memory_provider_neutral_keypair_generation_no_dependency_on_AndroidKeyStore_API_31_ephemeral_ECDH",
+        "downgradeRule": "no_alternate_curve_hash_kdf_cipher_dtls_or_plaintext_fallback",
+        "networkExecutionDuringSelection": False,
+    },
+    "isolated_harness_design": {
+        "candidateOptionId": "linux-netns-twin-agent-local-services",
+        "phaseA": {
+            "name": "android_macos_compile_only",
+            "socketCreationAllowed": False,
+            "networkIOAllowed": False,
+            "sourceDownloadAllowed": False,
+            "outputs": ["compiler_diagnostics", "linker_symbol_manifest", "abi_manifest", "static_policy_results"],
+        },
+        "phaseB": {
+            "name": "later_approved_linux_namespace_execution",
+            "status": "blocked_on_separate_versioned_decision",
+            "agentProcessCount": 2,
+            "serviceScope": "local_stun_and_turn_only",
+            "externalEgressPolicy": "deny_all",
+            "namespaceRule": "one_network_namespace_per_agent_plus_local_service_namespace",
+            "hostNetworkAccess": False,
+            "internetAccess": False,
+            "wallClockTimeoutSeconds": 600,
+            "setupTimeoutSeconds": 120,
+            "sessionEstablishmentTimeoutSeconds": 60,
+            "consentObservationSeconds": 45,
+            "maximumLocalServiceProcessCount": 2,
+            "maximumCpuCoresPerProcess": 1,
+            "maximumResidentMemoryMiBPerProcess": 256,
+            "maximumFileDescriptorsPerProcess": 64,
+            "maximumSocketsPerProcess": 16,
+            "maximumCapturedPacketsPerRun": 10_000,
+            "maximumCapturedBytesPerRun": 16_777_216,
+        },
+        "failureRule": "kill_all_processes_and_discard_measurement_on_timeout_ceiling_breach_route_drift_policy_drift_or_witness_failure",
+    },
+    "socket_destination_and_egress_controls": {
+        "candidateOptionId": "numeric-endpoint-allowlist-plus-os-egress-witness",
+        "authorizationOrder": [
+            "parse_numeric_endpoint_without_resolution",
+            "apply_candidate_policy_before_library_call",
+            "match_immutable_per_run_protocol_address_port_allowlist",
+            "verify_os_deny_all_witness_is_armed",
+            "permit_single_bounded_socket_operation",
+            "assert_packet_capture_against_same_allowlist",
+        ],
+        "allowlistMutability": "immutable_after_run_manifest_signature",
+        "endpointSyntax": "numeric_ipv4_or_bracketed_numeric_ipv6_plus_explicit_protocol_and_port",
+        "prohibitedResolutionAndRouting": [
+            "dns", "mdns", "doh", "dot", "http_proxy", "socks_proxy", "pac",
+            "environment_proxy", "redirect", "url_fetch", "default_external_route",
+        ],
+        "osWitness": "deny_all_then_allow_exact_local_numeric_tuples_with_counter_and_kill_switch",
+        "packetCaptureAssertion": "every_packet_must_match_manifest_direction_protocol_numeric_address_and_port",
+        "secretHandling": "redact_tokens_credentials_keys_nonces_candidate_values_packet_payloads_and_application_content",
+        "policyDriftRule": "kill_all_processes_invalidate_run_and_preserve_content_free_reason_code_only",
+        "networkExecutionDuringSelection": False,
+    },
+}
+EXPECTED_SECURITY_FLOORS = [
+    {
+        "floorId": "route_token_separation",
+        "contract": "routeToken is never candidate, ICE, STUN, TURN, endpoint, transcript, capability, traffic-key, allowlist, or application authority.",
+    },
+    {
+        "floorId": "endpoint_identity_before_application_readiness",
+        "contract": "Both paired endpoint identities and the ALP1 transcript are authenticated before any path becomes application-ready.",
+    },
+    {
+        "floorId": "no_plaintext_or_unauthenticated_downgrade",
+        "contract": "Failure of identity, key confirmation, authenticated encryption, consent, or service trust closes the path without plaintext, anonymous, legacy, or lower-suite fallback.",
+    },
+    {
+        "floorId": "default_deny_destination",
+        "contract": "Candidate policy and an immutable per-run numeric endpoint allowlist must both authorize the exact protocol, address, and port before socket creation.",
+    },
+    {
+        "floorId": "no_dns_or_proxy",
+        "contract": "Hostnames, DNS resolution, DNS rebinding, HTTP proxies, SOCKS proxies, environment proxies, PAC, URL fetches, and redirects are prohibited.",
+    },
+    {
+        "floorId": "no_application_payload_before_identity_and_key_confirmation",
+        "contract": "No application payload byte is admitted before path validation, endpoint identity verification, ALP1 transcript binding, and bidirectional key confirmation complete.",
+    },
+    {
+        "floorId": "exact_resource_and_time_ceilings",
+        "contract": {
+            "agentProcessCount": 2,
+            "maximumLocalServiceProcessCount": 2,
+            "maximumRunSeconds": 600,
+            "maximumSetupSeconds": 120,
+            "maximumSessionEstablishmentSeconds": 60,
+            "maximumConsentObservationSeconds": 45,
+            "maximumCpuCoresPerProcess": 1,
+            "maximumResidentMemoryMiBPerProcess": 256,
+            "maximumFileDescriptorsPerProcess": 64,
+            "maximumSocketsPerProcess": 16,
+            "maximumCapturedPacketsPerRun": 10_000,
+            "maximumCapturedBytesPerRun": 16_777_216,
+        },
+    },
+    {
+        "floorId": "content_free_logs",
+        "contract": "Logs contain only bounded reason codes, counters, durations, numeric test endpoint labels, and redacted digests; no secrets, keys, tokens, credentials, candidates, packet payloads, or application content.",
+    },
+    {
+        "floorId": "kill_on_policy_drift",
+        "contract": "Any allowlist mutation, unexpected route, DNS or proxy attempt, witness failure, ceiling breach, or packet outside the approved tuple set kills all harness processes and marks the run invalid.",
+    },
+]
 EXPECTED_OPTIONS = {
     "networking_library_selection": {
         "libjuice-1.7.2-static-c-abi",
@@ -111,6 +244,27 @@ REQUIRED_SOURCE_URLS = {
     "https://www.rfc-editor.org/rfc/rfc7675.html",
     "https://www.rfc-editor.org/rfc/rfc5869.html",
 }
+EXPECTED_OFFICIAL_SOURCES = [
+    {"sourceId": "libjuice_repository", "url": "https://github.com/paullouisageneau/libjuice"},
+    {"sourceId": "libjuice_v1_7_2_header", "url": "https://github.com/paullouisageneau/libjuice/blob/v1.7.2/include/juice/juice.h"},
+    {"sourceId": "libjuice_v1_7_2_release", "url": "https://github.com/paullouisageneau/libjuice/releases/tag/v1.7.2"},
+    {"sourceId": "libnice_site_and_0_1_23_release_index", "url": "https://libnice.freedesktop.org/"},
+    {"sourceId": "libnice_nice_agent_reference", "url": "https://libnice.freedesktop.org/libnice/NiceAgent.html"},
+    {"sourceId": "libdatachannel_repository", "url": "https://github.com/paullouisageneau/libdatachannel"},
+    {"sourceId": "libdatachannel_v0_24_3_release", "url": "https://github.com/paullouisageneau/libdatachannel/releases/tag/v0.24.3"},
+    {"sourceId": "libdatachannel_native_c_api_note", "url": "https://github.com/paullouisageneau/libdatachannel/blob/v0.24.3/DOC.md"},
+    {"sourceId": "android_cryptography", "url": "https://developer.android.com/privacy-and-security/cryptography"},
+    {"sourceId": "android_key_agreement", "url": "https://developer.android.com/reference/javax/crypto/KeyAgreement"},
+    {"sourceId": "android_key_gen_parameter_spec", "url": "https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec"},
+    {"sourceId": "apple_cryptokit_p256", "url": "https://developer.apple.com/documentation/cryptokit/p256"},
+    {"sourceId": "apple_cryptokit_hkdf", "url": "https://developer.apple.com/documentation/cryptokit/hkdf"},
+    {"sourceId": "apple_cryptokit_aes_gcm", "url": "https://developer.apple.com/documentation/cryptokit/aes/gcm"},
+    {"sourceId": "rfc8445", "url": "https://www.rfc-editor.org/rfc/rfc8445.html"},
+    {"sourceId": "rfc8489", "url": "https://www.rfc-editor.org/rfc/rfc8489.html"},
+    {"sourceId": "rfc8656", "url": "https://www.rfc-editor.org/rfc/rfc8656.html"},
+    {"sourceId": "rfc7675", "url": "https://www.rfc-editor.org/rfc/rfc7675.html"},
+    {"sourceId": "rfc5869", "url": "https://www.rfc-editor.org/rfc/rfc5869.html"},
+]
 
 
 class ReviewValidationError(ValueError):
@@ -142,6 +296,21 @@ def exact_keys(value: Any, expected: set[str], label: str) -> dict[str, Any]:
         actual = sorted(value) if isinstance(value, dict) else type(value).__name__
         fail(f"{label}: expected exact keys {sorted(expected)}, got {actual}")
     return value
+
+
+def type_exact_equal(actual: Any, expected: Any) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(actual) == set(expected) and all(
+            type_exact_equal(actual[key], expected[key]) for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            type_exact_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
 
 
 def nonempty_strings(value: Any, label: str, minimum: int = 1) -> list[str]:
@@ -268,12 +437,11 @@ def validate_document(document: Any) -> None:
         recommended = next(option for option in options if option["disposition"] == "recommended")
         if recommended["optionId"] != decision["recommendedOptionId"]:
             fail(f"review-v1.decisions[{index}]: recommended disposition mismatch")
-        if not isinstance(decision["proposedContract"], dict) or not decision["proposedContract"]:
-            fail(f"review-v1.decisions[{index}].proposedContract: expected a non-empty object")
-        contract_text = json.dumps(decision["proposedContract"], sort_keys=True).lower()
-        for snippet in REQUIRED_CONTRACT_SNIPPETS[decision_id]:
-            if snippet.lower() not in contract_text:
-                fail(f"review-v1.decisions[{index}].proposedContract: missing {snippet!r}")
+        if not type_exact_equal(
+            decision["proposedContract"],
+            EXPECTED_PROPOSED_CONTRACTS[decision_id],
+        ):
+            fail(f"review-v1.decisions[{index}].proposedContract: canonical contract drifted")
         nonempty_strings(
             decision["rejectionConditions"],
             f"review-v1.decisions[{index}].rejectionConditions",
@@ -285,36 +453,15 @@ def validate_document(document: Any) -> None:
             3,
         )
 
-    floors = root["securityFloors"]
-    if not isinstance(floors, list) or len(floors) != len(REQUIRED_SECURITY_FLOORS):
-        fail("review-v1.securityFloors: expected exactly nine floors")
-    floor_ids: set[str] = set()
-    for index, raw_floor in enumerate(floors):
-        floor = exact_keys(raw_floor, {"floorId", "contract"}, f"securityFloors[{index}]")
-        if not isinstance(floor["floorId"], str) or not floor["floorId"]:
-            fail(f"securityFloors[{index}].floorId: invalid")
-        if not isinstance(floor["contract"], (str, dict)) or not floor["contract"]:
-            fail(f"securityFloors[{index}].contract: invalid")
-        floor_ids.add(floor["floorId"])
-    if floor_ids != REQUIRED_SECURITY_FLOORS:
-        fail("review-v1.securityFloors: canonical security floor set drifted")
+    if not type_exact_equal(root["securityFloors"], EXPECTED_SECURITY_FLOORS):
+        fail("review-v1.securityFloors: canonical floor order, contract, or ceiling drifted")
 
     source_root = exact_keys(root["officialSources"], {"verifiedAt", "sources"}, "officialSources")
     if source_root["verifiedAt"] != "2026-07-12":
         fail("review-v1.officialSources.verifiedAt: expected 2026-07-12")
     sources = source_root["sources"]
-    if not isinstance(sources, list) or len(sources) != len(REQUIRED_SOURCE_URLS):
-        fail("review-v1.officialSources: expected the exact official source set")
-    urls: set[str] = set()
-    for index, raw_source in enumerate(sources):
-        source = exact_keys(raw_source, {"sourceId", "url"}, f"officialSources[{index}]")
-        if not isinstance(source["sourceId"], str) or not source["sourceId"]:
-            fail(f"officialSources[{index}].sourceId: invalid")
-        if not isinstance(source["url"], str):
-            fail(f"officialSources[{index}].url: invalid")
-        urls.add(source["url"])
-    if urls != REQUIRED_SOURCE_URLS:
-        fail("review-v1.officialSources: source URL set drifted")
+    if not type_exact_equal(sources, EXPECTED_OFFICIAL_SOURCES):
+        fail("review-v1.officialSources: canonical source id, URL, or order drifted")
 
     authorization = exact_keys(
         root["authorization"],
@@ -326,23 +473,23 @@ def validate_document(document: Any) -> None:
     )
     if any(value is not False for value in authorization.values()):
         fail("review-v1.authorization: all approval gates must remain false")
-    if root["reviewOutcome"] != {
+    if not type_exact_equal(root["reviewOutcome"], {
         "selectedDecisionCount": 0,
         "recommendationCount": 4,
         "controlledNetworkSpikeStatus": "blocked_on_explicit_selection",
         "artifactCreated": False,
         "handoffCreated": False,
-    }:
+    }):
         fail("review-v1.reviewOutcome: unselected outcome drifted")
-    if root["approvalRequired"] != {
+    if not type_exact_equal(root["approvalRequired"], {
         "decisionIds": list(DECISION_ORDER),
         "approvalBoundary": "separate_versioned_decision_before_socket_execution",
-    }:
+    }):
         fail("review-v1.approvalRequired: explicit approval dependency drifted")
-    if root["immutability"] != {
+    if not type_exact_equal(root["immutability"], {
         "recordState": "closed",
         "amendmentPolicy": "supersede_with_new_versioned_review",
-    }:
+    }):
         fail("review-v1.immutability: closed proposal contract drifted")
 
 

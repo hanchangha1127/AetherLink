@@ -300,6 +300,24 @@ public struct ChatRequest: Equatable, Sendable {
     }
 }
 
+public enum ChatProviderWireMode: String, Equatable, Sendable {
+    case ollamaChat = "ollama_chat"
+    case lmStudioNative = "lmstudio_native"
+    case lmStudioOpenAICompatible = "lmstudio_openai_compat"
+}
+
+public struct ChatProviderUsageSource: Equatable, Sendable {
+    public var provider: ModelProvider
+    public var providerModelID: String
+    public var wireMode: ChatProviderWireMode
+
+    public init(provider: ModelProvider, providerModelID: String, wireMode: ChatProviderWireMode) {
+        self.provider = provider
+        self.providerModelID = providerModelID
+        self.wireMode = wireMode
+    }
+}
+
 public enum ChatStreamEvent: Equatable, Sendable {
     case delta(String)
     case reasoningDelta(String)
@@ -340,6 +358,7 @@ public protocol LlmBackend: Sendable {
     func embed(request: EmbeddingRequest) async throws -> EmbeddingResult
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult
     @discardableResult func cancel(generationID: String) -> GenerationCancellationResult
+    func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource?
 }
 
 public extension LlmBackend {
@@ -363,5 +382,9 @@ public extension LlmBackend {
             message: "\(provider.displayName) does not support text embeddings.",
             retryable: false
         )
+    }
+
+    func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        nil
     }
 }

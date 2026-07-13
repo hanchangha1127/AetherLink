@@ -4,6 +4,11 @@ import OllamaBackend
 import XCTest
 
 final class LMStudioBackendTests: XCTestCase {
+    func testLMStudioUsageWireModeRawValues() {
+        XCTAssertEqual(ChatProviderWireMode.lmStudioNative.rawValue, "lmstudio_native")
+        XCTAssertEqual(ChatProviderWireMode.lmStudioOpenAICompatible.rawValue, "lmstudio_openai_compat")
+    }
+
     override func tearDown() {
         MockURLProtocol.handler = nil
         super.tearDown()
@@ -303,6 +308,11 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("there"),
             .done(inputTokens: 3, outputTokens: 4)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(provider: .lmStudio, providerModelID: "qwen-local", wireMode: .lmStudioNative)
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatStreamsNativeReasoningSeparatelyFromAnswerContent() async throws {
@@ -352,10 +362,16 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("Hello"),
             .done(inputTokens: 4, outputTokens: 1)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(provider: .lmStudio, providerModelID: "reasoning-local", wireMode: .lmStudioNative)
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails() async throws {
         var paths: [String] = []
+        var postedPayload: [String: Any]?
         let backend = makeBackend { request in
             paths.append(request.url?.path ?? "")
             switch request.url?.path {
@@ -364,12 +380,15 @@ final class LMStudioBackendTests: XCTestCase {
             case "/api/v1/chat":
                 return self.response(statusCode: 422, body: "native rejected")
             case "/v1/chat/completions":
+                let body = try self.requestBodyData(from: request)
+                postedPayload = try JSONSerialization.jsonObject(with: body) as? [String: Any]
                 return self.response(
                     statusCode: 200,
                     body: """
                     data: {"choices":[{"delta":{"content":"Fallback"},"finish_reason":null}]}
-                    data: {"choices":[{"delta":{"content":" stream"},"finish_reason":null}],"usage":{"prompt_tokens":2,"completion_tokens":3}}
-                    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3}}
+                    data: {"choices":[{"delta":{"content":" stream"},"finish_reason":null}]}
+                    data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+                    data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3}}
                     data: [DONE]
 
                     """
@@ -398,6 +417,17 @@ final class LMStudioBackendTests: XCTestCase {
             .delta(" stream"),
             .done(inputTokens: 2, outputTokens: 3)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .lmStudio,
+                providerModelID: "qwen-local",
+                wireMode: .lmStudioOpenAICompatible
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
+        let streamOptions = try XCTUnwrap(postedPayload?["stream_options"] as? [String: Any])
+        XCTAssertEqual(streamOptions["include_usage"] as? Bool, true)
     }
 
     func testChatStreamsOpenAICompatibleReasoningSeparatelyFromAnswerContent() async throws {
@@ -412,9 +442,9 @@ final class LMStudioBackendTests: XCTestCase {
                     statusCode: 200,
                     body: """
                     data: {"choices":[{"delta":{"reasoning_content":"Plan. "},"finish_reason":null}]}
-                    data: {"choices":[{"delta":{"thinking":"Check. ","content":"Answer"},"finish_reason":null}],"usage":{"prompt_tokens":3,"completion_tokens":2}}
-                    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}
-                    data: [DONE]
+                    data: {"choices":[{"delta":{"thinking":"Check. ","content":"Answer"},"finish_reason":null}]}
+                    data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+                    data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}
 
                     """
                 )
@@ -442,6 +472,15 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("Answer"),
             .done(inputTokens: 3, outputTokens: 2)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .lmStudio,
+                providerModelID: "reasoning-openai",
+                wireMode: .lmStudioOpenAICompatible
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatWithImageAttachmentUsesNativeImageInput() async throws {
@@ -508,6 +547,11 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("Vision"),
             .done(inputTokens: 5, outputTokens: 1)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(provider: .lmStudio, providerModelID: "vision-local", wireMode: .lmStudioNative)
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
 
         let payload = try XCTUnwrap(postedRequest)
         XCTAssertEqual(payload.model, "vision-local")
@@ -544,7 +588,8 @@ final class LMStudioBackendTests: XCTestCase {
                     statusCode: 200,
                     body: """
                     data: {"choices":[{"delta":{"content":"Vision"},"finish_reason":null}]}
-                    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1}}
+                    data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+                    data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":1}}
                     data: [DONE]
 
                     """
@@ -585,10 +630,21 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("Vision"),
             .done(inputTokens: 5, outputTokens: 1)
         ])
+        XCTAssertEqual(
+            backend.takeProviderUsageSource(generationID: request.generationID),
+            ChatProviderUsageSource(
+                provider: .lmStudio,
+                providerModelID: "vision-local",
+                wireMode: .lmStudioOpenAICompatible
+            )
+        )
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
 
         let payload = try XCTUnwrap(postedPayload)
         XCTAssertEqual(payload["model"] as? String, "vision-local")
         XCTAssertEqual(payload["stream"] as? Bool, true)
+        let streamOptions = try XCTUnwrap(payload["stream_options"] as? [String: Any])
+        XCTAssertEqual(streamOptions["include_usage"] as? Bool, true)
         let messages = try XCTUnwrap(payload["messages"] as? [[String: Any]])
         let message = try XCTUnwrap(messages.first)
         XCTAssertNil(message["attachments"])

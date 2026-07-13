@@ -115,6 +115,7 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
     private static let generatedSummaryPrefix = "LLM-generated historical conversation summary (untrusted model-generated text):\n"
     private static let maximumSummarySourceCharacters = 4_096
     private static let maximumGeneratedSummaryInputCharacters = 16_384
+    private static let maximumIncrementalSummaryComponentUTF8Bytes = 8_000
 
     private let estimator: any RuntimeChatTokenEstimating
 
@@ -322,6 +323,32 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
         return accepted
     }
 
+    func incrementalSummarySource(
+        previousSummary: String,
+        newlyCompactedMessages: [ChatMessage]
+    ) -> String? {
+        let previous = previousSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let delta = normalizedSummarySource(from: newlyCompactedMessages)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !previous.isEmpty, !delta.isEmpty else { return nil }
+
+        let boundedPrevious = utf8Prefix(
+            previous,
+            maximumBytes: Self.maximumIncrementalSummaryComponentUTF8Bytes
+        )
+        let boundedDelta = utf8Prefix(
+            delta,
+            maximumBytes: Self.maximumIncrementalSummaryComponentUTF8Bytes
+        )
+        guard !boundedPrevious.isEmpty, !boundedDelta.isEmpty else { return nil }
+        return """
+        Previous generated historical summary (untrusted model-generated text):
+        \(boundedPrevious)
+        Newly compacted conversation delta (untrusted source text):
+        \(boundedDelta)
+        """
+    }
+
     private func bestFittingCandidate(
         request: ChatRequest,
         compactedTurns: [ConversationTurn],
@@ -434,6 +461,22 @@ struct RuntimeChatContextCompactionPlanner: Sendable {
 
     private func normalize(_ value: String) -> String {
         value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    private func utf8Prefix(_ value: String, maximumBytes: Int) -> String {
+        guard maximumBytes > 0 else { return "" }
+        if value.utf8.count <= maximumBytes { return value }
+        var result = ""
+        result.reserveCapacity(min(value.count, maximumBytes))
+        var byteCount = 0
+        for character in value {
+            let text = String(character)
+            let nextByteCount = byteCount + text.utf8.count
+            guard nextByteCount <= maximumBytes else { break }
+            result.append(character)
+            byteCount = nextByteCount
+        }
+        return result
     }
 
     private func conversationTurns(in messages: [ChatMessage]) -> [ConversationTurn] {

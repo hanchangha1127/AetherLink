@@ -1,6 +1,36 @@
 import Foundation
 import OllamaBackend
 
+private final class RuntimeAggregateGenerationReservation: @unchecked Sendable {
+    var task: Task<Void, Never>?
+
+    private let lock = NSLock()
+    private var activated = false
+    private var activationContinuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilActivated() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if activated {
+                    continuation.resume()
+                } else {
+                    activationContinuation = continuation
+                }
+            }
+        }
+    }
+
+    func activate() {
+        let continuation = lock.withLock {
+            activated = true
+            let continuation = activationContinuation
+            activationContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
+    }
+}
+
 public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     public let provider = ModelProvider.aggregate
 
@@ -8,6 +38,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private let backendsByProvider: [ModelProvider: any LlmBackend]
     private let lock = NSLock()
     private var generationProviders: [String: ModelProvider] = [:]
+    private var generationReservations: [String: RuntimeAggregateGenerationReservation] = [:]
+    private var completedProviderUsageSources: [String: (source: ChatProviderUsageSource, sequence: UInt64)] = [:]
+    private var completedProviderUsageSequence: UInt64 = 0
     private var activeResidencyModel: RuntimeModelResidencyKey?
     private var inFlightResidencyCounts: [RuntimeModelResidencyKey: Int] = [:]
     private var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
@@ -102,10 +135,16 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            lock.withLock {
+                completedProviderUsageSources[request.generationID] = nil
+            }
+            let reservation = RuntimeAggregateGenerationReservation()
             let task = Task {
+                await reservation.waitUntilActivated()
                 var residencyModel: RuntimeModelResidencyKey?
                 var residencyFinished = false
                 do {
+                    try Task.checkCancellation()
                     let resolved = try await resolveChatRoute(for: request.model)
                     let backend = try backend(for: resolved.provider)
                     let currentResidencyModel = RuntimeModelResidencyKey(
@@ -114,17 +153,32 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                     )
                     residencyModel = currentResidencyModel
                     await prepareResidency(for: currentResidencyModel)
+                    try Task.checkCancellation()
                     let routedRequest = ChatRequest(
                         generationID: request.generationID,
                         sessionID: request.sessionID,
                         model: resolved.modelID,
                         messages: request.messages
                     )
-                    remember(generationID: request.generationID, provider: resolved.provider)
-                    for try await event in backend.chat(request: routedRequest) {
-                        if case .done = event, !residencyFinished {
-                            residencyFinished = true
-                            await finishResidency(for: currentResidencyModel)
+                    let providerEvents = try providerChatStreamIfActive(
+                        request: routedRequest,
+                        provider: resolved.provider,
+                        backend: backend
+                    )
+                    for try await event in providerEvents {
+                        if case .done = event {
+                            if let source = backend.takeProviderUsageSource(
+                                generationID: routedRequest.generationID
+                            ) {
+                                storeCompletedProviderUsageSource(
+                                    source,
+                                    generationID: request.generationID
+                                )
+                            }
+                            if !residencyFinished {
+                                residencyFinished = true
+                                await finishResidency(for: currentResidencyModel)
+                            }
                         }
                         continuation.yield(event)
                     }
@@ -132,17 +186,35 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                         residencyFinished = true
                         await finishResidency(for: currentResidencyModel)
                     }
-                    forget(generationID: request.generationID)
+                    forget(generationID: request.generationID, reservation: reservation)
                     continuation.finish()
                 } catch {
                     if let residencyModel, !residencyFinished {
                         residencyFinished = true
                         await finishResidency(for: residencyModel)
                     }
-                    forget(generationID: request.generationID)
+                    forget(generationID: request.generationID, reservation: reservation)
                     continuation.finish(throwing: error)
                 }
             }
+            reservation.task = task
+            let registered = lock.withLock {
+                guard generationReservations[request.generationID] == nil else { return false }
+                generationReservations[request.generationID] = reservation
+                return true
+            }
+            guard registered else {
+                task.cancel()
+                reservation.activate()
+                continuation.finish(throwing: BackendError(
+                    provider: .aggregate,
+                    code: "generation_already_active",
+                    message: "A generation with this request id is already active.",
+                    retryable: false
+                ))
+                return
+            }
+            reservation.activate()
 
             continuation.onTermination = { [weak self] termination in
                 if case .cancelled = termination {
@@ -150,6 +222,12 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                 }
                 task.cancel()
             }
+        }
+    }
+
+    public func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
+        lock.withLock {
+            completedProviderUsageSources.removeValue(forKey: generationID)?.source
         }
     }
 
@@ -177,13 +255,20 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
     @discardableResult
     public func cancel(generationID: String) -> GenerationCancellationResult {
-        if let provider = lock.withLock({ generationProviders[generationID] }),
-           let backend = backendsByProvider[provider] {
-            let result = backend.cancel(generationID: generationID)
-            if case .cancelled = result {
-                forget(generationID: generationID)
+        let active: (reserved: Bool, provider: ModelProvider?) = lock.withLock {
+            guard let reservation = generationReservations[generationID],
+                  let task = reservation.task else {
+                return (false, nil)
             }
-            return result
+            task.cancel()
+            return (true, generationProviders[generationID])
+        }
+        if active.reserved {
+            if let provider = active.provider,
+               let backend = backendsByProvider[provider] {
+                _ = backend.cancel(generationID: generationID)
+            }
+            return .cancelled(generationID: generationID)
         }
 
         for backend in orderedBackends {
@@ -289,15 +374,48 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         return (ordered, byProvider)
     }
 
-    private func remember(generationID: String, provider: ModelProvider) {
+    private func forget(
+        generationID: String,
+        reservation: RuntimeAggregateGenerationReservation
+    ) {
         lock.withLock {
-            generationProviders[generationID] = provider
+            guard generationReservations[generationID] === reservation else { return }
+            generationProviders[generationID] = nil
+            generationReservations[generationID] = nil
         }
     }
 
-    private func forget(generationID: String) {
+    private func providerChatStreamIfActive(
+        request: ChatRequest,
+        provider: ModelProvider,
+        backend: any LlmBackend
+    ) throws -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        try lock.withLock {
+            guard generationReservations[request.generationID] != nil else {
+                throw CancellationError()
+            }
+            try Task.checkCancellation()
+            generationProviders[request.generationID] = provider
+            return backend.chat(request: request)
+        }
+    }
+
+    private func storeCompletedProviderUsageSource(
+        _ source: ChatProviderUsageSource,
+        generationID: String
+    ) {
         lock.withLock {
-            generationProviders[generationID] = nil
+            completedProviderUsageSequence &+= 1
+            completedProviderUsageSources[generationID] = (
+                source: source,
+                sequence: completedProviderUsageSequence
+            )
+            while completedProviderUsageSources.count > 256,
+                  let oldest = completedProviderUsageSources.min(by: {
+                      $0.value.sequence < $1.value.sequence
+                  })?.key {
+                completedProviderUsageSources[oldest] = nil
+            }
         }
     }
 

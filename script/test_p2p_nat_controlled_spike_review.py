@@ -34,6 +34,8 @@ class ControlledSpikeReviewMutationTests(unittest.TestCase):
         CHECKER.validate_source_handoff()
         CHECKER.validate_document(copy.deepcopy(self.canonical))
         CHECKER.validate_markdown(CHECKER.MARKDOWN_PATH.read_bytes())
+        for path, expected in CHECKER.GENERATED_ARTIFACT_SHA256.items():
+            CHECKER.validate_file_hash(path, expected)
 
     def test_missing_unknown_and_duplicate_names_fail(self) -> None:
         self.assert_rejected(lambda value: value.pop("authorization"))
@@ -80,7 +82,83 @@ class ControlledSpikeReviewMutationTests(unittest.TestCase):
         self.assert_rejected(
             lambda value: value["decisions"][0]["proposedContract"].clear()
         )
+        self.assert_rejected(
+            lambda value: value["decisions"][0]["proposedContract"].update({
+                "sourceAcquisition": "allowed",
+                "networkExecutionDuringSelection": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][0]["proposedContract"].update({
+                "socketExecutionAuthorized": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][1]["proposedContract"].update({
+                "androidMinimumSdk": 31,
+                "downgradeRule": "plaintext_fallback_allowed",
+                "networkExecutionDuringSelection": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][0]["proposedContract"].update({
+                "networkExecutionDuringSelection": 0,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][1]["proposedContract"].update({
+                "androidMinimumSdk": 26.0,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][2]["proposedContract"]["phaseA"].update({
+                "socketCreationAllowed": True,
+                "networkIOAllowed": True,
+                "sourceDownloadAllowed": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][2]["proposedContract"]["phaseB"].update({
+                "wallClockTimeoutSeconds": 3600,
+                "maximumResidentMemoryMiBPerProcess": 4096,
+                "maximumSocketsPerProcess": 1024,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][2]["proposedContract"]["phaseB"].update({
+                "maximumCpuCoresPerProcess": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][3]["proposedContract"].update({
+                "allowlistMutability": "mutable",
+                "endpointSyntax": "hostname_wildcard_or_url",
+                "networkExecutionDuringSelection": True,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["decisions"][3]["proposedContract"][
+                "prohibitedResolutionAndRouting"
+            ].remove("dns")
+        )
         self.assert_rejected(lambda value: value["securityFloors"].pop())
+        self.assert_rejected(
+            lambda value: value["securityFloors"][2].update({
+                "contract": "plaintext fallback is allowed",
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["securityFloors"][6]["contract"].update({
+                "maximumRunSeconds": 3600,
+                "maximumResidentMemoryMiBPerProcess": 4096,
+                "maximumSocketsPerProcess": 1024,
+            })
+        )
+        self.assert_rejected(
+            lambda value: value["securityFloors"][6]["contract"].update({
+                "maximumCpuCoresPerProcess": True,
+            })
+        )
         self.assert_rejected(
             lambda value: value["securityFloors"].append({
                 "floorId": "allow_unrestricted_egress",
@@ -95,6 +173,11 @@ class ControlledSpikeReviewMutationTests(unittest.TestCase):
         )
         self.assert_rejected(
             lambda value: value["officialSources"]["sources"][0].update({"url": "https://example.com"})
+        )
+        self.assert_rejected(
+            lambda value: value["officialSources"]["sources"][1].update({
+                "sourceId": value["officialSources"]["sources"][0]["sourceId"],
+            })
         )
 
     def test_measurement_and_outcome_claims_fail(self) -> None:

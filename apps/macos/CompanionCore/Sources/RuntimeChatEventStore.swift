@@ -64,6 +64,48 @@ public struct RuntimeChatStoredUsage: Codable, Equatable, Sendable {
     }
 }
 
+public enum RuntimeChatProviderTokenRelation: String, Codable, Equatable, Sendable {
+    case withinConservativeEstimate = "within_conservative_estimate"
+    case exceededConservativeEstimateWithinBudget = "exceeded_conservative_estimate_within_budget"
+    case exceededInputBudget = "exceeded_input_budget"
+}
+
+public struct RuntimeChatProviderUsageCalibration: Codable, Equatable, Sendable {
+    public static let countSourceIdentifier = "provider_usage_calibration_v1"
+
+    public var countSource: String
+    public var provider: String
+    public var providerModelID: String
+    public var wireMode: String
+    public var inputTokens: Int
+    public var relation: RuntimeChatProviderTokenRelation
+
+    public init(
+        countSource: String = Self.countSourceIdentifier,
+        provider: String,
+        providerModelID: String,
+        wireMode: String,
+        inputTokens: Int,
+        relation: RuntimeChatProviderTokenRelation
+    ) {
+        self.countSource = countSource
+        self.provider = provider
+        self.providerModelID = providerModelID
+        self.wireMode = wireMode
+        self.inputTokens = inputTokens
+        self.relation = relation
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case countSource = "count_source"
+        case provider
+        case providerModelID = "provider_model_id"
+        case wireMode = "wire_mode"
+        case inputTokens = "input_tokens"
+        case relation
+    }
+}
+
 public struct RuntimeChatStoredError: Codable, Equatable, Sendable {
     public var code: String
     public var message: String
@@ -180,6 +222,9 @@ public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
     public var retainedStartTurn: Int?
     public var retainedEndTurn: Int?
     public var retainedTurnCount: Int
+    public var sourceFingerprintAlgorithm: String?
+    public var sourceFingerprint: String?
+    public var sourceCanonicalByteCount: Int?
 
     public init(
         sourceKind: String = "client_visible_conversation_turns",
@@ -191,7 +236,10 @@ public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
         compactedTurnCount: Int,
         retainedStartTurn: Int? = nil,
         retainedEndTurn: Int? = nil,
-        retainedTurnCount: Int
+        retainedTurnCount: Int,
+        sourceFingerprintAlgorithm: String? = nil,
+        sourceFingerprint: String? = nil,
+        sourceCanonicalByteCount: Int? = nil
     ) {
         self.sourceKind = sourceKind
         self.sessionID = sessionID
@@ -203,6 +251,9 @@ public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
         self.retainedStartTurn = retainedStartTurn
         self.retainedEndTurn = retainedEndTurn
         self.retainedTurnCount = retainedTurnCount
+        self.sourceFingerprintAlgorithm = sourceFingerprintAlgorithm
+        self.sourceFingerprint = sourceFingerprint
+        self.sourceCanonicalByteCount = sourceCanonicalByteCount
     }
 
     enum CodingKeys: String, CodingKey {
@@ -216,6 +267,9 @@ public struct RuntimeChatCompactionSourcePointer: Codable, Equatable, Sendable {
         case retainedStartTurn = "retained_start_turn"
         case retainedEndTurn = "retained_end_turn"
         case retainedTurnCount = "retained_turn_count"
+        case sourceFingerprintAlgorithm = "source_fingerprint_algorithm"
+        case sourceFingerprint = "source_fingerprint"
+        case sourceCanonicalByteCount = "source_canonical_byte_count"
     }
 }
 
@@ -228,6 +282,8 @@ public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
     public var inputBudgetTokens: Int?
     public var estimatedInputTokensBefore: Int?
     public var estimatedInputTokensAfter: Int?
+    public var estimateKind: String?
+    public var summaryPolicy: String?
 
     public init(
         strategy: String = "backend_only_summary_v1",
@@ -237,7 +293,9 @@ public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
         outputReserveTokens: Int? = nil,
         inputBudgetTokens: Int? = nil,
         estimatedInputTokensBefore: Int? = nil,
-        estimatedInputTokensAfter: Int? = nil
+        estimatedInputTokensAfter: Int? = nil,
+        estimateKind: String? = nil,
+        summaryPolicy: String? = nil
     ) {
         self.strategy = strategy
         self.sourcePointers = sourcePointers
@@ -247,6 +305,8 @@ public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
         self.inputBudgetTokens = inputBudgetTokens
         self.estimatedInputTokensBefore = estimatedInputTokensBefore
         self.estimatedInputTokensAfter = estimatedInputTokensAfter
+        self.estimateKind = estimateKind
+        self.summaryPolicy = summaryPolicy
     }
 
     enum CodingKeys: String, CodingKey {
@@ -258,6 +318,46 @@ public struct RuntimeChatCompactionMetadata: Codable, Equatable, Sendable {
         case inputBudgetTokens = "input_budget_tokens"
         case estimatedInputTokensBefore = "estimated_input_tokens_before"
         case estimatedInputTokensAfter = "estimated_input_tokens_after"
+        case estimateKind = "estimate_kind"
+        case summaryPolicy = "summary_policy"
+    }
+}
+
+public struct RuntimeChatCompactionResolution: Codable, Equatable, Sendable {
+    public var primaryDispatched: Bool
+    public var summaryMethod: String?
+    public var estimatorIdentifier: String
+    public var inputBudgetTokens: Int
+    public var estimatedInputTokensAfter: Int?
+    public var resolvedProviderQualifiedModelID: String?
+    public var providerUsageCalibration: RuntimeChatProviderUsageCalibration?
+
+    public init(
+        primaryDispatched: Bool,
+        summaryMethod: String? = nil,
+        estimatorIdentifier: String,
+        inputBudgetTokens: Int,
+        estimatedInputTokensAfter: Int? = nil,
+        resolvedProviderQualifiedModelID: String? = nil,
+        providerUsageCalibration: RuntimeChatProviderUsageCalibration? = nil
+    ) {
+        self.primaryDispatched = primaryDispatched
+        self.summaryMethod = summaryMethod
+        self.estimatorIdentifier = estimatorIdentifier
+        self.inputBudgetTokens = inputBudgetTokens
+        self.estimatedInputTokensAfter = estimatedInputTokensAfter
+        self.resolvedProviderQualifiedModelID = resolvedProviderQualifiedModelID
+        self.providerUsageCalibration = providerUsageCalibration
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case primaryDispatched = "primary_dispatched"
+        case summaryMethod = "summary_method"
+        case estimatorIdentifier = "estimator_identifier"
+        case inputBudgetTokens = "input_budget_tokens"
+        case estimatedInputTokensAfter = "estimated_input_tokens_after"
+        case resolvedProviderQualifiedModelID = "resolved_provider_qualified_model_id"
+        case providerUsageCalibration = "provider_usage_calibration"
     }
 }
 
@@ -277,6 +377,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
     public var error: RuntimeChatStoredError?
     public var ownerDeviceID: String?
     public var compactionMetadata: RuntimeChatCompactionMetadata?
+    public var compactionResolution: RuntimeChatCompactionResolution?
     public var sourceAttributions: [RuntimeChatSourceAttribution]?
     public var assistantMessageID: String?
     public var sourceAttributionBindings: [RuntimeChatSourceAttributionBinding]?
@@ -297,6 +398,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         error: RuntimeChatStoredError? = nil,
         ownerDeviceID: String? = nil,
         compactionMetadata: RuntimeChatCompactionMetadata? = nil,
+        compactionResolution: RuntimeChatCompactionResolution? = nil,
         sourceAttributions: [RuntimeChatSourceAttribution]? = nil,
         assistantMessageID: String? = nil,
         sourceAttributionBindings: [RuntimeChatSourceAttributionBinding]? = nil
@@ -316,6 +418,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         self.error = error
         self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
         self.compactionMetadata = compactionMetadata
+        self.compactionResolution = compactionResolution
         self.sourceAttributions = sourceAttributions
         self.assistantMessageID = assistantMessageID
         self.sourceAttributionBindings = sourceAttributionBindings
@@ -337,6 +440,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         case error
         case ownerDeviceID = "owner_device_id"
         case compactionMetadata = "compaction_metadata"
+        case compactionResolution = "compaction_resolution"
         case sourceAttributions = "source_attributions"
         case assistantMessageID = "assistant_message_id"
         case sourceAttributionBindings = "source_attribution_bindings"
@@ -763,6 +867,18 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
     }
 }
 
+private struct RuntimeChatCompactionResolutionBindingKey: Hashable {
+    var ownerDeviceID: String?
+    var sessionID: String
+    var requestID: String
+
+    init(event: RuntimeChatStoredEvent) {
+        ownerDeviceID = event.ownerDeviceID.normalizedOwnerDeviceID
+        sessionID = event.sessionID
+        requestID = event.requestID
+    }
+}
+
 public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked Sendable {
     private let fileURL: URL
     private let encoder: JSONEncoder
@@ -928,6 +1044,14 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     static func events(from fileURL: URL) throws -> [RuntimeChatStoredEvent] {
+        let indexedEvents = try decodedEventsInAppendOrder(from: fileURL)
+        try validateCompactionResolutionBindings(indexedEvents)
+        return indexedEvents.map(\.event).sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private static func decodedEventsInAppendOrder(
+        from fileURL: URL
+    ) throws -> [(line: Int, event: RuntimeChatStoredEvent)] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         let data = try Data(contentsOf: fileURL)
         guard !data.isEmpty else { return [] }
@@ -935,7 +1059,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         decoder.dateDecodingStrategy = .iso8601
         let lines = String(decoding: data, as: UTF8.self)
             .components(separatedBy: .newlines)
-        var events: [RuntimeChatStoredEvent] = []
+        var events: [(line: Int, event: RuntimeChatStoredEvent)] = []
         for (index, line) in lines.enumerated() {
             guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 continue
@@ -944,7 +1068,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             do {
                 let event = try decoder.decode(RuntimeChatStoredEvent.self, from: lineData)
                 try Self.validateStoredEvent(event, line: index + 1)
-                events.append(event)
+                events.append((line: index + 1, event: event))
             } catch {
                 if let storeError = error as? RuntimeChatEventStoreError {
                     throw storeError
@@ -955,7 +1079,37 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 )
             }
         }
-        return events.sorted { $0.timestamp < $1.timestamp }
+        return events
+    }
+
+    static func validateCompactionResolutionBindings(
+        _ indexedEvents: [(line: Int, event: RuntimeChatStoredEvent)]
+    ) throws {
+        var latestRequests: [RuntimeChatCompactionResolutionBindingKey: RuntimeChatStoredEvent] = [:]
+        for indexedEvent in indexedEvents {
+            let event = indexedEvent.event
+            let key = RuntimeChatCompactionResolutionBindingKey(event: event)
+            if event.kind == .request {
+                latestRequests[key] = event
+                continue
+            }
+            guard let resolution = event.compactionResolution else { continue }
+            guard let request = latestRequests[key],
+                  let metadata = request.compactionMetadata,
+                  metadata.strategy == "adaptive_backend_only_summary_v3" else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: indexedEvent.line,
+                    reason: "chat compaction resolution is not bound to an adaptive v3 request"
+                )
+            }
+            guard metadata.estimatorIdentifier == resolution.estimatorIdentifier,
+                  metadata.inputBudgetTokens == resolution.inputBudgetTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: indexedEvent.line,
+                    reason: "chat compaction resolution does not match request accounting"
+                )
+            }
+        }
     }
 
     private static func decodeFailureReason(_ error: Error) -> String {
@@ -988,6 +1142,15 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 )
             }
             try validateCompactionMetadata(compactionMetadata, event: event, line: line)
+        }
+        if let compactionResolution = event.compactionResolution {
+            guard event.kind == .done || event.kind == .cancelled || event.kind == .error else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction resolution is only valid on terminal events"
+                )
+            }
+            try validateCompactionResolution(compactionResolution, event: event, line: line)
         }
         if let sourceAttributions = event.sourceAttributions {
             guard event.kind == .done, event.finishReason == "stop" else {
@@ -1094,11 +1257,36 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 reason: "chat compaction accounting fields must be all present or all absent"
             )
         }
-        if metadata.strategy == "adaptive_backend_only_summary_v2" && !hasAccounting {
+        let adaptiveStrategies = [
+            "adaptive_backend_only_summary_v2",
+            "adaptive_backend_only_summary_v3",
+        ]
+        if adaptiveStrategies.contains(metadata.strategy) && !hasAccounting {
             throw RuntimeChatEventStoreError.corruptEventLog(
                 line: line,
                 reason: "adaptive chat compaction accounting is missing"
             )
+        }
+        let policyPresence = [metadata.estimateKind != nil, metadata.summaryPolicy != nil]
+        let hasPolicy = policyPresence.allSatisfy { $0 }
+        guard hasPolicy || policyPresence.allSatisfy({ !$0 }) else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat compaction estimate policy fields must be all present or all absent"
+            )
+        }
+        if metadata.strategy == "adaptive_backend_only_summary_v3" {
+            let supportedSummaryPolicies = [
+                "llm_prepass_with_deterministic_fallback_v1",
+                "llm_prepass_with_incremental_lineage_v2",
+            ]
+            guard metadata.estimateKind == "planned_upper_bound",
+                  metadata.summaryPolicy.map(supportedSummaryPolicies.contains) == true else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "adaptive v3 chat compaction estimate policy is invalid"
+                )
+            }
         }
         if hasAccounting {
             try requireNonBlank(
@@ -1175,21 +1363,50 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 }
             }
             if let retainedEndTurn = pointer.retainedEndTurn {
-                guard retainedEndTurn <= pointer.totalTurns else {
+                guard retainedEndTurn > 0,
+                      retainedEndTurn <= pointer.totalTurns else {
                     throw RuntimeChatEventStoreError.corruptEventLog(
                         line: line,
                         reason: "chat compaction retained range exceeds total turns"
                     )
                 }
             }
+            let fingerprintPresence = [
+                pointer.sourceFingerprintAlgorithm != nil,
+                pointer.sourceFingerprint != nil,
+                pointer.sourceCanonicalByteCount != nil,
+            ]
+            let hasFingerprint = fingerprintPresence.allSatisfy { $0 }
+            guard hasFingerprint || fingerprintPresence.allSatisfy({ !$0 }) else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction source fingerprint fields must be all present or all absent"
+                )
+            }
+            if hasFingerprint {
+                guard pointer.sourceFingerprintAlgorithm == RuntimeChatCompactionSourceFingerprinter.algorithm,
+                      let sourceFingerprint = pointer.sourceFingerprint,
+                      sourceFingerprint.range(
+                        of: "^[0-9a-f]{64}$",
+                        options: .regularExpression
+                      ) != nil,
+                      let sourceCanonicalByteCount = pointer.sourceCanonicalByteCount,
+                      sourceCanonicalByteCount > 0 else {
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: line,
+                        reason: "chat compaction source fingerprint is invalid"
+                    )
+                }
+            }
         }
-        if metadata.strategy == "adaptive_backend_only_summary_v2" {
+        if adaptiveStrategies.contains(metadata.strategy) {
             guard metadata.sourcePointers.count == 1,
                   let pointer = metadata.sourcePointers.first,
                   pointer.sourceKind == "client_visible_conversation_turns",
                   pointer.sessionID == event.sessionID,
                   pointer.requestID == event.requestID,
                   pointer.startTurn == 1,
+                  pointer.endTurn < pointer.totalTurns,
                   pointer.retainedStartTurn == pointer.endTurn + 1,
                   pointer.retainedEndTurn == pointer.totalTurns,
                   pointer.retainedTurnCount == pointer.totalTurns - pointer.compactedTurnCount else {
@@ -1199,6 +1416,182 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 )
             }
         }
+        if metadata.strategy == "adaptive_backend_only_summary_v3" {
+            guard let pointer = metadata.sourcePointers.first,
+                  pointer.retainedStartTurn != nil,
+                  pointer.retainedEndTurn != nil,
+                  pointer.sourceFingerprint != nil,
+                  pointer.sourceCanonicalByteCount != nil else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "adaptive v3 chat compaction source binding is missing"
+                )
+            }
+        }
+        for pointer in metadata.sourcePointers where pointer.sourceFingerprint != nil {
+            guard let sourceFingerprint = pointer.sourceFingerprint,
+                  let sourceCanonicalByteCount = pointer.sourceCanonicalByteCount,
+                  let messages = event.messages else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction source binding is missing request messages"
+                )
+            }
+            let conversationMessages = messages.filter { message in
+                let role = message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return role == "user" || role == "assistant"
+            }
+            guard conversationMessages.count == pointer.totalTurns,
+                  pointer.startTurn > 0,
+                  pointer.endTurn <= conversationMessages.count else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction source turns do not match the request event"
+                )
+            }
+            let selectedMessages = Array(
+                conversationMessages[(pointer.startTurn - 1)..<pointer.endTurn]
+            )
+            let recomputed = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+                pointer: pointer,
+                messages: selectedMessages
+            )
+            guard recomputed.canonicalByteCount == sourceCanonicalByteCount,
+                  constantTimeEqual(recomputed.digest, sourceFingerprint) else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction source fingerprint does not match the request event"
+                )
+            }
+        }
+    }
+
+    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+        let left = Array(lhs.utf8)
+        let right = Array(rhs.utf8)
+        guard left.count == right.count else { return false }
+        var difference: UInt8 = 0
+        for index in left.indices {
+            difference |= left[index] ^ right[index]
+        }
+        return difference == 0
+    }
+
+    private static func validateCompactionResolution(
+        _ resolution: RuntimeChatCompactionResolution,
+        event: RuntimeChatStoredEvent,
+        line: Int
+    ) throws {
+        try requireNonBlank(
+            resolution.estimatorIdentifier,
+            line: line,
+            reason: "chat compaction resolution estimator identifier is empty"
+        )
+        guard resolution.inputBudgetTokens > 0 else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat compaction resolution input budget is invalid"
+            )
+        }
+        if resolution.primaryDispatched {
+            guard resolution.summaryMethod == "deterministic_preview_v1"
+                    || resolution.summaryMethod == "llm_summary_v1",
+                  let estimatedInputTokensAfter = resolution.estimatedInputTokensAfter,
+                  estimatedInputTokensAfter >= 0,
+                  estimatedInputTokensAfter <= resolution.inputBudgetTokens else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "dispatched chat compaction resolution is invalid"
+                )
+            }
+        } else {
+            guard resolution.summaryMethod == nil,
+                  resolution.estimatedInputTokensAfter == nil,
+                  resolution.resolvedProviderQualifiedModelID == nil,
+                  resolution.providerUsageCalibration == nil,
+                  event.kind != .done else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "undispatched chat compaction resolution is invalid"
+                )
+            }
+        }
+        if let resolvedProviderQualifiedModelID = resolution.resolvedProviderQualifiedModelID {
+            guard let resolved = ModelProvider.splitQualifiedModelID(resolvedProviderQualifiedModelID),
+                  !resolved.modelID.isEmpty,
+                  canonicalProviderModelID(resolved.modelID) == resolved.modelID,
+                  resolved.provider.qualifiedModelID(resolved.modelID) == resolvedProviderQualifiedModelID else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat compaction resolved provider model binding is invalid"
+                )
+            }
+        }
+        if let calibration = resolution.providerUsageCalibration {
+            try validateProviderUsageCalibration(
+                calibration,
+                resolution: resolution,
+                event: event,
+                line: line
+            )
+        }
+    }
+
+    private static func validateProviderUsageCalibration(
+        _ calibration: RuntimeChatProviderUsageCalibration,
+        resolution: RuntimeChatCompactionResolution,
+        event: RuntimeChatStoredEvent,
+        line: Int
+    ) throws {
+        let validWireMode: Bool
+        switch calibration.provider {
+        case ModelProvider.ollama.rawValue:
+            validWireMode = calibration.wireMode == "ollama_chat"
+        case ModelProvider.lmStudio.rawValue:
+            validWireMode = calibration.wireMode == "lmstudio_native"
+                || calibration.wireMode == "lmstudio_openai_compat"
+        default:
+            validWireMode = false
+        }
+        let calibrationQualifiedModelID = "\(calibration.provider):\(calibration.providerModelID)"
+        guard event.kind == .done,
+              resolution.primaryDispatched,
+              calibration.countSource == RuntimeChatProviderUsageCalibration.countSourceIdentifier,
+              calibration.inputTokens >= 0,
+              event.usage?.inputTokens == calibration.inputTokens,
+              validWireMode,
+              calibration.providerModelID == canonicalProviderModelID(calibration.providerModelID),
+              !calibration.providerModelID.isEmpty,
+              ModelProvider.splitQualifiedModelID(calibration.providerModelID) == nil,
+              resolution.resolvedProviderQualifiedModelID == calibrationQualifiedModelID,
+              let estimatedInputTokensAfter = resolution.estimatedInputTokensAfter else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat provider usage calibration is invalid"
+            )
+        }
+        let expectedRelation: RuntimeChatProviderTokenRelation
+        if calibration.inputTokens <= estimatedInputTokensAfter {
+            expectedRelation = .withinConservativeEstimate
+        } else if calibration.inputTokens <= resolution.inputBudgetTokens {
+            expectedRelation = .exceededConservativeEstimateWithinBudget
+        } else {
+            expectedRelation = .exceededInputBudget
+        }
+        guard calibration.relation == expectedRelation else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat provider usage calibration relation does not match request accounting"
+            )
+        }
+    }
+
+    private static func canonicalProviderModelID(_ modelID: String) -> String {
+        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix(":latest") {
+            return String(trimmed.dropLast(":latest".count))
+        }
+        return trimmed
     }
 
     private static func requireNonBlank(_ value: String?, line: Int, reason: String) throws {
@@ -1216,6 +1609,12 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     private func appendUnlocked(_ event: RuntimeChatStoredEvent) throws {
         let sanitized = event.sanitizedForStorage()
         try Self.validateStoredEvent(sanitized, line: 0)
+        if sanitized.compactionResolution != nil {
+            let existingEvents = try Self.decodedEventsInAppendOrder(from: fileURL)
+            try Self.validateCompactionResolutionBindings(
+                existingEvents + [(line: 0, event: sanitized)]
+            )
+        }
         let data = try encoder.encode(sanitized)
         let line = data + Data([0x0A])
         try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
