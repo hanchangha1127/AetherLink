@@ -46,6 +46,7 @@ import com.localagentbridge.android.ui.chatHistoryArchiveAllEnabled
 import com.localagentbridge.android.ui.chatHistoryBulkActionsAvailable
 import com.localagentbridge.android.ui.chatHistoryPermanentDeleteArchivedEnabled
 import com.localagentbridge.android.ui.chatHistoryPermanentDeleteChatEnabled
+import com.localagentbridge.android.ui.chatHistoryRefreshEnabled
 import com.localagentbridge.android.ui.chatHistorySessionStatusRes
 import com.localagentbridge.android.ui.connectRuntimeActionLabelRes
 import com.localagentbridge.android.ui.connectionStatusHeroDetailRes
@@ -59,8 +60,13 @@ import com.localagentbridge.android.ui.hasRelayRouteMaterial
 import com.localagentbridge.android.ui.hasRelayRouteWithoutSecret
 import com.localagentbridge.android.ui.hasUsableRelayRoute
 import com.localagentbridge.android.ui.memoryActionsEnabled
+import com.localagentbridge.android.ui.memoryDuplicateSuggestionsActionEnabled
 import com.localagentbridge.android.ui.memoryEmptyStateTextRes
 import com.localagentbridge.android.ui.memoryLockNoticeTextRes
+import com.localagentbridge.android.ui.memorySemanticDuplicateSuggestionsActionEnabled
+import com.localagentbridge.android.ui.memorySemanticDuplicateSuggestionsDisabledReasonTextRes
+import com.localagentbridge.android.ui.memorySemanticDuplicateClustersActionEnabled
+import com.localagentbridge.android.ui.memorySemanticDuplicateClustersDisabledReasonTextRes
 import com.localagentbridge.android.ui.MessageContentPart
 import com.localagentbridge.android.ui.newUserMessageAddedSince
 import com.localagentbridge.android.ui.parseMessageContent
@@ -1733,6 +1739,23 @@ class AppNavigationTest {
     }
 
     @Test
+    fun chatHistoryLoadingStateDisablesMutationsButAllowsListSupersessionOnly() {
+        val listLoading = RuntimeUiState(
+            isConnected = true,
+            isLoadingChatSessions = true,
+        )
+        assertTrue(listLoading.isChatHistoryActionPending)
+        assertTrue(chatHistoryRefreshEnabled(listLoading))
+
+        val bulkLoading = RuntimeUiState(
+            isConnected = true,
+            isBulkMutatingChatSessions = true,
+        )
+        assertTrue(bulkLoading.isChatHistoryActionPending)
+        assertFalse(chatHistoryRefreshEnabled(bulkLoading))
+    }
+
+    @Test
     fun chatHistoryBulkActionsOnlyAppearWhenChatsExist() {
         assertEquals(true, chatHistoryBulkActionsAvailable(activeSessionCount = 1, archivedSessionCount = 0))
         assertEquals(true, chatHistoryBulkActionsAvailable(activeSessionCount = 0, archivedSessionCount = 1))
@@ -2474,6 +2497,132 @@ class AppNavigationTest {
             ),
         )
         assertEquals(false, memoryActionsEnabled(RuntimeUiState()))
+    }
+
+    @Test
+    fun memoryDuplicateReviewRequiresAuthenticatedFeatureAvailability() {
+        val connected = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = trustedRuntime(),
+        )
+
+        assertEquals(false, memoryDuplicateSuggestionsActionEnabled(connected))
+        assertEquals(
+            true,
+            memoryDuplicateSuggestionsActionEnabled(
+                connected.copy(memoryDuplicateSuggestionsAvailable = true),
+            ),
+        )
+        assertEquals(
+            false,
+            memoryDuplicateSuggestionsActionEnabled(
+                connected.copy(
+                    memoryDuplicateSuggestionsAvailable = true,
+                    isStreaming = true,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun memorySemanticDuplicateReviewRequiresCurrentInstalledLocalEmbeddingModel() {
+        val connected = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = trustedRuntime(),
+            memorySemanticDuplicateSuggestionsAvailable = true,
+        )
+        val localEmbeddingModel = RuntimeModel(
+            id = "ollama:embedding-local",
+            name = "Local Embedding",
+            modelKind = "embedding",
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+
+        assertEquals(false, memorySemanticDuplicateSuggestionsActionEnabled(connected))
+        assertEquals(
+            R.string.memory_semantic_duplicate_suggestions_select_local_model,
+            memorySemanticDuplicateSuggestionsDisabledReasonTextRes(connected),
+        )
+
+        val ready = connected.copy(
+            selectedEmbeddingModelId = localEmbeddingModel.id,
+            models = listOf(localEmbeddingModel),
+        )
+        assertEquals(true, memorySemanticDuplicateSuggestionsActionEnabled(ready))
+
+        val providerManaged = ready.copy(
+            models = listOf(localEmbeddingModel.copy(source = "provider")),
+        )
+        assertEquals(false, memorySemanticDuplicateSuggestionsActionEnabled(providerManaged))
+        assertEquals(
+            R.string.memory_semantic_duplicate_suggestions_model_unavailable,
+            memorySemanticDuplicateSuggestionsDisabledReasonTextRes(providerManaged),
+        )
+
+        val notInstalled = ready.copy(
+            models = listOf(localEmbeddingModel.copy(installed = false)),
+        )
+        assertEquals(false, memorySemanticDuplicateSuggestionsActionEnabled(notInstalled))
+        assertEquals(
+            R.string.memory_semantic_duplicate_suggestions_model_unavailable,
+            memorySemanticDuplicateSuggestionsDisabledReasonTextRes(notInstalled),
+        )
+
+        val featureUnavailable = ready.copy(
+            memorySemanticDuplicateSuggestionsAvailable = false,
+        )
+        assertEquals(false, memorySemanticDuplicateSuggestionsActionEnabled(featureUnavailable))
+        assertEquals(
+            R.string.memory_semantic_duplicate_suggestions_unavailable,
+            memorySemanticDuplicateSuggestionsDisabledReasonTextRes(featureUnavailable),
+        )
+
+        val streaming = ready.copy(isStreaming = true)
+        assertEquals(false, memorySemanticDuplicateSuggestionsActionEnabled(streaming))
+        assertEquals(
+            R.string.memory_action_state_wait_for_stream,
+            memorySemanticDuplicateSuggestionsDisabledReasonTextRes(streaming),
+        )
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel() {
+        val localEmbedding = RuntimeModel(
+            id = "ollama:nomic-embed-text",
+            name = "nomic-embed-text",
+            provider = "ollama",
+            modelKind = "embedding",
+            source = "local",
+            installed = true,
+        )
+        val base = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = trustedRuntime(),
+            models = listOf(localEmbedding),
+            selectedEmbeddingModelId = localEmbedding.id,
+            memorySemanticDuplicateSuggestionsAvailable = true,
+            memorySemanticDuplicateClustersAvailable = false,
+        )
+
+        assertFalse(memorySemanticDuplicateClustersActionEnabled(base))
+        assertEquals(
+            R.string.memory_semantic_duplicate_clusters_unavailable,
+            memorySemanticDuplicateClustersDisabledReasonTextRes(base),
+        )
+        assertTrue(memorySemanticDuplicateSuggestionsActionEnabled(base))
+
+        val ready = base.copy(memorySemanticDuplicateClustersAvailable = true)
+        assertTrue(memorySemanticDuplicateClustersActionEnabled(ready))
+        val unavailableModel = ready.copy(
+            models = listOf(localEmbedding.copy(installed = false)),
+        )
+        assertFalse(memorySemanticDuplicateClustersActionEnabled(unavailableModel))
+        assertEquals(
+            R.string.memory_semantic_duplicate_clusters_model_unavailable,
+            memorySemanticDuplicateClustersDisabledReasonTextRes(unavailableModel),
+        )
     }
 
     @Test

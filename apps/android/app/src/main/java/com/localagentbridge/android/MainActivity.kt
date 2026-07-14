@@ -641,9 +641,10 @@ private fun LocalAgentBridgeApp(
                             scope.launch { drawerState.close() }
                         },
                         onSelectChatSession = { session ->
-                            viewModel.selectChatSession(session.id)
-                            destination = AppDestination.Chat
-                            scope.launch { drawerState.close() }
+                            if (viewModel.selectChatSession(session.id)) {
+                                destination = AppDestination.Chat
+                                scope.launch { drawerState.close() }
+                            }
                         },
                         onRenameChatSession = { session ->
                             renamingSessionId = session.id
@@ -786,6 +787,12 @@ private fun LocalAgentBridgeApp(
                                     onApproveMemorySummaryDraft = viewModel::approveMemorySummaryDraft,
                                     onDismissMemorySummaryDraft = viewModel::dismissMemorySummaryDraft,
                                     onRefreshMemory = viewModel::refreshRuntimeMemory,
+                                    onScanMemoryDuplicateSuggestions =
+                                        viewModel::scanRuntimeMemoryDuplicateSuggestions,
+                                    onScanMemorySemanticDuplicateSuggestions =
+                                        viewModel::scanRuntimeMemorySemanticDuplicateSuggestions,
+                                    onScanMemorySemanticDuplicateClusters =
+                                        viewModel::scanRuntimeMemorySemanticDuplicateClusters,
                                     onSearchMemory = { query ->
                                         viewModel.refreshRuntimeMemory(query)
                                     },
@@ -800,8 +807,9 @@ private fun LocalAgentBridgeApp(
                                         viewModel.refreshRuntimeChatHistory(query)
                                     },
                                     onOpenChatSession = { sessionId ->
-                                        viewModel.selectChatSession(sessionId)
-                                        destination = AppDestination.Chat
+                                        if (viewModel.selectChatSession(sessionId)) {
+                                            destination = AppDestination.Chat
+                                        }
                                     },
                                     onRenameChatSession = { sessionId ->
                                         val session = (state.chatSessions + state.archivedChatSessions)
@@ -2013,7 +2021,7 @@ internal fun AetherLinkNavigationDrawerContent(
                                 models = state.models,
                                 selected = effectiveDestination == AppDestination.Chat &&
                                     session.id == state.activeChatSessionId,
-                                enabled = !state.isStreaming,
+                                enabled = !state.isStreaming && !state.isChatHistoryActionPending,
                                 onClick = { onSelectChatSession(session) },
                                 onRename = {
                                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)

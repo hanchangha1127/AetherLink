@@ -61,6 +61,9 @@ ALLOWED_MEMORY_TYPES = {
     "memory.list",
     "memory.upsert",
     "memory.delete",
+    "memory.duplicate_suggestions.list",
+    "memory.semantic_duplicate_suggestions.list",
+    "memory.semantic_duplicate_clusters.list",
     "memory.summary.drafts.list",
     "memory.summary.draft.generate",
     "memory.summary.draft.approve",
@@ -427,6 +430,9 @@ def check_protocol_schema_rejects_future_memory_namespaces() -> list[str]:
     synthetic_memory_types = future_memory_message_types([
         "memory.list",
         "memory.upsert",
+        "memory.duplicate_suggestions.list",
+        "memory.semantic_duplicate_suggestions.list",
+        "memory.semantic_duplicate_clusters.list",
         "memory.summary.drafts.list",
         "memory.summary.draft.generate",
         "memory.search",
@@ -4183,6 +4189,75 @@ def check_chat_sessions_list_payload_schema_contract(schema: dict[str, object]) 
             )
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.chatSessionsListPayload request additionalProperties must be false")
+
+    cursor_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["cursor"]
+        ),
+        None,
+    )
+    if not isinstance(cursor_option, dict):
+        failures.append("$defs.chatSessionsListPayload must include a cursor-only continuation request")
+    else:
+        cursor_properties = cursor_option.get("properties")
+        if not isinstance(cursor_properties, dict) or set(cursor_properties.keys()) != {"cursor"}:
+            failures.append("$defs.chatSessionsListPayload cursor request must contain only cursor")
+        else:
+            cursor_schema = cursor_properties.get("cursor")
+            if not isinstance(cursor_schema, dict) or cursor_schema.get("type") != "string":
+                failures.append("$defs.chatSessionsListPayload cursor must stay a string")
+            elif cursor_schema.get("minLength") != 1 or cursor_schema.get("maxLength") != 512:
+                failures.append("$defs.chatSessionsListPayload cursor must stay bounded to 1...512 characters")
+        if cursor_option.get("additionalProperties") is not False:
+            failures.append("$defs.chatSessionsListPayload cursor request additionalProperties must be false")
+
+    legacy_response = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["sessions"]
+        ),
+        None,
+    )
+    authoritative_response = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["sessions", "snapshot_count"]
+        ),
+        None,
+    )
+    if not isinstance(legacy_response, dict):
+        failures.append("$defs.chatSessionsListPayload must preserve the legacy sessions-only response")
+    if not isinstance(authoritative_response, dict):
+        failures.append("$defs.chatSessionsListPayload must include the authoritative snapshot response")
+    else:
+        response_properties = authoritative_response.get("properties")
+        if not isinstance(response_properties, dict):
+            failures.append("$defs.chatSessionsListPayload authoritative response properties must be an object")
+        else:
+            if set(response_properties.keys()) != {"sessions", "snapshot_count", "next_cursor"}:
+                failures.append(
+                    "$defs.chatSessionsListPayload authoritative response must stay limited to sessions, snapshot_count, and next_cursor"
+                )
+            if response_properties.get("snapshot_count") != {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000,
+            }:
+                failures.append("$defs.chatSessionsListPayload snapshot_count must stay bounded 0...10000")
+            next_cursor = response_properties.get("next_cursor")
+            if not isinstance(next_cursor, dict) or next_cursor.get("type") != "string":
+                failures.append("$defs.chatSessionsListPayload next_cursor must stay an optional string")
+            elif next_cursor.get("minLength") != 1 or next_cursor.get("maxLength") != 512:
+                failures.append("$defs.chatSessionsListPayload next_cursor must stay bounded to 1...512 characters")
+        if authoritative_response.get("additionalProperties") is not False:
+            failures.append("$defs.chatSessionsListPayload authoritative response additionalProperties must be false")
     return failures
 
 
@@ -4359,6 +4434,106 @@ def check_chat_session_lifecycle_payload_schema_contract(schema: dict[str, objec
             failures.append("$defs.chatSessionLifecycleRequestPayload session_id must use nonBlankString")
     if lifecycle_payload.get("additionalProperties") is not False:
         failures.append("$defs.chatSessionLifecycleRequestPayload additionalProperties must be false")
+
+    bulk_request = defs.get("chatSessionBulkLifecycleRequestPayload")
+    if not isinstance(bulk_request, dict):
+        failures.append("$defs.chatSessionBulkLifecycleRequestPayload schema is missing")
+    else:
+        if bulk_request.get("required") != ["scope"]:
+            failures.append("$defs.chatSessionBulkLifecycleRequestPayload must require only scope")
+        bulk_request_properties = bulk_request.get("properties")
+        if not isinstance(bulk_request_properties, dict) or set(bulk_request_properties.keys()) != {"scope", "limit"}:
+            failures.append("$defs.chatSessionBulkLifecycleRequestPayload must stay limited to scope and limit")
+        else:
+            if bulk_request_properties.get("scope") != {
+                "type": "string",
+                "enum": ["all_active", "all_archived"],
+            }:
+                failures.append("$defs.chatSessionBulkLifecycleRequestPayload scope must stay closed")
+            if bulk_request_properties.get("limit") != {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200,
+                "default": 200,
+            }:
+                failures.append("$defs.chatSessionBulkLifecycleRequestPayload limit must stay bounded 1...200")
+        if bulk_request.get("additionalProperties") is not False:
+            failures.append("$defs.chatSessionBulkLifecycleRequestPayload additionalProperties must be false")
+
+    bulk_result = defs.get("chatSessionBulkLifecycleResultPayload")
+    expected_bulk_result_required = [
+        "scope",
+        "status",
+        "affected_count",
+        "remaining_count",
+        "completed_at",
+    ]
+    if not isinstance(bulk_result, dict):
+        failures.append("$defs.chatSessionBulkLifecycleResultPayload schema is missing")
+    else:
+        if bulk_result.get("required") != expected_bulk_result_required:
+            failures.append("$defs.chatSessionBulkLifecycleResultPayload must require the complete bounded result")
+        bulk_result_properties = bulk_result.get("properties")
+        if not isinstance(bulk_result_properties, dict) or set(bulk_result_properties.keys()) != set(expected_bulk_result_required):
+            failures.append("$defs.chatSessionBulkLifecycleResultPayload properties must stay closed")
+        else:
+            if bulk_result_properties.get("affected_count") != {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 200,
+            }:
+                failures.append("$defs.chatSessionBulkLifecycleResultPayload affected_count must stay bounded 0...200")
+            if bulk_result_properties.get("remaining_count") != {"type": "integer", "minimum": 0}:
+                failures.append("$defs.chatSessionBulkLifecycleResultPayload remaining_count must stay nonnegative")
+            if bulk_result_properties.get("completed_at") != {"type": "string", "format": "date-time"}:
+                failures.append("$defs.chatSessionBulkLifecycleResultPayload completed_at must stay date-time")
+        if bulk_result.get("additionalProperties") is not False:
+            failures.append("$defs.chatSessionBulkLifecycleResultPayload additionalProperties must be false")
+
+    for payload_name, scope, status in (
+        ("chatSessionArchivePayload", "all_active", "archived"),
+        ("chatSessionDeletePayload", "all_archived", "deleted"),
+    ):
+        payload = defs.get(payload_name)
+        options = payload.get("oneOf") if isinstance(payload, dict) else None
+        if not isinstance(options, list):
+            failures.append(f"$defs.{payload_name} must include single and bulk lifecycle shapes")
+            continue
+        has_bulk_request = any(
+            isinstance(option, dict)
+            and isinstance(option.get("allOf"), list)
+            and any(
+                isinstance(part, dict)
+                and part.get("$ref") == "#/$defs/chatSessionBulkLifecycleRequestPayload"
+                for part in option["allOf"]
+            )
+            and any(
+                isinstance(part, dict)
+                and part.get("properties", {}).get("scope", {}).get("const") == scope
+                for part in option["allOf"]
+            )
+            for option in options
+        )
+        has_bulk_result = any(
+            isinstance(option, dict)
+            and isinstance(option.get("allOf"), list)
+            and any(
+                isinstance(part, dict)
+                and part.get("$ref") == "#/$defs/chatSessionBulkLifecycleResultPayload"
+                for part in option["allOf"]
+            )
+            and any(
+                isinstance(part, dict)
+                and part.get("properties", {}).get("scope", {}).get("const") == scope
+                and part.get("properties", {}).get("status", {}).get("const") == status
+                for part in option["allOf"]
+            )
+            for option in options
+        )
+        if not has_bulk_request:
+            failures.append(f"$defs.{payload_name} must bind its runtime-authoritative bulk request scope")
+        if not has_bulk_result:
+            failures.append(f"$defs.{payload_name} must bind its runtime-authoritative bulk result scope/status")
     return failures
 
 
@@ -4508,6 +4683,464 @@ def check_memory_list_payload_schema_contract(schema: dict[str, object]) -> list
             )
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.memoryListPayload request additionalProperties must be false")
+    return failures
+
+
+def check_memory_duplicate_suggestions_payload_schema_contract(
+    schema: dict[str, object],
+) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memory duplicate suggestion schemas"]
+
+    payload = defs.get("memoryDuplicateSuggestionsListPayload")
+    group = defs.get("memoryDuplicateSuggestionGroup")
+    if not isinstance(payload, dict):
+        return ["$defs.memoryDuplicateSuggestionsListPayload schema is missing"]
+    if not isinstance(group, dict):
+        return ["$defs.memoryDuplicateSuggestionGroup schema is missing"]
+
+    options = payload.get("oneOf")
+    if not isinstance(options, list) or len(options) != 2:
+        return [
+            "$defs.memoryDuplicateSuggestionsListPayload.oneOf must describe only empty request and bounded response payloads"
+        ]
+    if {
+        option.get("$ref")
+        for option in options
+        if isinstance(option, dict) and "$ref" in option
+    } != {
+        "#/$defs/emptyPayload"
+    }:
+        failures.append(
+            "$defs.memoryDuplicateSuggestionsListPayload request must use emptyPayload"
+        )
+    response = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["groups", "scanned_count", "truncated"]
+        ),
+        None,
+    )
+    if not isinstance(response, dict):
+        failures.append(
+            "$defs.memoryDuplicateSuggestionsListPayload must require the complete bounded response"
+        )
+    else:
+        properties = response.get("properties")
+        expected_keys = {"groups", "scanned_count", "truncated"}
+        if not isinstance(properties, dict) or set(properties) != expected_keys:
+            failures.append(
+                "$defs.memoryDuplicateSuggestionsListPayload response properties must stay closed"
+            )
+        else:
+            if properties.get("groups") != {
+                "type": "array",
+                "items": {"$ref": "#/$defs/memoryDuplicateSuggestionGroup"},
+                "maxItems": 100,
+                "uniqueItems": True,
+            }:
+                failures.append(
+                    "$defs.memoryDuplicateSuggestionsListPayload groups must stay unique and bounded to 100"
+                )
+            if properties.get("scanned_count") != {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 200,
+            }:
+                failures.append(
+                    "$defs.memoryDuplicateSuggestionsListPayload scanned_count must stay bounded 0...200"
+                )
+            if properties.get("truncated") != {"type": "boolean"}:
+                failures.append(
+                    "$defs.memoryDuplicateSuggestionsListPayload truncated must stay boolean"
+                )
+            forbidden = {
+                "content",
+                "content_hash",
+                "embedding",
+                "embedding_model_id",
+                "model_id",
+                "source",
+                "source_revision",
+                "audit_handle",
+                "backend_url",
+                "route_token",
+            }
+            leaked = sorted(set(properties) & forbidden)
+            if leaked:
+                failures.append(
+                    "$defs.memoryDuplicateSuggestionsListPayload response leaks protected metadata "
+                    f"{leaked}"
+                )
+        if response.get("additionalProperties") is not False:
+            failures.append(
+                "$defs.memoryDuplicateSuggestionsListPayload response additionalProperties must be false"
+            )
+
+    if group.get("required") != ["entry_ids"]:
+        failures.append("$defs.memoryDuplicateSuggestionGroup must require only entry_ids")
+    group_properties = group.get("properties")
+    if not isinstance(group_properties, dict) or set(group_properties) != {"entry_ids"}:
+        failures.append("$defs.memoryDuplicateSuggestionGroup properties must stay closed")
+    else:
+        entry_ids = group_properties.get("entry_ids")
+        expected_entry_ids = {
+            "type": "array",
+            "items": {"$ref": "#/$defs/nonBlankString"},
+            "minItems": 2,
+            "maxItems": 200,
+            "uniqueItems": True,
+        }
+        if entry_ids != expected_entry_ids:
+            failures.append(
+                "$defs.memoryDuplicateSuggestionGroup entry_ids must be unique nonblank IDs with 2...200 members"
+            )
+    if group.get("additionalProperties") is not False:
+        failures.append(
+            "$defs.memoryDuplicateSuggestionGroup additionalProperties must be false"
+        )
+    return failures
+
+
+def check_memory_semantic_duplicate_suggestions_payload_schema_contract(
+    schema: dict[str, object],
+) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memory semantic duplicate suggestion schemas"]
+
+    payload = defs.get("memorySemanticDuplicateSuggestionsListPayload")
+    pair = defs.get("memorySemanticDuplicateSuggestionPair")
+    if not isinstance(payload, dict):
+        return ["$defs.memorySemanticDuplicateSuggestionsListPayload schema is missing"]
+    if not isinstance(pair, dict):
+        return ["$defs.memorySemanticDuplicateSuggestionPair schema is missing"]
+
+    options = payload.get("oneOf")
+    if not isinstance(options, list) or len(options) != 2:
+        return [
+            "$defs.memorySemanticDuplicateSuggestionsListPayload.oneOf must describe only request and response payloads"
+        ]
+    request = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required")
+            == ["embedding_model_id", "minimum_similarity_basis_points"]
+        ),
+        None,
+    )
+    response = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required")
+            == ["pairs", "scanned_count", "omitted_count", "truncated"]
+        ),
+        None,
+    )
+    if not isinstance(request, dict):
+        failures.append(
+            "$defs.memorySemanticDuplicateSuggestionsListPayload must require the complete request"
+        )
+    else:
+        properties = request.get("properties")
+        expected_keys = {"embedding_model_id", "minimum_similarity_basis_points"}
+        if not isinstance(properties, dict) or set(properties) != expected_keys:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionsListPayload request properties must stay closed"
+            )
+        else:
+            if properties.get("embedding_model_id") != {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "\\S",
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateSuggestionsListPayload embedding_model_id must be bounded nonblank text"
+                )
+            if properties.get("minimum_similarity_basis_points") != {
+                "type": "integer",
+                "minimum": 8000,
+                "maximum": 10000,
+                "x-aetherlink-wire-kind": "exact-json-integer-token",
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateSuggestionsListPayload threshold must stay exact-wire integer 8000...10000"
+                )
+        if request.get("additionalProperties") is not False:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionsListPayload request additionalProperties must be false"
+            )
+
+    if not isinstance(response, dict):
+        failures.append(
+            "$defs.memorySemanticDuplicateSuggestionsListPayload must require the complete response"
+        )
+    else:
+        properties = response.get("properties")
+        expected_keys = {"pairs", "scanned_count", "omitted_count", "truncated"}
+        if not isinstance(properties, dict) or set(properties) != expected_keys:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionsListPayload response properties must stay closed"
+            )
+        else:
+            if properties.get("pairs") != {
+                "type": "array",
+                "items": {"$ref": "#/$defs/memorySemanticDuplicateSuggestionPair"},
+                "maxItems": 100,
+                "uniqueItems": True,
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateSuggestionsListPayload pairs must stay unique and bounded to 100"
+                )
+            for key in ("scanned_count", "omitted_count"):
+                if properties.get(key) != {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 200,
+                }:
+                    failures.append(
+                        f"$defs.memorySemanticDuplicateSuggestionsListPayload {key} must stay bounded 0...200"
+                    )
+            if properties.get("truncated") != {"type": "boolean"}:
+                failures.append(
+                    "$defs.memorySemanticDuplicateSuggestionsListPayload truncated must stay boolean"
+                )
+            forbidden = {
+                "content",
+                "content_hash",
+                "embedding",
+                "embedding_model_id",
+                "model_fingerprint",
+                "source",
+                "source_revision",
+                "audit_handle",
+                "backend_url",
+                "route_token",
+            }
+            leaked = sorted(set(properties) & forbidden)
+            if leaked:
+                failures.append(
+                    "$defs.memorySemanticDuplicateSuggestionsListPayload response leaks protected metadata "
+                    f"{leaked}"
+                )
+        if response.get("additionalProperties") is not False:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionsListPayload response additionalProperties must be false"
+            )
+
+    if pair.get("required") != ["entry_ids", "similarity_basis_points"]:
+        failures.append(
+            "$defs.memorySemanticDuplicateSuggestionPair must require IDs and integer similarity"
+        )
+    pair_properties = pair.get("properties")
+    if not isinstance(pair_properties, dict) or set(pair_properties) != {
+        "entry_ids",
+        "similarity_basis_points",
+    }:
+        failures.append("$defs.memorySemanticDuplicateSuggestionPair properties must stay closed")
+    else:
+        if pair_properties.get("entry_ids") != {
+            "type": "array",
+            "items": {"$ref": "#/$defs/nonBlankString"},
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": True,
+        }:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionPair entry_ids must be exactly two unique nonblank IDs"
+            )
+        if pair_properties.get("similarity_basis_points") != {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+        }:
+            failures.append(
+                "$defs.memorySemanticDuplicateSuggestionPair similarity must stay integer 0...10000"
+            )
+    if pair.get("additionalProperties") is not False:
+        failures.append(
+            "$defs.memorySemanticDuplicateSuggestionPair additionalProperties must be false"
+        )
+    return failures
+
+
+def check_memory_semantic_duplicate_clusters_payload_schema_contract(
+    schema: dict[str, object],
+) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memory semantic duplicate cluster schemas"]
+
+    payload = defs.get("memorySemanticDuplicateClustersListPayload")
+    cluster = defs.get("memorySemanticDuplicateCluster")
+    if not isinstance(payload, dict):
+        return ["$defs.memorySemanticDuplicateClustersListPayload schema is missing"]
+    if not isinstance(cluster, dict):
+        return ["$defs.memorySemanticDuplicateCluster schema is missing"]
+
+    options = payload.get("oneOf")
+    if not isinstance(options, list) or len(options) != 2:
+        return [
+            "$defs.memorySemanticDuplicateClustersListPayload.oneOf must describe only request and response payloads"
+        ]
+    request = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required")
+            == ["embedding_model_id", "minimum_similarity_basis_points"]
+        ),
+        None,
+    )
+    response = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required")
+            == ["clusters", "scanned_count", "omitted_count", "truncated"]
+        ),
+        None,
+    )
+
+    if not isinstance(request, dict):
+        failures.append(
+            "$defs.memorySemanticDuplicateClustersListPayload must require the complete request"
+        )
+    else:
+        properties = request.get("properties")
+        expected_keys = {"embedding_model_id", "minimum_similarity_basis_points"}
+        if not isinstance(properties, dict) or set(properties) != expected_keys:
+            failures.append(
+                "$defs.memorySemanticDuplicateClustersListPayload request properties must stay closed"
+            )
+        else:
+            if properties.get("embedding_model_id") != {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "\\S",
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateClustersListPayload embedding_model_id must be bounded nonblank text"
+                )
+            if properties.get("minimum_similarity_basis_points") != {
+                "type": "integer",
+                "minimum": 8000,
+                "maximum": 10000,
+                "x-aetherlink-wire-kind": "exact-json-integer-token",
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateClustersListPayload threshold must stay exact-wire integer 8000...10000"
+                )
+        if request.get("additionalProperties") is not False:
+            failures.append(
+                "$defs.memorySemanticDuplicateClustersListPayload request additionalProperties must be false"
+            )
+
+    if not isinstance(response, dict):
+        failures.append(
+            "$defs.memorySemanticDuplicateClustersListPayload must require the complete response"
+        )
+    else:
+        properties = response.get("properties")
+        expected_keys = {"clusters", "scanned_count", "omitted_count", "truncated"}
+        if not isinstance(properties, dict) or set(properties) != expected_keys:
+            failures.append(
+                "$defs.memorySemanticDuplicateClustersListPayload response properties must stay closed"
+            )
+        else:
+            if properties.get("clusters") != {
+                "type": "array",
+                "items": {"$ref": "#/$defs/memorySemanticDuplicateCluster"},
+                "maxItems": 100,
+                "uniqueItems": True,
+            }:
+                failures.append(
+                    "$defs.memorySemanticDuplicateClustersListPayload clusters must stay unique and bounded to 100"
+                )
+            for key in ("scanned_count", "omitted_count"):
+                if properties.get(key) != {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 200,
+                }:
+                    failures.append(
+                        f"$defs.memorySemanticDuplicateClustersListPayload {key} must stay bounded 0...200"
+                    )
+            if properties.get("truncated") != {"type": "boolean"}:
+                failures.append(
+                    "$defs.memorySemanticDuplicateClustersListPayload truncated must stay boolean"
+                )
+            forbidden = {
+                "content",
+                "content_hash",
+                "embedding",
+                "embedding_model_id",
+                "model_fingerprint",
+                "source",
+                "source_revision",
+                "audit_handle",
+                "backend_url",
+                "route_token",
+            }
+            leaked = sorted(set(properties) & forbidden)
+            if leaked:
+                failures.append(
+                    "$defs.memorySemanticDuplicateClustersListPayload response leaks protected metadata "
+                    f"{leaked}"
+                )
+        if response.get("additionalProperties") is not False:
+            failures.append(
+                "$defs.memorySemanticDuplicateClustersListPayload response additionalProperties must be false"
+            )
+
+    if cluster.get("required") != ["entry_ids", "minimum_similarity_basis_points"]:
+        failures.append(
+            "$defs.memorySemanticDuplicateCluster must require IDs and minimum integer similarity"
+        )
+    cluster_properties = cluster.get("properties")
+    if not isinstance(cluster_properties, dict) or set(cluster_properties) != {
+        "entry_ids",
+        "minimum_similarity_basis_points",
+    }:
+        failures.append("$defs.memorySemanticDuplicateCluster properties must stay closed")
+    else:
+        if cluster_properties.get("entry_ids") != {
+            "type": "array",
+            "items": {"$ref": "#/$defs/nonBlankString"},
+            "minItems": 2,
+            "maxItems": 200,
+            "uniqueItems": True,
+        }:
+            failures.append(
+                "$defs.memorySemanticDuplicateCluster entry_ids must contain 2...200 unique nonblank IDs"
+            )
+        if cluster_properties.get("minimum_similarity_basis_points") != {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000,
+            "x-aetherlink-wire-kind": "exact-json-integer-token",
+        }:
+            failures.append(
+                "$defs.memorySemanticDuplicateCluster minimum similarity must stay exact-wire integer 0...10000"
+            )
+    if cluster.get("additionalProperties") is not False:
+        failures.append(
+            "$defs.memorySemanticDuplicateCluster additionalProperties must be false"
+        )
     return failures
 
 
@@ -5163,6 +5796,13 @@ def main() -> int:
         failures.extend(check_chat_session_lifecycle_payload_schema_contract(schema))
         failures.extend(check_chat_session_rename_payload_schema_contract(schema))
         failures.extend(check_memory_list_payload_schema_contract(schema))
+        failures.extend(check_memory_duplicate_suggestions_payload_schema_contract(schema))
+        failures.extend(
+            check_memory_semantic_duplicate_suggestions_payload_schema_contract(schema)
+        )
+        failures.extend(
+            check_memory_semantic_duplicate_clusters_payload_schema_contract(schema)
+        )
         failures.extend(check_memory_upsert_payload_schema_contract(schema))
         failures.extend(check_memory_delete_payload_schema_contract(schema))
         failures.extend(check_index_documents_list_payload_schema_contract(schema))

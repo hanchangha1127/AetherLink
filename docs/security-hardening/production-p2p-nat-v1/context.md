@@ -16,9 +16,12 @@ canonical contracts and no-network conformance as completed. The versioned
 `handoff-v3` records that all seven pre-network recommendations are selected
 while keeping socket execution, network I/O, library selection, and production
 deployment unauthorized. The closed
-`controlled-network-spike/review-v1` pair now proposes concrete choices for the
-four remaining blockers, but selects zero and keeps source acquisition, harness
-implementation, socket execution, and a next handoff unauthorized.
+`controlled-network-spike/review-v1` pair preserves the zero-selection proposal.
+The separate closed `controlled-network-spike/decision-v1` and
+`implementation/handoff-v4` select all four recommendations only for offline
+Phase A inspection, compile-only, cryptographic-vector, and static-policy work.
+They keep source-acquisition network I/O, runtime and harness network I/O,
+socket execution, Phase B, measurement, and production deployment unauthorized.
 `route.refresh` remains the only active
 traversal-related namespace.
 
@@ -29,7 +32,7 @@ traversal-related namespace.
 - Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4`
+  `8741927642b8697e517dccee7dc639d279037f530b442f9ddf9873cbd2294a92`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.
@@ -50,7 +53,7 @@ traversal-related namespace.
 | `E003` | QR P2P family validation | Observed | `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:121`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt:197` | Android accepts only a complete, bounded `p2p_rendezvous` field family and rejects unsupported class/version and incomplete material. It defines no candidate grammar or target policy. |
 | `E004` | Injected P2P connector and fallback seam | Observed | `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:158`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:181`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:288`, `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt:396` | The manager validates identity, token separation, and expiration, delegates P2P behavior to an optional connector, and can proceed to relay after failure. No production connector is supplied. |
 | `E005` | Opaque P2P route envelope | Observed | `apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparation.kt:3` | Current preparation carries a record id, a field named encrypted candidate material, expiration, nonce, and protocol version; it checks shape, freshness, and route-token separation but does not interpret candidates or prove encryption. |
-| `E006` | macOS route and pair lifecycle owner | Observed | `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:700`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:873`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:1799` | The app model owns the connection manager and starts pair-scoped private-overlay and relay transports, but the inventoried source does not provide production candidate gathering or traversal. |
+| `E006` | macOS route and pair lifecycle owner | Observed | `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:731`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:910`, `apps/macos/CompanionCore/Sources/CompanionAppModel.swift:1981` | The app model owns the connection manager and starts pair-scoped private-overlay and relay transports, but the inventoried source does not provide production candidate gathering or traversal. |
 | `E007` | Authenticated route-refresh envelope | Observed | `apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift:705` | The runtime can return a complete fresh P2P opaque field family through authenticated route refresh, with canonicality and expiration checks. This does not authenticate a candidate service. |
 | `E008` | Pair-scoped private-overlay lifecycle seam | Observed | `apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift:17`, `apps/macos/CompanionCore/Sources/MacRuntimeConnectionManager.swift:98` | Current uncommitted source defines injected per-pair private-overlay and relay transport ownership with lifecycle isolation. It does not establish ICE, TURN, or secure path migration. |
 | `E009` | macOS pairing and QR serialization boundary | Observed | `apps/macos/Pairing/Sources/PairingCoordinator.swift:186` | macOS emits canonical, complete opaque P2P QR material from a pairing boundary that has long-term device identity context. The encrypted body's producer and cryptographic meaning remain outside this code. |

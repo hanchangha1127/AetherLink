@@ -87,6 +87,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -145,11 +146,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.localagentbridge.android.R
 import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
 import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.protocol.RetrievalMatchKind
+import com.localagentbridge.android.core.protocol.isCanonicalProviderQualifiedModelId
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
@@ -167,6 +170,9 @@ import com.localagentbridge.android.runtime.RuntimeDocumentIndexDocument
 import com.localagentbridge.android.runtime.RuntimeDocumentSearchResult
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
+import com.localagentbridge.android.runtime.RuntimeMemoryDuplicateSuggestionGroup
+import com.localagentbridge.android.runtime.RuntimeMemorySemanticDuplicateSuggestionPair
+import com.localagentbridge.android.runtime.RuntimeMemorySemanticDuplicateCluster
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraft
 import com.localagentbridge.android.runtime.RuntimeMessageAttachment
 import com.localagentbridge.android.runtime.RuntimeModel
@@ -181,6 +187,7 @@ import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isEmbeddingModel
+import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
 import com.localagentbridge.android.runtime.supportsImageInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -2048,6 +2055,9 @@ fun SettingsScreen(
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit = {},
+    onScanMemoryDuplicateSuggestions: () -> Unit = {},
+    onScanMemorySemanticDuplicateSuggestions: (Int) -> Unit = {},
+    onScanMemorySemanticDuplicateClusters: (Int) -> Unit = {},
     onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
     onRefreshDocuments: () -> Unit = {},
     onSearchDocuments: (String) -> Unit = {},
@@ -2219,6 +2229,52 @@ fun SettingsScreen(
                     generatingSummaryDraftIds = state.generatingMemorySummaryDraftIds,
                     approvingSummaryDraftIds = state.approvingMemorySummaryDraftIds,
                     dismissingSummaryDraftIds = state.dismissingMemorySummaryDraftIds,
+                    duplicateSuggestionGroups = state.memoryDuplicateSuggestionGroups,
+                    duplicateSuggestionsScannedCount = state.memoryDuplicateSuggestionsScannedCount,
+                    duplicateSuggestionsTruncated = state.memoryDuplicateSuggestionsTruncated,
+                    hasDuplicateSuggestionsResult = state.hasMemoryDuplicateSuggestionsResult,
+                    isScanningDuplicateSuggestions = state.isScanningMemoryDuplicateSuggestions,
+                    duplicateSuggestionsActionEnabled = memoryDuplicateSuggestionsActionEnabled(state),
+                    semanticDuplicateSuggestionPairs = state.memorySemanticDuplicateSuggestionPairs,
+                    semanticDuplicateSuggestionsScannedCount =
+                        state.memorySemanticDuplicateSuggestionsScannedCount,
+                    semanticDuplicateSuggestionsOmittedCount =
+                        state.memorySemanticDuplicateSuggestionsOmittedCount,
+                    semanticDuplicateSuggestionsTruncated =
+                        state.memorySemanticDuplicateSuggestionsTruncated,
+                    semanticDuplicateSuggestionsThresholdBasisPoints =
+                        state.memorySemanticDuplicateSuggestionsThresholdBasisPoints,
+                    hasSemanticDuplicateSuggestionsResult =
+                        state.hasMemorySemanticDuplicateSuggestionsResult,
+                    isScanningSemanticDuplicateSuggestions =
+                        state.isScanningMemorySemanticDuplicateSuggestions,
+                    semanticDuplicateSuggestionsActionEnabled =
+                        memorySemanticDuplicateSuggestionsActionEnabled(state),
+                    semanticDuplicateSuggestionsDisabledReasonRes =
+                        memorySemanticDuplicateSuggestionsDisabledReasonTextRes(
+                            state = state,
+                            hasEntries = state.memoryEntries.isNotEmpty(),
+                        ),
+                    semanticDuplicateClusters = state.memorySemanticDuplicateClusters,
+                    semanticDuplicateClustersScannedCount =
+                        state.memorySemanticDuplicateClustersScannedCount,
+                    semanticDuplicateClustersOmittedCount =
+                        state.memorySemanticDuplicateClustersOmittedCount,
+                    semanticDuplicateClustersTruncated =
+                        state.memorySemanticDuplicateClustersTruncated,
+                    semanticDuplicateClustersThresholdBasisPoints =
+                        state.memorySemanticDuplicateClustersThresholdBasisPoints,
+                    hasSemanticDuplicateClustersResult =
+                        state.hasMemorySemanticDuplicateClustersResult,
+                    isScanningSemanticDuplicateClusters =
+                        state.isScanningMemorySemanticDuplicateClusters,
+                    semanticDuplicateClustersActionEnabled =
+                        memorySemanticDuplicateClustersActionEnabled(state),
+                    semanticDuplicateClustersDisabledReasonRes =
+                        memorySemanticDuplicateClustersDisabledReasonTextRes(
+                            state = state,
+                            hasEntries = state.memoryEntries.isNotEmpty(),
+                        ),
                     actionsEnabled = memoryActionsEnabled(state),
                     actionsDisabledReasonRes = memoryLockNoticeTextRes(
                         state = state,
@@ -2231,6 +2287,11 @@ fun SettingsScreen(
                     onApproveMemorySummaryDraft = onApproveMemorySummaryDraft,
                     onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                     onRefreshMemory = onRefreshMemory,
+                    onScanMemoryDuplicateSuggestions = onScanMemoryDuplicateSuggestions,
+                    onScanMemorySemanticDuplicateSuggestions =
+                        onScanMemorySemanticDuplicateSuggestions,
+                    onScanMemorySemanticDuplicateClusters =
+                        onScanMemorySemanticDuplicateClusters,
                     onSearchMemory = onSearchMemory,
                     showHeader = false,
                 )
@@ -2247,7 +2308,7 @@ fun SettingsScreen(
                     archivedSessions = state.archivedChatSessions,
                     activeChatSessionId = state.activeChatSessionId,
                     models = state.models,
-                    isActionEnabled = !state.isStreaming,
+                    isActionEnabled = !state.isStreaming && !state.isChatHistoryActionPending,
                     canRefreshChatHistory = chatHistoryRefreshEnabled(state),
                     refreshStateDescriptionRes = chatHistoryRefreshStateDescriptionRes(state),
                     onRefreshChatHistory = onRefreshChatHistory,
@@ -6846,13 +6907,14 @@ internal fun chatHistoryBulkActionsAvailable(
 }
 
 internal fun chatHistoryRefreshEnabled(state: RuntimeUiState): Boolean {
-    return state.isConnected && !state.isStreaming
+    return state.isConnected && !state.isStreaming && !state.isBulkMutatingChatSessions
 }
 
 @StringRes
 internal fun chatHistoryRefreshStateDescriptionRes(state: RuntimeUiState): Int {
     return when {
         state.isStreaming -> R.string.chat_history_action_state_wait_for_stream
+        state.isBulkMutatingChatSessions -> R.string.error_chat_history_loading
         state.isConnected -> R.string.chat_history_refresh_state_ready
         else -> R.string.chat_history_refresh_state_connect_first
     }
@@ -8194,6 +8256,32 @@ internal fun MemoryPanel(
     generatingSummaryDraftIds: Set<String> = emptySet(),
     approvingSummaryDraftIds: Set<String> = emptySet(),
     dismissingSummaryDraftIds: Set<String> = emptySet(),
+    duplicateSuggestionGroups: List<RuntimeMemoryDuplicateSuggestionGroup> = emptyList(),
+    duplicateSuggestionsScannedCount: Int = 0,
+    duplicateSuggestionsTruncated: Boolean = false,
+    hasDuplicateSuggestionsResult: Boolean = false,
+    isScanningDuplicateSuggestions: Boolean = false,
+    duplicateSuggestionsActionEnabled: Boolean = false,
+    semanticDuplicateSuggestionPairs: List<RuntimeMemorySemanticDuplicateSuggestionPair> = emptyList(),
+    semanticDuplicateSuggestionsScannedCount: Int = 0,
+    semanticDuplicateSuggestionsOmittedCount: Int = 0,
+    semanticDuplicateSuggestionsTruncated: Boolean = false,
+    semanticDuplicateSuggestionsThresholdBasisPoints: Int = 9_000,
+    hasSemanticDuplicateSuggestionsResult: Boolean = false,
+    isScanningSemanticDuplicateSuggestions: Boolean = false,
+    semanticDuplicateSuggestionsActionEnabled: Boolean = false,
+    @StringRes semanticDuplicateSuggestionsDisabledReasonRes: Int =
+        R.string.memory_semantic_duplicate_suggestions_select_local_model,
+    semanticDuplicateClusters: List<RuntimeMemorySemanticDuplicateCluster> = emptyList(),
+    semanticDuplicateClustersScannedCount: Int = 0,
+    semanticDuplicateClustersOmittedCount: Int = 0,
+    semanticDuplicateClustersTruncated: Boolean = false,
+    semanticDuplicateClustersThresholdBasisPoints: Int = 9_000,
+    hasSemanticDuplicateClustersResult: Boolean = false,
+    isScanningSemanticDuplicateClusters: Boolean = false,
+    semanticDuplicateClustersActionEnabled: Boolean = false,
+    @StringRes semanticDuplicateClustersDisabledReasonRes: Int =
+        R.string.memory_semantic_duplicate_clusters_select_local_model,
     actionsEnabled: Boolean,
     @StringRes actionsDisabledReasonRes: Int = memoryLockNoticeTextRes(hasEntries = entries.isNotEmpty()),
     onAddMemoryEntry: (String) -> Unit,
@@ -8203,6 +8291,9 @@ internal fun MemoryPanel(
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit,
+    onScanMemoryDuplicateSuggestions: () -> Unit = {},
+    onScanMemorySemanticDuplicateSuggestions: (Int) -> Unit = {},
+    onScanMemorySemanticDuplicateClusters: (Int) -> Unit = {},
     onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
     showHeader: Boolean = true,
 ) {
@@ -8297,6 +8388,13 @@ internal fun MemoryPanel(
                     )
                 }
             }
+            MemoryDuplicateSuggestionsScanAction(
+                enabled = duplicateSuggestionsActionEnabled,
+                scanning = isScanningDuplicateSuggestions,
+                disabledStateDescription = actionsDisabledReason,
+                onScan = onScanMemoryDuplicateSuggestions,
+                hapticFeedback = hapticFeedback,
+            )
             OutlinedTextField(
                 value = draft.value,
                 onValueChange = {
@@ -8443,6 +8541,541 @@ internal fun MemoryPanel(
                     onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                     hapticFeedback = hapticFeedback,
                 )
+            }
+            if (hasDuplicateSuggestionsResult) {
+                MemoryDuplicateSuggestionsSection(
+                    groups = duplicateSuggestionGroups,
+                    entries = entries,
+                    scannedCount = duplicateSuggestionsScannedCount,
+                    truncated = duplicateSuggestionsTruncated,
+                    actionsEnabled = actionsEnabled,
+                    disabledActionStateDescription = if (actionsEnabled) null else actionsDisabledReason,
+                    onRemoveMemoryEntry = onRemoveMemoryEntry,
+                    onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                )
+            }
+            MemorySemanticDuplicateSuggestionsSection(
+                pairs = semanticDuplicateSuggestionPairs,
+                entries = entries,
+                scannedCount = semanticDuplicateSuggestionsScannedCount,
+                omittedCount = semanticDuplicateSuggestionsOmittedCount,
+                truncated = semanticDuplicateSuggestionsTruncated,
+                resultThresholdBasisPoints = semanticDuplicateSuggestionsThresholdBasisPoints,
+                hasResult = hasSemanticDuplicateSuggestionsResult,
+                scanning = isScanningSemanticDuplicateSuggestions,
+                scanEnabled = semanticDuplicateSuggestionsActionEnabled,
+                disabledStateDescription = stringResource(
+                    semanticDuplicateSuggestionsDisabledReasonRes,
+                ),
+                actionsEnabled = actionsEnabled,
+                disabledManualActionStateDescription =
+                    if (actionsEnabled) null else actionsDisabledReason,
+                onScan = onScanMemorySemanticDuplicateSuggestions,
+                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                hapticFeedback = hapticFeedback,
+            )
+            MemorySemanticDuplicateClustersSection(
+                clusters = semanticDuplicateClusters,
+                entries = entries,
+                scannedCount = semanticDuplicateClustersScannedCount,
+                omittedCount = semanticDuplicateClustersOmittedCount,
+                truncated = semanticDuplicateClustersTruncated,
+                resultThresholdBasisPoints = semanticDuplicateClustersThresholdBasisPoints,
+                hasResult = hasSemanticDuplicateClustersResult,
+                scanning = isScanningSemanticDuplicateClusters,
+                scanEnabled = semanticDuplicateClustersActionEnabled,
+                disabledStateDescription = stringResource(
+                    semanticDuplicateClustersDisabledReasonRes,
+                ),
+                actionsEnabled = actionsEnabled,
+                disabledManualActionStateDescription =
+                    if (actionsEnabled) null else actionsDisabledReason,
+                onScan = onScanMemorySemanticDuplicateClusters,
+                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                hapticFeedback = hapticFeedback,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemoryDuplicateSuggestionsScanAction(
+    enabled: Boolean,
+    scanning: Boolean,
+    disabledStateDescription: String,
+    onScan: () -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    val actionLabel = stringResource(R.string.memory_duplicate_suggestions_scan)
+    val scanningLabel = stringResource(R.string.memory_duplicate_suggestions_scanning)
+    val readyState = stringResource(R.string.memory_duplicate_suggestions_scan_state_ready)
+    OutlinedButton(
+        onClick = {
+            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+            onScan()
+        },
+        enabled = enabled && !scanning,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MEMORY_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+            .semantics {
+                contentDescription = actionLabel
+                stateDescription = when {
+                    scanning -> scanningLabel
+                    enabled -> readyState
+                    else -> disabledStateDescription
+                }
+                onClick(label = actionLabel, action = null)
+            },
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (scanning) scanningLabel else actionLabel,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun MemoryDuplicateSuggestionsSection(
+    groups: List<RuntimeMemoryDuplicateSuggestionGroup>,
+    entries: List<RuntimeMemoryEntry>,
+    scannedCount: Int,
+    truncated: Boolean,
+    actionsEnabled: Boolean,
+    disabledActionStateDescription: String?,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+) {
+    val entriesById = remember(entries) { entries.associateBy(RuntimeMemoryEntry::id) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MEMORY_DUPLICATE_SUGGESTIONS_SECTION_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.memory_duplicate_suggestions_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            text = stringResource(R.string.memory_duplicate_suggestions_review_only),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Text(
+            text = stringResource(R.string.memory_duplicate_suggestions_scanned_count, scannedCount),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (truncated) {
+            Text(
+                text = stringResource(R.string.memory_duplicate_suggestions_truncated),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag(MEMORY_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG),
+            )
+        }
+        if (groups.isEmpty()) {
+            Text(
+                text = stringResource(R.string.memory_duplicate_suggestions_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag(MEMORY_DUPLICATE_SUGGESTIONS_EMPTY_TEST_TAG),
+            )
+        } else {
+            groups.forEachIndexed { groupIndex, group ->
+                Text(
+                    text = stringResource(R.string.memory_duplicate_suggestions_group, groupIndex + 1),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.testTag(memoryDuplicateSuggestionGroupTestTag(groupIndex)),
+                )
+                group.entryIds.mapNotNull(entriesById::get).forEach { entry ->
+                    MemoryEntryRow(
+                        entry = entry,
+                        actionsEnabled = actionsEnabled,
+                        disabledActionStateDescription = disabledActionStateDescription,
+                        onRemoveMemoryEntry = onRemoveMemoryEntry,
+                        onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemorySemanticDuplicateSuggestionsSection(
+    pairs: List<RuntimeMemorySemanticDuplicateSuggestionPair>,
+    entries: List<RuntimeMemoryEntry>,
+    scannedCount: Int,
+    omittedCount: Int,
+    truncated: Boolean,
+    resultThresholdBasisPoints: Int,
+    hasResult: Boolean,
+    scanning: Boolean,
+    scanEnabled: Boolean,
+    disabledStateDescription: String,
+    actionsEnabled: Boolean,
+    disabledManualActionStateDescription: String?,
+    onScan: (Int) -> Unit,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    val entriesById = remember(entries) { entries.associateBy(RuntimeMemoryEntry::id) }
+    var thresholdBasisPoints by rememberSaveable(resultThresholdBasisPoints) {
+        mutableStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
+    }
+    val thresholdLabel = stringResource(
+        R.string.memory_semantic_duplicate_suggestions_threshold,
+        thresholdBasisPoints / 100.0,
+    )
+    val scanLabel = stringResource(R.string.memory_semantic_duplicate_suggestions_scan)
+    val scanningLabel = stringResource(R.string.memory_semantic_duplicate_suggestions_scanning)
+    val scanStateDescription = when {
+        scanning -> scanningLabel
+        scanEnabled -> stringResource(R.string.memory_semantic_duplicate_suggestions_scan_state_ready)
+        else -> disabledStateDescription
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SECTION_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.memory_semantic_duplicate_suggestions_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            text = stringResource(R.string.memory_semantic_duplicate_suggestions_review_only),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Text(
+            text = thresholdLabel,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.testTag(
+                MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_LABEL_TEST_TAG,
+            ),
+        )
+        Slider(
+            value = thresholdBasisPoints.toFloat(),
+            onValueChange = {
+                thresholdBasisPoints = it.roundToInt().coerceIn(8_000, 10_000)
+            },
+            enabled = scanEnabled && !scanning,
+            valueRange = 8_000f..10_000f,
+            steps = 1_999,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_TEST_TAG)
+                .semantics { stateDescription = thresholdLabel },
+        )
+        OutlinedButton(
+            onClick = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                onScan(thresholdBasisPoints)
+            },
+            enabled = scanEnabled && !scanning,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+                .semantics {
+                    contentDescription = scanLabel
+                    stateDescription = scanStateDescription
+                    onClick(label = scanLabel, action = null)
+                },
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (scanning) scanningLabel else scanLabel,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (!scanEnabled && !scanning && actionsEnabled) {
+            Text(
+                text = disabledStateDescription,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.testTag(
+                    MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_DISABLED_REASON_TEST_TAG,
+                ),
+            )
+        }
+        if (hasResult) {
+            Text(
+                text = stringResource(
+                    R.string.memory_semantic_duplicate_suggestions_result_summary,
+                    scannedCount,
+                    resultThresholdBasisPoints / 100.0,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            if (omittedCount > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.memory_semantic_duplicate_suggestions_omitted_count,
+                        omittedCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_OMITTED_TEST_TAG,
+                    ),
+                )
+            }
+            if (truncated) {
+                Text(
+                    text = stringResource(
+                        R.string.memory_semantic_duplicate_suggestions_truncated,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG,
+                    ),
+                )
+            }
+            if (pairs.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.memory_semantic_duplicate_suggestions_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_EMPTY_TEST_TAG,
+                    ),
+                )
+            } else {
+                pairs.forEachIndexed { pairIndex, pair ->
+                    val pairEntries = pair.entryIds.mapNotNull(entriesById::get)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(memorySemanticDuplicateSuggestionPairTestTag(pairIndex)),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.memory_semantic_duplicate_suggestions_pair,
+                                pairIndex + 1,
+                                pair.similarityBasisPoints / 100.0,
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        pairEntries.forEach { entry ->
+                            MemoryEntryRow(
+                                entry = entry,
+                                actionsEnabled = actionsEnabled,
+                                disabledActionStateDescription =
+                                    disabledManualActionStateDescription,
+                                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemorySemanticDuplicateClustersSection(
+    clusters: List<RuntimeMemorySemanticDuplicateCluster>,
+    entries: List<RuntimeMemoryEntry>,
+    scannedCount: Int,
+    omittedCount: Int,
+    truncated: Boolean,
+    resultThresholdBasisPoints: Int,
+    hasResult: Boolean,
+    scanning: Boolean,
+    scanEnabled: Boolean,
+    disabledStateDescription: String,
+    actionsEnabled: Boolean,
+    disabledManualActionStateDescription: String?,
+    onScan: (Int) -> Unit,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    val entriesById = remember(entries) { entries.associateBy(RuntimeMemoryEntry::id) }
+    var thresholdBasisPoints by rememberSaveable(resultThresholdBasisPoints) {
+        mutableStateOf(resultThresholdBasisPoints.coerceIn(8_000, 10_000))
+    }
+    val thresholdLabel = stringResource(
+        R.string.memory_semantic_duplicate_clusters_threshold,
+        thresholdBasisPoints / 100.0,
+    )
+    val scanLabel = stringResource(R.string.memory_semantic_duplicate_clusters_scan)
+    val scanningLabel = stringResource(R.string.memory_semantic_duplicate_clusters_scanning)
+    val scanStateDescription = when {
+        scanning -> scanningLabel
+        scanEnabled -> stringResource(R.string.memory_semantic_duplicate_clusters_scan_state_ready)
+        else -> disabledStateDescription
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SECTION_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider()
+        Text(
+            text = stringResource(R.string.memory_semantic_duplicate_clusters_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
+        )
+        Text(
+            text = stringResource(R.string.memory_semantic_duplicate_clusters_review_only),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Text(
+            text = thresholdLabel,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.testTag(
+                MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_LABEL_TEST_TAG,
+            ),
+        )
+        Slider(
+            value = thresholdBasisPoints.toFloat(),
+            onValueChange = {
+                thresholdBasisPoints = it.roundToInt().coerceIn(8_000, 10_000)
+            },
+            enabled = scanEnabled && !scanning,
+            valueRange = 8_000f..10_000f,
+            steps = 1_999,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_TEST_TAG)
+                .semantics { stateDescription = thresholdLabel },
+        )
+        OutlinedButton(
+            onClick = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                onScan(thresholdBasisPoints)
+            },
+            enabled = scanEnabled && !scanning,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SCAN_ACTION_TEST_TAG)
+                .semantics {
+                    contentDescription = scanLabel
+                    stateDescription = scanStateDescription
+                    onClick(label = scanLabel, action = null)
+                },
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (scanning) scanningLabel else scanLabel,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (!scanEnabled && !scanning && actionsEnabled) {
+            Text(
+                text = disabledStateDescription,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.testTag(
+                    MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_DISABLED_REASON_TEST_TAG,
+                ),
+            )
+        }
+        if (hasResult) {
+            Text(
+                text = stringResource(
+                    R.string.memory_semantic_duplicate_clusters_result_summary,
+                    scannedCount,
+                    resultThresholdBasisPoints / 100.0,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            if (omittedCount > 0) {
+                Text(
+                    text = stringResource(
+                        R.string.memory_semantic_duplicate_clusters_omitted_count,
+                        omittedCount,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_OMITTED_TEST_TAG,
+                    ),
+                )
+            }
+            if (truncated) {
+                Text(
+                    text = stringResource(R.string.memory_semantic_duplicate_clusters_truncated),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_TRUNCATED_TEST_TAG,
+                    ),
+                )
+            }
+            if (clusters.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.memory_semantic_duplicate_clusters_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag(
+                        MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_EMPTY_TEST_TAG,
+                    ),
+                )
+            } else {
+                clusters.forEachIndexed { clusterIndex, cluster ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(memorySemanticDuplicateClusterTestTag(clusterIndex)),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.memory_semantic_duplicate_clusters_cluster,
+                                clusterIndex + 1,
+                                cluster.minimumSimilarityBasisPoints / 100.0,
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        cluster.entryIds.mapNotNull(entriesById::get).forEach { entry ->
+                            MemoryEntryRow(
+                                entry = entry,
+                                actionsEnabled = actionsEnabled,
+                                disabledActionStateDescription =
+                                    disabledManualActionStateDescription,
+                                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -9299,6 +9932,52 @@ internal const val SAVED_EMBEDDING_MODEL_LABEL_TEST_TAG = "saved_embedding_model
 internal const val SAVED_EMBEDDING_MODEL_DETAIL_TEST_TAG = "saved_embedding_model_detail"
 internal const val MEMORY_PANEL_HEADER_TEST_TAG = "memory_panel_header"
 internal const val MEMORY_REFRESH_ACTION_TEST_TAG = "memory_refresh_action"
+internal const val MEMORY_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG =
+    "memory_duplicate_suggestions_scan_action"
+internal const val MEMORY_DUPLICATE_SUGGESTIONS_SECTION_TEST_TAG =
+    "memory_duplicate_suggestions_section"
+internal const val MEMORY_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG =
+    "memory_duplicate_suggestions_truncated"
+internal const val MEMORY_DUPLICATE_SUGGESTIONS_EMPTY_TEST_TAG =
+    "memory_duplicate_suggestions_empty"
+private const val MEMORY_DUPLICATE_SUGGESTION_GROUP_TEST_TAG_PREFIX =
+    "memory_duplicate_suggestion_group_"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SECTION_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_section"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_threshold"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_LABEL_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_threshold_label"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_scan_action"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_DISABLED_REASON_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_disabled_reason"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_OMITTED_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_omitted"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_truncated"
+internal const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_EMPTY_TEST_TAG =
+    "memory_semantic_duplicate_suggestions_empty"
+private const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_TEST_TAG_PREFIX =
+    "memory_semantic_duplicate_suggestion_pair_"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SECTION_TEST_TAG =
+    "memory_semantic_duplicate_clusters_section"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_TEST_TAG =
+    "memory_semantic_duplicate_clusters_threshold"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_LABEL_TEST_TAG =
+    "memory_semantic_duplicate_clusters_threshold_label"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SCAN_ACTION_TEST_TAG =
+    "memory_semantic_duplicate_clusters_scan_action"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_DISABLED_REASON_TEST_TAG =
+    "memory_semantic_duplicate_clusters_disabled_reason"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_OMITTED_TEST_TAG =
+    "memory_semantic_duplicate_clusters_omitted"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_TRUNCATED_TEST_TAG =
+    "memory_semantic_duplicate_clusters_truncated"
+internal const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_EMPTY_TEST_TAG =
+    "memory_semantic_duplicate_clusters_empty"
+private const val MEMORY_SEMANTIC_DUPLICATE_CLUSTER_TEST_TAG_PREFIX =
+    "memory_semantic_duplicate_cluster_"
 internal const val MEMORY_LOCK_NOTICE_TEST_TAG = "memory_lock_notice"
 internal const val MEMORY_LOCK_NOTICE_TEXT_TEST_TAG = "memory_lock_notice_text"
 internal const val MEMORY_SEARCH_TEST_TAG = "memory_search"
@@ -9362,6 +10041,15 @@ internal fun memoryEntrySearchMetadataTestTag(entryId: String): String =
 
 internal fun memoryEntrySearchSnippetTestTag(entryId: String): String =
     "$MEMORY_ENTRY_SEARCH_SNIPPET_TEST_TAG_PREFIX$entryId"
+
+internal fun memoryDuplicateSuggestionGroupTestTag(index: Int): String =
+    "$MEMORY_DUPLICATE_SUGGESTION_GROUP_TEST_TAG_PREFIX$index"
+
+internal fun memorySemanticDuplicateSuggestionPairTestTag(index: Int): String =
+    "$MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_TEST_TAG_PREFIX$index"
+
+internal fun memorySemanticDuplicateClusterTestTag(index: Int): String =
+    "$MEMORY_SEMANTIC_DUPLICATE_CLUSTER_TEST_TAG_PREFIX$index"
 
 internal fun documentCatalogRowTestTag(documentId: String): String =
     "$DOCUMENT_INDEX_CATALOG_ROW_TEST_TAG_PREFIX${documentIndexTagKey(documentId)}"
@@ -10558,6 +11246,73 @@ internal fun shouldShowChatEmptyState(state: RuntimeUiState): Boolean {
 
 internal fun memoryActionsEnabled(state: RuntimeUiState): Boolean {
     return state.isConnected && state.trustedRuntime != null && !state.isStreaming
+}
+
+internal fun memoryDuplicateSuggestionsActionEnabled(state: RuntimeUiState): Boolean {
+    return memoryActionsEnabled(state) && state.memoryDuplicateSuggestionsAvailable
+}
+
+internal fun memorySemanticDuplicateSuggestionsActionEnabled(state: RuntimeUiState): Boolean {
+    return memoryActionsEnabled(state) &&
+        state.memorySemanticDuplicateSuggestionsAvailable &&
+        selectedLocalEmbeddingModelAvailable(state)
+}
+
+internal fun memorySemanticDuplicateClustersActionEnabled(state: RuntimeUiState): Boolean {
+    return memoryActionsEnabled(state) &&
+        state.memorySemanticDuplicateClustersAvailable &&
+        selectedLocalEmbeddingModelAvailable(state)
+}
+
+@StringRes
+internal fun memorySemanticDuplicateSuggestionsDisabledReasonTextRes(
+    state: RuntimeUiState,
+    hasEntries: Boolean = state.memoryEntries.isNotEmpty(),
+): Int {
+    if (!memoryActionsEnabled(state)) {
+        return memoryLockNoticeTextRes(state = state, hasEntries = hasEntries)
+    }
+    if (state.selectedEmbeddingModelId == null) {
+        return R.string.memory_semantic_duplicate_suggestions_select_local_model
+    }
+    if (!selectedLocalEmbeddingModelAvailable(state)) {
+        return R.string.memory_semantic_duplicate_suggestions_model_unavailable
+    }
+    if (!state.memorySemanticDuplicateSuggestionsAvailable) {
+        return R.string.memory_semantic_duplicate_suggestions_unavailable
+    }
+    return R.string.memory_semantic_duplicate_suggestions_scan_state_ready
+}
+
+@StringRes
+internal fun memorySemanticDuplicateClustersDisabledReasonTextRes(
+    state: RuntimeUiState,
+    hasEntries: Boolean = state.memoryEntries.isNotEmpty(),
+): Int {
+    if (!memoryActionsEnabled(state)) {
+        return memoryLockNoticeTextRes(state = state, hasEntries = hasEntries)
+    }
+    if (state.selectedEmbeddingModelId == null) {
+        return R.string.memory_semantic_duplicate_clusters_select_local_model
+    }
+    if (!selectedLocalEmbeddingModelAvailable(state)) {
+        return R.string.memory_semantic_duplicate_clusters_model_unavailable
+    }
+    if (!state.memorySemanticDuplicateClustersAvailable) {
+        return R.string.memory_semantic_duplicate_clusters_unavailable
+    }
+    return R.string.memory_semantic_duplicate_clusters_scan_state_ready
+}
+
+private fun selectedLocalEmbeddingModelAvailable(state: RuntimeUiState): Boolean {
+    val selectedModelId = state.selectedEmbeddingModelId ?: return false
+    return state.models.any { model ->
+        model.id == selectedModelId &&
+            isCanonicalProviderQualifiedModelId(model.id) &&
+            model.isEmbeddingModel() &&
+            model.isRuntimeHostLocalModel() &&
+            model.installed
+    }
 }
 
 internal fun documentIndexActionsEnabled(state: RuntimeUiState): Boolean {

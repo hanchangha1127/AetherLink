@@ -579,3 +579,13 @@
 "The document sharing confirmation is invalid. Review the source again." = "문서 공유 확인이 올바르지 않습니다. 소스를 다시 검토하세요.";
 "This source changed after the review started. Review the latest source before sharing it." = "검토를 시작한 후 소스가 변경되었습니다. 공유하기 전에 최신 소스를 검토하세요.";
 "AetherLink could not update the local document library." = "AetherLink가 로컬 문서 라이브러리를 업데이트하지 못했습니다.";
+"Deleted Chat Retention" = "삭제된 채팅 보존";
+"Clean Deleted History" = "삭제된 기록 정리";
+"Deleted chats are kept for 90 days, then removed automatically from this runtime host." = "삭제된 채팅은 90일간 보관된 후 이 런타임 호스트에서 자동으로 제거됩니다.";
+"Cleaning expired deleted chats." = "만료된 삭제 채팅을 정리하는 중입니다.";
+"Cleanup finished. No expired deleted chats were found." = "정리가 완료되었습니다. 만료된 삭제 채팅이 없습니다.";
+"Cleanup finished. %@ removed." = "정리 완료: %@ 제거됨.";
+"Cleanup failed. Check Activity and try again." = "정리에 실패했습니다. 활동을 확인한 후 다시 시도하세요.";
+"Remove chats deleted at least 90 days ago from this runtime host." = "90일 이상 전에 삭제된 채팅을 이 런타임 호스트에서 제거합니다.";
+"1 deleted chat" = "삭제된 채팅 1개";
+"%d deleted chats" = "삭제된 채팅 %d개";

@@ -521,7 +521,13 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                             ],
                             transcriptErrors: [:],
                             errorMessage: nil,
+                            retentionStatus: CompanionRuntimeChatRetentionStatus(
+                                state: .completed,
+                                prunedDeletedSessionCount: 2,
+                                lastRunAt: Date(timeIntervalSince1970: 125)
+                            ),
                             onRefresh: {},
+                            onRunRetentionMaintenance: {},
                             onLoadTranscriptPreview: { _ in }
                         )
                         .environment(\.locale, Locale(identifier: language.localeIdentifier))

@@ -137,6 +137,29 @@ public struct CompanionRuntimeDataSummary: Equatable, Sendable {
     }
 }
 
+public enum CompanionRuntimeChatRetentionState: Equatable, Sendable {
+    case notRun
+    case running
+    case completed
+    case failed
+}
+
+public struct CompanionRuntimeChatRetentionStatus: Equatable, Sendable {
+    public var state: CompanionRuntimeChatRetentionState
+    public var prunedDeletedSessionCount: Int
+    public var lastRunAt: Date?
+
+    public init(
+        state: CompanionRuntimeChatRetentionState = .notRun,
+        prunedDeletedSessionCount: Int = 0,
+        lastRunAt: Date? = nil
+    ) {
+        self.state = state
+        self.prunedDeletedSessionCount = max(0, prunedDeletedSessionCount)
+        self.lastRunAt = lastRunAt
+    }
+}
+
 public enum CompanionRelayConfigurationResult: Equatable, Sendable {
     case disabled
     case savedStatic(endpoint: String)
@@ -682,6 +705,7 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var models: [ModelInfo] = []
     @Published public private(set) var modelResidency: CompanionModelResidencyStatus = .inactive
     @Published public private(set) var runtimeDataSummary = CompanionRuntimeDataSummary()
+    @Published public private(set) var runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus()
     @Published public private(set) var runtimeChatSessions: [RuntimeChatStoredSession] = []
     @Published public private(set) var runtimeChatSessionsError: String?
     @Published public private(set) var runtimeChatTranscriptMessages: [String: [RuntimeChatStoredMessage]] = [:]
@@ -727,7 +751,11 @@ public final class CompanionAppModel: ObservableObject {
     private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
     private var isRuntimeStarted = false
+    private var hasScheduledRuntimeChatRetentionMaintenance = false
+    private var runtimeChatRetentionMaintenanceTask: Task<Void, Never>?
     private var shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+
+    private static let runtimeChatRetentionMaintenanceIntervalNanoseconds: UInt64 = 24 * 60 * 60 * 1_000_000_000
 
     public var hasDevelopmentRelayRoute: Bool {
         relayConfiguration != nil
@@ -899,6 +927,10 @@ public final class CompanionAppModel: ObservableObject {
         refreshRuntimeDataSummary()
     }
 
+    deinit {
+        runtimeChatRetentionMaintenanceTask?.cancel()
+    }
+
     public func start(port: UInt16 = 43170) {
         runtimePort = port
         isRuntimeStarted = true
@@ -934,6 +966,35 @@ public final class CompanionAppModel: ObservableObject {
         Task {
             await refreshTrustedDevices()
             await refreshBackendStatus()
+        }
+        if !hasScheduledRuntimeChatRetentionMaintenance {
+            hasScheduledRuntimeChatRetentionMaintenance = true
+            let interval = Self.runtimeChatRetentionMaintenanceIntervalNanoseconds
+            let store = runtimeChatEventStore
+            runtimeChatRetentionMaintenanceTask = Task { [weak self, store] in
+                while !Task.isCancelled {
+                    guard self != nil else { return }
+                    if self?.beginRuntimeChatRetentionMaintenance() == true {
+                        do {
+                            let prunedSessionCount = try await Self.pruneExpiredDeletedRuntimeChats(
+                                from: store
+                            )
+                            self?.completeRuntimeChatRetentionMaintenance(
+                                prunedSessionCount: prunedSessionCount
+                            )
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            self?.failRuntimeChatRetentionMaintenance(error)
+                        }
+                    }
+                    do {
+                        try await Task.sleep(nanoseconds: interval)
+                    } catch {
+                        return
+                    }
+                }
+            }
         }
     }
 
@@ -1020,6 +1081,71 @@ public final class CompanionAppModel: ObservableObject {
             lastRefreshedAt: refreshedAt,
             errorMessage: errorMessages.first
         )
+    }
+
+    public func runRuntimeChatRetentionMaintenance() async {
+        guard beginRuntimeChatRetentionMaintenance() else { return }
+        let store = runtimeChatEventStore
+        do {
+            let prunedSessionCount = try await Self.pruneExpiredDeletedRuntimeChats(from: store)
+            completeRuntimeChatRetentionMaintenance(prunedSessionCount: prunedSessionCount)
+        } catch is CancellationError {
+            runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(state: .notRun)
+        } catch {
+            failRuntimeChatRetentionMaintenance(error)
+        }
+    }
+
+    private func beginRuntimeChatRetentionMaintenance() -> Bool {
+        guard runtimeChatRetentionStatus.state != .running else { return false }
+        runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(state: .running)
+        return true
+    }
+
+    private func completeRuntimeChatRetentionMaintenance(prunedSessionCount: Int) {
+        runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+            state: .completed,
+            prunedDeletedSessionCount: prunedSessionCount,
+            lastRunAt: Date()
+        )
+        log(
+            "Runtime chat retention completed: "
+                + "\(prunedSessionCount) expired deleted sessions pruned"
+        )
+    }
+
+    private func failRuntimeChatRetentionMaintenance(_ error: any Error) {
+        runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus(
+            state: .failed,
+            lastRunAt: Date()
+        )
+        log("Runtime chat retention failed: \(error.localizedDescription)")
+    }
+
+    nonisolated private static func pruneExpiredDeletedRuntimeChats(
+        from store: any RuntimeChatEventStore
+    ) async throws -> Int {
+        let policy = RuntimeChatRetentionPolicy.productionDefault
+        return try await withThrowingTaskGroup(of: Int.self) { group in
+            group.addTask(priority: .utility) {
+                var total = 0
+                while true {
+                    try Task.checkCancellation()
+                    let result = try RuntimeChatEventStoreDefaults.runProductionMaintenance(
+                        on: store,
+                        policy: policy
+                    )
+                    total += result.prunedDeletedSessionCount
+                    guard result.prunedDeletedSessionCount == policy.deletedSessionPruneLimit else {
+                        return total
+                    }
+                    await Task.yield()
+                }
+            }
+            guard let total = try await group.next() else { return 0 }
+            group.cancelAll()
+            return total
+        }
     }
 
     public func refreshRuntimeMemoryEntries() {

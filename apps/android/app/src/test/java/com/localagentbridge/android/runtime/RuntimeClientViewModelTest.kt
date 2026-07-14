@@ -4,16 +4,21 @@ import android.app.Application
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY
+import com.localagentbridge.android.core.protocol.CHAT_SESSIONS_SYNC_CAPABILITY
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
+import com.localagentbridge.android.core.protocol.ChatMessagesListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
+import com.localagentbridge.android.core.protocol.ChatSessionsBulkLifecyclePayload
+import com.localagentbridge.android.core.protocol.ChatSessionsBulkLifecycleResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
+import com.localagentbridge.android.core.protocol.ChatSessionRenamePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSearchPayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredAttachmentPayload
@@ -28,6 +33,17 @@ import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
+import com.localagentbridge.android.core.protocol.MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MemoryDuplicateSuggestionGroupPayload
+import com.localagentbridge.android.core.protocol.MemoryDuplicateSuggestionsListResultPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateSuggestionPairPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateSuggestionsListRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateSuggestionsListResultPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateClusterPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateClustersListRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateClustersListResultPayload
 import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
@@ -144,6 +160,8 @@ import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.X509EncodedKeySpec
+import java.time.Instant
+import java.time.format.DateTimeFormatterBuilder
 import java.util.Base64
 
 class RuntimeClientViewModelTest {
@@ -4905,6 +4923,89 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun currentAuthenticationErrorWithChatHistoryPrefixIsNotIgnored() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                trustedRuntimeForViewModelTests().copy(
+                    fingerprint = initialPairingRuntimeFingerprint,
+                    publicKeyBase64 = initialPairingRuntimePublicKey,
+                ),
+            )
+            val testedViewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for prefixed authentication error")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    authenticatedRouteRefreshEnabled = true,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            viewModel = testedViewModel
+            advanceUntilIdle()
+
+            testedViewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            val challengeRequestId = "chat-sessions-list-auth-challenge"
+            channel.enqueue(
+                signedRuntimeAuthChallenge(
+                    keyPair = initialPairingRuntimeKeyPair,
+                    nonce = "prefixed-authentication-error",
+                    transportBinding = null,
+                ).copy(requestId = challengeRequestId),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                challengeRequestId,
+                channel.sentEnvelopes.single { it.type == MessageType.AuthResponse }.requestId,
+            )
+
+            channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = challengeRequestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_failed",
+                        message = "Reject prefixed authentication",
+                        retryable = false,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("authentication_failed", testedViewModel.state.value.error?.code)
+            assertEquals(
+                "Reject prefixed authentication",
+                testedViewModel.state.value.error?.technicalDetail,
+            )
+            assertFalse(testedViewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(testedViewModel.privateField<Any>("pendingRuntimeAuthentication"))
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.RuntimeHealth })
+            assertEquals(0, channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList })
+        } finally {
+            viewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -6239,6 +6340,17 @@ class RuntimeClientViewModelTest {
             assertEquals("failed", viewModel.state.value.runtimeStatus)
             assertNull(viewModel.state.value.activeRouteKind)
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertNull(viewModel.privateField<String>("pendingChatSessionsRequestId"))
+            val historyRequestCount = channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            viewModel.refreshRuntimeChatHistory(query = "must not send after route expiry")
+            runCurrent()
+            assertEquals(
+                historyRequestCount,
+                channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
 
             advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
             currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1
@@ -6858,6 +6970,27 @@ class RuntimeClientViewModelTest {
             completeRuntimeAuthentication(
                 viewModel = viewModel,
                 channel = channel,
+            )
+            runCurrent()
+            val initialListRequest = channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-session",
+                                title = "Original title",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:00:00Z",
+                                messageCount = 1,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = initialListRequest.requestId,
+                ),
             )
             runCurrent()
 
@@ -14206,7 +14339,8 @@ class RuntimeClientViewModelTest {
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend },
             )
             assertTrue(replacementChannel.sentEnvelopes.none { it.type == MessageType.ChatSend })
-            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+            assertNull(fixture.viewModel.state.value.error)
+            assertNotNull(fixture.viewModel.state.value.activeRequestId)
             assertFalse(fixture.viewModel.state.value.toString().contains(grantId))
             assertFalse(fixture.localStore.data.toString().contains(grantId))
         } finally {
@@ -17498,7 +17632,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun refreshRuntimeChatHistoryRequestsFreshListAfterPendingListCompletes() = runTest {
+    fun refreshRuntimeChatHistorySupersedesPendingListAndRejectsStaleResponse() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -17516,9 +17650,13 @@ class RuntimeClientViewModelTest {
             fixture.viewModel.refreshRuntimeChatHistory()
             advanceUntilIdle()
             assertEquals(
-                initialChatSessionsRequestCount,
+                initialChatSessionsRequestCount + 1,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
             )
+            val supersedingRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            assertNotEquals(initialChatSessionsRequest.requestId, supersedingRequest.requestId)
 
             fixture.channel.enqueue(
                 envelope(
@@ -17542,13 +17680,15 @@ class RuntimeClientViewModelTest {
                 ),
             )
             advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
 
             fixture.viewModel.refreshRuntimeChatHistory()
             advanceUntilIdle()
             val chatSessionsRequests = fixture.channel.sentEnvelopes.filter {
                 it.type == MessageType.ChatSessionsList
             }
-            assertEquals(initialChatSessionsRequestCount + 1, chatSessionsRequests.size)
+            assertEquals(initialChatSessionsRequestCount + 2, chatSessionsRequests.size)
             val refreshPayload = json.decodeFromJsonElement(
                 ChatSessionsListRequestPayload.serializer(),
                 chatSessionsRequests.last().payload,
@@ -17587,6 +17727,1028 @@ class RuntimeClientViewModelTest {
             assertTrue(savedRuntimeSession.runtimeOwned)
             assertTrue(savedRuntimeSession.messages.isEmpty())
             assertEquals(4, savedRuntimeSession.runtimeMessageCount)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeChatHistoryPublishesFullSnapshotOnlyAfterMoreThan100RowsComplete() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val firstRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 0, count = 100),
+                        snapshotCount = 150,
+                        nextCursor = "page-2",
+                    ),
+                    requestId = firstRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            val continuation = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            assertEquals(setOf("cursor"), continuation.payload.keys)
+            assertEquals("page-2", continuation.payload["cursor"]?.toString()?.trim('"'))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 100, count = 50),
+                        snapshotCount = 150,
+                    ),
+                    requestId = continuation.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(150, fixture.viewModel.state.value.chatSessions.size)
+            assertEquals(150, fixture.localStore.data.sessions.count { it.runtimeOwned })
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeSessionSyncConsumesExactMacOSWireTranscriptPayloads() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val wireFixture = authoritativeSessionSyncWireFixture()
+            val transcript = wireFixture.getValue("wire_transcript").jsonObject
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+
+            transcript.getValue("active_pages").jsonArray.forEach { page ->
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        payload = page.jsonObject,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+            val expectedIDs = listOf("wire-session-001", "wire-session-000")
+            assertEquals(expectedIDs, fixture.viewModel.state.value.chatSessions.map { it.id })
+            assertEquals(expectedIDs, fixture.localStore.data.sessions.map { it.id })
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val archiveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionArchive,
+                    requestId = archiveRequest.requestId,
+                    payload = transcript.getValue("archive_result").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            transcript.getValue("archived_pages").jsonArray.forEach { page ->
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        payload = page.jsonObject,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertEquals(expectedIDs, fixture.viewModel.state.value.archivedChatSessions.map { it.id })
+
+            fixture.viewModel.clearArchivedChatSessions()
+            advanceUntilIdle()
+            val deleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionDelete
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionDelete,
+                    requestId = deleteRequest.requestId,
+                    payload = transcript.getValue("delete_result").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val finalRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = finalRequest.requestId,
+                    payload = transcript.getValue("final_page").jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeSessionSyncConsumesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val wireFixture = authoritativeSessionSyncWireFixture()
+            assertEquals(
+                "aetherlink.chat-sessions-authoritative-sync-wire-smoke",
+                wireFixture.getValue("document_type").jsonPrimitive.content,
+            )
+            assertEquals(1, wireFixture.getValue("schema_version").jsonPrimitive.int)
+            assertEquals(
+                CHAT_SESSIONS_SYNC_CAPABILITY,
+                wireFixture.getValue("capability").jsonPrimitive.content,
+            )
+            val series = wireFixture.getValue("session_series").jsonObject
+            val pagination = wireFixture.getValue("pagination").jsonObject
+            val pages = pagination.getValue("pages").jsonArray.map { it.jsonObject }
+            val bulk = wireFixture.getValue("bulk").jsonObject
+            val sampleTimestamp = wireFixture.getValue("dynamic_values")
+                .jsonObject
+                .getValue("sample_timestamp")
+                .jsonPrimitive
+                .content
+            val expectedSessionCount = series.getValue("count").jsonPrimitive.int
+            assertEquals(expectedSessionCount, pages.sumOf { it.getValue("count").jsonPrimitive.int })
+            val representativeCursorPattern = Regex(
+                """v1\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.\d+\.\d+\.[0-9a-f]{64}""",
+            )
+            pages.dropLast(1).forEach { page ->
+                val cursor = page.getValue("next_cursor").jsonPrimitive.content
+                assertTrue(representativeCursorPattern.matches(cursor))
+                assertEquals(
+                    page.getValue("offset").jsonPrimitive.int + page.getValue("count").jsonPrimitive.int,
+                    cursor.split('.')[2].toInt(),
+                )
+                assertTrue(cursor.toByteArray(Charsets.UTF_8).size <= 512)
+            }
+
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = pagination.getValue("initial_request").jsonObject
+            var priorCursor: String? = null
+            pages.forEachIndexed { pageIndex, page ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+                if (pageIndex == 0) {
+                    val requestPayload = json.decodeFromJsonElement(
+                        ChatSessionsListRequestPayload.serializer(),
+                        request.payload,
+                    )
+                    assertEquals(initialRequest.getValue("limit").jsonPrimitive.int, requestPayload.limit)
+                    assertEquals(
+                        initialRequest.getValue("include_archived").jsonPrimitive.content.toBooleanStrict(),
+                        requestPayload.includeArchived,
+                    )
+                    assertNull(requestPayload.cursor)
+                } else {
+                    assertEquals(
+                        pagination.getValue("continuation_request_keys")
+                            .jsonArray
+                            .map { it.jsonPrimitive.content }
+                            .toSet(),
+                        request.payload.keys,
+                    )
+                    assertEquals(priorCursor, request.payload.getValue("cursor").jsonPrimitive.content)
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        payload = authoritativeWireSessionPagePayload(
+                            series = series,
+                            page = page,
+                            status = "active",
+                        ),
+                    ),
+                )
+                advanceUntilIdle()
+                priorCursor = page["next_cursor"]?.jsonPrimitive?.content
+                if (priorCursor != null) {
+                    assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+                    assertTrue(fixture.localStore.data.sessions.isEmpty())
+                    assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+                }
+            }
+
+            val expectedIDs = (expectedSessionCount - 1 downTo 0).map {
+                authoritativeWireSessionID(series, it)
+            }
+            assertEquals(expectedIDs, fixture.viewModel.state.value.chatSessions.map { it.id })
+            assertEquals(expectedSessionCount, fixture.localStore.data.sessions.count { it.runtimeOwned })
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+
+            val archive = bulk.getValue("archive").jsonObject
+            val archiveRequestIDs = mutableListOf<String>()
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            archive.getValue("batches").jsonArray.forEach { batchElement ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+                if (request.requestId !in archiveRequestIDs) {
+                    archiveRequestIDs += request.requestId
+                }
+                assertEquals(
+                    setOf("scope", "limit"),
+                    request.payload.keys,
+                )
+                assertEquals(archive.getValue("scope"), request.payload.getValue("scope"))
+                assertEquals(bulk.getValue("limit"), request.payload.getValue("limit"))
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionArchive,
+                        requestId = request.requestId,
+                        payload = authoritativeWireBulkResultPayload(
+                            operation = archive,
+                            batch = batchElement.jsonObject,
+                            completedAt = sampleTimestamp,
+                        ),
+                    ),
+                )
+                advanceUntilIdle()
+                if (batchElement.jsonObject.getValue("remaining_count").jsonPrimitive.int > 0) {
+                    assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+                    assertEquals(expectedSessionCount, fixture.localStore.data.sessions.size)
+                }
+            }
+            assertEquals(archiveRequestIDs.size, archiveRequestIDs.toSet().size)
+            assertEquals(archive.getValue("batches").jsonArray.size, archiveRequestIDs.size)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+
+            priorCursor = null
+            pages.forEachIndexed { pageIndex, page ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+                if (pageIndex > 0) {
+                    assertEquals(priorCursor, request.payload.getValue("cursor").jsonPrimitive.content)
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        payload = authoritativeWireSessionPagePayload(
+                            series = series,
+                            page = page,
+                            status = archive.getValue("status").jsonPrimitive.content,
+                            archivedAt = sampleTimestamp,
+                        ),
+                    ),
+                )
+                advanceUntilIdle()
+                priorCursor = page["next_cursor"]?.jsonPrimitive?.content
+            }
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertEquals(expectedIDs, fixture.viewModel.state.value.archivedChatSessions.map { it.id })
+
+            val delete = bulk.getValue("delete").jsonObject
+            fixture.viewModel.clearArchivedChatSessions()
+            advanceUntilIdle()
+            val deleteRequestIDs = mutableListOf<String>()
+            delete.getValue("batches").jsonArray.forEach { batchElement ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionDelete }
+                assertTrue(request.requestId !in deleteRequestIDs)
+                deleteRequestIDs += request.requestId
+                assertEquals(setOf("scope", "limit"), request.payload.keys)
+                assertEquals(delete.getValue("scope"), request.payload.getValue("scope"))
+                assertEquals(bulk.getValue("limit"), request.payload.getValue("limit"))
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionDelete,
+                        requestId = request.requestId,
+                        payload = authoritativeWireBulkResultPayload(
+                            operation = delete,
+                            batch = batchElement.jsonObject,
+                            completedAt = sampleTimestamp,
+                        ),
+                    ),
+                )
+                advanceUntilIdle()
+            }
+            assertEquals(delete.getValue("batches").jsonArray.size, deleteRequestIDs.size)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+
+            val finalRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = finalRequest.requestId,
+                    payload = buildJsonObject {
+                        put("sessions", JsonArray(emptyList()))
+                        put(
+                            "snapshot_count",
+                            wireFixture.getValue("final_snapshot_count").jsonPrimitive.int,
+                        )
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeChatQueryPublishesTransientResultsOnlyAfterMoreThan100RowsComplete() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = runtimeChatSessionSummaries(start = 500, count = 1),
+                capable = true,
+            )
+            fixture.viewModel.refreshRuntimeChatHistory(query = "runtime page")
+            advanceUntilIdle()
+            val firstQueryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 0, count = 100),
+                        snapshotCount = 120,
+                        nextCursor = "query-page-2",
+                    ),
+                    requestId = firstQueryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.chatSessionSearchResults.isEmpty())
+            assertEquals(listOf("runtime-page-500"), fixture.localStore.data.sessions.map { it.id })
+            val continuation = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 100, count = 20),
+                        snapshotCount = 120,
+                    ),
+                    requestId = continuation.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(120, fixture.viewModel.state.value.chatSessionSearchResults.size)
+            assertEquals("runtime page", fixture.viewModel.state.value.chatSessionSearchQuery)
+            assertEquals(listOf("runtime-page-500"), fixture.localStore.data.sessions.map { it.id })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeChatHistoryRejectsDuplicateCountCursorOverflowAndFinalMismatch() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val baseline = runtimeChatSessionSummaries(start = 900, count = 1)
+            completePendingRuntimeChatSessionList(fixture, sessions = baseline)
+
+            suspend fun respond(payload: ChatSessionsListResultPayload) {
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = payload,
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+
+            suspend fun assertRejectedAndBaselinePreserved() {
+                assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+                assertEquals(listOf("runtime-page-900"), fixture.viewModel.state.value.chatSessions.map { it.id })
+                assertEquals(listOf("runtime-page-900"), fixture.localStore.data.sessions.map { it.id })
+                assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            }
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(0, 1), 2, "duplicate"))
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(0, 1), 2))
+            assertRejectedAndBaselinePreserved()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(10, 1), 2, "drift"))
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(11, 1), 3))
+            assertRejectedAndBaselinePreserved()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(20, 1), 3, "loop"))
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(21, 1), 3, "loop"))
+            assertRejectedAndBaselinePreserved()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(30, 1), 2, "overflow"))
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(31, 2), 2))
+            assertRejectedAndBaselinePreserved()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            respond(ChatSessionsListResultPayload(runtimeChatSessionSummaries(40, 1), 2))
+            assertRejectedAndBaselinePreserved()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeChatHistoryRejectsEmptyNonterminalPage() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequestCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList }
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = emptyList(),
+                        snapshotCount = 1,
+                        nextCursor = "must-not-continue",
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                initialRequestCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeChatHistoryStopsAt100PageBudget() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequestCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList }
+            repeat(100) { page ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = runtimeChatSessionSummaries(start = page, count = 1),
+                            snapshotCount = 101,
+                            nextCursor = "budget-${page + 1}",
+                        ),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+            }
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                initialRequestCount + 100,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            val overBudgetRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 100, count = 1),
+                        snapshotCount = 101,
+                    ),
+                    requestId = overBudgetRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertEquals(
+                initialRequestCount + 100,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeRuntimeRejectsLegacyDowngradeUntilFreshFullSnapshotCompletes() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val authoritativeSessions = runtimeChatSessionSummaries(start = 0, count = 2)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = authoritativeSessions,
+                capable = true,
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val downgradeRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = authoritativeSessions.take(1),
+                    ),
+                    requestId = downgradeRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val downgradedState = fixture.viewModel.state.value
+            assertEquals(
+                authoritativeSessions.map { it.sessionId },
+                downgradedState.chatSessions.map { it.id },
+            )
+            assertEquals("invalid_payload", downgradedState.error?.code)
+            assertTrue(
+                downgradedState.error?.technicalDetail.orEmpty().contains("omitted snapshot_count"),
+            )
+            assertTrue(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsAuthoritativeSyncSupported",
+                ) == true,
+            )
+            assertFalse(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsBulkAuthorityEnabled",
+                ) ?: true,
+            )
+
+            val archiveRequestCountBeforeQuarantine = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionArchive
+            }
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                authoritativeSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.all { it.archivedAtMillis == null })
+            assertEquals(
+                archiveRequestCountBeforeQuarantine,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionArchive },
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val recoveredSessions = runtimeChatSessionSummaries(start = 10, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = recoveredSessions,
+                capable = true,
+            )
+            assertEquals(
+                recoveredSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertTrue(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsBulkAuthorityEnabled",
+                ) == true,
+            )
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val bulkRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            assertEquals(setOf("scope", "limit"), bulkRequest.payload.keys)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeRuntimeQuarantineBlocksDeleteAllUntilFreshFullSnapshotCompletes() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val archivedSessions = runtimeChatSessionSummaries(start = 0, count = 2, status = "archived")
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = archivedSessions,
+                capable = true,
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val downgradeRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = archivedSessions.take(1)),
+                    requestId = downgradeRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val deleteRequestCountBeforeQuarantine = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionDelete
+            }
+            fixture.viewModel.clearArchivedChatSessions()
+            advanceUntilIdle()
+
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                archivedSessions.map { it.sessionId },
+                fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+            )
+            assertEquals(archivedSessions.size, fixture.localStore.data.sessions.size)
+            assertEquals(
+                deleteRequestCountBeforeQuarantine,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionDelete },
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = archivedSessions,
+                capable = true,
+            )
+            fixture.viewModel.clearArchivedChatSessions()
+            advanceUntilIdle()
+
+            val recoveredBulkRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionDelete
+            }
+            assertEquals(setOf("scope", "limit"), recoveredBulkRequest.payload.keys)
+            assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeBulkArchiveBatchesUntilTerminalAckThenReconciles() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val active = runtimeChatSessionSummaries(start = 0, count = 2)
+            completePendingRuntimeChatSessionList(fixture, sessions = active, capable = true)
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val firstBatch = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+            val firstPayload = json.decodeFromJsonElement(
+                ChatSessionsBulkLifecyclePayload.serializer(),
+                firstBatch.payload,
+            )
+            assertEquals("all_active", firstPayload.scope)
+            assertEquals(200, firstPayload.limit)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                    payload = ChatSessionsBulkLifecycleResultPayload(
+                        scope = "all_active",
+                        status = "archived",
+                        affectedCount = 200,
+                        remainingCount = 50,
+                        completedAt = "2026-06-25T00:01:00Z",
+                    ),
+                    requestId = firstBatch.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            val secondBatch = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+            assertNotEquals(firstBatch.requestId, secondBatch.requestId)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                    payload = ChatSessionsBulkLifecycleResultPayload(
+                        scope = "all_active",
+                        status = "archived",
+                        affectedCount = 50,
+                        remainingCount = 0,
+                        completedAt = "2026-06-25T00:02:00Z",
+                    ),
+                    requestId = secondBatch.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(2, fixture.viewModel.state.value.archivedChatSessions.size)
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            completePendingRuntimeChatSessionList(
+                fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 2, status = "archived"),
+                capable = true,
+            )
+            assertEquals(2, fixture.viewModel.state.value.archivedChatSessions.size)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeBulkRejectsStaleMalformedAndErrorWithoutOptimisticMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val active = runtimeChatSessionSummaries(start = 0, count = 1)
+            completePendingRuntimeChatSessionList(fixture, sessions = active, capable = true)
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val bulkRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                    payload = ChatSessionsBulkLifecycleResultPayload(
+                        scope = "all_active",
+                        status = "archived",
+                        affectedCount = 1,
+                        remainingCount = 0,
+                        completedAt = "2026-06-25T00:01:00Z",
+                    ),
+                    requestId = "stale-bulk-request",
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionArchive,
+                    requestId = bulkRequest.requestId,
+                    payload = buildJsonObject {
+                        put("scope", "all_active")
+                        put("status", "archived")
+                        put("affected_count", 1)
+                        put("remaining_count", 0)
+                        put("completed_at", "2026-06-25T00:01:00Z")
+                        put("unexpected", true)
+                    },
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionArchive })
+            completePendingRuntimeChatSessionList(fixture, sessions = active, capable = true)
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val retryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "chat_store_unavailable",
+                        message = "ambiguous bulk failure",
+                        retryable = true,
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(2, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionArchive })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableRuntimeBulkStopsAt50BatchBudgetWithoutApplyingMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = true,
+            )
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+
+            repeat(50) { batch ->
+                val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionArchive,
+                        serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                        payload = ChatSessionsBulkLifecycleResultPayload(
+                            scope = "all_active",
+                            status = "archived",
+                            affectedCount = 200,
+                            remainingCount = 1,
+                            completedAt = "2026-06-25T00:01:00Z",
+                        ),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+                if (batch < 49) {
+                    assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+                }
+            }
+
+            assertEquals(50, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionArchive })
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun legacyRuntimeBulkFallsBackToOptimisticPerCachedSessionLifecycle() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = false,
+            )
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+            assertEquals(setOf("session_id"), request.payload.keys)
+            assertEquals(1, fixture.viewModel.state.value.archivedChatSessions.size)
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun observedCapableRuntimeKeepsLocalOnlyBulkAvailableOffline() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localSession = PersistedChatSession(
+                id = "local-only",
+                title = "Local only",
+                createdAtMillis = 100L,
+                updatedAtMillis = 200L,
+                runtimeOwned = false,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+                initialData = PersistedRuntimeData(
+                    selectedModelId = "ollama:llama3.1:8b",
+                    trustedRuntimeAutoReconnectEnabled = false,
+                    sessions = listOf(localSession),
+                ),
+            )
+            completePendingRuntimeChatSessionList(fixture, capable = true)
+            fixture.viewModel.setPrivateField("activeChannel", null)
+            fixture.viewModel.replaceStateForTest { it.copy(isConnected = false) }
+            val lifecycleRequestCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionArchive || it.type == MessageType.ChatSessionDelete
+            }
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            assertEquals(listOf("local-only"), fixture.viewModel.state.value.archivedChatSessions.map { it.id })
+            fixture.viewModel.clearArchivedChatSessions()
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertEquals(
+                lifecycleRequestCount,
+                fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionArchive || it.type == MessageType.ChatSessionDelete
+                },
+            )
         } finally {
             Dispatchers.resetMain()
         }
@@ -17768,6 +18930,1663 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun authoritativeSearchOnlyRuntimeChatCanOpenAndLoadTranscript() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-full-cache",
+                                title = "Recent cached chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-25T00:01:00Z",
+                                messageCount = 2,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "older architecture")
+            advanceUntilIdle()
+            val searchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-search-only",
+                                title = "Older architecture chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "active",
+                                search = ChatSessionSearchPayload(
+                                    rank = 1,
+                                    snippet = "Older architecture details",
+                                    matchedFields = listOf("transcript"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    requestId = searchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("runtime-full-cache"),
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertEquals(
+                listOf("runtime-search-only"),
+                fixture.viewModel.state.value.chatSessionSearchResults.map { it.id },
+            )
+
+            fixture.viewModel.selectChatSession("runtime-search-only")
+            advanceUntilIdle()
+
+            val loadingState = fixture.viewModel.state.value
+            assertEquals("runtime-search-only", loadingState.activeChatSessionId)
+            assertEquals("runtime-search-only", loadingState.loadingChatSessionId)
+            assertEquals(
+                setOf("runtime-full-cache", "runtime-search-only"),
+                loadingState.chatSessions.map { it.id }.toSet(),
+            )
+            assertNull(loadingState.error)
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            val messagesPayload = json.decodeFromJsonElement(
+                ChatMessagesListRequestPayload.serializer(),
+                messagesRequest.payload,
+            )
+            assertEquals("runtime-search-only", messagesPayload.sessionId)
+            val savedSearchOnlySession = fixture.localStore.data.sessions.single {
+                it.id == "runtime-search-only"
+            }
+            assertNull(savedSearchOnlySession.runtimeSearchRank)
+            assertNull(savedSearchOnlySession.runtimeSearchSnippet)
+            assertTrue(savedSearchOnlySession.runtimeSearchMatchedFields.isEmpty())
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-search-only",
+                        messages = listOf(
+                            ChatStoredMessagePayload(role = "user", content = "Older question"),
+                            ChatStoredMessagePayload(role = "assistant", content = "Older answer"),
+                        ),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val loadedState = fixture.viewModel.state.value
+            assertNull(loadedState.loadingChatSessionId)
+            assertEquals(
+                listOf("Older question", "Older answer"),
+                loadedState.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completedRuntimeChatSearchResponseCannotReplayAsFullHistorySync() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val completedSearchRequest = seedRuntimeChatSearch(fixture)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-replayed",
+                                title = "Replayed response",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-26T00:01:00Z",
+                                messageCount = 9,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = completedSearchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("older architecture", state.chatSessionSearchQuery)
+            assertEquals(listOf("runtime-search-only"), state.chatSessionSearchResults.map { it.id })
+            assertEquals(listOf("runtime-full-cache"), state.chatSessions.map { it.id })
+            assertEquals(listOf("runtime-full-cache"), fixture.localStore.data.sessions.map { it.id })
+            assertTrue(state.chatSessions.none { it.id == "runtime-replayed" })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeReceiveFailureRevokesSearchOnlySessionAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+            val messagesBeforeFailure = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatMessagesList
+            }
+
+            fixture.channel.failReceive(IllegalStateException("test receive failure"))
+            runCurrent()
+
+            val failedState = fixture.viewModel.state.value
+            assertNull(failedState.chatSessionSearchQuery)
+            assertTrue(failedState.chatSessionSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.selectChatSession("runtime-search-only"))
+            assertEquals(
+                messagesBeforeFailure,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatMessagesList },
+            )
+            fixture.viewModel.disconnect()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeConnectionReplacementRevokesSearchOnlySessionAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+                replacementChannel = replacementChannel,
+            )
+            seedRuntimeChatSearch(fixture)
+            fixture.viewModel.refreshRuntimeChatHistory(query = "old connection pending")
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.viewModel.replaceStateForTest { it.copy(isConnected = false) }
+
+            fixture.viewModel.connectToTrustedRuntime()
+            runCurrent()
+
+            val replacedState = fixture.viewModel.state.value
+            assertNull(replacedState.chatSessionSearchQuery)
+            assertTrue(replacedState.chatSessionSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.selectChatSession("runtime-search-only"))
+            assertTrue(replacementChannel.isConnected)
+            assertTrue(replacementChannel.sentEnvelopes.any { it.type == MessageType.Hello })
+
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = replacementChannel,
+                requestId = "replacement-auth-accepted",
+            )
+            runCurrent()
+
+            val replacementHistoryRequest = replacementChannel.sentEnvelopes.single {
+                it.type == MessageType.ChatSessionsList
+            }
+            assertNotEquals(staleRequest.requestId, replacementHistoryRequest.requestId)
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "stale-old-connection",
+                                title = "Must stay rejected",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-27T00:01:00Z",
+                                messageCount = 4,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.chatSessions.none { it.id == "stale-old-connection" })
+
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "replacement-current",
+                                title = "Replacement current history",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-28T00:01:00Z",
+                                messageCount = 5,
+                                status = "active",
+                            ),
+                        ),
+                    ),
+                    requestId = replacementHistoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                listOf("replacement-current"),
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            fixture.viewModel.disconnect()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSessionsListSendFailurePreservesConcurrentTranscriptRequest() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val session = runtimeChatSessionSummaries(start = 0, count = 1).single()
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = listOf(session),
+                capable = true,
+            )
+            assertTrue(fixture.viewModel.selectChatSession(session.sessionId))
+            advanceUntilIdle()
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            assertEquals(session.sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+
+            fixture.channel.sendFailure = IllegalStateException("synthetic sessions list send failure")
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            fixture.channel.sendFailure = null
+
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(session.sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+            assertEquals(
+                messagesRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = session.sessionId,
+                        messages = emptyList(),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatMessagesListSendFailurePreservesConcurrentSessionsListRun() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val session = runtimeChatSessionSummaries(start = 0, count = 1).single()
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = listOf(session),
+                capable = true,
+            )
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val sessionsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.sendFailure = IllegalStateException("synthetic messages list send failure")
+            assertTrue(fixture.viewModel.selectChatSession(session.sessionId))
+            advanceUntilIdle()
+            fixture.channel.sendFailure = null
+
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                sessionsRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"),
+            )
+            val refreshedSessions = runtimeChatSessionSummaries(start = 10, count = 1)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = refreshedSessions,
+                        snapshotCount = refreshedSessions.size,
+                    ),
+                    requestId = sessionsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                refreshedSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun staleChatSessionsListSendFailureCannotRevokeNewAuthoritativeAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = true,
+            )
+            val staleSendStarted = CompletableDeferred<Unit>()
+            val releaseStaleSendFailure = CompletableDeferred<Unit>()
+            var staleRequestId: String? = null
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.ChatSessionsList && staleRequestId == null) {
+                    staleRequestId = envelope.requestId
+                    staleSendStarted.complete(Unit)
+                    releaseStaleSendFailure.await()
+                    throw IllegalStateException("delayed stale sessions list send failure")
+                }
+            }
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            runCurrent()
+            assertTrue(staleSendStarted.isCompleted)
+            fixture.viewModel.refreshRuntimeChatHistory()
+            runCurrent()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            assertNotEquals(staleRequestId, currentRequest.requestId)
+            val currentSessions = runtimeChatSessionSummaries(start = 20, count = 1)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = currentSessions,
+                        snapshotCount = currentSessions.size,
+                    ),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            runCurrent()
+            releaseStaleSendFailure.complete(Unit)
+            advanceUntilIdle()
+            fixture.channel.afterSend = null
+
+            assertEquals(
+                currentSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+            assertTrue(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsBulkAuthorityEnabled",
+                ) == true,
+            )
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val bulkRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            assertEquals(setOf("scope", "limit"), bulkRequest.payload.keys)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun supersededChatSessionsListAuthenticationErrorCannotRevokeNewerAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val supersededRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val currentSessions = runtimeChatSessionSummaries(start = 40, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Delayed superseded request error.",
+                        retryable = false,
+                    ),
+                    requestId = supersededRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertTrue(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsBulkAuthorityEnabled",
+                ) == true,
+            )
+            assertEquals(currentSessions.map { it.sessionId }, fixture.viewModel.state.value.chatSessions.map { it.id })
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completedChatMessagesListPairingErrorCannotRevokeNewerAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val currentSessions = runtimeChatSessionSummaries(start = 50, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+            assertTrue(fixture.viewModel.selectChatSession(currentSessions.single().sessionId))
+            advanceUntilIdle()
+            val completedMessagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = currentSessions.single().sessionId,
+                        messages = emptyList(),
+                    ),
+                    requestId = completedMessagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "pairing_required",
+                        message = "Delayed completed request error.",
+                        retryable = false,
+                    ),
+                    requestId = completedMessagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertTrue(
+                fixture.viewModel.privateField<Boolean>(
+                    "runtimeChatSessionsBulkAuthorityEnabled",
+                ) == true,
+            )
+            assertEquals(currentSessions.map { it.sessionId }, fixture.viewModel.state.value.chatSessions.map { it.id })
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun currentChatMessagesListAuthenticationErrorStillRevokesAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val currentSessions = runtimeChatSessionSummaries(start = 60, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+            assertTrue(fixture.viewModel.selectChatSession(currentSessions.single().sessionId))
+            advanceUntilIdle()
+            val currentMessagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Current request lost authentication.",
+                        retryable = false,
+                    ),
+                    requestId = currentMessagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals("pairing_required", fixture.viewModel.state.value.error?.code)
+            assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun reusedClosedChatSessionsRequestIdCannotMaskCurrentAuthenticationError() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val closedRequestId = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }.requestId
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            runCurrent()
+            val currentRun = requireNotNull(
+                fixture.viewModel.privateField<Any>("pendingChatSessionsListRun"),
+            )
+            currentRun.javaClass.getDeclaredField("requestId").apply {
+                isAccessible = true
+                set(currentRun, closedRequestId)
+            }
+            fixture.viewModel.setPrivateField("pendingChatSessionsRequestId", closedRequestId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Current reused request lost authentication.",
+                        retryable = false,
+                    ),
+                    requestId = closedRequestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals("pairing_required", fixture.viewModel.state.value.error?.code)
+            assertNull(fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun closedRuntimeChatHistoryRequestCorrelationIsBounded() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val evictedRequestId = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }.requestId
+
+            repeat(140) {
+                fixture.viewModel.refreshRuntimeChatHistory()
+                runCurrent()
+            }
+
+            assertEquals(
+                128,
+                fixture.viewModel.privateField<List<Any>>(
+                    "closedRuntimeChatHistoryRequests",
+                ).orEmpty().size,
+            )
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Very late evicted history error.",
+                        retryable = false,
+                    ),
+                    requestId = evictedRequestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun closedChatSessionsErrorIsIgnoredBeforeUnknownMetadataValidation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val closedRequestId = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }.requestId
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+            val currentSessions = runtimeChatSessionSummaries(start = 70, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = closedRequestId,
+                    payload = buildJsonObject {
+                        put("code", "authentication_required")
+                        put("message", "Delayed malformed history error.")
+                        put("retryable", false)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(
+                currentSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun currentChatMessagesUnknownMetadataErrorClosesRequestAndRejectsLateSuccess() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val currentSessions = runtimeChatSessionSummaries(start = 80, count = 1)
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = currentSessions,
+                capable = true,
+            )
+            assertTrue(fixture.viewModel.selectChatSession(currentSessions.single().sessionId))
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = request.requestId,
+                    payload = buildJsonObject {
+                        put("code", "chat_store_unavailable")
+                        put("message", "Malformed current transcript error.")
+                        put("retryable", true)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = currentSessions.single().sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Must remain ignored",
+                                createdAt = "2026-07-14T00:00:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(
+                fixture.viewModel.state.value.messages.none { message ->
+                    message.content == "Must remain ignored"
+                },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun delayedRevokedSessionSendFailureCannotMutateReauthenticatedState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+            val sendStarted = CompletableDeferred<Unit>()
+            val releaseSendFailure = CompletableDeferred<Unit>()
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.ChatSessionRename) {
+                    sendStarted.complete(Unit)
+                    releaseSendFailure.await()
+                    throw IllegalStateException("delayed old-channel send failure")
+                }
+            }
+
+            fixture.viewModel.renameChatSession("runtime-full-cache", "Pending old-channel title")
+            runCurrent()
+            assertTrue(sendStarted.isCompleted)
+
+            val pendingMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                    requestId = pendingMemoryRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "same-channel-reauthenticated",
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isConnected = true,
+                    isStreaming = true,
+                    activeRequestId = "replacement-stream",
+                    error = null,
+                )
+            }
+
+            releaseSendFailure.complete(Unit)
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.isConnected)
+            assertTrue(state.isStreaming)
+            assertEquals("replacement-stream", state.activeRequestId)
+            assertNull(state.error)
+            assertEquals(
+                "Recent cached chat",
+                state.chatSessions.single { it.id == "runtime-full-cache" }.title,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completedMutationDelayedSendFailureCannotMutateActiveStream() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+            val sendStarted = CompletableDeferred<Unit>()
+            val releaseSendFailure = CompletableDeferred<Unit>()
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.ChatSessionRename) {
+                    sendStarted.complete(Unit)
+                    releaseSendFailure.await()
+                    throw IllegalStateException("delayed completed-request send failure")
+                }
+            }
+
+            fixture.viewModel.renameChatSession("runtime-full-cache", "Pending rename")
+            runCurrent()
+            assertTrue(sendStarted.isCompleted)
+            val renameRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRename,
+                    serializer = ChatSessionRenamePayload.serializer(),
+                    payload = ChatSessionRenamePayload(
+                        sessionId = "runtime-full-cache",
+                        title = "Accepted rename",
+                    ),
+                    requestId = renameRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertEquals(
+                "Accepted rename",
+                fixture.viewModel.state.value.chatSessions.single { it.id == "runtime-full-cache" }.title,
+            )
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    activeRequestId = "new-active-stream",
+                    error = null,
+                )
+            }
+            releaseSendFailure.complete(Unit)
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.isStreaming)
+            assertEquals("new-active-stream", state.activeRequestId)
+            assertNull(state.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completedHelloSendFailureCannotMutateAuthenticatedState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val pendingMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                    requestId = pendingMemoryRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            val sendStarted = CompletableDeferred<Unit>()
+            val releaseSendFailure = CompletableDeferred<Unit>()
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.Hello) {
+                    sendStarted.complete(Unit)
+                    releaseSendFailure.await()
+                    throw IllegalStateException("delayed completed-hello send failure")
+                }
+            }
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            assertTrue(sendStarted.isCompleted)
+
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "completed-hello-authenticated",
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    activeRequestId = "authenticated-stream",
+                    error = null,
+                )
+            }
+            releaseSendFailure.complete(Unit)
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.isStreaming)
+            assertEquals("authenticated-stream", state.activeRequestId)
+            assertNull(state.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun completedPairingSendFailureCannotMutateAuthenticatedState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            fixture.viewModel.setPrivateField("isSessionAuthenticated", false)
+            val sendStarted = CompletableDeferred<Unit>()
+            val releaseSendFailure = CompletableDeferred<Unit>()
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.PairingRequest) {
+                    sendStarted.complete(Unit)
+                    releaseSendFailure.await()
+                    throw IllegalStateException("delayed completed-pairing send failure")
+                }
+            }
+            fixture.viewModel.sendEnvelopeForTest(
+                ProtocolEnvelope(
+                    type = MessageType.PairingRequest,
+                    requestId = "completed-pairing-request",
+                    payload = buildJsonObject {},
+                ),
+            )
+            runCurrent()
+            assertTrue(sendStarted.isCompleted)
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "completed-pairing-authenticated",
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    activeRequestId = "post-pairing-stream",
+                    error = null,
+                )
+            }
+            releaseSendFailure.complete(Unit)
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.isStreaming)
+            assertEquals("post-pairing-stream", state.activeRequestId)
+            assertNull(state.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeChatHistoryAuthenticationLossRevokesSearchOnlySessionAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+            fixture.viewModel.refreshRuntimeChatHistory(query = "new authenticated query")
+            advanceUntilIdle()
+            val rejectedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                    requestId = rejectedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("pairing_required", state.runtimeStatus)
+            assertEquals("pairing_required", state.error?.code)
+            assertNull(state.chatSessionSearchQuery)
+            assertTrue(state.chatSessionSearchResults.isEmpty())
+            assertFalse(fixture.viewModel.selectChatSession("runtime-search-only"))
+            val requestCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.viewModel.refreshRuntimeChatHistory(query = "must not send")
+            advanceUntilIdle()
+            assertEquals(
+                requestCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeMemoryAuthenticationLossRevokesSearchAndPendingHistoryAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+            fixture.viewModel.refreshRuntimeChatHistory(query = "pending during auth loss")
+            advanceUntilIdle()
+            val pendingHistoryCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            val pendingMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                    requestId = pendingMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("pairing_required", state.runtimeStatus)
+            assertNull(state.chatSessionSearchQuery)
+            assertTrue(state.chatSessionSearchResults.isEmpty())
+            assertNull(fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"))
+            assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
+            fixture.viewModel.refreshRuntimeChatHistory(query = "must not send")
+            advanceUntilIdle()
+            assertEquals(
+                pendingHistoryCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeMutationFailureSupersedesPendingSearchAndRestoresOptimisticState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-archived",
+                                title = "Archived runtime chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "archived",
+                                archivedAt = "2026-06-20T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "pending search")
+            advanceUntilIdle()
+            val staleSearchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-archived",
+                                title = "Archived runtime chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "archived",
+                                archivedAt = "2026-06-20T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = staleSearchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.deleteChatSession("runtime-archived")
+            advanceUntilIdle()
+            val deleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionDelete
+            }
+            assertTrue(fixture.localStore.data.sessions.none { it.id == "runtime-archived" })
+            assertEquals(
+                listOf("runtime-archived"),
+                fixture.localStore.data.suppressedRuntimeSessions.map { it.sessionId },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "chat_session_not_found",
+                        message = "Runtime refused delete",
+                        retryable = true,
+                    ),
+                    requestId = deleteRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val freshFullRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            assertNotEquals(staleSearchRequest.requestId, freshFullRequest.requestId)
+            assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                listOf("runtime-archived"),
+                fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+            )
+            assertTrue(fixture.localStore.data.suppressedRuntimeSessions.isEmpty())
+            assertNull(fixture.viewModel.privateField<String>("pendingChatSessionsQuery"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "stale-search-result",
+                                title = "Must stay ignored",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-19T00:01:00Z",
+                                messageCount = 1,
+                                status = "active",
+                                search = ChatSessionSearchPayload(
+                                    rank = 1,
+                                    snippet = "Stale response",
+                                    matchedFields = listOf("title"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    requestId = staleSearchRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.chatSessionSearchResults.isEmpty())
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-archived",
+                                title = "Archived runtime chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "archived",
+                                archivedAt = "2026-06-20T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = freshFullRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                listOf("runtime-archived"),
+                fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeAuthenticationLossRollsBackConcurrentChatSessionMutations() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-active",
+                                title = "Active runtime chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:02:00Z",
+                                messageCount = 2,
+                                status = "active",
+                            ),
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-archived",
+                                title = "Archived runtime chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "archived",
+                                archivedAt = "2026-06-20T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = initialRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.selectChatSession("runtime-active"))
+            advanceUntilIdle()
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-active",
+                        messages = emptyList(),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.archiveChatSession("runtime-active")
+            fixture.viewModel.deleteChatSession("runtime-archived")
+            advanceUntilIdle()
+            val lifecycleRequests = fixture.channel.sentEnvelopes.filter {
+                it.type == MessageType.ChatSessionArchive || it.type == MessageType.ChatSessionDelete
+            }
+            assertEquals(2, lifecycleRequests.size)
+            assertTrue(fixture.localStore.data.sessions.none { it.id == "runtime-archived" })
+            assertEquals(
+                listOf("runtime-archived"),
+                fixture.localStore.data.suppressedRuntimeSessions.map { it.sessionId },
+            )
+
+            val pendingMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                    requestId = pendingMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(
+                fixture.localStore.data.sessions.single { it.id == "runtime-active" }.archivedAtMillis,
+            )
+            assertNotNull(
+                fixture.localStore.data.sessions.single { it.id == "runtime-archived" }.archivedAtMillis,
+            )
+            assertEquals("runtime-active", fixture.localStore.data.activeSessionId)
+            assertTrue(fixture.localStore.data.suppressedRuntimeSessions.isEmpty())
+            assertTrue(
+                fixture.viewModel.privateField<MutableSet<String>>(
+                    "pendingChatSessionLifecycleRequestIds",
+                )?.isEmpty() == true,
+            )
+            assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+
+            lifecycleRequests.forEach { request ->
+                fixture.channel.enqueue(
+                    envelope(
+                        type = request.type,
+                        serializer = ChatSessionLifecyclePayload.serializer(),
+                        payload = ChatSessionLifecyclePayload(
+                            sessionId = if (request.type == MessageType.ChatSessionDelete) {
+                                "runtime-archived"
+                            } else {
+                                "runtime-active"
+                            },
+                            status = if (request.type == MessageType.ChatSessionDelete) "deleted" else "archived",
+                        ),
+                        requestId = request.requestId,
+                    ),
+                )
+            }
+            advanceUntilIdle()
+            assertNull(
+                fixture.localStore.data.sessions.single { it.id == "runtime-active" }.archivedAtMillis,
+            )
+            assertNotNull(
+                fixture.localStore.data.sessions.single { it.id == "runtime-archived" }.archivedAtMillis,
+            )
+            assertTrue(fixture.localStore.data.suppressedRuntimeSessions.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun promotedSearchSummaryIsConsumedBeforeRuntimeLifecycleActions() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            seedRuntimeChatSearch(fixture)
+
+            assertTrue(fixture.viewModel.selectChatSession("runtime-search-only"))
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.chatSessionSearchResults.isEmpty())
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-search-only",
+                        messages = emptyList(),
+                    ),
+                    requestId = messagesRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            fixture.viewModel.archiveChatSession("runtime-search-only")
+            advanceUntilIdle()
+            assertEquals(
+                listOf("runtime-search-only"),
+                fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+            )
+            val archiveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(
+                        sessionId = "runtime-search-only",
+                        status = "archived",
+                    ),
+                    requestId = archiveRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val archiveReconciliationRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = "runtime-search-only",
+                                title = "Older architecture chat",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-06-20T00:01:00Z",
+                                messageCount = 2,
+                                status = "archived",
+                                archivedAt = "2026-06-20T00:02:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = archiveReconciliationRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.deleteChatSession("runtime-search-only")
+            advanceUntilIdle()
+
+            val lifecycleTypes = fixture.channel.sentEnvelopes
+                .map(ProtocolEnvelope::type)
+                .filter { it == MessageType.ChatSessionArchive || it == MessageType.ChatSessionDelete }
+            assertEquals(listOf(MessageType.ChatSessionArchive, MessageType.ChatSessionDelete), lifecycleTypes)
+            assertTrue(
+                (fixture.viewModel.state.value.chatSessions + fixture.viewModel.state.value.archivedChatSessions)
+                    .none { it.id == "runtime-search-only" },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun remoteSearchSummaryCannotReplaceLocalOnlySessionWithSameId() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localCollision = PersistedChatSession(
+                id = "local-collision",
+                title = "Private local draft",
+                modelId = "ollama:llama3.1:8b",
+                createdAtMillis = 100L,
+                updatedAtMillis = 200L,
+                messages = listOf(
+                    PersistedChatMessage(
+                        id = "local-message",
+                        role = "user",
+                        content = "Keep this device-only content",
+                        createdAtMillis = 100L,
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+                initialData = PersistedRuntimeData(
+                    selectedModelId = "ollama:llama3.1:8b",
+                    trustedRuntimeAutoReconnectEnabled = false,
+                    sessions = listOf(localCollision),
+                ),
+            )
+
+            seedRuntimeChatSearch(
+                fixture = fixture,
+                searchSessionId = "local-collision",
+                searchTitle = "Remote collision",
+            )
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.chatSessionSearchResults.isEmpty())
+            val retained = fixture.localStore.data.sessions.single { it.id == "local-collision" }
+            assertFalse(retained.runtimeOwned)
+            assertEquals("Private local draft", retained.title)
+            assertEquals("Keep this device-only content", retained.messages.single().content)
+            assertTrue(state.chatSessions.none { it.title == "Remote collision" })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -17907,9 +20726,12 @@ class RuntimeClientViewModelTest {
             fixture.viewModel.refreshRuntimeChatHistory()
             advanceUntilIdle()
             assertEquals(
-                initialChatSessionsRequestCount,
+                initialChatSessionsRequestCount + 1,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
             )
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
 
             fixture.channel.enqueue(
                 envelope(
@@ -17920,7 +20742,7 @@ class RuntimeClientViewModelTest {
                         message = "Runtime history unavailable",
                         retryable = true,
                     ),
-                    requestId = initialChatSessionsRequest.requestId,
+                    requestId = currentRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -17932,7 +20754,7 @@ class RuntimeClientViewModelTest {
             fixture.viewModel.refreshRuntimeChatHistory()
             advanceUntilIdle()
             assertEquals(
-                initialChatSessionsRequestCount + 1,
+                initialChatSessionsRequestCount + 2,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
             )
         } finally {
@@ -19557,6 +22379,7 @@ class RuntimeClientViewModelTest {
                 models = listOf(textChatModel()),
                 initialData = initialData,
             )
+            completePendingRuntimeChatSessionList(fixture)
 
             fixture.viewModel.replaceStateForTest {
                 it.copy(pendingAttachments = listOf(textAttachment()))
@@ -19606,6 +22429,7 @@ class RuntimeClientViewModelTest {
                 models = listOf(textChatModel()),
                 initialData = initialData,
             )
+            completePendingRuntimeChatSessionList(fixture)
 
             fixture.viewModel.replaceStateForTest {
                 it.copy(pendingAttachments = listOf(textAttachment()))
@@ -21673,6 +24497,24 @@ class RuntimeClientViewModelTest {
                     currentTimeMillis = { 3_000L },
                 ),
             )
+            viewModel.setPrivateField("isSessionAuthenticated", true)
+            viewModel.setPrivateField("pendingChatSessionsRequestId", "stale-history-request")
+            viewModel.setPrivateField("pendingChatSessionsQuery", "stale query")
+            viewModel.setPrivateField(
+                "runtimeChatSearchSummariesById",
+                mapOf(
+                    "stale-search" to ChatSessionSummaryPayload(
+                        sessionId = "stale-search",
+                        title = "Stale search authority",
+                        model = "ollama:llama3.1:8b",
+                        lastActivityAt = "2026-06-20T00:01:00Z",
+                        messageCount = 1,
+                    ),
+                ),
+            )
+            viewModel.replaceStateForTest {
+                it.copy(chatSessionSearchQuery = "stale query")
+            }
             advanceUntilIdle()
 
             assertEquals(0, directConnectionAttempts)
@@ -21687,6 +24529,14 @@ class RuntimeClientViewModelTest {
             assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
             assertNull(trustedStore.trusted?.relayHost)
             assertNull(trustedStore.trusted?.relaySecret)
+            assertFalse(viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertNull(viewModel.privateField<String>("pendingChatSessionsRequestId"))
+            assertTrue(
+                viewModel.privateField<Map<String, ChatSessionSummaryPayload>>(
+                    "runtimeChatSearchSummariesById",
+                ).orEmpty().isEmpty(),
+            )
+            assertNull(viewModel.state.value.chatSessionSearchQuery)
         } finally {
             Dispatchers.resetMain()
         }
@@ -24480,6 +27330,7 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains("chat.attachments"))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SESSIONS_SYNC_CAPABILITY))
     }
 
     @Test
@@ -25150,6 +28001,73 @@ class RuntimeClientViewModelTest {
         return fixture.readText().trim()
     }
 
+    private fun authoritativeSessionSyncWireFixture(): JsonObject {
+        return json.parseToJsonElement(
+            sharedProtocolFixture("chat-sessions-authoritative-sync-smoke-v1.json"),
+        ).jsonObject
+    }
+
+    private fun authoritativeWireSessionID(series: JsonObject, index: Int): String {
+        val prefix = series.getValue("id_prefix").jsonPrimitive.content
+        val width = series.getValue("id_width").jsonPrimitive.int
+        return prefix + index.toString().padStart(width, '0')
+    }
+
+    private fun authoritativeWireSessionPagePayload(
+        series: JsonObject,
+        page: JsonObject,
+        status: String,
+        archivedAt: String? = null,
+    ): JsonObject {
+        val totalCount = series.getValue("count").jsonPrimitive.int
+        val offset = page.getValue("offset").jsonPrimitive.int
+        val pageCount = page.getValue("count").jsonPrimitive.int
+        val titlePrefix = series.getValue("title_prefix").jsonPrimitive.content
+        val model = series.getValue("model").jsonPrimitive.content
+        val baseTimestamp = Instant.parse(series.getValue("base_timestamp").jsonPrimitive.content)
+        val timestampStepSeconds = series.getValue("timestamp_step_seconds").jsonPrimitive.int
+        val messageCount = series.getValue("message_count").jsonPrimitive.int
+        val lastEvent = series.getValue("last_event").jsonPrimitive.content
+        val timestampFormatter = DateTimeFormatterBuilder().appendInstant(3).toFormatter()
+        val indexes = (totalCount - 1 downTo 0).drop(offset).take(pageCount)
+        val sessions = JsonArray(indexes.map { index ->
+            buildJsonObject {
+                put("session_id", authoritativeWireSessionID(series, index))
+                put("title", "$titlePrefix$index")
+                put("model", model)
+                put(
+                    "last_activity_at",
+                    timestampFormatter.format(
+                        baseTimestamp.plusSeconds(index.toLong() * timestampStepSeconds),
+                    ),
+                )
+                put("message_count", messageCount)
+                put("status", status)
+                put("last_event", lastEvent)
+                archivedAt?.let { put("archived_at", it) }
+            }
+        })
+        return buildJsonObject {
+            put("sessions", sessions)
+            put("snapshot_count", page.getValue("snapshot_count").jsonPrimitive.int)
+            page["next_cursor"]?.jsonPrimitive?.content?.let { put("next_cursor", it) }
+        }
+    }
+
+    private fun authoritativeWireBulkResultPayload(
+        operation: JsonObject,
+        batch: JsonObject,
+        completedAt: String,
+    ): JsonObject {
+        return buildJsonObject {
+            put("scope", operation.getValue("scope").jsonPrimitive.content)
+            put("status", operation.getValue("status").jsonPrimitive.content)
+            put("affected_count", batch.getValue("affected_count").jsonPrimitive.int)
+            put("remaining_count", batch.getValue("remaining_count").jsonPrimitive.int)
+            put("completed_at", completedAt)
+        }
+    }
+
     private fun RuntimeClientViewModel.clearForTest() {
         val method = RuntimeClientViewModel::class.java.getDeclaredMethod("onCleared")
         method.isAccessible = true
@@ -25250,6 +28168,11 @@ class RuntimeClientViewModelTest {
 
         fun enqueue(envelope: ProtocolEnvelope) {
             incoming.trySend(envelope).getOrThrow()
+        }
+
+        fun failReceive(error: Throwable) {
+            closed = true
+            incoming.close(error)
         }
 
         override fun close() {
@@ -25412,6 +28335,2038 @@ class RuntimeClientViewModelTest {
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.seedRuntimeChatSearch(
+        fixture: RuntimeClientFixture,
+        searchSessionId: String = "runtime-search-only",
+        searchTitle: String = "Older architecture chat",
+    ): ProtocolEnvelope {
+        val initialRequest = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.ChatSessionsList
+        }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ChatSessionsList,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(
+                    sessions = listOf(
+                        ChatSessionSummaryPayload(
+                            sessionId = "runtime-full-cache",
+                            title = "Recent cached chat",
+                            model = "ollama:llama3.1:8b",
+                            lastActivityAt = "2026-06-25T00:01:00Z",
+                            messageCount = 2,
+                            status = "active",
+                        ),
+                    ),
+                ),
+                requestId = initialRequest.requestId,
+            ),
+        )
+        advanceUntilIdle()
+
+        fixture.viewModel.refreshRuntimeChatHistory(query = "older architecture")
+        advanceUntilIdle()
+        val searchRequest = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.ChatSessionsList
+        }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ChatSessionsList,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(
+                    sessions = listOf(
+                        ChatSessionSummaryPayload(
+                            sessionId = searchSessionId,
+                            title = searchTitle,
+                            model = "ollama:llama3.1:8b",
+                            lastActivityAt = "2026-06-20T00:01:00Z",
+                            messageCount = 2,
+                            status = "active",
+                            search = ChatSessionSearchPayload(
+                                rank = 1,
+                                snippet = "Older architecture details",
+                                matchedFields = listOf("transcript"),
+                            ),
+                        ),
+                    ),
+                ),
+                requestId = searchRequest.requestId,
+            ),
+        )
+        advanceUntilIdle()
+        return searchRequest
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.completePendingRuntimeChatSessionList(
+        fixture: RuntimeClientFixture,
+        sessions: List<ChatSessionSummaryPayload> = emptyList(),
+        capable: Boolean = false,
+    ) {
+        val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ChatSessionsList,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(
+                    sessions = sessions,
+                    snapshotCount = sessions.size.takeIf { capable },
+                ),
+                requestId = request.requestId,
+            ),
+        )
+        advanceUntilIdle()
+    }
+
+    private fun runtimeChatSessionSummaries(
+        start: Int,
+        count: Int,
+        status: String = "active",
+    ): List<ChatSessionSummaryPayload> {
+        return (start until start + count).map { index ->
+            ChatSessionSummaryPayload(
+                sessionId = "runtime-page-$index",
+                title = "Runtime page $index",
+                model = "ollama:llama3.1:8b",
+                lastActivityAt = "2026-06-25T00:00:00Z",
+                messageCount = index + 1,
+                status = status,
+                archivedAt = "2026-06-25T00:00:00Z".takeIf { status == "archived" },
+                search = ChatSessionSearchPayload(
+                    rank = index + 1,
+                    snippet = "Runtime result $index",
+                    matchedFields = listOf("title"),
+                ),
+            )
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val hello = fixture.channel.sentEnvelopes.first { it.type == MessageType.Hello }
+            val helloPayload = json.decodeFromJsonElement(HelloPayload.serializer(), hello.payload)
+            assertTrue(MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY in helloPayload.capabilities)
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            val initialUnqueriedMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_store_unavailable",
+                        message = "Initial authoritative list unavailable",
+                        retryable = true,
+                    ),
+                    requestId = initialUnqueriedMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.refreshRuntimeMemory("same exact memory")
+            advanceUntilIdle()
+            val queriedMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "memory-query-only",
+                                content = "Same exact memory",
+                                enabled = true,
+                            ),
+                        ),
+                    ),
+                    requestId = queriedMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "Same exact memory", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "Same exact memory", enabled = true),
+                    MemoryEntryPayload(id = "memory-c", content = "Different memory", enabled = false),
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            assertTrue(request.payload.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryDuplicateSuggestionsList,
+                    serializer = MemoryDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = MemoryDuplicateSuggestionsListResultPayload(
+                        groups = listOf(
+                            MemoryDuplicateSuggestionGroupPayload(
+                                entryIds = listOf("memory-a", "memory-b"),
+                            ),
+                        ),
+                        scannedCount = 3,
+                        truncated = true,
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals(
+                listOf(listOf("memory-a", "memory-b")),
+                state.memoryDuplicateSuggestionGroups.map { it.entryIds },
+            )
+            assertEquals(3, state.memoryDuplicateSuggestionsScannedCount)
+            assertTrue(state.memoryDuplicateSuggestionsTruncated)
+            assertTrue(state.hasMemoryDuplicateSuggestionsResult)
+            assertFalse(state.isScanningMemoryDuplicateSuggestions)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            val persistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(persistedSnapshot.contains("memoryDuplicateSuggestion"))
+            assertFalse(persistedSnapshot.contains("Same exact memory"))
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            val authoritativeRefresh = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(id = "memory-a", content = "Same exact memory", enabled = true),
+                            MemoryEntryPayload(id = "memory-b", content = "Same exact memory", enabled = true),
+                            MemoryEntryPayload(id = "memory-c", content = "Different memory", enabled = false),
+                        ),
+                    ),
+                    requestId = authoritativeRefresh.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionGroups.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemoryDuplicateSuggestionsResult)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsRejectsMalformedDuplicateUnknownIdsAndMetadata() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                    MemoryEntryPayload(id = "memory-c", content = "C", enabled = true),
+                ),
+            )
+            val invalidPayloads = listOf(
+                """{"groups":[{"entry_ids":["memory-a"]}],"scanned_count":1,"truncated":false}""",
+                """{"groups":[{"entry_ids":["memory-a","memory-b"]},{"entry_ids":["memory-b","memory-c"]}],"scanned_count":3,"truncated":false}""",
+                """{"groups":[{"entry_ids":["memory-a","memory-unknown"]}],"scanned_count":3,"truncated":false}""",
+                """{"groups":[{"entry_ids":["memory-a","memory-b"],"score":1}],"scanned_count":3,"truncated":false}""",
+            )
+
+            invalidPayloads.forEach { rawPayload ->
+                fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemoryDuplicateSuggestionsList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.MemoryDuplicateSuggestionsList,
+                        requestId = request.requestId,
+                        payload = json.parseToJsonElement(rawPayload).jsonObject,
+                    ),
+                )
+                advanceUntilIdle()
+
+                val state = fixture.viewModel.state.value
+                assertEquals("invalid_payload", state.error?.code)
+                assertTrue(state.memoryDuplicateSuggestionGroups.isEmpty())
+                assertFalse(state.hasMemoryDuplicateSuggestionsResult)
+                assertFalse(state.isScanningMemoryDuplicateSuggestions)
+                assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsIgnoresStaleResponsesAndClearsAcrossAuthorityChanges() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            val result = MemoryDuplicateSuggestionsListResultPayload(
+                groups = listOf(
+                    MemoryDuplicateSuggestionGroupPayload(entryIds = listOf("memory-a", "memory-b")),
+                ),
+                scannedCount = 2,
+                truncated = false,
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Stale authentication error",
+                        retryable = false,
+                    ),
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertTrue(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryDuplicateSuggestionsList,
+                    serializer = MemoryDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = result,
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionGroups.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryDuplicateSuggestionsList,
+                    serializer = MemoryDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = result,
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fixture.viewModel.state.value.memoryDuplicateSuggestionGroups.size)
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val mutationSupersededRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            fixture.viewModel.setMemoryEntryEnabled("memory-a", enabled = false)
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionGroups.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemoryDuplicateSuggestionsResult)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Stale mutation error",
+                        retryable = false,
+                    ),
+                    requestId = mutationSupersededRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val authLossRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Authentication expired",
+                        retryable = false,
+                    ),
+                    requestId = authLossRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionGroups.isEmpty())
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertFalse(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.MemoryDuplicateSuggestionsList) {
+                    throw IllegalStateException("synthetic duplicate suggestions send failure")
+                }
+            }
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val failedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            assertFalse(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+            assertEquals("memory_load_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.channel.afterSend = null
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Stale post-send error",
+                        retryable = false,
+                    ),
+                    requestId = failedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertEquals("memory_load_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsClosedCorrelationHistoryIsBounded() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+
+            repeat(40) {
+                fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+                advanceUntilIdle()
+            }
+
+            val evictedRequest = fixture.channel.sentEnvelopes.first {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+
+            val closed = requireNotNull(
+                fixture.viewModel.privateField<List<*>>(
+                    "closedMemoryDuplicateSuggestionsRequests",
+                ),
+            )
+            assertEquals(32, closed.size)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Evicted stale authentication error",
+                        retryable = false,
+                    ),
+                    requestId = evictedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertTrue(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsResetsAcrossDisconnectAndReplacementChannelAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+                replacementChannel = replacementChannel,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDuplicateSuggestionsList
+            }
+            val staleConnectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = replacementChannel,
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            val replacementMemoryRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                            MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                        ),
+                    ),
+                    requestId = replacementMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.handleErrorForTest(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Stale disconnected authority",
+                        retryable = false,
+                    ),
+                    requestId = staleRequest.requestId,
+                ),
+                fixture.channel,
+                staleConnectionGeneration,
+            )
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertTrue(fixture.viewModel.state.value.isConnected)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryDuplicateSuggestionsDisablesOldRuntimeUnsupportedOperationsForCurrentAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            listOf("unknown_message_type", "unsupported_operation").forEach { errorCode ->
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    redactRuntimeOwnedLocalDataOnSave = true,
+                )
+                enqueueAuthoritativeMemoryEntries(
+                    fixture,
+                    listOf(
+                        MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                        MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                    ),
+                )
+                fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemoryDuplicateSuggestionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = errorCode,
+                            message = "Operation is not supported",
+                            retryable = false,
+                        ),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+
+                val sentRequestCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.MemoryDuplicateSuggestionsList
+                }
+                assertFalse(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+                assertFalse(fixture.viewModel.state.value.isScanningMemoryDuplicateSuggestions)
+                assertTrue(fixture.viewModel.state.value.isConnected)
+                assertNull(fixture.viewModel.state.value.error)
+
+                fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+                advanceUntilIdle()
+                assertEquals(
+                    sentRequestCount,
+                    fixture.channel.sentEnvelopes.count {
+                        it.type == MessageType.MemoryDuplicateSuggestionsList
+                    },
+                )
+                fixture.viewModel.disconnect()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsAdvertisesSeparatelyAndRequiresCurrentAuthorityAndLocalModel() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val uninstalledEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "ollama:uninstalled-embed",
+                name = "uninstalled-embed",
+                installed = false,
+            )
+            val remoteEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "lm_studio:remote-embed",
+                name = "remote-embed",
+                provider = "lm_studio",
+                source = "cloud",
+            )
+            val bareEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "bare-embed",
+                name = "bare-embed",
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(
+                    textChatModel(),
+                    selectedEmbeddingModel,
+                    uninstalledEmbeddingModel,
+                    remoteEmbeddingModel,
+                    bareEmbeddingModel,
+                ),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val hello = fixture.channel.sentEnvelopes.first { it.type == MessageType.Hello }
+            val capabilities = json.decodeFromJsonElement(HelloPayload.serializer(), hello.payload).capabilities
+            assertTrue(MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY in capabilities)
+            assertTrue(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY in capabilities)
+            assertNotEquals(
+                MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY,
+                MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY,
+            )
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            val initialUnqueriedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_store_unavailable",
+                        message = "Initial authoritative list unavailable",
+                        retryable = true,
+                    ),
+                    requestId = initialUnqueriedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeMemory("semantic query only")
+            advanceUntilIdle()
+            val queriedRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "memory-query-only",
+                                content = "Semantic query only",
+                                enabled = true,
+                            ),
+                        ),
+                    ),
+                    requestId = queriedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.selectEmbeddingModel(null)
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            fixture.viewModel.selectEmbeddingModel(uninstalledEmbeddingModel.id)
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.selectedEmbeddingModelId)
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            fixture.viewModel.selectEmbeddingModel(remoteEmbeddingModel.id)
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.selectedEmbeddingModelId)
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            fixture.viewModel.selectEmbeddingModel(bareEmbeddingModel.id)
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.state.value.selectedEmbeddingModelId)
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            fixture.viewModel.selectEmbeddingModel(selectedEmbeddingModel.id)
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            listOf(8_000, 10_000).forEach { threshold ->
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(threshold)
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                }
+                val payload = json.decodeFromJsonElement(
+                    MemorySemanticDuplicateSuggestionsListRequestPayload.serializer(),
+                    request.payload,
+                )
+                assertEquals(selectedEmbeddingModel.id, payload.embeddingModelId)
+                assertEquals(threshold, payload.minimumSimilarityBasisPoints)
+                assertFalse(request.payload.getValue("minimum_similarity_basis_points").jsonPrimitive.isString)
+                assertEquals(
+                    threshold,
+                    request.payload.getValue("minimum_similarity_basis_points").jsonPrimitive.int,
+                )
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsRejectsResponseAfterSelectedModelLeavesCurrentCatalog() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(9_250)
+            advanceUntilIdle()
+            val semanticRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+
+            fixture.viewModel.requestModels()
+            advanceUntilIdle()
+            val modelsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(
+                        models = listOf(textChatModel().toModelInfoPayload()),
+                    ),
+                    requestId = modelsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val afterCatalogDrift = fixture.viewModel.state.value
+            assertEquals(selectedEmbeddingModel.id, afterCatalogDrift.selectedEmbeddingModelId)
+            assertFalse(afterCatalogDrift.memorySemanticDuplicateSuggestionsAvailable)
+            assertFalse(afterCatalogDrift.isScanningMemorySemanticDuplicateSuggestions)
+            assertFalse(afterCatalogDrift.hasMemorySemanticDuplicateSuggestionsResult)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                    serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = MemorySemanticDuplicateSuggestionsListResultPayload(
+                        pairs = listOf(
+                            MemorySemanticDuplicateSuggestionPairPayload(
+                                entryIds = listOf("memory-a", "memory-b"),
+                                similarityBasisPoints = 9_500,
+                            ),
+                        ),
+                        scannedCount = 2,
+                        omittedCount = 0,
+                        truncated = false,
+                    ),
+                    requestId = semanticRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val afterStaleResponse = fixture.viewModel.state.value
+            assertTrue(afterStaleResponse.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertFalse(afterStaleResponse.hasMemorySemanticDuplicateSuggestionsResult)
+            assertNull(afterStaleResponse.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsPublishesTransientReviewStateWithoutPersistence() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "Prefer concise output", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "Keep output concise", enabled = true),
+                    MemoryEntryPayload(id = "memory-c", content = "Use Korean", enabled = false),
+                ),
+            )
+            val persistedBeforeScan = fixture.localStore.data
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(9_000)
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                    serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = MemorySemanticDuplicateSuggestionsListResultPayload(
+                        pairs = listOf(
+                            MemorySemanticDuplicateSuggestionPairPayload(
+                                entryIds = listOf("memory-a", "memory-b"),
+                                similarityBasisPoints = 9_650,
+                            ),
+                        ),
+                        scannedCount = 3,
+                        omittedCount = 1,
+                        truncated = true,
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals(
+                listOf(listOf("memory-a", "memory-b")),
+                state.memorySemanticDuplicateSuggestionPairs.map { it.entryIds },
+            )
+            assertEquals(
+                listOf(9_650),
+                state.memorySemanticDuplicateSuggestionPairs.map { it.similarityBasisPoints },
+            )
+            assertEquals(3, state.memorySemanticDuplicateSuggestionsScannedCount)
+            assertEquals(1, state.memorySemanticDuplicateSuggestionsOmittedCount)
+            assertTrue(state.memorySemanticDuplicateSuggestionsTruncated)
+            assertEquals(9_000, state.memorySemanticDuplicateSuggestionsThresholdBasisPoints)
+            assertTrue(state.hasMemorySemanticDuplicateSuggestionsResult)
+            assertFalse(state.isScanningMemorySemanticDuplicateSuggestions)
+            assertEquals(persistedBeforeScan, fixture.localStore.data)
+            val persistedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(persistedSnapshot.contains("memorySemanticDuplicateSuggestion"))
+            assertFalse(persistedSnapshot.contains("Prefer concise output"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsRejectsLowScoresUnknownIdsAndUnknownMetadata() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            val invalidPayloads = listOf(
+                """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":8999}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+                """{"pairs":[{"entry_ids":["memory-a","memory-unknown"],"similarity_basis_points":9500}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+                """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9500}],"scanned_count":2,"omitted_count":0,"truncated":false,"extra":true}""",
+                """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9500,"extra":true}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            )
+
+            invalidPayloads.forEach { rawPayload ->
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(9_000)
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                        requestId = request.requestId,
+                        payload = json.parseToJsonElement(rawPayload).jsonObject,
+                    ),
+                )
+                advanceUntilIdle()
+
+                val state = fixture.viewModel.state.value
+                assertEquals("invalid_payload", state.error?.code)
+                assertTrue(state.memorySemanticDuplicateSuggestionPairs.isEmpty())
+                assertFalse(state.hasMemorySemanticDuplicateSuggestionsResult)
+                assertFalse(state.isScanningMemorySemanticDuplicateSuggestions)
+                assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsIgnoresSupersededResponsesAndNamespacedErrors() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(9_000)
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions(9_500)
+            advanceUntilIdle()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            val currentResult = MemorySemanticDuplicateSuggestionsListResultPayload(
+                pairs = listOf(
+                    MemorySemanticDuplicateSuggestionPairPayload(
+                        entryIds = listOf("memory-a", "memory-b"),
+                        similarityBasisPoints = 9_750,
+                    ),
+                ),
+                scannedCount = 2,
+                omittedCount = 0,
+                truncated = false,
+            )
+            listOf(staleRequest.requestId, "memory-semantic-duplicate-suggestions-list-stale").forEach {
+                staleRequestId ->
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "authentication_required",
+                            message = "Stale namespaced authentication error",
+                            retryable = false,
+                        ),
+                        requestId = staleRequestId,
+                    ),
+                )
+                advanceUntilIdle()
+                assertTrue(fixture.viewModel.state.value.isConnected)
+                assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+                assertNull(fixture.viewModel.state.value.error)
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                    serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = currentResult,
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                    serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = currentResult,
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.size)
+            assertEquals(9_500, fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsThresholdBasisPoints)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsUnsupportedDisablesOnlySemanticForCurrentAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            listOf("unknown_message_type", "unsupported_operation").forEach { errorCode ->
+                val selectedEmbeddingModel = embeddingModel()
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel(), selectedEmbeddingModel),
+                    selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                    redactRuntimeOwnedLocalDataOnSave = true,
+                )
+                enqueueAuthoritativeMemoryEntries(
+                    fixture,
+                    listOf(
+                        MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                        MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                    ),
+                )
+                assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+                assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+                advanceUntilIdle()
+                val semanticRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = errorCode,
+                            message = "Semantic review is unsupported",
+                            retryable = false,
+                        ),
+                        requestId = semanticRequest.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+
+                assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+                assertTrue(fixture.viewModel.state.value.memoryDuplicateSuggestionsAvailable)
+                assertTrue(fixture.viewModel.state.value.isConnected)
+                assertNull(fixture.viewModel.state.value.error)
+                fixture.viewModel.scanRuntimeMemoryDuplicateSuggestions()
+                advanceUntilIdle()
+                assertTrue(
+                    fixture.channel.sentEnvelopes.any {
+                        it.type == MessageType.MemoryDuplicateSuggestionsList
+                    },
+                )
+                val semanticRequestCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                }
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+                advanceUntilIdle()
+                assertEquals(
+                    semanticRequestCount,
+                    fixture.channel.sentEnvelopes.count {
+                        it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                    },
+                )
+                fixture.viewModel.disconnect()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsClearsOnModelChangeMutationAndAuthoritativeRefresh() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val alternateEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "ollama:alternate-embed",
+                name = "alternate-embed",
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel, alternateEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+
+            suspend fun publishSemanticResult() {
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                        serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                        payload = MemorySemanticDuplicateSuggestionsListResultPayload(
+                            pairs = listOf(
+                                MemorySemanticDuplicateSuggestionPairPayload(
+                                    entryIds = listOf("memory-a", "memory-b"),
+                                    similarityBasisPoints = 9_500,
+                                ),
+                            ),
+                            scannedCount = 2,
+                            omittedCount = 0,
+                            truncated = false,
+                        ),
+                        requestId = request.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+                assertTrue(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+            }
+
+            publishSemanticResult()
+            fixture.viewModel.selectEmbeddingModel(alternateEmbeddingModel.id)
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            publishSemanticResult()
+            fixture.viewModel.setMemoryEntryEnabled("memory-a", enabled = false)
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+
+            publishSemanticResult()
+            fixture.viewModel.refreshRuntimeMemory()
+            advanceUntilIdle()
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsClearsAcrossDisconnectAndReplacementAuthentication() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+                replacementChannel = replacementChannel,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+            advanceUntilIdle()
+            val completedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                    serializer = MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+                    payload = MemorySemanticDuplicateSuggestionsListResultPayload(
+                        pairs = listOf(
+                            MemorySemanticDuplicateSuggestionPairPayload(
+                                entryIds = listOf("memory-a", "memory-b"),
+                                similarityBasisPoints = 9_500,
+                            ),
+                        ),
+                        scannedCount = 2,
+                        omittedCount = 0,
+                        truncated = false,
+                    ),
+                    requestId = completedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            val staleConnectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            assertFalse(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertFalse(fixture.viewModel.state.value.hasMemorySemanticDuplicateSuggestionsResult)
+
+            fixture.viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = replacementChannel,
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "ok"),
+                    requestId = "replacement-runtime-health",
+                ),
+            )
+            advanceUntilIdle()
+            val replacementModelsRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(
+                        models = listOf(textChatModel(), selectedEmbeddingModel).map {
+                            it.toModelInfoPayload()
+                        },
+                    ),
+                    requestId = replacementModelsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            val replacementMemoryRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = entries),
+                    requestId = replacementMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+
+            fixture.viewModel.handleErrorForTest(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Stale disconnected semantic request",
+                        retryable = false,
+                    ),
+                    requestId = staleRequest.requestId,
+                ),
+                fixture.channel,
+                staleConnectionGeneration,
+            )
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateSuggestionsClosedCorrelationHistoryIsBounded() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+
+            repeat(40) {
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateSuggestions()
+                advanceUntilIdle()
+            }
+            val evictedRequest = fixture.channel.sentEnvelopes.first {
+                it.type == MessageType.MemorySemanticDuplicateSuggestionsList
+            }
+            val closed = requireNotNull(
+                fixture.viewModel.privateField<List<*>>(
+                    "closedMemorySemanticDuplicateSuggestionsRequests",
+                ),
+            )
+            assertEquals(32, closed.size)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Evicted stale semantic authentication error",
+                        retryable = false,
+                    ),
+                    requestId = evictedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateSuggestions)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersAdvertisesCanonicalRequestAndPublishesTransientReviewState() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "Prefer concise output", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "Keep answers brief", enabled = true),
+                MemoryEntryPayload(id = "memory-c", content = "Use Korean", enabled = false),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+            val hello = fixture.channel.sentEnvelopes.first { it.type == MessageType.Hello }
+            val capabilities = json.decodeFromJsonElement(HelloPayload.serializer(), hello.payload).capabilities
+            assertTrue(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY in capabilities)
+            assertTrue(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY in capabilities)
+            assertNotEquals(
+                MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY,
+                MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY,
+            )
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+            val persistedBeforeScan = fixture.localStore.data
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters(9_251)
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            assertTrue(request.requestId.startsWith("memory-semantic-duplicate-clusters-list-"))
+            val requestPayload = json.decodeFromJsonElement(
+                MemorySemanticDuplicateClustersListRequestPayload.serializer(),
+                request.payload,
+            )
+            assertEquals(selectedEmbeddingModel.id, requestPayload.embeddingModelId)
+            assertEquals(9_251, requestPayload.minimumSimilarityBasisPoints)
+            assertFalse(request.payload.getValue("minimum_similarity_basis_points").jsonPrimitive.isString)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateClustersList,
+                    serializer = MemorySemanticDuplicateClustersListResultPayload.serializer(),
+                    payload = MemorySemanticDuplicateClustersListResultPayload(
+                        clusters = listOf(
+                            MemorySemanticDuplicateClusterPayload(
+                                entryIds = listOf("memory-a", "memory-b", "memory-c"),
+                                minimumSimilarityBasisPoints = 9_500,
+                            ),
+                        ),
+                        scannedCount = 3,
+                        omittedCount = 1,
+                        truncated = true,
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals(listOf(listOf("memory-a", "memory-b", "memory-c")), state.memorySemanticDuplicateClusters.map { it.entryIds })
+            assertEquals(listOf(9_500), state.memorySemanticDuplicateClusters.map { it.minimumSimilarityBasisPoints })
+            assertEquals(3, state.memorySemanticDuplicateClustersScannedCount)
+            assertEquals(1, state.memorySemanticDuplicateClustersOmittedCount)
+            assertTrue(state.memorySemanticDuplicateClustersTruncated)
+            assertEquals(9_251, state.memorySemanticDuplicateClustersThresholdBasisPoints)
+            assertTrue(state.hasMemorySemanticDuplicateClustersResult)
+            assertFalse(state.isScanningMemorySemanticDuplicateClusters)
+            assertTrue(state.memorySemanticDuplicateSuggestionPairs.isEmpty())
+            assertEquals(persistedBeforeScan, fixture.localStore.data)
+            assertFalse(json.encodeToString(fixture.localStore.data).contains("memorySemanticDuplicateCluster"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersRejectsLowScoresUnknownIdsMetadataAndIdenticalContents() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "byte-identical", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "byte-identical", enabled = true),
+                    MemoryEntryPayload(id = "memory-c", content = "different", enabled = true),
+                ),
+            )
+            val invalidPayloads = listOf(
+                """{"clusters":[{"entry_ids":["memory-a","memory-c"],"minimum_similarity_basis_points":8999}],"scanned_count":3,"omitted_count":0,"truncated":false}""",
+                """{"clusters":[{"entry_ids":["memory-a","memory-unknown"],"minimum_similarity_basis_points":9500}],"scanned_count":3,"omitted_count":0,"truncated":false}""",
+                """{"clusters":[{"entry_ids":["memory-a","memory-c"],"minimum_similarity_basis_points":9500,"extra":true}],"scanned_count":3,"omitted_count":0,"truncated":false}""",
+                """{"clusters":[{"entry_ids":["memory-a","memory-b"],"minimum_similarity_basis_points":9500}],"scanned_count":3,"omitted_count":0,"truncated":false}""",
+            )
+
+            invalidPayloads.forEach { rawPayload ->
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters(9_000)
+                advanceUntilIdle()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.MemorySemanticDuplicateClustersList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.MemorySemanticDuplicateClustersList,
+                        requestId = request.requestId,
+                        payload = json.parseToJsonElement(rawPayload).jsonObject,
+                    ),
+                )
+                advanceUntilIdle()
+                val state = fixture.viewModel.state.value
+                assertEquals("invalid_payload", state.error?.code)
+                assertTrue(state.memorySemanticDuplicateClusters.isEmpty())
+                assertFalse(state.hasMemorySemanticDuplicateClustersResult)
+                assertFalse(state.isScanningMemorySemanticDuplicateClusters)
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersIgnoresStaleResponsesAndUnsupportedDisablesOnlyClusters() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters(9_000)
+            advanceUntilIdle()
+            val staleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters(9_500)
+            advanceUntilIdle()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            val result = MemorySemanticDuplicateClustersListResultPayload(
+                clusters = listOf(
+                    MemorySemanticDuplicateClusterPayload(
+                        entryIds = listOf("memory-a", "memory-b"),
+                        minimumSimilarityBasisPoints = 9_750,
+                    ),
+                ),
+                scannedCount = 2,
+                omittedCount = 0,
+                truncated = false,
+            )
+            listOf(staleRequest.requestId, "memory-semantic-duplicate-clusters-list-stale").forEach { requestId ->
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "authentication_required",
+                            message = "Stale cluster error",
+                            retryable = false,
+                        ),
+                        requestId = requestId,
+                    ),
+                )
+                advanceUntilIdle()
+                assertTrue(fixture.viewModel.state.value.isConnected)
+                assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
+                assertNull(fixture.viewModel.state.value.error)
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateClustersList,
+                    serializer = MemorySemanticDuplicateClustersListResultPayload.serializer(),
+                    payload = result,
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClusters.isEmpty())
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateClustersList,
+                    serializer = MemorySemanticDuplicateClustersListResultPayload.serializer(),
+                    payload = result,
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(1, fixture.viewModel.state.value.memorySemanticDuplicateClusters.size)
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+            advanceUntilIdle()
+            val unsupportedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "unsupported_operation",
+                        message = "Clusters unsupported",
+                        retryable = false,
+                    ),
+                    requestId = unsupportedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            val state = fixture.viewModel.state.value
+            assertFalse(state.memorySemanticDuplicateClustersAvailable)
+            assertTrue(state.memorySemanticDuplicateSuggestionsAvailable)
+            assertTrue(state.memoryDuplicateSuggestionsAvailable)
+            assertTrue(state.isConnected)
+            assertNull(state.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersRejectsStaleCatalogAndClearsOnModelMutationAndDisconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val alternateEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "ollama:alternate-embed",
+                name = "alternate-embed",
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel, alternateEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+            advanceUntilIdle()
+            val staleCatalogRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            fixture.viewModel.requestModels()
+            advanceUntilIdle()
+            val modelsRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(
+                        models = listOf(textChatModel(), selectedEmbeddingModel, alternateEmbeddingModel).map {
+                            it.toModelInfoPayload()
+                        },
+                    ),
+                    requestId = modelsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySemanticDuplicateClustersList,
+                    serializer = MemorySemanticDuplicateClustersListResultPayload.serializer(),
+                    payload = MemorySemanticDuplicateClustersListResultPayload(
+                        clusters = listOf(
+                            MemorySemanticDuplicateClusterPayload(
+                                entryIds = listOf("memory-a", "memory-b"),
+                                minimumSimilarityBasisPoints = 9_500,
+                            ),
+                        ),
+                        scannedCount = 2,
+                        omittedCount = 0,
+                        truncated = false,
+                    ),
+                    requestId = staleCatalogRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClusters.isEmpty())
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+            advanceUntilIdle()
+            fixture.viewModel.selectEmbeddingModel(alternateEmbeddingModel.id)
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClusters.isEmpty())
+            assertFalse(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
+
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+            advanceUntilIdle()
+            fixture.viewModel.setMemoryEntryEnabled("memory-a", enabled = false)
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
+            assertFalse(fixture.viewModel.state.value.hasMemorySemanticDuplicateClustersResult)
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClusters.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersRequiresCurrentAuthorityCorrelatedModelCatalog() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val models = listOf(textChatModel(), selectedEmbeddingModel)
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = models,
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+                replacementChannel = replacementChannel,
+            )
+            val entries = listOf(
+                MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+            )
+            enqueueAuthoritativeMemoryEntries(fixture, entries)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+            val oldModelsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            fixture.viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = replacementChannel,
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "ok"),
+                    requestId = "replacement-cluster-runtime-health",
+                ),
+            )
+            advanceUntilIdle()
+            val currentModelsRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+            val currentMemoryRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = entries),
+                    requestId = currentMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(models = emptyList()),
+                    requestId = oldModelsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isLoadingModels)
+            assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(models = models.map { it.toModelInfoPayload() }),
+                    requestId = currentModelsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.isLoadingModels)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersIgnoresSupersededModelListSendFailure() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val models = listOf(textChatModel(), selectedEmbeddingModel)
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = models,
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+            val staleSendStarted = CompletableDeferred<Unit>()
+            val releaseStaleSendFailure = CompletableDeferred<Unit>()
+            var staleRequestId: String? = null
+            fixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.ModelsList && staleRequestId == null) {
+                    staleRequestId = envelope.requestId
+                    staleSendStarted.complete(Unit)
+                    releaseStaleSendFailure.await()
+                    throw IllegalStateException("delayed stale models list send failure")
+                }
+            }
+
+            fixture.viewModel.requestModels()
+            runCurrent()
+            assertTrue(staleSendStarted.isCompleted)
+            fixture.viewModel.requestModels()
+            runCurrent()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+            assertNotEquals(staleRequestId, currentRequest.requestId)
+            assertTrue(fixture.viewModel.state.value.isLoadingModels)
+
+            releaseStaleSendFailure.complete(Unit)
+            advanceUntilIdle()
+            fixture.channel.afterSend = null
+            assertTrue(fixture.viewModel.state.value.isLoadingModels)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ModelsResult,
+                    serializer = ModelsResultPayload.serializer(),
+                    payload = ModelsResultPayload(models = models.map { it.toModelInfoPayload() }),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertFalse(fixture.viewModel.state.value.isLoadingModels)
+            assertTrue(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersMalformedCorrelatedErrorPreservesInvalidPayload() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = request.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"message":"missing code","retryable":false}""",
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("invalid_payload", state.error?.code)
+            assertFalse(state.isScanningMemorySemanticDuplicateClusters)
+            assertTrue(state.memorySemanticDuplicateClusters.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySemanticDuplicateClustersClosedCorrelationHistoryIsBounded() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            enqueueAuthoritativeMemoryEntries(
+                fixture,
+                listOf(
+                    MemoryEntryPayload(id = "memory-a", content = "A", enabled = true),
+                    MemoryEntryPayload(id = "memory-b", content = "B", enabled = true),
+                ),
+            )
+            repeat(40) {
+                fixture.viewModel.scanRuntimeMemorySemanticDuplicateClusters()
+                advanceUntilIdle()
+            }
+            val closed = requireNotNull(
+                fixture.viewModel.privateField<List<*>>(
+                    "closedMemorySemanticDuplicateClustersRequests",
+                ),
+            )
+            assertEquals(32, closed.size)
+            val evictedRequest = fixture.channel.sentEnvelopes.first {
+                it.type == MessageType.MemorySemanticDuplicateClustersList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Evicted stale cluster error",
+                        retryable = false,
+                    ),
+                    requestId = evictedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertTrue(fixture.viewModel.state.value.isScanningMemorySemanticDuplicateClusters)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.enqueueAuthoritativeMemoryEntries(
+        fixture: RuntimeClientFixture,
+        entries: List<MemoryEntryPayload>,
+    ) {
+        val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.MemoryList,
+                serializer = MemoryListResultPayload.serializer(),
+                payload = MemoryListResultPayload(entries = entries),
+                requestId = request.requestId,
+            ),
+        )
+        advanceUntilIdle()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun TestScope.createAuthenticatedRuntimeClientFixture(
         models: List<RuntimeModel>,
         modelPayloads: List<ModelInfoPayload> = models.map { it.toModelInfoPayload() },
@@ -25420,8 +30375,10 @@ class RuntimeClientViewModelTest {
         attachmentReader: RuntimeAttachmentReader? = null,
         redactRuntimeOwnedLocalDataOnSave: Boolean = false,
         initialData: PersistedRuntimeData? = null,
+        replacementChannel: ScriptedRuntimeProtocolChannel? = null,
     ): RuntimeClientFixture {
         val channel = ScriptedRuntimeProtocolChannel()
+        var relayConnectionCount = 0
         val localStore = FakeRuntimeLocalDataStore(
             initialData = initialData ?: PersistedRuntimeData(
                 selectedModelId = selectedModelId,
@@ -25439,7 +30396,9 @@ class RuntimeClientViewModelTest {
                 transportConnector = RuntimeTransportConnector { _, _, _ ->
                     error("Direct TCP should not be used by attachment send-path tests")
                 },
-                relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                relayConnector = RuntimeRelayConnector { _, _ ->
+                    if (relayConnectionCount++ == 0) channel else replacementChannel ?: channel
+                },
                 discovery = EmptyRuntimeDiscoverySource,
                 trustedRuntimeStore = trustedStore,
                 deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
@@ -25542,6 +30501,40 @@ class RuntimeClientViewModelTest {
         val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
         field.isAccessible = true
         field.set(this, value)
+    }
+
+    private fun RuntimeClientViewModel.sendHelloForTest() {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "sendHello",
+            Boolean::class.javaObjectType,
+            Int::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, null, 1)
+    }
+
+    private fun RuntimeClientViewModel.sendEnvelopeForTest(envelope: ProtocolEnvelope) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "sendEnvelope",
+            ProtocolEnvelope::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope)
+    }
+
+    private fun RuntimeClientViewModel.handleErrorForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "handleError",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
     }
 
     private fun memorySummaryDraftPayload(id: String): MemorySummaryDraftPayload {

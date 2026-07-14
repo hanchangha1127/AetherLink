@@ -2932,6 +2932,1578 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.count, 0)
     }
 
+    func testAuthoritativeChatSessionCursorTraversesSnapshotWithAbsoluteRanksAndRejectsTampering() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        for index in 0..<5 {
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+                kind: .request,
+                requestID: "authoritative-\(index)-turn",
+                sessionID: "authoritative-\(index)",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "authoritative pagination \(index)")],
+                ownerDeviceID: "device-a"
+            ))
+        }
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-initial",
+            payload: [
+                "limit": .number(2),
+                "query": .string("authoritative pagination")
+            ]
+        ), sink: sink)
+        let initial = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(initial?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(initial?.payload["snapshot_count"], .number(5))
+        let initialObjects = try chatSessionObjects(from: XCTUnwrap(initial))
+        XCTAssertEqual(initialObjects.map { $0["session_id"] }, [.string("authoritative-4"), .string("authoritative-3")])
+        XCTAssertEqual(initialObjects.map { $0["search"]?.objectValue?["rank"] }, [.number(1), .number(2)])
+        guard case .string(let firstCursor)? = initial?.payload["next_cursor"] else {
+            XCTFail("Expected authoritative next cursor")
+            return
+        }
+
+        let tamperedSuffix = firstCursor.last == "0" ? "1" : "0"
+        let tamperedCursor = String(firstCursor.dropLast()) + tamperedSuffix
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-tampered",
+            payload: ["cursor": .string(tamperedCursor)]
+        ), sink: sink)
+        let tampered = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(tampered?.type, MessageType.error)
+        XCTAssertEqual(tampered?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-extra-field",
+            payload: ["cursor": .string(firstCursor), "limit": .number(2)]
+        ), sink: sink)
+        let extraField = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(extraField?.type, MessageType.error)
+        XCTAssertEqual(extraField?.payload["code"], .string("invalid_payload"))
+
+        let otherSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: otherSink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-other-connection",
+            payload: ["cursor": .string(firstCursor)]
+        ), sink: otherSink)
+        let otherConnection = try await otherSink.waitForMessages(count: 3).last
+        XCTAssertEqual(otherConnection?.type, MessageType.error)
+        XCTAssertEqual(otherConnection?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-page-2",
+            payload: ["cursor": .string(firstCursor)]
+        ), sink: sink)
+        let page2 = try await sink.waitForMessages(count: 6).last
+        let page2Objects = try chatSessionObjects(from: XCTUnwrap(page2))
+        XCTAssertEqual(page2Objects.map { $0["session_id"] }, [.string("authoritative-2"), .string("authoritative-1")])
+        XCTAssertEqual(page2Objects.map { $0["search"]?.objectValue?["rank"] }, [.number(3), .number(4)])
+        guard case .string(let secondCursor)? = page2?.payload["next_cursor"] else {
+            XCTFail("Expected second authoritative cursor")
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "authoritative-page-3",
+            payload: ["cursor": .string(secondCursor)]
+        ), sink: sink)
+        let page3 = try await sink.waitForMessages(count: 7).last
+        let page3Objects = try chatSessionObjects(from: XCTUnwrap(page3))
+        XCTAssertEqual(page3Objects.map { $0["session_id"] }, [.string("authoritative-0")])
+        XCTAssertEqual(page3Objects.first?["search"]?.objectValue?["rank"], .number(5))
+        XCTAssertNil(page3?.payload["next_cursor"])
+    }
+
+    func testAuthoritativeSessionSyncWireTranscriptMatchesSharedExactPayloads() async throws {
+        let fixture = try authoritativeSessionSyncWireFixture()
+        let transcript = fixture.wireTranscript
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "wire-device",
+            name: "Wire Device",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        let baseTimestamp = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: fixture.sessionSeries.baseTimestamp)
+        )
+        for index in 0..<2 {
+            let sessionID = authoritativeWireSessionID(index: index, series: fixture.sessionSeries)
+            let timestamp = baseTimestamp.addingTimeInterval(Double(index))
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: timestamp,
+                kind: .request,
+                requestID: "\(sessionID)-turn",
+                sessionID: sessionID,
+                model: fixture.sessionSeries.model,
+                messages: [ChatMessage(role: "user", content: "Exact wire transcript \(index)")],
+                ownerDeviceID: "wire-device"
+            ))
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: timestamp,
+                kind: .title,
+                requestID: "\(sessionID)-title",
+                sessionID: sessionID,
+                model: fixture.sessionSeries.model,
+                title: "\(fixture.sessionSeries.titlePrefix)\(index)",
+                ownerDeviceID: "wire-device"
+            ))
+        }
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "wire-device",
+            privateKey: deviceKey,
+            clientCapabilities: [fixture.capability]
+        )
+
+        var observedMessageCount = 2
+        var cursor: String?
+        for (pageIndex, expectedPayload) in transcript.activePages.enumerated() {
+            let payload = pageIndex == 0
+                ? authoritativeWireInitialRequestPayload(transcript.initialRequest)
+                : ["cursor": .string(try XCTUnwrap(cursor))]
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "exact-wire-active-\(pageIndex + 1)",
+                payload: payload
+            ), sink: sink)
+            observedMessageCount += 1
+            let messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            let response = try XCTUnwrap(messages.last)
+            let representativeCursor = expectedPayload["next_cursor"]?.stringValue
+            assertAuthoritativeWireCursorShape(
+                actual: response.payload["next_cursor"]?.stringValue,
+                representative: representativeCursor,
+                expectedOffset: pageIndex + 1
+            )
+            XCTAssertEqual(
+                normalizedAuthoritativeWirePagePayload(
+                    response.payload,
+                    cursorPlaceholder: representativeCursor,
+                    archivedAtPlaceholder: nil
+                ),
+                expectedPayload
+            )
+            cursor = response.payload["next_cursor"]?.stringValue
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "exact-wire-archive",
+            payload: authoritativeWireBulkRequestPayload(
+                operation: fixture.bulk.archive,
+                limit: fixture.bulk.limit
+            )
+        ), sink: sink)
+        observedMessageCount += 1
+        var messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+        var response = try XCTUnwrap(messages.last)
+        XCTAssertEqual(
+            normalizedAuthoritativeWireBulkPayload(
+                response.payload,
+                completedAtPlaceholder: fixture.dynamicValues.sampleTimestamp
+            ),
+            transcript.archiveResult
+        )
+
+        cursor = nil
+        for (pageIndex, expectedPayload) in transcript.archivedPages.enumerated() {
+            let payload = pageIndex == 0
+                ? authoritativeWireInitialRequestPayload(transcript.initialRequest)
+                : ["cursor": .string(try XCTUnwrap(cursor))]
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: "exact-wire-archived-\(pageIndex + 1)",
+                payload: payload
+            ), sink: sink)
+            observedMessageCount += 1
+            messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            response = try XCTUnwrap(messages.last)
+            let representativeCursor = expectedPayload["next_cursor"]?.stringValue
+            assertAuthoritativeWireCursorShape(
+                actual: response.payload["next_cursor"]?.stringValue,
+                representative: representativeCursor,
+                expectedOffset: pageIndex + 1
+            )
+            XCTAssertEqual(
+                normalizedAuthoritativeWirePagePayload(
+                    response.payload,
+                    cursorPlaceholder: representativeCursor,
+                    archivedAtPlaceholder: fixture.dynamicValues.sampleTimestamp
+                ),
+                expectedPayload
+            )
+            cursor = response.payload["next_cursor"]?.stringValue
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "exact-wire-delete",
+            payload: authoritativeWireBulkRequestPayload(
+                operation: fixture.bulk.delete,
+                limit: fixture.bulk.limit
+            )
+        ), sink: sink)
+        observedMessageCount += 1
+        messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+        response = try XCTUnwrap(messages.last)
+        XCTAssertEqual(
+            normalizedAuthoritativeWireBulkPayload(
+                response.payload,
+                completedAtPlaceholder: fixture.dynamicValues.sampleTimestamp
+            ),
+            transcript.deleteResult
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "exact-wire-final",
+            payload: authoritativeWireInitialRequestPayload(transcript.initialRequest)
+        ), sink: sink)
+        observedMessageCount += 1
+        messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+        response = try XCTUnwrap(messages.last)
+        XCTAssertEqual(response.payload, transcript.finalPage)
+    }
+
+    func testAuthoritativeSessionSyncMatchesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle() async throws {
+        let fixture = try authoritativeSessionSyncWireFixture()
+        XCTAssertEqual(fixture.documentType, "aetherlink.chat-sessions-authoritative-sync-wire-smoke")
+        XCTAssertEqual(fixture.schemaVersion, 1)
+        XCTAssertEqual(fixture.sessionSeries.count, fixture.pagination.pages.reduce(0) { $0 + $1.count })
+
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "wire-device",
+            name: "Wire Device",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        let baseTimestamp = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: fixture.sessionSeries.baseTimestamp)
+        )
+        for index in 0..<fixture.sessionSeries.count {
+            let sessionID = authoritativeWireSessionID(index: index, series: fixture.sessionSeries)
+            let timestamp = baseTimestamp.addingTimeInterval(
+                Double(index * fixture.sessionSeries.timestampStepSeconds)
+            )
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: timestamp,
+                kind: .request,
+                requestID: "\(sessionID)-turn",
+                sessionID: sessionID,
+                model: fixture.sessionSeries.model,
+                messages: [ChatMessage(role: "user", content: "Wire transcript \(index)")],
+                ownerDeviceID: "wire-device"
+            ))
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: timestamp,
+                kind: .title,
+                requestID: "\(sessionID)-title",
+                sessionID: sessionID,
+                model: fixture.sessionSeries.model,
+                title: "\(fixture.sessionSeries.titlePrefix)\(index)",
+                ownerDeviceID: "wire-device"
+            ))
+        }
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "wire-device",
+            privateKey: deviceKey,
+            clientCapabilities: [fixture.capability]
+        )
+
+        var observedMessageCount = 2
+        var cursor: String?
+        for (pageIndex, page) in fixture.pagination.pages.enumerated() {
+            let requestID = "wire-active-page-\(pageIndex + 1)"
+            let requestPayload: [String: JSONValue]
+            if pageIndex == 0 {
+                requestPayload = authoritativeWireInitialRequestPayload(fixture.pagination.initialRequest)
+            } else {
+                requestPayload = ["cursor": .string(try XCTUnwrap(cursor))]
+                XCTAssertEqual(Set(requestPayload.keys), Set(fixture.pagination.continuationRequestKeys))
+            }
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: requestID,
+                payload: requestPayload
+            ), sink: sink)
+            observedMessageCount += 1
+            let messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            let response = try XCTUnwrap(messages.last)
+            XCTAssertEqual(response.type, MessageType.chatSessionsList)
+            XCTAssertEqual(response.requestID, requestID)
+            assertAuthoritativeWireCursorShape(
+                actual: response.payload["next_cursor"]?.stringValue,
+                representative: page.nextCursor,
+                expectedOffset: page.offset + page.count
+            )
+            XCTAssertEqual(
+                normalizedAuthoritativeWirePagePayload(
+                    response.payload,
+                    cursorPlaceholder: page.nextCursor,
+                    archivedAtPlaceholder: nil
+                ),
+                authoritativeWireExpectedPagePayload(
+                    fixture: fixture,
+                    page: page,
+                    status: "active",
+                    archivedAt: nil
+                )
+            )
+            cursor = response.payload["next_cursor"]?.stringValue
+        }
+        XCTAssertNil(cursor)
+
+        var archiveRequestIDs: [String] = []
+        for (batchIndex, batch) in fixture.bulk.archive.batches.enumerated() {
+            let requestID = "wire-archive-\(batchIndex + 1)"
+            archiveRequestIDs.append(requestID)
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionArchive,
+                requestID: requestID,
+                payload: authoritativeWireBulkRequestPayload(
+                    operation: fixture.bulk.archive,
+                    limit: fixture.bulk.limit
+                )
+            ), sink: sink)
+            observedMessageCount += 1
+            let messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            let response = try XCTUnwrap(messages.last)
+            XCTAssertEqual(response.requestID, requestID)
+            XCTAssertEqual(
+                normalizedAuthoritativeWireBulkPayload(
+                    response.payload,
+                    completedAtPlaceholder: fixture.dynamicValues.completedAtPlaceholder
+                ),
+                authoritativeWireExpectedBulkPayload(
+                    operation: fixture.bulk.archive,
+                    batch: batch,
+                    completedAt: fixture.dynamicValues.completedAtPlaceholder
+                )
+            )
+        }
+        XCTAssertEqual(Set(archiveRequestIDs).count, archiveRequestIDs.count)
+
+        cursor = nil
+        for (pageIndex, page) in fixture.pagination.pages.enumerated() {
+            let requestID = "wire-archived-page-\(pageIndex + 1)"
+            let requestPayload = pageIndex == 0
+                ? authoritativeWireInitialRequestPayload(fixture.pagination.initialRequest)
+                : ["cursor": .string(try XCTUnwrap(cursor))]
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: requestID,
+                payload: requestPayload
+            ), sink: sink)
+            observedMessageCount += 1
+            let messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            let response = try XCTUnwrap(messages.last)
+            assertAuthoritativeWireCursorShape(
+                actual: response.payload["next_cursor"]?.stringValue,
+                representative: page.nextCursor,
+                expectedOffset: page.offset + page.count
+            )
+            XCTAssertEqual(
+                normalizedAuthoritativeWirePagePayload(
+                    response.payload,
+                    cursorPlaceholder: page.nextCursor,
+                    archivedAtPlaceholder: fixture.dynamicValues.archivedAtPlaceholder
+                ),
+                authoritativeWireExpectedPagePayload(
+                    fixture: fixture,
+                    page: page,
+                    status: fixture.bulk.archive.status,
+                    archivedAt: fixture.dynamicValues.archivedAtPlaceholder
+                )
+            )
+            cursor = response.payload["next_cursor"]?.stringValue
+        }
+
+        var deleteRequestIDs: [String] = []
+        for (batchIndex, batch) in fixture.bulk.delete.batches.enumerated() {
+            let requestID = "wire-delete-\(batchIndex + 1)"
+            deleteRequestIDs.append(requestID)
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionDelete,
+                requestID: requestID,
+                payload: authoritativeWireBulkRequestPayload(
+                    operation: fixture.bulk.delete,
+                    limit: fixture.bulk.limit
+                )
+            ), sink: sink)
+            observedMessageCount += 1
+            let messages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+            let response = try XCTUnwrap(messages.last)
+            XCTAssertEqual(response.requestID, requestID)
+            XCTAssertEqual(
+                normalizedAuthoritativeWireBulkPayload(
+                    response.payload,
+                    completedAtPlaceholder: fixture.dynamicValues.completedAtPlaceholder
+                ),
+                authoritativeWireExpectedBulkPayload(
+                    operation: fixture.bulk.delete,
+                    batch: batch,
+                    completedAt: fixture.dynamicValues.completedAtPlaceholder
+                )
+            )
+        }
+        XCTAssertEqual(Set(deleteRequestIDs).count, deleteRequestIDs.count)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "wire-final-reconciliation",
+            payload: authoritativeWireInitialRequestPayload(fixture.pagination.initialRequest)
+        ), sink: sink)
+        observedMessageCount += 1
+        let finalMessages = try await sink.waitForMessages(count: observedMessageCount, timeout: 3)
+        let finalResponse = try XCTUnwrap(finalMessages.last)
+        XCTAssertEqual(finalResponse.type, MessageType.chatSessionsList)
+        XCTAssertEqual(finalResponse.payload, [
+            "sessions": .array([]),
+            "snapshot_count": .number(Double(fixture.finalSnapshotCount))
+        ])
+    }
+
+    func testAuthoritativePaginationRejectsExpiredEvictedAndCrossOwnerCursors() throws {
+        let sessions = (0..<3).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "pagination-boundary-\(index)",
+                title: "Pagination boundary \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                messageCount: 1
+            )
+        }
+        let context = RuntimeChatSessionSnapshotContext(
+            mode: "base",
+            includeArchived: false,
+            query: nil,
+            embeddingModelID: nil
+        )
+        let pagination = RuntimeChatSessionPagination(
+            authenticationKey: SymmetricKey(data: Data(repeating: 0x41, count: 32))
+        )
+        let connectionID = UUID()
+        let initial = try pagination.createSnapshot(
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            context: context,
+            sessions: sessions,
+            pageLimit: 1,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+        let cursor = try XCTUnwrap(initial.nextCursor)
+        XCTAssertThrowsError(try pagination.continueSnapshot(
+            cursor: cursor,
+            connectionID: connectionID,
+            ownerDeviceID: "device-b",
+            now: Date(timeIntervalSince1970: 1_001)
+        ))
+        XCTAssertThrowsError(try pagination.continueSnapshot(
+            cursor: cursor,
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 1_120)
+        ))
+
+        let replacementPagination = RuntimeChatSessionPagination(
+            authenticationKey: SymmetricKey(data: Data(repeating: 0x42, count: 32))
+        )
+        let replaced = try replacementPagination.createSnapshot(
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            context: context,
+            sessions: sessions,
+            pageLimit: 1,
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+        let replacedCursor = try XCTUnwrap(replaced.nextCursor)
+        _ = try replacementPagination.createSnapshot(
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            context: context,
+            sessions: sessions,
+            pageLimit: 1,
+            now: Date(timeIntervalSince1970: 2_001)
+        )
+        XCTAssertThrowsError(try replacementPagination.continueSnapshot(
+            cursor: replacedCursor,
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 2_002)
+        ))
+
+        let evictionPagination = RuntimeChatSessionPagination(
+            authenticationKey: SymmetricKey(data: Data(repeating: 0x43, count: 32))
+        )
+        let oldestConnectionID = UUID()
+        let oldest = try evictionPagination.createSnapshot(
+            connectionID: oldestConnectionID,
+            ownerDeviceID: "device-a",
+            context: context,
+            sessions: sessions,
+            pageLimit: 1,
+            now: Date(timeIntervalSince1970: 3_000)
+        )
+        let oldestCursor = try XCTUnwrap(oldest.nextCursor)
+        for index in 0..<RuntimeChatSessionPagination.maximumGlobalSnapshots {
+            _ = try evictionPagination.createSnapshot(
+                connectionID: UUID(),
+                ownerDeviceID: "device-a",
+                context: context,
+                sessions: sessions,
+                pageLimit: 1,
+                now: Date(timeIntervalSince1970: TimeInterval(3_001 + index))
+            )
+        }
+        XCTAssertThrowsError(try evictionPagination.continueSnapshot(
+            cursor: oldestCursor,
+            connectionID: oldestConnectionID,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 3_010)
+        ))
+    }
+
+    func testAuthoritativePaginationExpiresAfterMonotonicTTLWhenWallClockRollsBack() throws {
+        let clock = TestMonotonicClock(now: 10)
+        let pagination = RuntimeChatSessionPagination(
+            authenticationKey: SymmetricKey(data: Data(repeating: 0x44, count: 32)),
+            monotonicNow: { clock.now }
+        )
+        let sessions = (0..<3).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "monotonic-expiry-\(index)",
+                title: "Monotonic expiry \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                messageCount: 1
+            )
+        }
+        let connectionID = UUID()
+        let initial = try pagination.createSnapshot(
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            context: RuntimeChatSessionSnapshotContext(
+                mode: "base",
+                includeArchived: false,
+                query: nil,
+                embeddingModelID: nil
+            ),
+            sessions: sessions,
+            pageLimit: 1,
+            now: Date(timeIntervalSince1970: 1_000)
+        )
+
+        clock.now = 129
+        let second = try pagination.continueSnapshot(
+            cursor: XCTUnwrap(initial.nextCursor),
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 900)
+        )
+        clock.now = 130
+        XCTAssertThrowsError(try pagination.continueSnapshot(
+            cursor: XCTUnwrap(second.nextCursor),
+            connectionID: connectionID,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 900)
+        ))
+    }
+
+    func testReauthenticationChallengeInvalidatesCursorAndSuppressesInFlightInitialPublication() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(revision: "reauth-pagination-v1")],
+            holdEmbeddingUntilReleased: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: (0..<3).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "reauth-pagination-\(index)",
+                title: "Reauthentication pagination \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+                messageCount: 1
+            )
+        })
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        let capability = "chat.sessions.authoritative_sync.v1"
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: [capability]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "reauth-pagination-initial",
+            payload: ["limit": .number(1)]
+        ), sink: sink)
+        let initial = try await sink.waitForMessages(count: 3).last
+        guard case .string(let cursor)? = initial?.payload["next_cursor"] else {
+            XCTFail("Expected cursor before reauthentication")
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "reauth-pagination-slow",
+            payload: [
+                "limit": .number(1),
+                "query": .string("reauthentication"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<100 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "reauth-pagination-hello",
+            payload: [
+                "device_id": .string("device-a"),
+                "client_capabilities": .array([.string(capability)])
+            ]
+        ), sink: sink)
+        let challenge = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(challenge?.type, MessageType.authChallenge)
+        let nonce: String
+        if case .string(let value)? = challenge?.payload["nonce"] {
+            nonce = value
+        } else {
+            XCTFail("Expected reauthentication nonce")
+            return
+        }
+
+        backend.releaseHeldEmbeddings()
+        let whileChallenged = try await sink.waitForMessages(count: 5, timeout: 0.1)
+        XCTAssertEqual(whileChallenged.count, 4)
+        XCTAssertFalse(whileChallenged.contains { $0.requestID == "reauth-pagination-slow" })
+
+        let authMessage = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+            deviceID: "device-a",
+            nonce: nonce
+        )
+        let signature = try deviceKey
+            .signature(for: SHA256.hash(data: XCTUnwrap(authMessage.data(using: .utf8))))
+            .derRepresentation
+            .base64EncodedString()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "reauth-pagination-response",
+            payload: [
+                "device_id": .string("device-a"),
+                "nonce": .string(nonce),
+                "signature": .string(signature)
+            ]
+        ), sink: sink)
+        let reauthenticated = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(reauthenticated?.type, MessageType.authResponse)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "reauth-pagination-stale-cursor",
+            payload: ["cursor": .string(cursor)]
+        ), sink: sink)
+        let staleCursor = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(staleCursor?.type, MessageType.error)
+        XCTAssertEqual(staleCursor?.payload["code"], .string("invalid_payload"))
+    }
+
+    func testNewerAuthoritativeInitialRequestRetainsAuthorityOverOlderSlowRequest() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(revision: "latest-initial-v1")],
+            holdEmbeddingUntilReleased: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: (0..<3).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "latest-initial-\(index)",
+                title: "Latest initial \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+                messageCount: 1
+            )
+        })
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "older-slow-initial",
+            payload: [
+                "limit": .number(1),
+                "query": .string("latest"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<100 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "newer-fast-initial",
+            payload: ["limit": .number(1)]
+        ), sink: sink)
+        let newer = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(newer?.requestID, "newer-fast-initial")
+        guard case .string(let cursor)? = newer?.payload["next_cursor"] else {
+            XCTFail("Expected cursor from newer initial request")
+            return
+        }
+
+        backend.releaseHeldEmbeddings()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "newer-fast-continuation",
+            payload: ["cursor": .string(cursor)]
+        ), sink: sink)
+        let messages = try await sink.waitForMessages(count: 4)
+        XCTAssertFalse(messages.contains { $0.requestID == "older-slow-initial" })
+        let continuation = messages.first { $0.requestID == "newer-fast-continuation" }
+        XCTAssertEqual(continuation?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(try chatSessionObjects(from: XCTUnwrap(continuation)).count, 1)
+    }
+
+    func testAuthoritativeSemanticContinuationReusesMaterializedRankingWithoutInference() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(models: [semanticEmbeddingModel(revision: "authoritative-semantic-v1")])
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: (0..<3).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "semantic-page-\(index)",
+                title: "Relay recovery \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(300 - index)),
+                messageCount: 1
+            )
+        })
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-authoritative-initial",
+            payload: [
+                "limit": .number(1),
+                "query": .string("relay recovery"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        let initial = try await sink.waitForMessages(count: 3).last
+        guard case .string(let cursor)? = initial?.payload["next_cursor"] else {
+            XCTFail("Expected semantic continuation cursor")
+            return
+        }
+        let embeddingRequestCount = backend.embeddingRequests.count
+        let messageRequestCount = store.messageRequests.count
+        XCTAssertGreaterThan(embeddingRequestCount, 0)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-authoritative-page-2",
+            payload: ["cursor": .string(cursor)]
+        ), sink: sink)
+        let page2 = try await sink.waitForMessages(count: 4).last
+        let page2Objects = try chatSessionObjects(from: XCTUnwrap(page2))
+        XCTAssertEqual(page2Objects.first?["search"]?.objectValue?["rank"], .number(2))
+        XCTAssertEqual(backend.embeddingRequests.count, embeddingRequestCount)
+        XCTAssertEqual(store.messageRequests.count, messageRequestCount)
+    }
+
+    func testAuthoritativeBulkLifecycleUsesBoundedFreshRequestBatchesAndReportsRemaining() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        for index in 0..<205 {
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(1_000 + index)),
+                kind: .request,
+                requestID: "router-bulk-\(index)-turn",
+                sessionID: "router-bulk-\(index)",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Router bulk \(index)")],
+                ownerDeviceID: "device-a"
+            ))
+        }
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 2_000),
+            kind: .request,
+            requestID: "router-other-owner-turn",
+            sessionID: "router-other-owner",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Other owner")],
+            ownerDeviceID: "device-b"
+        ))
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "router-bulk-archive-1",
+            payload: ["scope": .string("all_active")]
+        ), sink: sink)
+        let first = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(first?.type, MessageType.chatSessionArchive)
+        XCTAssertEqual(first?.payload["scope"], .string("all_active"))
+        XCTAssertEqual(first?.payload["status"], .string("archived"))
+        XCTAssertEqual(first?.payload["affected_count"], .number(200))
+        XCTAssertEqual(first?.payload["remaining_count"], .number(5))
+        XCTAssertNotNil(first?.payload["completed_at"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "router-bulk-archive-2",
+            payload: ["scope": .string("all_active"), "limit": .number(200)]
+        ), sink: sink)
+        let second = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(second?.payload["affected_count"], .number(5))
+        XCTAssertEqual(second?.payload["remaining_count"], .number(0))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-b", limit: 10, includeArchived: true)
+                .map(\.sessionID),
+            ["router-other-owner"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "router-bulk-delete-1",
+            payload: ["scope": .string("all_archived"), "limit": .number(200)]
+        ), sink: sink)
+        let delete = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(delete?.type, MessageType.chatSessionDelete)
+        XCTAssertEqual(delete?.payload["affected_count"], .number(200))
+        XCTAssertEqual(delete?.payload["remaining_count"], .number(5))
+    }
+
+    func testAuthoritativeBulkLifecycleRejectsAuthorityCapturedBeforeCapabilityDowngrade() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            kind: .request,
+            requestID: "bulk-authority-race-turn",
+            sessionID: "bulk-authority-race",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep this active")],
+            ownerDeviceID: "device-a"
+        ))
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            chatSessionLifecycleAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "bulk-authority-race-archive",
+            payload: ["scope": .string("all_active")]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: [],
+            existingMessageCount: 2,
+            requestSuffix: "bulk-authority-downgrade"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "bulk-authority-race-archive")
+        XCTAssertEqual(staleResponse?.type, MessageType.error)
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true)
+                .first?.status,
+            "active"
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "bulk-after-capability-downgrade",
+            payload: ["scope": .string("all_active")]
+        ), sink: sink)
+        let downgradedResponse = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(downgradedResponse?.type, MessageType.error)
+        XCTAssertEqual(downgradedResponse?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true)
+                .first?.status,
+            "active"
+        )
+    }
+
+    func testSingleSessionLifecycleRejectsAuthorityCapturedBeforeReauthentication() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            kind: .request,
+            requestID: "single-authority-race-turn",
+            sessionID: "single-authority-race",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep this active")],
+            ownerDeviceID: "device-a"
+        ))
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            chatSessionLifecycleAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey
+        )
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "single-authority-race-archive",
+            payload: ["session_id": .string("single-authority-race")]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: [],
+            existingMessageCount: 2,
+            requestSuffix: "single-authority-reauth"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "single-authority-race-archive")
+        XCTAssertEqual(staleResponse?.type, MessageType.error)
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true)
+                .first?.status,
+            "active"
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "single-after-reauthentication",
+            payload: ["session_id": .string("single-authority-race")]
+        ), sink: sink)
+        let freshResponse = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(freshResponse?.type, MessageType.chatSessionArchive)
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true)
+                .first?.status,
+            "archived"
+        )
+    }
+
+    func testChatSessionRenameRejectsAuthorityCapturedBeforeDifferentOwnerReauthentication() async throws {
+        let deviceAKey = P256.Signing.PrivateKey()
+        let deviceBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-b",
+            name: "Device B",
+            publicKeyBase64: deviceBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        for ownerDeviceID in ["device-a", "device-b"] {
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: ownerDeviceID == "device-a" ? 1_000 : 2_000),
+                kind: .request,
+                requestID: "rename-owner-race-turn-\(ownerDeviceID)",
+                sessionID: "rename-owner-race",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Keep \(ownerDeviceID) unchanged")],
+                ownerDeviceID: ownerDeviceID
+            ))
+        }
+        let originalATitle = try XCTUnwrap(
+            chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).first?.title
+        )
+        let originalBTitle = try XCTUnwrap(
+            chatStore.listSessions(ownerDeviceID: "device-b", limit: 10, includeArchived: true).first?.title
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            chatSessionLifecycleAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceAKey
+        )
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "rename-owner-race-stale",
+            payload: [
+                "session_id": .string("rename-owner-race"),
+                "title": .string("Must not rename either owner")
+            ]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else { return }
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-b",
+            privateKey: deviceBKey,
+            clientCapabilities: [],
+            existingMessageCount: 2,
+            requestSuffix: "rename-owner-race-device-b"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "rename-owner-race-stale")
+        XCTAssertEqual(staleResponse?.type, MessageType.error)
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).first?.title,
+            originalATitle
+        )
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-b", limit: 10, includeArchived: true).first?.title,
+            originalBTitle
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "rename-owner-race-fresh",
+            payload: [
+                "session_id": .string("rename-owner-race"),
+                "title": .string("Device B renamed")
+            ]
+        ), sink: sink)
+        let freshResponse = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(freshResponse?.type, MessageType.chatSessionRename)
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).first?.title,
+            originalATitle
+        )
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-b", limit: 10, includeArchived: true).first?.title,
+            "Device B renamed"
+        )
+    }
+
+    func testDevelopmentChatSessionRenameRejectsConnectionClosedAfterAuthorityCapture() async throws {
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            kind: .request,
+            requestID: "development-rename-close-race-turn",
+            sessionID: "development-rename-close-race",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep this title")]
+        ))
+        let originalTitle = try XCTUnwrap(
+            chatStore.listSessions(ownerDeviceID: nil, limit: 10, includeArchived: true).first?.title
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: false,
+            chatEventStore: chatStore,
+            chatSessionLifecycleAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "development-rename-close-race-request",
+            payload: [
+                "session_id": .string("development-rename-close-race"),
+                "title": .string("Must not be stored")
+            ]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else { return }
+
+        router.connectionDidClose(sink.connectionID)
+        checkpoint.release()
+
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.requestID, "development-rename-close-race-request")
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: nil, limit: 10, includeArchived: true).first?.title,
+            originalTitle
+        )
+    }
+
+    func testDevelopmentChatSessionRenameRejectsCloseDuringRequestTaskRegistration() async throws {
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            kind: .request,
+            requestID: "development-registration-close-race-turn",
+            sessionID: "development-registration-close-race",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep registration race title")]
+        ))
+        let originalTitle = try XCTUnwrap(
+            chatStore.listSessions(ownerDeviceID: nil, limit: 10, includeArchived: true).first?.title
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: false,
+            chatEventStore: chatStore,
+            requestTaskRegistrationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+
+        checkpoint.arm()
+        let handleTask = Task {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionRename,
+                requestID: "development-registration-close-race-request",
+                payload: [
+                    "session_id": .string("development-registration-close-race"),
+                    "title": .string("Must not be stored")
+                ]
+            ), sink: sink)
+        }
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            await handleTask.value
+            return
+        }
+
+        router.connectionDidClose(sink.connectionID)
+        checkpoint.release()
+        await handleTask.value
+
+        let messages = try await sink.waitForMessages(count: 1, timeout: 0.05)
+        XCTAssertTrue(messages.isEmpty)
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: nil, limit: 10, includeArchived: true).first?.title,
+            originalTitle
+        )
+    }
+
+    func testDevelopmentSingleSessionLifecycleRejectsConnectionClosedAfterAuthorityCapture() async throws {
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            kind: .request,
+            requestID: "development-close-race-turn",
+            sessionID: "development-close-race",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep this active")]
+        ))
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: false,
+            chatEventStore: chatStore,
+            chatSessionLifecycleAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+
+        checkpoint.arm()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "development-close-race-archive",
+            payload: ["session_id": .string("development-close-race")]
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else { return }
+
+        router.connectionDidClose(sink.connectionID)
+        checkpoint.release()
+
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.requestID, "development-close-race-archive")
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("authentication_required"))
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: nil, limit: 10, includeArchived: true)
+                .first?.status,
+            "active"
+        )
+    }
+
+    func testAuthoritativeSessionListRejectsOversizedCursorAndSnapshotOverflow() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let store = RecordingRuntimeChatEventStore(sessions: (0...10_000).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "overflow-\(index)",
+                title: "Overflow \(index)",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                messageCount: 1
+            )
+        })
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "zero-page-limit",
+            payload: ["limit": .number(0)]
+        ), sink: sink)
+        let zeroLimitResponse = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(zeroLimitResponse?.type, MessageType.error)
+        XCTAssertEqual(zeroLimitResponse?.payload["code"], .string("invalid_payload"))
+        XCTAssertTrue(store.sessionListRequests.isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "oversized-cursor",
+            payload: ["cursor": .string(String(repeating: "x", count: 513))]
+        ), sink: sink)
+        let cursorResponse = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(cursorResponse?.type, MessageType.error)
+        XCTAssertEqual(cursorResponse?.payload["code"], .string("invalid_payload"))
+        XCTAssertTrue(store.sessionListRequests.isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "snapshot-overflow",
+            payload: ["limit": .number(1)]
+        ), sink: sink)
+        let overflowResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(overflowResponse?.type, MessageType.error)
+        XCTAssertEqual(overflowResponse?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertNil(overflowResponse?.payload["snapshot_count"])
+        XCTAssertEqual(store.sessionListRequests.last?.limit, 10_001)
+    }
+
+    func testAuthoritativeBulkDeletePurgeFailurePreventsLifecycleMutation() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        for index in 0..<2 {
+            let sessionID = "purge-blocked-\(index)"
+            try chatStore.append(RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+                kind: .request,
+                requestID: "\(sessionID)-turn",
+                sessionID: sessionID,
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: sessionID)],
+                ownerDeviceID: "device-a"
+            ))
+            _ = try chatStore.mutateSession(
+                ownerDeviceID: "device-a",
+                sessionID: sessionID,
+                requestID: "\(sessionID)-archive",
+                mutation: .archive,
+                timestamp: Date(timeIntervalSince1970: TimeInterval(110 + index))
+            )
+        }
+        let summaryCache = RecordingRuntimeChatCompactionSummaryCache(
+            deleteError: testRuntimeInspectorError("simulated summary purge failure")
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            chatCompactionSummaryCache: summaryCache
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "purge-blocked-delete",
+            payload: ["scope": .string("all_archived"), "limit": .number(2)]
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertEqual(summaryCache.deletedSessionIDs, ["purge-blocked-1"])
+        XCTAssertEqual(
+            try chatStore.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true)
+                .map(\.sessionID),
+            ["purge-blocked-1", "purge-blocked-0"]
+        )
+    }
+
+    func testAuthoritativeSemanticMaterializationFailsClosedWhenLifecycleChangesDuringInference() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-a",
+            name: "Device A",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let backend = MockBackend(
+            models: [semanticEmbeddingModel(revision: "lifecycle-generation-v1")],
+            holdEmbeddingUntilReleased: true
+        )
+        let store = SearchHintRecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "lifecycle-race-session",
+                title: "Relay lifecycle",
+                model: "ollama:llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 1
+            )
+        ])
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-a",
+            privateKey: deviceKey,
+            clientCapabilities: ["chat.sessions.authoritative_sync.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "semantic-lifecycle-race",
+            payload: [
+                "limit": .number(1),
+                "query": .string("relay"),
+                "embedding_model_id": .string("ollama:nomic-embed-text")
+            ]
+        ), sink: sink)
+        for _ in 0..<100 where backend.embeddingRequests.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(backend.embeddingRequests.count, 1)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "rename-during-semantic-materialization",
+            payload: [
+                "session_id": .string("lifecycle-race-session"),
+                "title": .string("Renamed during inference")
+            ]
+        ), sink: sink)
+        let renameResponse = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(renameResponse?.type, MessageType.chatSessionRename)
+        backend.releaseHeldEmbeddings()
+
+        let responses = try await sink.waitForMessages(count: 4)
+        let semanticResponse = responses.first { $0.requestID == "semantic-lifecycle-race" }
+        XCTAssertEqual(semanticResponse?.type, MessageType.error)
+        XCTAssertEqual(semanticResponse?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertNil(semanticResponse?.payload["snapshot_count"])
+    }
+
     func testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch() async throws {
         let sink = RecordingSink()
         let store = SearchHintRecordingRuntimeChatEventStore(sessions: [])
@@ -14579,6 +16151,98 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(freshMessages.last?.payload["accepted"], .bool(true))
     }
 
+    func testTrustedAuthResponseRejectsChallengeSupersededDuringTrustedDeviceLookup() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let device = TrustedDevice(
+            id: "android-blocked-auth",
+            name: "Blocked Auth Client",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        )
+        let trustedLookup = BlockingTrustedDeviceLookup(device: device)
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceLookup: { deviceID in
+                await trustedLookup.lookup(deviceID: deviceID)
+            }
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-blocked-auth-1",
+            payload: [
+                "device_id": .string(device.id),
+                "client_capabilities": .array([.string("chat")])
+            ]
+        ), sink: sink)
+        let firstChallenge = try await sink.waitForMessages(count: 1).last
+        guard case .string(let firstNonce)? = firstChallenge?.payload["nonce"] else {
+            XCTFail("Expected first nonce in auth challenge")
+            return
+        }
+
+        await trustedLookup.blockNextLookup()
+        let firstSignature = try clientAuthenticationSignature(
+            privateKey: privateKey,
+            deviceID: device.id,
+            nonce: firstNonce
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-blocked-stale",
+            payload: [
+                "device_id": .string(device.id),
+                "nonce": .string(firstNonce),
+                "signature": .string(firstSignature)
+            ]
+        ), sink: sink)
+        let didBlockTrustedLookup = await trustedLookup.waitUntilBlocked()
+        XCTAssertTrue(didBlockTrustedLookup)
+        guard didBlockTrustedLookup else { return }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-blocked-auth-2",
+            payload: [
+                "device_id": .string(device.id),
+                "client_capabilities": .array([
+                    .string("chat.sessions.authoritative_sync.v1")
+                ])
+            ]
+        ), sink: sink)
+        let secondChallenge = try await sink.waitForMessages(count: 2).last
+        guard case .string(let secondNonce)? = secondChallenge?.payload["nonce"] else {
+            await trustedLookup.releaseBlockedLookup()
+            XCTFail("Expected second nonce in auth challenge")
+            return
+        }
+        XCTAssertNotEqual(firstNonce, secondNonce)
+        await trustedLookup.releaseBlockedLookup()
+
+        let staleResponse = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(staleResponse?.requestID, "auth-blocked-stale")
+        XCTAssertEqual(staleResponse?.type, MessageType.error)
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_failed"))
+
+        let secondSignature = try clientAuthenticationSignature(
+            privateKey: privateKey,
+            deviceID: device.id,
+            nonce: secondNonce
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-blocked-fresh",
+            payload: [
+                "device_id": .string(device.id),
+                "nonce": .string(secondNonce),
+                "signature": .string(secondSignature)
+            ]
+        ), sink: sink)
+        let freshResponse = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(freshResponse?.type, MessageType.authResponse)
+        XCTAssertEqual(freshResponse?.payload["accepted"], .bool(true))
+    }
+
     func testConnectionDidCloseClearsAuthenticatedSession() async throws {
         let privateKey = P256.Signing.PrivateKey()
         let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
@@ -14965,6 +16629,147 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(model.runtimeMemoryEntriesError)
         XCTAssertNotNil(model.runtimeDataSummary.lastRefreshedAt)
         XCTAssertNil(model.runtimeDataSummary.errorMessage)
+    }
+
+    @MainActor
+    func testCompanionAppModelRunsAllOwnerRuntimeChatRetentionMaintenance() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+
+        func appendDeletedSession(
+            ownerDeviceID: String?,
+            sessionID: String,
+            timestamp: TimeInterval
+        ) throws {
+            try chatStore.append(RuntimeChatStoredEvent(
+                id: "\(sessionID)-request",
+                timestamp: Date(timeIntervalSince1970: timestamp),
+                kind: .request,
+                requestID: "\(sessionID)-turn",
+                sessionID: sessionID,
+                model: "llama",
+                messages: [ChatMessage(role: "user", content: "Already deleted retention test chat.")],
+                ownerDeviceID: ownerDeviceID
+            ))
+            _ = try chatStore.mutateSession(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: sessionID,
+                requestID: "\(sessionID)-archive",
+                mutation: .archive,
+                timestamp: Date(timeIntervalSince1970: timestamp + 1)
+            )
+            _ = try chatStore.mutateSession(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: sessionID,
+                requestID: "\(sessionID)-delete",
+                mutation: .delete,
+                timestamp: Date(timeIntervalSince1970: timestamp + 2)
+            )
+        }
+
+        try appendDeletedSession(ownerDeviceID: "device-a", sessionID: "expired-a", timestamp: 100)
+        try appendDeletedSession(ownerDeviceID: "device-b", sessionID: "expired-b", timestamp: 200)
+        try appendDeletedSession(ownerDeviceID: nil, sessionID: "expired-legacy", timestamp: 300)
+        for index in 0..<102 {
+            let ownerDeviceID: String? = switch index % 3 {
+            case 0: "device-a"
+            case 1: "device-b"
+            default: nil
+            }
+            try appendDeletedSession(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: "expired-backlog-\(index)",
+                timestamp: TimeInterval(400 + index * 10)
+            )
+        }
+
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .notRun)
+
+        model.start()
+        for _ in 0..<200 where model.runtimeChatRetentionStatus.state != .completed {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .completed)
+        XCTAssertEqual(model.runtimeChatRetentionStatus.prunedDeletedSessionCount, 105)
+        XCTAssertNotNil(model.runtimeChatRetentionStatus.lastRunAt)
+        XCTAssertEqual(
+            try chatStore.listMessages(ownerDeviceID: "device-a", sessionID: "expired-a", limit: 10),
+            []
+        )
+        XCTAssertEqual(
+            try chatStore.listMessages(ownerDeviceID: "device-b", sessionID: "expired-b", limit: 10),
+            []
+        )
+        XCTAssertEqual(
+            try chatStore.listMessages(ownerDeviceID: nil, sessionID: "expired-legacy", limit: 10),
+            []
+        )
+        XCTAssertThrowsError(try chatStore.append(RuntimeChatStoredEvent(
+            id: "expired-a-resurrection",
+            timestamp: Date(),
+            kind: .request,
+            requestID: "expired-a-resurrection",
+            sessionID: "expired-a",
+            model: "llama",
+            messages: [ChatMessage(role: "user", content: "Must remain pruned.")],
+            ownerDeviceID: "device-a"
+        ))) { error in
+            XCTAssertTrue(error.localizedDescription.contains("pruned by retention"))
+        }
+
+        await model.runRuntimeChatRetentionMaintenance()
+
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .completed)
+        XCTAssertEqual(model.runtimeChatRetentionStatus.prunedDeletedSessionCount, 0)
+    }
+
+    @MainActor
+    func testCompanionAppModelRetentionMaintenanceDoesNotRescanRuntimeDataSummary() async {
+        let chatStore = RecordingRuntimeChatEventStore()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        let initialSummaryScanCount = chatStore.allSessionListRequestCount
+
+        XCTAssertEqual(initialSummaryScanCount, 1)
+
+        await model.runRuntimeChatRetentionMaintenance()
+
+        XCTAssertEqual(model.runtimeChatRetentionStatus.state, .completed)
+        XCTAssertEqual(chatStore.allSessionListRequestCount, initialSummaryScanCount)
+    }
+
+    @MainActor
+    func testCompanionAppModelRetentionScheduleDoesNotKeepModelAlive() async throws {
+        weak var weakModel: CompanionAppModel?
+        var model: CompanionAppModel? = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL()),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        weakModel = model
+
+        model?.start()
+        model = nil
+        for _ in 0..<200 where weakModel != nil {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertNil(weakModel)
     }
 
     @MainActor
@@ -17886,6 +19691,325 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 }
 
+private struct AuthoritativeSessionSyncWireFixture: Decodable {
+    var documentType: String
+    var schemaVersion: Int
+    var capability: String
+    var wireTranscript: AuthoritativeWireTranscript
+    var sessionSeries: AuthoritativeWireSessionSeries
+    var pagination: AuthoritativeWirePagination
+    var bulk: AuthoritativeWireBulk
+    var dynamicValues: AuthoritativeWireDynamicValues
+    var finalSnapshotCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case documentType = "document_type"
+        case schemaVersion = "schema_version"
+        case capability
+        case wireTranscript = "wire_transcript"
+        case sessionSeries = "session_series"
+        case pagination
+        case bulk
+        case dynamicValues = "dynamic_values"
+        case finalSnapshotCount = "final_snapshot_count"
+    }
+}
+
+private struct AuthoritativeWireTranscript: Decodable {
+    var initialRequest: AuthoritativeWireInitialRequest
+    var activePages: [[String: JSONValue]]
+    var archiveResult: [String: JSONValue]
+    var archivedPages: [[String: JSONValue]]
+    var deleteResult: [String: JSONValue]
+    var finalPage: [String: JSONValue]
+
+    enum CodingKeys: String, CodingKey {
+        case initialRequest = "initial_request"
+        case activePages = "active_pages"
+        case archiveResult = "archive_result"
+        case archivedPages = "archived_pages"
+        case deleteResult = "delete_result"
+        case finalPage = "final_page"
+    }
+}
+
+private struct AuthoritativeWireSessionSeries: Decodable {
+    var count: Int
+    var idPrefix: String
+    var idWidth: Int
+    var titlePrefix: String
+    var model: String
+    var baseTimestamp: String
+    var timestampStepSeconds: Int
+    var messageCount: Int
+    var lastEvent: String
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case idPrefix = "id_prefix"
+        case idWidth = "id_width"
+        case titlePrefix = "title_prefix"
+        case model
+        case baseTimestamp = "base_timestamp"
+        case timestampStepSeconds = "timestamp_step_seconds"
+        case messageCount = "message_count"
+        case lastEvent = "last_event"
+    }
+}
+
+private struct AuthoritativeWirePagination: Decodable {
+    var initialRequest: AuthoritativeWireInitialRequest
+    var continuationRequestKeys: [String]
+    var pages: [AuthoritativeWirePage]
+
+    enum CodingKeys: String, CodingKey {
+        case initialRequest = "initial_request"
+        case continuationRequestKeys = "continuation_request_keys"
+        case pages
+    }
+}
+
+private struct AuthoritativeWireInitialRequest: Decodable {
+    var limit: Int
+    var includeArchived: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case limit
+        case includeArchived = "include_archived"
+    }
+}
+
+private struct AuthoritativeWirePage: Decodable {
+    var offset: Int
+    var count: Int
+    var snapshotCount: Int
+    var nextCursor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case offset
+        case count
+        case snapshotCount = "snapshot_count"
+        case nextCursor = "next_cursor"
+    }
+}
+
+private struct AuthoritativeWireBulk: Decodable {
+    var limit: Int
+    var archive: AuthoritativeWireBulkOperation
+    var delete: AuthoritativeWireBulkOperation
+}
+
+private struct AuthoritativeWireBulkOperation: Decodable {
+    var scope: String
+    var status: String
+    var batches: [AuthoritativeWireBulkBatch]
+}
+
+private struct AuthoritativeWireBulkBatch: Decodable {
+    var affectedCount: Int
+    var remainingCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case affectedCount = "affected_count"
+        case remainingCount = "remaining_count"
+    }
+}
+
+private struct AuthoritativeWireDynamicValues: Decodable {
+    var completedAtPlaceholder: String
+    var archivedAtPlaceholder: String
+    var sampleTimestamp: String
+
+    enum CodingKeys: String, CodingKey {
+        case completedAtPlaceholder = "completed_at_placeholder"
+        case archivedAtPlaceholder = "archived_at_placeholder"
+        case sampleTimestamp = "sample_timestamp"
+    }
+}
+
+private func authoritativeSessionSyncWireFixture() throws -> AuthoritativeSessionSyncWireFixture {
+    let relative = "shared/protocol/fixtures/chat-sessions-authoritative-sync-smoke-v1.json"
+    let starts = [
+        URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    ]
+    for start in starts {
+        var directory = start.standardizedFileURL
+        while true {
+            let candidate = directory.appendingPathComponent(relative)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return try JSONDecoder().decode(
+                    AuthoritativeSessionSyncWireFixture.self,
+                    from: Data(contentsOf: candidate)
+                )
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path { break }
+            directory = parent
+        }
+    }
+    throw testRuntimeInspectorError("Missing authoritative session sync wire fixture")
+}
+
+private func authoritativeWireSessionID(
+    index: Int,
+    series: AuthoritativeWireSessionSeries
+) -> String {
+    series.idPrefix + String(format: "%0\(series.idWidth)d", index)
+}
+
+private func authoritativeWireInitialRequestPayload(
+    _ request: AuthoritativeWireInitialRequest
+) -> [String: JSONValue] {
+    [
+        "limit": .number(Double(request.limit)),
+        "include_archived": .bool(request.includeArchived)
+    ]
+}
+
+private func authoritativeWireBulkRequestPayload(
+    operation: AuthoritativeWireBulkOperation,
+    limit: Int
+) -> [String: JSONValue] {
+    [
+        "scope": .string(operation.scope),
+        "limit": .number(Double(limit))
+    ]
+}
+
+private func authoritativeWireExpectedBulkPayload(
+    operation: AuthoritativeWireBulkOperation,
+    batch: AuthoritativeWireBulkBatch,
+    completedAt: String
+) -> [String: JSONValue] {
+    [
+        "scope": .string(operation.scope),
+        "status": .string(operation.status),
+        "affected_count": .number(Double(batch.affectedCount)),
+        "remaining_count": .number(Double(batch.remainingCount)),
+        "completed_at": .string(completedAt)
+    ]
+}
+
+private func normalizedAuthoritativeWireBulkPayload(
+    _ payload: [String: JSONValue],
+    completedAtPlaceholder: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) -> [String: JSONValue] {
+    var normalized = payload
+    if case .string(let completedAt)? = normalized["completed_at"],
+       isCanonicalAuthoritativeWireTimestamp(completedAt) {
+        normalized["completed_at"] = .string(completedAtPlaceholder)
+    } else {
+        XCTFail("Expected a canonical string completed_at timestamp", file: file, line: line)
+    }
+    return normalized
+}
+
+private func normalizedAuthoritativeWirePagePayload(
+    _ payload: [String: JSONValue],
+    cursorPlaceholder: String?,
+    archivedAtPlaceholder: String?,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) -> [String: JSONValue] {
+    var normalized = payload
+    if normalized["next_cursor"] != nil, let cursorPlaceholder {
+        normalized["next_cursor"] = .string(cursorPlaceholder)
+    }
+    if let archivedAtPlaceholder,
+       case .array(let sessions)? = normalized["sessions"] {
+        normalized["sessions"] = .array(sessions.map { value in
+            guard case .object(var session) = value else { return value }
+            if case .string(let archivedAt)? = session["archived_at"],
+               isCanonicalAuthoritativeWireTimestamp(archivedAt) {
+                session["archived_at"] = .string(archivedAtPlaceholder)
+            } else {
+                XCTFail("Expected a canonical string archived_at timestamp", file: file, line: line)
+            }
+            return .object(session)
+        })
+    }
+    return normalized
+}
+
+private func isCanonicalAuthoritativeWireTimestamp(_ value: String) -> Bool {
+    for options: ISO8601DateFormatter.Options in [
+        [.withInternetDateTime, .withFractionalSeconds],
+        [.withInternetDateTime]
+    ] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = options
+        if let date = formatter.date(from: value), formatter.string(from: date) == value {
+            return true
+        }
+    }
+    return false
+}
+
+private func assertAuthoritativeWireCursorShape(
+    actual: String?,
+    representative: String?,
+    expectedOffset: Int,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertEqual(actual == nil, representative == nil, file: file, line: line)
+    for cursor in [actual, representative].compactMap({ $0 }) {
+        XCTAssertLessThanOrEqual(cursor.utf8.count, 512, file: file, line: line)
+        let fields = cursor.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        XCTAssertEqual(fields.count, 5, file: file, line: line)
+        guard fields.count == 5 else { continue }
+        XCTAssertEqual(fields[0], "v1", file: file, line: line)
+        XCTAssertEqual(UUID(uuidString: fields[1])?.uuidString.lowercased(), fields[1], file: file, line: line)
+        XCTAssertEqual(Int(fields[2]), expectedOffset, file: file, line: line)
+        XCTAssertEqual(String(Int(fields[2]) ?? -1), fields[2], file: file, line: line)
+        XCTAssertGreaterThan(Int64(fields[3]) ?? 0, 0, file: file, line: line)
+        XCTAssertEqual(String(Int64(fields[3]) ?? -1), fields[3], file: file, line: line)
+        XCTAssertEqual(fields[4].count, 64, file: file, line: line)
+        XCTAssertTrue(fields[4].allSatisfy { $0.isNumber || ("a"..."f").contains(String($0)) }, file: file, line: line)
+    }
+}
+
+private func authoritativeWireExpectedPagePayload(
+    fixture: AuthoritativeSessionSyncWireFixture,
+    page: AuthoritativeWirePage,
+    status: String,
+    archivedAt: String?
+) -> [String: JSONValue] {
+    let series = fixture.sessionSeries
+    let baseTimestamp = ISO8601DateFormatter().date(from: series.baseTimestamp)!
+    let orderedIndexes = Array((0..<series.count).reversed())
+    let pageIndexes = orderedIndexes.dropFirst(page.offset).prefix(page.count)
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let sessions: [JSONValue] = pageIndexes.map { index in
+        let timestamp = baseTimestamp.addingTimeInterval(Double(index * series.timestampStepSeconds))
+        var payload: [String: JSONValue] = [
+            "session_id": .string(authoritativeWireSessionID(index: index, series: series)),
+            "title": .string("\(series.titlePrefix)\(index)"),
+            "model": .string(series.model),
+            "last_activity_at": .string(formatter.string(from: timestamp)),
+            "message_count": .number(Double(series.messageCount)),
+            "status": .string(status),
+            "last_event": .string(series.lastEvent)
+        ]
+        if let archivedAt {
+            payload["archived_at"] = .string(archivedAt)
+        }
+        return .object(payload)
+    }
+    var payload: [String: JSONValue] = [
+        "sessions": .array(sessions),
+        "snapshot_count": .number(Double(page.snapshotCount))
+    ]
+    if let nextCursor = page.nextCursor {
+        payload["next_cursor"] = .string(nextCursor)
+    }
+    return payload
+}
+
 private func makeRouter(
     backend: any LlmBackend,
     requiresAuthentication: Bool = false,
@@ -17900,7 +20024,9 @@ private func makeRouter(
     documentIndexStore: any RuntimeDocumentIndexReading = RuntimeDocumentIndexStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
     runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
-    pairedRelayAuthorizationTimeout: TimeInterval = 5
+    pairedRelayAuthorizationTimeout: TimeInterval = 5,
+    requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+    chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil
 ) -> LocalRuntimeMessageRouter {
     LocalRuntimeMessageRouter(
         backend: backend,
@@ -17912,8 +20038,86 @@ private func makeRouter(
         documentIndexStore: documentIndexStore,
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner,
-        pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout
+        pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout,
+        requestTaskRegistrationCheckpoint: requestTaskRegistrationCheckpoint,
+        chatSessionLifecycleAuthorizationCheckpoint: chatSessionLifecycleAuthorizationCheckpoint
     )
+}
+
+private actor BlockingTrustedDeviceLookup {
+    private let device: TrustedDevice
+    private var shouldBlockNextLookup = false
+    private var blockedLookupContinuation: CheckedContinuation<Void, Never>?
+
+    init(device: TrustedDevice) {
+        self.device = device
+    }
+
+    func blockNextLookup() {
+        shouldBlockNextLookup = true
+    }
+
+    func lookup(deviceID: String) async -> TrustedDevice? {
+        if shouldBlockNextLookup {
+            shouldBlockNextLookup = false
+            await withCheckedContinuation { continuation in
+                blockedLookupContinuation = continuation
+            }
+        }
+        return device.id == deviceID ? device : nil
+    }
+
+    func waitUntilBlocked() async -> Bool {
+        for _ in 0..<500 {
+            if blockedLookupContinuation != nil { return true }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return false
+    }
+
+    func releaseBlockedLookup() {
+        let continuation = blockedLookupContinuation
+        blockedLookupContinuation = nil
+        continuation?.resume()
+    }
+}
+
+private final class BlockingLifecycleAuthorizationCheckpoint: @unchecked Sendable {
+    private let lock = NSLock()
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+    private var isArmed = false
+    private var didEnter = false
+
+    func arm() {
+        lock.withLock {
+            isArmed = true
+            didEnter = false
+        }
+    }
+
+    func checkpoint() {
+        let shouldBlock = lock.withLock { () -> Bool in
+            guard isArmed else { return false }
+            isArmed = false
+            didEnter = true
+            return true
+        }
+        if shouldBlock {
+            releaseSemaphore.wait()
+        }
+    }
+
+    func waitUntilEntered() async -> Bool {
+        for _ in 0..<500 {
+            if lock.withLock({ didEnter }) { return true }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return false
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
 }
 
 private final class RecordingRuntimeChatCompactionSummaryCache:
@@ -17921,9 +20125,19 @@ private final class RecordingRuntimeChatCompactionSummaryCache:
     @unchecked Sendable {
     private let lock = NSLock()
     private var storedUpsertAttempts = 0
+    private var storedDeletedSessionIDs: [String] = []
+    private let deleteError: Error?
+
+    init(deleteError: Error? = nil) {
+        self.deleteError = deleteError
+    }
 
     var upsertAttempts: Int {
         lock.withLock { storedUpsertAttempts }
+    }
+
+    var deletedSessionIDs: [String] {
+        lock.withLock { storedDeletedSessionIDs }
     }
 
     func cachedSummary(for key: RuntimeChatCompactionSummaryCacheKey) throws -> String? {
@@ -17946,7 +20160,12 @@ private final class RecordingRuntimeChatCompactionSummaryCache:
         }
     }
 
-    func deleteSummaries(ownerDeviceID: String?, sessionID: String) throws {}
+    func deleteSummaries(ownerDeviceID: String?, sessionID: String) throws {
+        lock.withLock {
+            storedDeletedSessionIDs.append(sessionID)
+        }
+        if let deleteError { throw deleteError }
+    }
 }
 
 private func semanticEmbeddingModel(
@@ -18226,6 +20445,65 @@ private final class AuditFailingRuntimeDocumentIndexStore: RuntimeDocumentIndexR
     func sourceAuditEvents(limit: Int) throws -> [RuntimeDocumentSourceAuditEvent] {
         backingStore.sourceAuditEvents(limit: limit)
     }
+}
+
+private func clientAuthenticationSignature(
+    privateKey: P256.Signing.PrivateKey,
+    deviceID: String,
+    nonce: String,
+    transportBinding: String? = nil
+) throws -> String {
+    let message = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+        deviceID: deviceID,
+        nonce: nonce,
+        transportBinding: transportBinding
+    )
+    let messageData = try XCTUnwrap(message.data(using: .utf8))
+    return try privateKey
+        .signature(for: SHA256.hash(data: messageData))
+        .derRepresentation
+        .base64EncodedString()
+}
+
+private func reauthenticateTrustedDevice(
+    router: LocalRuntimeMessageRouter,
+    sink: RecordingSink,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey,
+    clientCapabilities: [String],
+    existingMessageCount: Int,
+    requestSuffix: String
+) async throws {
+    var helloPayload: [String: JSONValue] = ["device_id": .string(deviceID)]
+    if !clientCapabilities.isEmpty {
+        helloPayload["client_capabilities"] = .array(clientCapabilities.map(JSONValue.string))
+    }
+    router.handle(ProtocolEnvelope(
+        type: MessageType.hello,
+        requestID: "hello-\(requestSuffix)",
+        payload: helloPayload
+    ), sink: sink)
+    let challenge = try await sink.waitForMessages(count: existingMessageCount + 1).last
+    guard case .string(let nonce)? = challenge?.payload["nonce"] else {
+        XCTFail("Expected nonce in reauthentication challenge")
+        return
+    }
+    router.handle(ProtocolEnvelope(
+        type: MessageType.authResponse,
+        requestID: "auth-\(requestSuffix)",
+        payload: [
+            "device_id": .string(deviceID),
+            "nonce": .string(nonce),
+            "signature": .string(try clientAuthenticationSignature(
+                privateKey: privateKey,
+                deviceID: deviceID,
+                nonce: nonce
+            ))
+        ]
+    ), sink: sink)
+    let response = try await sink.waitForMessages(count: existingMessageCount + 2).last
+    XCTAssertEqual(response?.type, MessageType.authResponse)
+    XCTAssertEqual(response?.payload["accepted"], .bool(true))
 }
 
 private func authenticateTrustedDevice(
@@ -19810,6 +22088,7 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     private var storedSessions: [RuntimeChatStoredSession]
     private var storedMessages: [String: [RuntimeChatStoredMessage]]
     private var recordedSessionListRequests: [RuntimeChatSessionListRequest] = []
+    private var recordedAllSessionListRequestCount = 0
     private var recordedMutationRequests: [RuntimeChatMutationRequest] = []
     private let onAppend: ((RuntimeChatStoredEvent) throws -> Void)?
     private let sourceAttributionResolution: RuntimeChatResolvedSourceAttribution?
@@ -19836,6 +22115,10 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
 
     var sessionListRequests: [RuntimeChatSessionListRequest] {
         lock.withLock { recordedSessionListRequests }
+    }
+
+    var allSessionListRequestCount: Int {
+        lock.withLock { recordedAllSessionListRequestCount }
     }
 
     func append(_ event: RuntimeChatStoredEvent) throws {
@@ -19883,7 +22166,10 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     }
 
     func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
-        lock.withLock { Array(storedSessions.prefix(limit)) }
+        lock.withLock {
+            recordedAllSessionListRequestCount += 1
+            return Array(storedSessions.prefix(limit))
+        }
     }
 
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
@@ -20173,6 +22459,50 @@ private func testRuntimeInspectorError(_ message: String) -> NSError {
         code: 100,
         userInfo: [NSLocalizedDescriptionKey: message]
     )
+}
+
+private func temporaryRuntimeChatJSONLURL() -> URL {
+    FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        .appendingPathComponent("runtime-chat-events.jsonl")
+}
+
+private func chatSessionObjects(from envelope: ProtocolEnvelope) throws -> [[String: JSONValue]] {
+    guard case .array(let sessions)? = envelope.payload["sessions"] else {
+        throw testRuntimeInspectorError("Expected chat sessions array")
+    }
+    return try sessions.map { value in
+        guard case .object(let object) = value else {
+            throw testRuntimeInspectorError("Expected chat session object")
+        }
+        return object
+    }
+}
+
+private extension JSONValue {
+    var objectValue: [String: JSONValue]? {
+        guard case .object(let object) = self else { return nil }
+        return object
+    }
+
+    var stringValue: String? {
+        guard case .string(let string) = self else { return nil }
+        return string
+    }
+}
+
+private final class TestMonotonicClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedNow: TimeInterval
+
+    init(now: TimeInterval) {
+        storedNow = now
+    }
+
+    var now: TimeInterval {
+        get { lock.withLock { storedNow } }
+        set { lock.withLock { storedNow = newValue } }
+    }
 }
 
 private extension RuntimeChatSessionMutation {

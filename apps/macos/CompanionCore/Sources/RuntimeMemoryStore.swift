@@ -246,6 +246,7 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
     case emptyContent
     case missingID
     case corruptEventLog(line: Int, reason: String)
+    case duplicateSuggestionResourceLimitExceeded
 
     public var errorDescription: String? {
         switch self {
@@ -255,12 +256,19 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
             return "Memory id must not be empty."
         case .corruptEventLog(let line, let reason):
             return "Runtime memory event log is corrupt at line \(line): \(reason)"
+        case .duplicateSuggestionResourceLimitExceeded:
+            return "Runtime memory duplicate suggestion scan exceeded its resource limit."
         }
     }
 }
 
 public protocol RuntimeMemoryStore: Sendable {
     func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry]
+    func exactDuplicateSuggestions(ownerDeviceID: String?) throws -> RuntimeMemoryDuplicateSuggestions
+    func semanticDuplicateSuggestionSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource]
     func listAll() throws -> [RuntimeMemoryEntry]
     func upsert(
         ownerDeviceID: String?,
@@ -328,6 +336,19 @@ public extension RuntimeMemoryStore {
             )
             return entry
         }
+    }
+
+    func exactDuplicateSuggestions(ownerDeviceID: String?) throws -> RuntimeMemoryDuplicateSuggestions {
+        try RuntimeMemoryExactDuplicateSuggester.suggestions(
+            from: list(ownerDeviceID: ownerDeviceID)
+        )
+    }
+
+    func semanticDuplicateSuggestionSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource] {
+        try listSemanticSearchSources(ownerDeviceID: ownerDeviceID, limit: limit)
     }
 
     func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
@@ -476,6 +497,41 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
     public func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
         try lock.withLock {
             Self.entries(from: try readEvents(ownerDeviceID: ownerDeviceID))
+        }
+    }
+
+    public func exactDuplicateSuggestions(ownerDeviceID: String?) throws -> RuntimeMemoryDuplicateSuggestions {
+        try lock.withLock {
+            try RuntimeMemoryExactDuplicateSuggester.suggestions(
+                from: Self.entries(
+                    from: try readEvents(
+                        ownerDeviceID: ownerDeviceID,
+                        maximumByteCount: RuntimeMemoryExactDuplicateSuggester.maximumSourceEventLogByteCount
+                    )
+                )
+            )
+        }
+    }
+
+    public func semanticDuplicateSuggestionSources(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeMemorySemanticSearchSource] {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
+            Self.entries(
+                from: try readEvents(
+                    ownerDeviceID: ownerDeviceID,
+                    maximumByteCount: RuntimeMemorySemanticDuplicateSuggester.maximumSourceEventLogByteCount
+                )
+            )
+            .prefix(limit)
+            .map { entry in
+                RuntimeMemorySemanticSearchSource(
+                    entry: entry,
+                    sourceRevision: RuntimeSemanticMemorySearch.sourceRevision(for: entry)
+                )
+            }
         }
     }
 
@@ -673,9 +729,33 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         return try readEvents().filter { $0.ownerDeviceID == scopedOwnerDeviceID }
     }
 
+    private func readEvents(
+        ownerDeviceID: String?,
+        maximumByteCount: Int
+    ) throws -> [RuntimeMemoryStoredEvent] {
+        let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        return try readEvents(maximumByteCount: maximumByteCount)
+            .filter { $0.ownerDeviceID == scopedOwnerDeviceID }
+    }
+
     private func readEvents() throws -> [RuntimeMemoryStoredEvent] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         let data = try Data(contentsOf: fileURL)
+        return try Self.decodeEvents(data)
+    }
+
+    private func readEvents(maximumByteCount: Int) throws -> [RuntimeMemoryStoredEvent] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: maximumByteCount + 1) ?? Data()
+        guard data.count <= maximumByteCount else {
+            throw RuntimeMemoryStoreError.duplicateSuggestionResourceLimitExceeded
+        }
+        return try Self.decodeEvents(data)
+    }
+
+    private static func decodeEvents(_ data: Data) throws -> [RuntimeMemoryStoredEvent] {
         guard !data.isEmpty else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

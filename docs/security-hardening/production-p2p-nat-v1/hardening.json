@@ -5,7 +5,7 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink P2P route-preparation and transport source snapshot for production NAT traversal security design",
-    "collectionSha256": "b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4",
+    "collectionSha256": "8741927642b8697e517dccee7dc639d279037f530b442f9ddf9873cbd2294a92",
     "artifactCount": 13,
     "sourceDrift": "present"
   },
@@ -15,11 +15,15 @@
     "selectionProfilePath": "selection-profile.json",
     "selectionProfileStatus": "approved_for_bounded_handoff",
     "selectionDecisionPath": "selection-decision.json",
-    "handoffPath": "implementation/handoff-v3.json",
+    "handoffPath": "implementation/handoff-v4.json",
     "implementationAuthorized": true,
     "networkIOAllowed": false,
     "librarySelectionAuthorized": false,
     "productionDeploymentAuthorized": false,
+    "conditionalLibrarySelectionAuthorized": true,
+    "controlledSpikePhaseAAuthorized": true,
+    "offlineSourceInspectionAuthorized": true,
+    "sourceAcquisitionNetworkIOAllowed": false,
     "controlledNetworkSpikeSocketExecutionAuthorized": false,
     "notImplemented": [
       "authenticated encrypted ICE candidate exchange",

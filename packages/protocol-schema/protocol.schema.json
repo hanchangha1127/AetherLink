@@ -45,6 +45,9 @@
         "memory.list",
         "memory.upsert",
         "memory.delete",
+        "memory.duplicate_suggestions.list",
+        "memory.semantic_duplicate_suggestions.list",
+        "memory.semantic_duplicate_clusters.list",
         "memory.summary.drafts.list",
         "memory.summary.draft.generate",
         "memory.summary.draft.approve",
@@ -200,6 +203,18 @@
     {
       "if": { "properties": { "type": { "const": "memory.delete" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memoryDeletePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.duplicate_suggestions.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memoryDuplicateSuggestionsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.semantic_duplicate_suggestions.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySemanticDuplicateSuggestionsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.semantic_duplicate_clusters.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySemanticDuplicateClustersListPayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "memory.summary.drafts.list" } }, "required": ["type"] },
@@ -955,11 +970,46 @@
         },
         {
           "type": "object",
+          "required": ["cursor"],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "required": ["sessions"],
           "properties": {
             "sessions": {
               "type": "array",
+              "maxItems": 200,
+              "uniqueItems": true,
               "items": { "$ref": "#/$defs/chatSessionSummary" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["sessions", "snapshot_count"],
+          "properties": {
+            "sessions": {
+              "type": "array",
+              "maxItems": 200,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/chatSessionSummary" }
+            },
+            "snapshot_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+            "next_cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9._-]+$"
             }
           },
           "additionalProperties": false
@@ -1125,6 +1175,12 @@
       "oneOf": [
         { "$ref": "#/$defs/chatSessionLifecycleRequestPayload" },
         {
+          "allOf": [
+            { "$ref": "#/$defs/chatSessionBulkLifecycleRequestPayload" },
+            { "properties": { "scope": { "const": "all_active" } } }
+          ]
+        },
+        {
           "type": "object",
           "required": ["session_id", "status", "archived_at"],
           "properties": {
@@ -1133,6 +1189,17 @@
             "archived_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/chatSessionBulkLifecycleResultPayload" },
+            {
+              "properties": {
+                "scope": { "const": "all_active" },
+                "status": { "const": "archived" }
+              }
+            }
+          ]
         }
       ]
     },
@@ -1155,6 +1222,12 @@
       "oneOf": [
         { "$ref": "#/$defs/chatSessionLifecycleRequestPayload" },
         {
+          "allOf": [
+            { "$ref": "#/$defs/chatSessionBulkLifecycleRequestPayload" },
+            { "properties": { "scope": { "const": "all_archived" } } }
+          ]
+        },
+        {
           "type": "object",
           "required": ["session_id", "status", "deleted_at"],
           "properties": {
@@ -1163,6 +1236,17 @@
             "deleted_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/chatSessionBulkLifecycleResultPayload" },
+            {
+              "properties": {
+                "scope": { "const": "all_archived" },
+                "status": { "const": "deleted" }
+              }
+            }
+          ]
         }
       ]
     },
@@ -1171,6 +1255,33 @@
       "required": ["session_id"],
       "properties": {
         "session_id": { "$ref": "#/$defs/nonBlankString" }
+      },
+      "additionalProperties": false
+    },
+    "chatSessionBulkLifecycleRequestPayload": {
+      "type": "object",
+      "required": ["scope"],
+      "properties": {
+        "scope": { "type": "string", "enum": ["all_active", "all_archived"] },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 200 }
+      },
+      "additionalProperties": false
+    },
+    "chatSessionBulkLifecycleResultPayload": {
+      "type": "object",
+      "required": [
+        "scope",
+        "status",
+        "affected_count",
+        "remaining_count",
+        "completed_at"
+      ],
+      "properties": {
+        "scope": { "type": "string", "enum": ["all_active", "all_archived"] },
+        "status": { "type": "string", "enum": ["archived", "deleted"] },
+        "affected_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "remaining_count": { "type": "integer", "minimum": 0 },
+        "completed_at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },
@@ -1688,6 +1799,157 @@
           "properties": {
             "id": { "$ref": "#/$defs/nonEmptyString" },
             "deleted_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memoryDuplicateSuggestionGroup": {
+      "type": "object",
+      "required": ["entry_ids"],
+      "properties": {
+        "entry_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonBlankString" },
+          "minItems": 2,
+          "maxItems": 200,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "memoryDuplicateSuggestionsListPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/emptyPayload" },
+        {
+          "type": "object",
+          "required": ["groups", "scanned_count", "truncated"],
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/memoryDuplicateSuggestionGroup" },
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "scanned_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "truncated": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memorySemanticDuplicateSuggestionPair": {
+      "type": "object",
+      "required": ["entry_ids", "similarity_basis_points"],
+      "properties": {
+        "entry_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonBlankString" },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "similarity_basis_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    "memorySemanticDuplicateSuggestionsListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["embedding_model_id", "minimum_similarity_basis_points"],
+          "properties": {
+            "embedding_model_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "\\S"
+            },
+            "minimum_similarity_basis_points": {
+              "type": "integer",
+              "minimum": 8000,
+              "maximum": 10000,
+              "x-aetherlink-wire-kind": "exact-json-integer-token"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["pairs", "scanned_count", "omitted_count", "truncated"],
+          "properties": {
+            "pairs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/memorySemanticDuplicateSuggestionPair" },
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "scanned_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "omitted_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "truncated": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memorySemanticDuplicateCluster": {
+      "type": "object",
+      "required": ["entry_ids", "minimum_similarity_basis_points"],
+      "properties": {
+        "entry_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonBlankString" },
+          "minItems": 2,
+          "maxItems": 200,
+          "uniqueItems": true
+        },
+        "minimum_similarity_basis_points": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "x-aetherlink-wire-kind": "exact-json-integer-token"
+        }
+      },
+      "additionalProperties": false
+    },
+    "memorySemanticDuplicateClustersListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["embedding_model_id", "minimum_similarity_basis_points"],
+          "properties": {
+            "embedding_model_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "\\S"
+            },
+            "minimum_similarity_basis_points": {
+              "type": "integer",
+              "minimum": 8000,
+              "maximum": 10000,
+              "x-aetherlink-wire-kind": "exact-json-integer-token"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["clusters", "scanned_count", "omitted_count", "truncated"],
+          "properties": {
+            "clusters": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/memorySemanticDuplicateCluster" },
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "scanned_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "omitted_count": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "truncated": { "type": "boolean" }
           },
           "additionalProperties": false
         }

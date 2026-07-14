@@ -579,3 +579,13 @@
 "The document sharing confirmation is invalid. Review the source again." = "La confirmation de partage du document n’est pas valide. Vérifiez à nouveau la source.";
 "This source changed after the review started. Review the latest source before sharing it." = "Cette source a changé après le début de la vérification. Vérifiez sa dernière version avant de la partager.";
 "AetherLink could not update the local document library." = "AetherLink n’a pas pu mettre à jour la bibliothèque locale de documents.";
+"Deleted Chat Retention" = "Conservation des chats supprimés";
+"Clean Deleted History" = "Nettoyer l’historique supprimé";
+"Deleted chats are kept for 90 days, then removed automatically from this runtime host." = "Les chats supprimés sont conservés pendant 90 jours, puis automatiquement retirés de cet hôte du runtime.";
+"Cleaning expired deleted chats." = "Nettoyage des chats supprimés arrivés à expiration.";
+"Cleanup finished. No expired deleted chats were found." = "Nettoyage terminé. Aucun chat supprimé arrivé à expiration n’a été trouvé.";
+"Cleanup finished. %@ removed." = "Nettoyage terminé : %@.";
+"Cleanup failed. Check Activity and try again." = "Échec du nettoyage. Consultez Activité et réessayez.";
+"Remove chats deleted at least 90 days ago from this runtime host." = "Supprimez de cet hôte du runtime les chats supprimés il y a au moins 90 jours.";
+"1 deleted chat" = "1 chat supprimé";
+"%d deleted chats" = "%d chats supprimés";

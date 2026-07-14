@@ -14,6 +14,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let requiresAuthentication: Bool
     private let pairingCoordinator: PairingCoordinator
     private let trustedDeviceStore: TrustedDeviceStore
+    private let trustedDeviceLookup: @Sendable (String) async throws -> TrustedDevice?
     private let chatEventStore: any RuntimeChatEventStore
     private let chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching
     private let memoryStore: any RuntimeMemoryStore
@@ -40,12 +41,31 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private var requestTasksByConnection: [UUID: [UUID: TrackedRuntimeRequestTask]] = [:]
     private let semanticSearchLock = NSLock()
     private var activeSemanticSearchConnections = Set<UUID>()
+    private let semanticEmbeddingModelCatalogLock = NSLock()
+    private var semanticEmbeddingModelCatalogStates: [
+        String: RuntimeSemanticEmbeddingModelCatalogState
+    ] = [:]
+    private var semanticEmbeddingModelCatalogNextGeneration: UInt64 = 0
+    private let chatSessionPagination = RuntimeChatSessionPagination()
+    private let chatSessionLifecycleLock = NSRecursiveLock()
+    private var chatSessionLifecycleGenerations: [RuntimeChatSessionOwnerScope: UInt64] = [:]
+    private var chatSessionAuthenticationGenerations: [UUID: UInt64] = [:]
+    private var chatSessionAuthenticatedOwners: [UUID: RuntimeChatSessionOwnerScope] = [:]
+    private var latestChatSessionInitialRequestGenerations: [UUID: UInt64] = [:]
+    private let requestTaskRegistrationCheckpoint: (@Sendable () -> Void)?
+    private let chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)?
+    private let semanticDuplicateAuthorityCheckpoint: (@Sendable () -> Void)?
+    private let semanticDuplicateCacheCommitCheckpoint: (@Sendable () -> Void)?
+    private let semanticDuplicatePublicationCheckpoint: (@Sendable () -> Void)?
+    private let semanticDuplicateMemoryMutationPrelockCheckpoint: (@Sendable () -> Void)?
+    private let semanticDuplicateMemoryMutationContentionCheckpoint: (@Sendable () -> Void)?
 
     public init(
         backend: any LlmBackend,
         requiresAuthentication: Bool = true,
         pairingCoordinator: PairingCoordinator = PairingCoordinator(),
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
+        trustedDeviceLookup: (@Sendable (String) async throws -> TrustedDevice?)? = nil,
         chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching = NullRuntimeChatCompactionSummaryCache(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
@@ -56,12 +76,22 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         routeRefresher: (any RuntimeRouteRefreshing)? = nil,
         runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
         pairedRelayAuthorizationTimeout: TimeInterval = 5,
+        requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+        chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil,
+        semanticDuplicateAuthorityCheckpoint: (@Sendable () -> Void)? = nil,
+        semanticDuplicateCacheCommitCheckpoint: (@Sendable () -> Void)? = nil,
+        semanticDuplicatePublicationCheckpoint: (@Sendable () -> Void)? = nil,
+        semanticDuplicateMemoryMutationPrelockCheckpoint: (@Sendable () -> Void)? = nil,
+        semanticDuplicateMemoryMutationContentionCheckpoint: (@Sendable () -> Void)? = nil,
         onPairingAccepted: (@Sendable (TrustedDevice) -> Void)? = nil
     ) {
         self.backend = backend
         self.requiresAuthentication = requiresAuthentication
         self.pairingCoordinator = pairingCoordinator
         self.trustedDeviceStore = trustedDeviceStore
+        self.trustedDeviceLookup = trustedDeviceLookup ?? { deviceID in
+            try await trustedDeviceStore.load().first { $0.id == deviceID }
+        }
         self.chatEventStore = chatEventStore
         self.chatCompactionSummaryCache = chatCompactionSummaryCache
         self.memoryStore = memoryStore
@@ -70,6 +100,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.routeRefresher = routeRefresher
         self.runtimeChallengeSigner = runtimeChallengeSigner
         self.pairedRelayAuthorizationTimeout = max(0.01, min(pairedRelayAuthorizationTimeout, 60))
+        self.requestTaskRegistrationCheckpoint = requestTaskRegistrationCheckpoint
+        self.chatSessionLifecycleAuthorizationCheckpoint = chatSessionLifecycleAuthorizationCheckpoint
+        self.semanticDuplicateAuthorityCheckpoint = semanticDuplicateAuthorityCheckpoint
+        self.semanticDuplicateCacheCommitCheckpoint = semanticDuplicateCacheCommitCheckpoint
+        self.semanticDuplicatePublicationCheckpoint = semanticDuplicatePublicationCheckpoint
+        self.semanticDuplicateMemoryMutationPrelockCheckpoint =
+            semanticDuplicateMemoryMutationPrelockCheckpoint
+        self.semanticDuplicateMemoryMutationContentionCheckpoint =
+            semanticDuplicateMemoryMutationContentionCheckpoint
         self.onPairingAccepted = onPairingAccepted
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
@@ -79,11 +118,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         requestTaskLock.withLock {
             requestTasksByConnection[sink.connectionID, default: [:]][taskID] = TrackedRuntimeRequestTask(task: nil)
         }
+        let startGate = RuntimeRequestTaskStartGate()
         let task = Task { [weak self] in
+            await startGate.waitUntilRegistered()
             guard let self else { return }
+            defer { finishRequestTask(connectionID: sink.connectionID, taskID: taskID) }
+            guard !Task.isCancelled else { return }
             await dispatch(envelope, sink: sink)
-            finishRequestTask(connectionID: sink.connectionID, taskID: taskID)
         }
+        requestTaskRegistrationCheckpoint?()
         let shouldCancel = requestTaskLock.withLock { () -> Bool in
             guard var tasks = requestTasksByConnection[sink.connectionID],
                   tasks[taskID] != nil else {
@@ -94,6 +137,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             return false
         }
         if shouldCancel { task.cancel() }
+        startGate.markRegistered()
     }
 
     public func connectionDidClose(_ connectionID: UUID) {
@@ -102,6 +146,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         cancelActiveChats(for: connectionID)
         requestTasks.forEach { $0.cancel() }
+        chatSessionLifecycleLock.withLock {
+            chatSessionPagination.clearConnection(connectionID)
+            chatSessionAuthenticationGenerations[connectionID] = nil
+            chatSessionAuthenticatedOwners[connectionID] = nil
+            latestChatSessionInitialRequestGenerations[connectionID] = nil
+        }
         authLock.withLock {
             authSessions[connectionID] = nil
         }
@@ -206,6 +256,61 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.memoryList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleMemoryList(envelope, sink: sink)
+        case MessageType.memoryDuplicateSuggestionsList:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard let authorization = memoryDuplicateSuggestionsAuthorization(
+                connectionID: sink.connectionID
+            ) else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "unsupported_operation",
+                    message: "This client did not negotiate memory.duplicate_suggestions.v1.",
+                    retryable: false
+                ))
+                return
+            }
+            await handleMemoryDuplicateSuggestionsList(
+                envelope,
+                authorization: authorization,
+                sink: sink
+            )
+        case MessageType.memorySemanticDuplicateSuggestionsList:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard let authorization = memorySemanticDuplicateSuggestionsAuthorization(
+                connectionID: sink.connectionID
+            ) else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "unsupported_operation",
+                    message: "This client did not negotiate memory.semantic_duplicate_suggestions.v1.",
+                    retryable: false
+                ))
+                return
+            }
+            await handleMemorySemanticDuplicateSuggestionsList(
+                envelope,
+                authorization: authorization,
+                sink: sink
+            )
+        case MessageType.memorySemanticDuplicateClustersList:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard let authorization = memorySemanticDuplicateClustersAuthorization(
+                connectionID: sink.connectionID
+            ) else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "unsupported_operation",
+                    message: "This client did not negotiate memory.semantic_duplicate_clusters.v1.",
+                    retryable: false
+                ))
+                return
+            }
+            await handleMemorySemanticDuplicateSuggestionsList(
+                envelope,
+                authorization: authorization,
+                operation: .clusters,
+                sink: sink
+            )
         case MessageType.memoryUpsert:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryUpsert(envelope, sink: sink)
@@ -522,7 +627,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             let nonce = try requiredNonBlankString("nonce", in: envelope.payload)
             let signature = try requiredNonBlankString("signature", in: envelope.payload)
 
-            guard let clientCapabilities = matchingChallengeCapabilities(
+            guard let challenge = matchingChallenge(
                     connectionID: sink.connectionID,
                     deviceID: deviceID,
                     nonce: nonce,
@@ -536,6 +641,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     nonce: nonce,
                     signatureBase64: signature,
                     transportBinding: transportBinding
+                  ),
+                  markAuthenticatedIfChallengeMatches(
+                    connectionID: sink.connectionID,
+                    deviceID: deviceID,
+                    publicKeyBase64: device.publicKeyBase64,
+                    challengeID: challenge.id,
+                    nonce: nonce,
+                    transportBinding: transportBinding,
+                    clientCapabilities: challenge.clientCapabilities
                   )
             else {
                 sink.send(errorEnvelope(
@@ -547,13 +661,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 return
             }
 
-            markAuthenticated(
-                connectionID: sink.connectionID,
-                deviceID: deviceID,
-                publicKeyBase64: device.publicKeyBase64,
-                transportBinding: transportBinding,
-                clientCapabilities: clientCapabilities
-            )
             var payload: [String: JSONValue] = [
                 "accepted": .bool(true),
                 "device_id": .string(deviceID)
@@ -1319,6 +1426,37 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func mutateChatSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        do {
+            return try chatCompactionSummaryCacheCoordinationLock.withLock {
+                let result = try chatEventStore.mutateSessions(
+                    ownerDeviceID: ownerDeviceID,
+                    scope: scope,
+                    limit: limit,
+                    requestID: requestID,
+                    timestamp: Date(),
+                    beforeCommit: { [chatCompactionSummaryCache] targetSessionIDs in
+                        guard scope == .allArchived else { return }
+                        for sessionID in targetSessionIDs {
+                            try chatCompactionSummaryCache.deleteSummaries(
+                                ownerDeviceID: ownerDeviceID,
+                                sessionID: sessionID
+                            )
+                        }
+                    }
+                )
+                return result
+            }
+        } catch {
+            throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+    }
+
     private func cacheCompletedChatCompactionSummaryIfEligible(
         _ record: RuntimeChatCompactionSummaryCacheRecord,
         context: RuntimeChatStorageContext,
@@ -2006,6 +2144,31 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             return
         }
         do {
+            let authorization = chatSessionListAuthorization(connectionID: sink.connectionID)
+            guard !requiresAuthentication || authorization != nil else {
+                throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
+            }
+            if envelope.payload["cursor"] != nil {
+                guard authorization?.supportsAuthoritativeSync == true else {
+                    throw LocalRuntimeRouterError.invalidPayload(
+                        "chat.sessions.list cursor requires chat.sessions.authoritative_sync.v1"
+                    )
+                }
+                guard envelope.payload.count == 1 else {
+                    throw LocalRuntimeRouterError.invalidPayload(
+                        "chat.sessions.list continuation payload must contain only cursor"
+                    )
+                }
+                let cursor = try requiredNonBlankString("cursor", in: envelope.payload)
+                try continueAuthoritativeChatSessionSnapshot(
+                    cursor: cursor,
+                    connectionID: sink.connectionID,
+                    ownerDeviceID: authorization?.ownerDeviceID,
+                    requestID: envelope.requestID,
+                    sink: sink
+                )
+                return
+            }
             let limit = boundedWindowLimit(
                 try optionalRequestInt("limit", in: envelope.payload),
                 defaultLimit: 100,
@@ -2019,14 +2182,29 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 query: query,
                 payload: envelope.payload
             )
-            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let ownerDeviceID = authorization?.ownerDeviceID
+            let supportsAuthoritativeSync = authorization?.supportsAuthoritativeSync == true
+            guard !supportsAuthoritativeSync || limit > 0 else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Authoritative chat.sessions.list limit must be an integer from 1 through 200"
+                )
+            }
+            let initialRequestAuthority = supportsAuthoritativeSync
+                ? try beginAuthoritativeChatSessionInitialRequest(
+                    connectionID: sink.connectionID,
+                    ownerDeviceID: ownerDeviceID
+                )
+                : nil
+            let materializationLimit = supportsAuthoritativeSync
+                ? RuntimeChatSessionPagination.maximumSnapshotCount + 1
+                : limit
             let sessions: [RuntimeChatStoredSession]
             if let embeddingModelID, let query {
                 try beginSemanticSearch(connectionID: sink.connectionID)
                 defer { finishSemanticSearch(connectionID: sink.connectionID) }
                 sessions = try await semanticChatSessions(
                     ownerDeviceID: ownerDeviceID,
-                    limit: limit,
+                    limit: materializationLimit,
                     includeArchived: includeArchived,
                     query: query,
                     embeddingModelID: embeddingModelID
@@ -2034,50 +2212,64 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             } else {
                 sessions = try chatEventStore.listSessions(
                     ownerDeviceID: ownerDeviceID,
-                    limit: limit,
+                    limit: materializationLimit,
                     includeArchived: includeArchived,
                     query: query,
                     embeddingModelID: nil
                 )
             }
             try Task.checkCancellation()
-            sink.send(ProtocolEnvelope(
-                type: MessageType.chatSessionsList,
-                requestID: envelope.requestID,
-                payload: [
-                    "sessions": .array(sessions.map { session in
-                        var payload: [String: JSONValue] = [
-                            "session_id": .string(session.sessionID),
-                            "title": .string(session.title),
-                            "model": .string(session.model),
-                            "last_activity_at": .string(dateFormatter.string(from: session.lastActivityAt)),
-                            "message_count": .number(Double(session.messageCount)),
-                            "status": .string(session.status)
-                        ]
-                        if let archivedAt = session.archivedAt {
-                            payload["archived_at"] = .string(dateFormatter.string(from: archivedAt))
-                        }
-                        if let lastEvent = session.lastEvent {
-                            payload["last_event"] = .string(lastEvent)
-                        }
-                        if let lastFinishReason = session.lastFinishReason {
-                            payload["last_finish_reason"] = .string(lastFinishReason)
-                        }
-                        if let lastErrorCode = session.lastErrorCode {
-                            payload["last_error_code"] = .string(lastErrorCode)
-                        }
-                        if let search = session.search {
-                            payload["search"] = .object([
-                                "rank": .number(Double(search.rank)),
-                                "snippet": .string(search.snippet),
-                                "matched_fields": .array(search.matchedFields.map { .string($0) })
-                            ])
-                        }
-                        return .object(payload)
-                    })
-                ]
-            ))
+            if supportsAuthoritativeSync {
+                guard let initialRequestAuthority else {
+                    throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
+                }
+                let mode = embeddingModelID != nil ? "semantic" : (query != nil ? "lexical" : "base")
+                try publishAuthoritativeChatSessionSnapshot(
+                    connectionID: sink.connectionID,
+                    ownerDeviceID: ownerDeviceID,
+                    authority: initialRequestAuthority,
+                    requestID: envelope.requestID,
+                    sink: sink,
+                    context: RuntimeChatSessionSnapshotContext(
+                        mode: mode,
+                        includeArchived: includeArchived,
+                        query: query,
+                        embeddingModelID: embeddingModelID
+                    ),
+                    sessions: sessions,
+                    pageLimit: limit
+                )
+            } else {
+                sink.send(chatSessionsListEnvelope(
+                    requestID: envelope.requestID,
+                    sessions: sessions
+                ))
+            }
         } catch is CancellationError {
+            return
+        } catch RuntimeChatSessionPaginationError.invalidCursor {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "chat.sessions.list cursor is invalid or expired"
+                )
+            ))
+        } catch RuntimeChatSessionPaginationError.snapshotLimitExceeded {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.chatStoreUnavailable(
+                    "Authoritative chat session snapshot exceeds 10000 sessions."
+                )
+            ))
+        } catch RuntimeChatSessionAuthoritativeSyncError.lifecycleChanged {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.chatStoreUnavailable(
+                    "Chat session lifecycle changed during authoritative materialization."
+                )
+            ))
+        } catch RuntimeChatSessionAuthoritativeSyncError.authenticationChanged,
+                RuntimeChatSessionAuthoritativeSyncError.initialRequestSuperseded {
             return
         } catch let error as LocalRuntimeRouterError {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -2090,6 +2282,60 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)))
         }
+    }
+
+    private func chatSessionsListEnvelope(
+        requestID: String,
+        page: RuntimeChatSessionSnapshotPage
+    ) -> ProtocolEnvelope {
+        var envelope = chatSessionsListEnvelope(requestID: requestID, sessions: page.sessions)
+        envelope.payload["snapshot_count"] = .number(Double(page.snapshotCount))
+        if let nextCursor = page.nextCursor {
+            envelope.payload["next_cursor"] = .string(nextCursor)
+        }
+        return envelope
+    }
+
+    private func chatSessionsListEnvelope(
+        requestID: String,
+        sessions: [RuntimeChatStoredSession]
+    ) -> ProtocolEnvelope {
+        ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: requestID,
+            payload: [
+                "sessions": .array(sessions.map { session in
+                    var payload: [String: JSONValue] = [
+                        "session_id": .string(session.sessionID),
+                        "title": .string(session.title),
+                        "model": .string(session.model),
+                        "last_activity_at": .string(dateFormatter.string(from: session.lastActivityAt)),
+                        "message_count": .number(Double(session.messageCount)),
+                        "status": .string(session.status)
+                    ]
+                    if let archivedAt = session.archivedAt {
+                        payload["archived_at"] = .string(dateFormatter.string(from: archivedAt))
+                    }
+                    if let lastEvent = session.lastEvent {
+                        payload["last_event"] = .string(lastEvent)
+                    }
+                    if let lastFinishReason = session.lastFinishReason {
+                        payload["last_finish_reason"] = .string(lastFinishReason)
+                    }
+                    if let lastErrorCode = session.lastErrorCode {
+                        payload["last_error_code"] = .string(lastErrorCode)
+                    }
+                    if let search = session.search {
+                        payload["search"] = .object([
+                            "rank": .number(Double(search.rank)),
+                            "snippet": .string(search.snippet),
+                            "matched_fields": .array(search.matchedFields.map { .string($0) })
+                        ])
+                    }
+                    return .object(payload)
+                })
+            ]
+        )
     }
 
     private func semanticChatSessions(
@@ -2324,8 +2570,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         _ result: EmbeddingResult,
         matches descriptor: RuntimeSemanticEmbeddingModelDescriptor
     ) -> Bool {
-        let resultModel = ModelProvider.splitQualifiedModelID(result.model)?.modelID ?? result.model
-        return RuntimeSemanticChatSessionSearch.canonicalModelName(resultModel) ==
+        if let qualified = ModelProvider.splitQualifiedModelID(result.model) {
+            let canonicalQualifiedResultModelID = qualified.provider.qualifiedModelID(
+                RuntimeSemanticChatSessionSearch.canonicalModelName(qualified.modelID)
+            )
+            return canonicalQualifiedResultModelID == descriptor.canonicalQualifiedModelID
+        }
+        return RuntimeSemanticChatSessionSearch.canonicalModelName(result.model) ==
             RuntimeSemanticChatSessionSearch.canonicalModelName(descriptor.providerModelID)
     }
 
@@ -2384,46 +2635,82 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func semanticEmbeddingModelDescriptor(
         modelID: String
     ) async -> RuntimeSemanticEmbeddingModelDescriptor? {
-        guard let qualified = ModelProvider.splitQualifiedModelID(modelID),
-              let models = try? await backend.listModels() else {
+        await semanticEmbeddingModelDescriptorSnapshot(modelID: modelID)?.descriptor
+    }
+
+    private func semanticEmbeddingModelDescriptorSnapshot(
+        modelID: String
+    ) async -> RuntimeSemanticEmbeddingModelDescriptorSnapshot? {
+        guard let qualified = ModelProvider.splitQualifiedModelID(modelID) else {
             return nil
         }
-        let eligible = models.filter { candidate in
-            candidate.provider == qualified.provider &&
-                candidate.kind == .embedding &&
-                candidate.installed &&
-                candidate.source == .local
-        }
-        let exact = eligible.first { candidate in
-            [candidate.id, candidate.providerModelID, candidate.name].contains(qualified.modelID)
-        }
-        let requestedCanonical = RuntimeSemanticChatSessionSearch.canonicalModelName(qualified.modelID)
-        guard let model = exact ?? eligible.first(where: { candidate in
-            [candidate.id, candidate.providerModelID, candidate.name]
-                .map(RuntimeSemanticChatSessionSearch.canonicalModelName)
-                .contains(requestedCanonical)
-        }) else {
-            return nil
-        }
-        let documentByteLimit: Int
-        if let contextWindowTokens = model.contextWindowTokens, contextWindowTokens > 32 {
-            documentByteLimit = min(
-                RuntimeSemanticChatSessionSearch.maximumDocumentUTF8Bytes,
-                max(1, contextWindowTokens - 32)
+        let models = try? await backend.listModels()
+        let descriptor = models.flatMap { models -> RuntimeSemanticEmbeddingModelDescriptor? in
+            let eligible = models.filter { candidate in
+                candidate.provider == qualified.provider &&
+                    candidate.kind == .embedding &&
+                    candidate.installed &&
+                    candidate.source == .local
+            }
+            let exact = eligible.first { candidate in
+                [candidate.id, candidate.providerModelID, candidate.name].contains(qualified.modelID)
+            }
+            let requestedCanonical = RuntimeSemanticChatSessionSearch.canonicalModelName(
+                qualified.modelID
             )
-        } else {
-            documentByteLimit = RuntimeSemanticChatSessionSearch.fallbackDocumentUTF8Bytes
+            guard let model = exact ?? eligible.first(where: { candidate in
+                [candidate.id, candidate.providerModelID, candidate.name]
+                    .map(RuntimeSemanticChatSessionSearch.canonicalModelName)
+                    .contains(requestedCanonical)
+            }) else {
+                return nil
+            }
+            let documentByteLimit: Int
+            if let contextWindowTokens = model.contextWindowTokens, contextWindowTokens > 32 {
+                documentByteLimit = min(
+                    RuntimeSemanticChatSessionSearch.maximumDocumentUTF8Bytes,
+                    max(1, contextWindowTokens - 32)
+                )
+            } else {
+                documentByteLimit = RuntimeSemanticChatSessionSearch.fallbackDocumentUTF8Bytes
+            }
+            return RuntimeSemanticEmbeddingModelDescriptor(
+                providerModelID: model.providerModelID,
+                canonicalQualifiedModelID: model.provider.qualifiedModelID(
+                    RuntimeSemanticChatSessionSearch.canonicalModelName(model.providerModelID)
+                ),
+                modelFingerprint: RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
+                    model: model,
+                    requestedQualifiedModelID: modelID
+                ),
+                documentByteLimit: documentByteLimit
+            )
         }
-        return RuntimeSemanticEmbeddingModelDescriptor(
-            providerModelID: model.providerModelID,
-            canonicalQualifiedModelID: model.provider.qualifiedModelID(
-                RuntimeSemanticChatSessionSearch.canonicalModelName(model.providerModelID)
-            ),
-            modelFingerprint: RuntimeSemanticChatSessionSearch.persistentModelFingerprint(
-                model: model,
-                requestedQualifiedModelID: modelID
-            ),
-            documentByteLimit: documentByteLimit
+        guard let descriptor else { return nil }
+        let catalogKey = descriptor.canonicalQualifiedModelID
+        let catalogGeneration = semanticEmbeddingModelCatalogLock.withLock { () -> UInt64 in
+            if let current = semanticEmbeddingModelCatalogStates[catalogKey],
+               current.descriptor == descriptor {
+                return current.generation
+            }
+            if semanticEmbeddingModelCatalogStates[catalogKey] == nil,
+               semanticEmbeddingModelCatalogStates.count >=
+                Self.maximumObservedSemanticEmbeddingModelCatalogStates,
+               let evictionKey = semanticEmbeddingModelCatalogStates.keys.sorted().first {
+                semanticEmbeddingModelCatalogStates[evictionKey] = nil
+            }
+            semanticEmbeddingModelCatalogNextGeneration &+= 1
+            let nextGeneration = semanticEmbeddingModelCatalogNextGeneration
+            semanticEmbeddingModelCatalogStates[catalogKey] = RuntimeSemanticEmbeddingModelCatalogState(
+                descriptor: descriptor,
+                generation: nextGeneration
+            )
+            return nextGeneration
+        }
+        return RuntimeSemanticEmbeddingModelDescriptorSnapshot(
+            descriptor: descriptor,
+            catalogKey: catalogKey,
+            catalogGeneration: catalogGeneration
         )
     }
 
@@ -2631,22 +2918,108 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "chat.session lifecycle payload contains unsupported field(s): \(fields)"
                 )
             }
-            let sessionID = try requiredNonBlankString("session_id", in: envelope.payload)
-            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
-            let result = try mutateChatSession(
-                ownerDeviceID: ownerDeviceID,
-                sessionID: sessionID,
-                requestID: envelope.requestID,
-                mutation: mutation
+            let hasSessionID = envelope.payload["session_id"] != nil
+            let hasScope = envelope.payload["scope"] != nil
+            guard hasSessionID != hasScope else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "chat.session lifecycle payload must contain exactly one of session_id or scope"
+                )
+            }
+
+            if hasSessionID {
+                guard envelope.payload["limit"] == nil else {
+                    throw LocalRuntimeRouterError.invalidPayload(
+                        "Payload field limit is allowed only with scope"
+                    )
+                }
+                let sessionID = try requiredNonBlankString("session_id", in: envelope.payload)
+                let authorization = try chatSessionMutationAuthorization(
+                    connectionID: sink.connectionID
+                )
+                chatSessionLifecycleAuthorizationCheckpoint?()
+                let result = try chatSessionLifecycleLock.withLock {
+                    let ownerDeviceID = try revalidatedChatSessionMutationOwner(
+                        authorization,
+                        connectionID: sink.connectionID,
+                        requiresAuthoritativeSync: false
+                    )
+                    let result = try mutateChatSession(
+                        ownerDeviceID: ownerDeviceID,
+                        sessionID: sessionID,
+                        requestID: envelope.requestID,
+                        mutation: mutation
+                    )
+                    invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: ownerDeviceID)
+                    return result
+                }
+                sink.send(ProtocolEnvelope(
+                    type: mutation.messageType,
+                    requestID: envelope.requestID,
+                    payload: [
+                        "session_id": .string(result.sessionID),
+                        "status": .string(result.mutation.rawValue),
+                        mutation.timestampPayloadKey: .string(dateFormatter.string(from: result.timestamp))
+                    ]
+                ))
+                return
+            }
+
+            guard mutation != .restore else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "chat.session.restore requires session_id"
+                )
+            }
+            let rawScope = try requiredNonBlankString("scope", in: envelope.payload)
+            guard let scope = RuntimeChatSessionBulkScope(rawValue: rawScope),
+                  scope.mutation == mutation else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    mutation == .archive
+                        ? "chat.session.archive scope must be all_active"
+                        : "chat.session.delete scope must be all_archived"
+                )
+            }
+            let requestedLimit = try optionalRequestInt("limit", in: envelope.payload) ?? 200
+            guard (1...200).contains(requestedLimit) else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field limit must be an integer from 1 through 200"
+                )
+            }
+            let authorization = try chatSessionMutationAuthorization(
+                connectionID: sink.connectionID
             )
+            chatSessionLifecycleAuthorizationCheckpoint?()
+            let result = try chatSessionLifecycleLock.withLock {
+                let ownerDeviceID = try revalidatedChatSessionMutationOwner(
+                    authorization,
+                    connectionID: sink.connectionID,
+                    requiresAuthoritativeSync: true
+                )
+                let result = try mutateChatSessions(
+                    ownerDeviceID: ownerDeviceID,
+                    scope: scope,
+                    limit: requestedLimit,
+                    requestID: envelope.requestID
+                )
+                invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: ownerDeviceID)
+                return result
+            }
             sink.send(ProtocolEnvelope(
                 type: mutation.messageType,
                 requestID: envelope.requestID,
                 payload: [
-                    "session_id": .string(result.sessionID),
+                    "scope": .string(scope.rawValue),
                     "status": .string(result.mutation.rawValue),
-                    mutation.timestampPayloadKey: .string(dateFormatter.string(from: result.timestamp))
+                    "affected_count": .number(Double(result.affectedCount)),
+                    "remaining_count": .number(Double(result.remainingCount)),
+                    "completed_at": .string(dateFormatter.string(from: result.timestamp))
                 ]
+            ))
+        } catch RuntimeChatSessionMutationAuthorizationError.authenticationChanged {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "authentication_required",
+                message: "Pair and authenticate this device before changing chat sessions.",
+                retryable: false
             ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -2668,22 +3041,34 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             guard !title.isEmpty else {
                 throw LocalRuntimeRouterError.invalidPayload("Payload field title must be a non-empty string")
             }
-            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
-            guard let session = try chatEventStore
-                .listSessions(ownerDeviceID: ownerDeviceID, limit: Int.max, includeArchived: true)
-                .first(where: { $0.sessionID == sessionID }) else {
-                throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+            let authorization = try chatSessionMutationAuthorization(
+                connectionID: sink.connectionID
+            )
+            chatSessionLifecycleAuthorizationCheckpoint?()
+            let renamedAt = try chatSessionLifecycleLock.withLock {
+                let ownerDeviceID = try revalidatedChatSessionMutationOwner(
+                    authorization,
+                    connectionID: sink.connectionID,
+                    requiresAuthoritativeSync: false
+                )
+                guard let session = try chatEventStore
+                    .listSessions(ownerDeviceID: ownerDeviceID, limit: Int.max, includeArchived: true)
+                    .first(where: { $0.sessionID == sessionID }) else {
+                    throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+                }
+                let renamedAt = Date()
+                try recordChatEvent(.init(
+                    timestamp: renamedAt,
+                    kind: .title,
+                    requestID: envelope.requestID,
+                    sessionID: sessionID,
+                    model: session.model,
+                    title: title,
+                    ownerDeviceID: ownerDeviceID
+                ))
+                invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: ownerDeviceID)
+                return renamedAt
             }
-            let renamedAt = Date()
-            try recordChatEvent(.init(
-                timestamp: renamedAt,
-                kind: .title,
-                requestID: envelope.requestID,
-                sessionID: sessionID,
-                model: session.model,
-                title: title,
-                ownerDeviceID: ownerDeviceID
-            ))
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionRename,
                 requestID: envelope.requestID,
@@ -2692,6 +3077,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "title": .string(title),
                     "renamed_at": .string(dateFormatter.string(from: renamedAt))
                 ]
+            ))
+        } catch RuntimeChatSessionMutationAuthorizationError.authenticationChanged {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "authentication_required",
+                message: "Pair and authenticate this device before changing chat sessions.",
+                retryable: false
             ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -2753,6 +3145,666 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)))
+        }
+    }
+
+    private func handleMemoryDuplicateSuggestionsList(
+        _ envelope: ProtocolEnvelope,
+        authorization: RuntimeMemoryDuplicateSuggestionsAuthorization,
+        sink: any RuntimeMessageSink
+    ) async {
+        do {
+            try validateEmptyRequestPayload(envelope)
+            let suggestions = try memoryStore.exactDuplicateSuggestions(
+                ownerDeviceID: authorization.ownerDeviceID
+            )
+            let currentTrustedDevice: TrustedDevice?
+            do {
+                currentTrustedDevice = try await trustedDevice(
+                    deviceID: authorization.ownerDeviceID
+                )
+            } catch {
+                clearAuthentication(
+                    connectionID: sink.connectionID,
+                    ifMatches: authorization.authSession,
+                    authenticationGeneration: authorization.authenticationGeneration
+                )
+                sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+                return
+            }
+            guard currentTrustedDevice?.publicKeyBase64 == authorization.publicKeyBase64 else {
+                let didClear = clearAuthentication(
+                    connectionID: sink.connectionID,
+                    ifMatches: authorization.authSession,
+                    authenticationGeneration: authorization.authenticationGeneration
+                )
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: didClear ? "pairing_required" : "authentication_required",
+                    message: didClear
+                        ? "This device is no longer trusted by AetherLink Runtime."
+                        : "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+            let response = ProtocolEnvelope(
+                type: MessageType.memoryDuplicateSuggestionsList,
+                requestID: envelope.requestID,
+                payload: [
+                    "groups": .array(suggestions.groups.map { group in
+                        .object([
+                            "entry_ids": .array(group.entryIDs.map(JSONValue.string))
+                        ])
+                    }),
+                    "scanned_count": .number(Double(suggestions.scannedCount)),
+                    "truncated": .bool(suggestions.truncated)
+                ]
+            )
+            let didSend = chatSessionLifecycleLock.withLock { () -> Bool in
+                guard chatSessionAuthenticationGenerations[sink.connectionID, default: 0]
+                        == authorization.authenticationGeneration else {
+                    return false
+                }
+                return authLock.withLock {
+                    guard authSessions[sink.connectionID] == authorization.authSession else {
+                        return false
+                    }
+                    sink.send(response)
+                    return true
+                }
+            }
+            guard didSend else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "authentication_required",
+                    message: "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+            ))
+        }
+    }
+
+    private func handleMemorySemanticDuplicateSuggestionsList(
+        _ envelope: ProtocolEnvelope,
+        authorization: RuntimeMemoryDuplicateSuggestionsAuthorization,
+        operation: RuntimeMemorySemanticDuplicateOperation = .pairs,
+        sink: any RuntimeMessageSink
+    ) async {
+        do {
+            try validateAllowedRequestPayload(
+                envelope,
+                allowedKeys: allowedMemorySemanticDuplicateSuggestionsListPayloadKeys
+            )
+            let embeddingModelID = try requiredNonBlankString(
+                "embedding_model_id",
+                in: envelope.payload
+            )
+            let qualifiedEmbeddingModelID = ModelProvider.splitQualifiedModelID(embeddingModelID)
+            guard embeddingModelID.unicodeScalars.count <= 256,
+                  qualifiedEmbeddingModelID != nil else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field embedding_model_id must be a provider-qualified model id of at most 256 Unicode code points"
+                )
+            }
+            if operation == .clusters,
+               let qualifiedEmbeddingModelID,
+               qualifiedEmbeddingModelID.modelID.isEmpty ||
+                qualifiedEmbeddingModelID.provider.qualifiedModelID(
+                    RuntimeSemanticChatSessionSearch.canonicalModelName(
+                        qualifiedEmbeddingModelID.modelID
+                    )
+                ) != embeddingModelID {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field embedding_model_id must be a canonical provider-qualified model id"
+                )
+            }
+            let minimumSimilarityBasisPoints = try requiredExactRequestInt(
+                "minimum_similarity_basis_points",
+                in: envelope.payload
+            )
+            guard minimumSimilarityBasisPoints >=
+                    RuntimeMemorySemanticDuplicateSuggester.minimumSimilarityThresholdBasisPoints,
+                  minimumSimilarityBasisPoints <=
+                    RuntimeMemorySemanticDuplicateSuggester.maximumSimilarityThresholdBasisPoints else {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field minimum_similarity_basis_points must be 8000...10000"
+                )
+            }
+
+            try beginSemanticSearch(connectionID: sink.connectionID)
+            defer { finishSemanticSearch(connectionID: sink.connectionID) }
+
+            var computation: RuntimeMemorySemanticDuplicateComputation?
+            for attempt in 0..<2 {
+                computation = try await semanticMemoryDuplicateSuggestionsAttempt(
+                    ownerDeviceID: authorization.ownerDeviceID,
+                    embeddingModelID: embeddingModelID,
+                    minimumSimilarityBasisPoints: minimumSimilarityBasisPoints,
+                    operation: operation
+                )
+                if computation != nil { break }
+                guard attempt == 0 else { break }
+            }
+            guard let computation else {
+                throw BackendError(
+                    provider: backend.provider,
+                    code: "backend_unavailable",
+                    message: "Memory changed while semantic duplicate suggestions were being calculated.",
+                    retryable: true
+                )
+            }
+            try Task.checkCancellation()
+
+            let currentTrustedDevice: TrustedDevice?
+            do {
+                currentTrustedDevice = try await trustedDevice(
+                    deviceID: authorization.ownerDeviceID
+                )
+            } catch {
+                clearAuthentication(
+                    connectionID: sink.connectionID,
+                    ifMatches: authorization.authSession,
+                    authenticationGeneration: authorization.authenticationGeneration
+                )
+                sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+                return
+            }
+            guard currentTrustedDevice?.publicKeyBase64 == authorization.publicKeyBase64 else {
+                let didClear = clearAuthentication(
+                    connectionID: sink.connectionID,
+                    ifMatches: authorization.authSession,
+                    authenticationGeneration: authorization.authenticationGeneration
+                )
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: didClear ? "pairing_required" : "authentication_required",
+                    message: didClear
+                        ? "This device is no longer trusted by AetherLink Runtime."
+                        : "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+            guard memoryDuplicateSuggestionsAuthorizationIsCurrent(
+                authorization,
+                connectionID: sink.connectionID
+            ) else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "authentication_required",
+                    message: "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+
+            guard try await semanticDuplicateComputationIsCurrent(
+                computation,
+                ownerDeviceID: authorization.ownerDeviceID,
+                embeddingModelID: embeddingModelID
+            ) else {
+                throw semanticDuplicateDriftError()
+            }
+
+            if !computation.cacheRecords.isEmpty {
+                try? chatSessionLifecycleLock.withLock {
+                    semanticDuplicateCacheCommitCheckpoint?()
+                    try memoryStore.upsertMemorySemanticEmbeddings(
+                        computation.cacheRecords,
+                        if: { [weak self] in
+                            guard let self, !Task.isCancelled else { return false }
+                            return self.memoryDuplicateSuggestionsAuthorizationIsCurrent(
+                                authorization,
+                                connectionID: sink.connectionID
+                            )
+                        }
+                    )
+                }
+                guard try await semanticDuplicateComputationIsCurrent(
+                    computation,
+                    ownerDeviceID: authorization.ownerDeviceID,
+                    embeddingModelID: embeddingModelID
+                ) else {
+                    throw semanticDuplicateDriftError()
+                }
+            }
+
+            guard let publicationModelSnapshot =
+                    await semanticEmbeddingModelDescriptorSnapshot(modelID: embeddingModelID),
+                  semanticDuplicateDescriptorIdentityMatches(
+                    computation.descriptor,
+                    publicationModelSnapshot.descriptor
+                  ) else {
+                throw semanticDuplicateDriftError()
+            }
+            semanticDuplicateAuthorityCheckpoint?()
+
+            let responseType: String
+            let responsePayload: [String: JSONValue]
+            switch computation.output {
+            case .pairs(let result):
+                responseType = MessageType.memorySemanticDuplicateSuggestionsList
+                responsePayload = [
+                    "pairs": .array(result.pairs.map { pair in
+                        .object([
+                            "entry_ids": .array([
+                                .string(pair.firstEntryID),
+                                .string(pair.secondEntryID)
+                            ]),
+                            "similarity_basis_points": .number(
+                                Double(pair.similarityBasisPoints)
+                            )
+                        ])
+                    }),
+                    "scanned_count": .number(Double(result.scannedCount)),
+                    "omitted_count": .number(Double(result.omittedEntryCount)),
+                    "truncated": .bool(result.sourceTruncated || result.truncated)
+                ]
+            case .clusters(let result):
+                responseType = MessageType.memorySemanticDuplicateClustersList
+                responsePayload = [
+                    "clusters": .array(result.clusters.map { cluster in
+                        .object([
+                            "entry_ids": .array(cluster.entryIDs.map(JSONValue.string)),
+                            "minimum_similarity_basis_points": .number(
+                                Double(cluster.minimumSimilarityBasisPoints)
+                            )
+                        ])
+                    }),
+                    "scanned_count": .number(Double(result.scannedCount)),
+                    "omitted_count": .number(Double(result.omittedEntryCount)),
+                    "truncated": .bool(result.sourceTruncated)
+                ]
+            }
+            let response = ProtocolEnvelope(
+                type: responseType,
+                requestID: envelope.requestID,
+                payload: responsePayload
+            )
+            let publication = try await trustedDeviceStore.withTrustedDeviceSnapshot(
+                deviceID: authorization.ownerDeviceID
+            ) { currentTrustedDevice in
+                guard currentTrustedDevice?.publicKeyBase64 == authorization.publicKeyBase64 else {
+                    return RuntimeSemanticDuplicatePublication.trustChanged
+                }
+                return try self.chatSessionLifecycleLock.withLock {
+                    let currentSources = try self.memoryStore.semanticDuplicateSuggestionSources(
+                        ownerDeviceID: authorization.ownerDeviceID,
+                        limit: RuntimeMemorySemanticDuplicateSuggester.candidateLimit + 1
+                    )
+                    guard self.semanticDuplicateSourceIdentities(currentSources) ==
+                            computation.sourceIdentities else {
+                        return RuntimeSemanticDuplicatePublication.sourceDrift
+                    }
+                    self.semanticDuplicatePublicationCheckpoint?()
+                    return self.semanticEmbeddingModelCatalogLock.withLock {
+                        guard let catalogState = self.semanticEmbeddingModelCatalogStates[
+                            publicationModelSnapshot.catalogKey
+                        ],
+                              catalogState.generation == publicationModelSnapshot.catalogGeneration,
+                              catalogState.descriptor == publicationModelSnapshot.descriptor else {
+                            return RuntimeSemanticDuplicatePublication.modelDrift
+                        }
+                        guard self.chatSessionAuthenticationGenerations[
+                            sink.connectionID,
+                            default: 0
+                        ] == authorization.authenticationGeneration else {
+                            return RuntimeSemanticDuplicatePublication.authorizationChanged
+                        }
+                        return self.authLock.withLock {
+                            guard self.authSessions[sink.connectionID] == authorization.authSession else {
+                                return RuntimeSemanticDuplicatePublication.authorizationChanged
+                            }
+                            sink.send(response)
+                            return RuntimeSemanticDuplicatePublication.sent
+                        }
+                    }
+                }
+            }
+            if publication == .sourceDrift || publication == .modelDrift {
+                throw semanticDuplicateDriftError()
+            }
+            if publication == .trustChanged {
+                let didClear = clearAuthentication(
+                    connectionID: sink.connectionID,
+                    ifMatches: authorization.authSession,
+                    authenticationGeneration: authorization.authenticationGeneration
+                )
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: didClear ? "pairing_required" : "authentication_required",
+                    message: didClear
+                        ? "This device is no longer trusted by AetherLink Runtime."
+                        : "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+            guard publication == .sent else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "authentication_required",
+                    message: "Pair and authenticate this device before sending runtime commands.",
+                    retryable: false
+                ))
+                return
+            }
+        } catch is CancellationError {
+            return
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch let error as OllamaBackendError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch let error as LMStudioBackendError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch let error as BackendError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch is RuntimeMemorySemanticDuplicateSuggestionsError {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: semanticSearchInvalidEmbeddingResponseError()
+            ))
+        } catch {
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+            ))
+        }
+    }
+
+    private func semanticMemoryDuplicateSuggestionsAttempt(
+        ownerDeviceID: String,
+        embeddingModelID: String,
+        minimumSimilarityBasisPoints: Int,
+        operation: RuntimeMemorySemanticDuplicateOperation = .pairs
+    ) async throws -> RuntimeMemorySemanticDuplicateComputation? {
+        try Task.checkCancellation()
+        guard let descriptor = await semanticEmbeddingModelDescriptor(modelID: embeddingModelID) else {
+            throw LocalRuntimeRouterError.modelNotInstalled(embeddingModelID)
+        }
+        if operation == .clusters,
+           descriptor.canonicalQualifiedModelID != embeddingModelID {
+            throw LocalRuntimeRouterError.invalidPayload(
+                "Payload field embedding_model_id must be a canonical provider-qualified model id"
+            )
+        }
+        let sources = try memoryStore.semanticDuplicateSuggestionSources(
+            ownerDeviceID: ownerDeviceID,
+            limit: RuntimeMemorySemanticDuplicateSuggester.candidateLimit + 1
+        )
+        let selection = try RuntimeMemorySemanticDuplicateSuggester.selectCandidates(
+            from: sources,
+            modelDocumentUTF8ByteLimit: descriptor.documentByteLimit
+        )
+        let candidates = selection.candidates
+        guard descriptor.modelFingerprint != nil ||
+                !semanticDuplicateRequiresMultipleEmbeddingBatches(
+                    documents: candidates.map(\.document)
+                ) else {
+            throw BackendError(
+                provider: backend.provider,
+                code: "backend_unavailable",
+                message: "The selected embedding model does not expose a strong revision for a multi-batch semantic duplicate scan.",
+                retryable: false
+            )
+        }
+        let cacheKeys: [RuntimeMemorySemanticEmbeddingKey]? = descriptor.modelFingerprint.map {
+            modelFingerprint in
+            candidates.map { candidate in
+                RuntimeMemorySemanticEmbeddingKey(
+                    ownerDeviceID: ownerDeviceID,
+                    entryID: candidate.entry.id,
+                    canonicalQualifiedEmbeddingModelID: descriptor.canonicalQualifiedModelID,
+                    modelFingerprint: modelFingerprint,
+                    documentFingerprint: candidate.documentFingerprint,
+                    sourceRevision: candidate.sourceRevision
+                )
+            }
+        }
+        let cachedRecords = cacheKeys.flatMap { keys in
+            try? memoryStore.cachedMemorySemanticEmbeddings(for: keys)
+        } ?? []
+        let cachedByKey = Dictionary(
+            uniqueKeysWithValues: cachedRecords.map { ($0.key, $0.embedding) }
+        )
+        var embeddings = Array<[Double]?>(repeating: nil, count: candidates.count)
+        var missingIndexes: [Int] = []
+        for index in candidates.indices {
+            if let cacheKeys, let cached = cachedByKey[cacheKeys[index]] {
+                embeddings[index] = cached
+            } else {
+                missingIndexes.append(index)
+            }
+        }
+
+        let missingEmbeddings = try await semanticDuplicateEmbeddings(
+            modelID: embeddingModelID,
+            descriptor: descriptor,
+            documents: missingIndexes.map { candidates[$0].document }
+        )
+        for (offset, index) in missingIndexes.enumerated() {
+            embeddings[index] = missingEmbeddings[offset]
+        }
+        var resolvedEmbeddings = embeddings.compactMap { $0 }
+        var cacheIndexes = missingIndexes
+        if !semanticDuplicateEmbeddingsAreValid(
+            resolvedEmbeddings,
+            expectedCount: candidates.count
+        ) {
+            resolvedEmbeddings = try await semanticDuplicateEmbeddings(
+                modelID: embeddingModelID,
+                descriptor: descriptor,
+                documents: candidates.map(\.document)
+            )
+            guard semanticDuplicateEmbeddingsAreValid(
+                resolvedEmbeddings,
+                expectedCount: candidates.count
+            ) else {
+                throw semanticSearchInvalidEmbeddingResponseError()
+            }
+            cacheIndexes = Array(candidates.indices)
+        }
+
+        let output: RuntimeMemorySemanticDuplicateOutput
+        switch operation {
+        case .pairs:
+            output = .pairs(try RuntimeMemorySemanticDuplicateSuggester.suggestions(
+                from: selection,
+                embeddings: resolvedEmbeddings,
+                similarityThresholdBasisPoints: minimumSimilarityBasisPoints
+            ))
+        case .clusters:
+            output = .clusters(try RuntimeMemorySemanticDuplicateSuggester.clusters(
+                from: selection,
+                embeddings: resolvedEmbeddings,
+                similarityThresholdBasisPoints: minimumSimilarityBasisPoints
+            ))
+        }
+        try Task.checkCancellation()
+        guard semanticDuplicateDescriptorIdentityMatches(
+            descriptor,
+            await semanticEmbeddingModelDescriptor(modelID: embeddingModelID)
+        ) else {
+            return nil
+        }
+        let currentSources = try memoryStore.semanticDuplicateSuggestionSources(
+            ownerDeviceID: ownerDeviceID,
+            limit: RuntimeMemorySemanticDuplicateSuggester.candidateLimit + 1
+        )
+        guard semanticDuplicateSourceIdentities(sources) ==
+                semanticDuplicateSourceIdentities(currentSources) else {
+            return nil
+        }
+
+        let cacheRecords: [RuntimeMemorySemanticEmbeddingRecord]
+        if let cacheKeys {
+            cacheRecords = cacheIndexes.map { index in
+                RuntimeMemorySemanticEmbeddingRecord(
+                    key: cacheKeys[index],
+                    embedding: resolvedEmbeddings[index]
+                )
+            }
+        } else {
+            cacheRecords = []
+        }
+        return RuntimeMemorySemanticDuplicateComputation(
+            output: output,
+            cacheRecords: cacheRecords,
+            descriptor: descriptor,
+            sourceIdentities: semanticDuplicateSourceIdentities(sources)
+        )
+    }
+
+    private func semanticDuplicateEmbeddings(
+        modelID: String,
+        descriptor: RuntimeSemanticEmbeddingModelDescriptor,
+        documents: [String]
+    ) async throws -> [[Double]] {
+        var embeddings: [[Double]] = []
+        var index = 0
+        while index < documents.count {
+            var batch: [String] = []
+            var byteCount = 0
+            while index < documents.count,
+                  batch.count < RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchCount {
+                let documentByteCount = documents[index].utf8.count
+                guard documentByteCount <= descriptor.documentByteLimit,
+                      documentByteCount <=
+                        RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount else {
+                    throw LocalRuntimeRouterError.invalidPayload(
+                        "Selected memory content exceeds the embedding model input budget"
+                    )
+                }
+                if !batch.isEmpty,
+                   documentByteCount >
+                    RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount -
+                        byteCount {
+                    break
+                }
+                batch.append(documents[index])
+                byteCount += documentByteCount
+                index += 1
+            }
+            guard !batch.isEmpty else {
+                throw semanticSearchInvalidEmbeddingResponseError()
+            }
+            let result = try await semanticEmbeddingResult(modelID: modelID, texts: batch)
+            guard semanticEmbeddingResult(result, matches: descriptor),
+                  semanticDuplicateEmbeddingsAreValid(
+                    result.embeddings,
+                    expectedCount: batch.count
+                  ) else {
+                throw semanticSearchInvalidEmbeddingResponseError()
+            }
+            embeddings.append(contentsOf: result.embeddings)
+        }
+        return embeddings
+    }
+
+    private func semanticDuplicateRequiresMultipleEmbeddingBatches(
+        documents: [String]
+    ) -> Bool {
+        guard documents.count <=
+                RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchCount else {
+            return true
+        }
+        var byteCount = 0
+        for document in documents {
+            let documentByteCount = document.utf8.count
+            guard documentByteCount <=
+                    RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingBatchUTF8ByteCount -
+                        byteCount else {
+                return true
+            }
+            byteCount += documentByteCount
+        }
+        return false
+    }
+
+    private func semanticDuplicateEmbeddingsAreValid(
+        _ embeddings: [[Double]],
+        expectedCount: Int
+    ) -> Bool {
+        guard embeddings.count == expectedCount else { return false }
+        guard let dimension = embeddings.first?.count else { return expectedCount == 0 }
+        return dimension > 0 &&
+            dimension <= RuntimeMemorySemanticDuplicateSuggester.maximumEmbeddingDimension &&
+            embeddings.allSatisfy {
+            $0.count == dimension && $0.isValidSemanticEmbedding
+        }
+    }
+
+    private func semanticDuplicateDescriptorIdentityMatches(
+        _ lhs: RuntimeSemanticEmbeddingModelDescriptor,
+        _ rhs: RuntimeSemanticEmbeddingModelDescriptor?
+    ) -> Bool {
+        guard let rhs else { return false }
+        return lhs.canonicalQualifiedModelID == rhs.canonicalQualifiedModelID &&
+            lhs.modelFingerprint == rhs.modelFingerprint &&
+            lhs.documentByteLimit == rhs.documentByteLimit
+    }
+
+    private func semanticDuplicateComputationIsCurrent(
+        _ computation: RuntimeMemorySemanticDuplicateComputation,
+        ownerDeviceID: String,
+        embeddingModelID: String
+    ) async throws -> Bool {
+        try Task.checkCancellation()
+        guard semanticDuplicateDescriptorIdentityMatches(
+            computation.descriptor,
+            await semanticEmbeddingModelDescriptor(modelID: embeddingModelID)
+        ) else {
+            return false
+        }
+        try Task.checkCancellation()
+        let currentSources = try memoryStore.semanticDuplicateSuggestionSources(
+            ownerDeviceID: ownerDeviceID,
+            limit: RuntimeMemorySemanticDuplicateSuggester.candidateLimit + 1
+        )
+        return semanticDuplicateSourceIdentities(currentSources) == computation.sourceIdentities
+    }
+
+    private func semanticDuplicateDriftError() -> BackendError {
+        BackendError(
+            provider: backend.provider,
+            code: "backend_unavailable",
+            message: "Memory or the selected embedding model changed before semantic duplicate suggestions were published.",
+            retryable: true
+        )
+    }
+
+    private func semanticDuplicateSourceIdentities(
+        _ sources: [RuntimeMemorySemanticSearchSource]
+    ) -> [RuntimeMemorySemanticDuplicateSourceIdentity] {
+        sources.map {
+            RuntimeMemorySemanticDuplicateSourceIdentity(
+                entryID: $0.entry.id,
+                sourceRevision: $0.sourceRevision
+            )
+        }
+    }
+
+    private func memoryDuplicateSuggestionsAuthorizationIsCurrent(
+        _ authorization: RuntimeMemoryDuplicateSuggestionsAuthorization,
+        connectionID: UUID
+    ) -> Bool {
+        chatSessionLifecycleLock.withLock {
+            guard chatSessionAuthenticationGenerations[connectionID, default: 0]
+                    == authorization.authenticationGeneration else {
+                return false
+            }
+            return authLock.withLock {
+                authSessions[connectionID] == authorization.authSession
+            }
         }
     }
 
@@ -3661,6 +4713,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return store
     }
 
+    private func withSemanticDuplicateCoordinatedMemoryMutation<Result>(
+        _ operation: () throws -> Result
+    ) rethrows -> Result {
+        guard semanticDuplicateMemoryMutationContentionCheckpoint != nil else {
+            return try chatSessionLifecycleLock.withLock(operation)
+        }
+        semanticDuplicateMemoryMutationPrelockCheckpoint?()
+        if chatSessionLifecycleLock.try() {
+            defer { chatSessionLifecycleLock.unlock() }
+            return try operation()
+        }
+        semanticDuplicateMemoryMutationContentionCheckpoint?()
+        chatSessionLifecycleLock.lock()
+        defer { chatSessionLifecycleLock.unlock() }
+        return try operation()
+    }
+
     private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryUpsertPayloadKeys)
@@ -3670,13 +4739,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "memory.upsert payload contains unsupported field(s): \(fields)"
                 )
             }
-            let entry = try memoryStore.upsert(
-                ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
-                id: try optionalNonBlankString("id", in: envelope.payload),
-                content: try requiredNonBlankString("content", in: envelope.payload),
-                enabled: try optionalRequestBool("enabled", in: envelope.payload),
-                timestamp: Date()
-            )
+            let entry = try withSemanticDuplicateCoordinatedMemoryMutation {
+                try memoryStore.upsert(
+                    ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
+                    id: try optionalNonBlankString("id", in: envelope.payload),
+                    content: try requiredNonBlankString("content", in: envelope.payload),
+                    enabled: try optionalRequestBool("enabled", in: envelope.payload),
+                    timestamp: Date()
+                )
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.memoryUpsert,
                 requestID: envelope.requestID,
@@ -3698,11 +4769,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "memory.delete payload contains unsupported field(s): \(fields)"
                 )
             }
-            let result = try memoryStore.delete(
-                ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
-                id: try requiredNonBlankString("id", in: envelope.payload),
-                timestamp: Date()
-            )
+            let result = try withSemanticDuplicateCoordinatedMemoryMutation {
+                try memoryStore.delete(
+                    ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
+                    id: try requiredNonBlankString("id", in: envelope.payload),
+                    timestamp: Date()
+                )
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.memoryDelete,
                 requestID: envelope.requestID,
@@ -4138,14 +5211,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
             }
             let content = rawContent.flatMap { $0.isEmpty ? nil : $0 } ?? draft.summaryPreview
-            let entry = try memoryStore.upsert(
-                ownerDeviceID: ownerDeviceID,
-                id: memorySummaryDraftEntryID(draftID),
-                content: content,
-                enabled: requestedEnabled,
-                source: memorySummaryDraftEntrySource(draft),
-                timestamp: Date()
-            )
+            let entry = try withSemanticDuplicateCoordinatedMemoryMutation {
+                try memoryStore.upsert(
+                    ownerDeviceID: ownerDeviceID,
+                    id: memorySummaryDraftEntryID(draftID),
+                    content: content,
+                    enabled: requestedEnabled,
+                    source: memorySummaryDraftEntrySource(draft),
+                    timestamp: Date()
+                )
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.memorySummaryDraftApprove,
                 requestID: envelope.requestID,
@@ -4465,7 +5540,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 mappedError = .chatSessionNotFound(sessionID)
             case .sessionMustBeArchivedBeforeDelete(let sessionID):
                 mappedError = .chatSessionMustBeArchivedBeforeDelete(sessionID)
-            case .corruptEventLog:
+            case .bulkMutationUnsupported, .corruptEventLog:
                 mappedError = .chatStoreUnavailable(error.localizedDescription)
             }
             return errorEnvelope(requestID: requestID, error: mappedError)
@@ -4577,7 +5652,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func trustedDevice(deviceID: String) async throws -> TrustedDevice? {
-        try await trustedDeviceStore.load().first { $0.id == deviceID }
+        try await trustedDeviceLookup(deviceID)
     }
 
     private func authenticatedSession(
@@ -4620,6 +5695,292 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             && capabilities.contains(Self.chatSourceAttributionResolveCapability)
     }
 
+    private func supportsAuthoritativeChatSessionSync(connectionID: UUID) -> Bool {
+        guard requiresAuthentication else { return false }
+        return authenticatedSession(connectionID: connectionID)?
+            .clientCapabilities
+            .contains(Self.authoritativeChatSessionSyncCapability) == true
+    }
+
+    private func memoryDuplicateSuggestionsAuthorization(
+        connectionID: UUID
+    ) -> RuntimeMemoryDuplicateSuggestionsAuthorization? {
+        guard requiresAuthentication else { return nil }
+        return chatSessionLifecycleLock.withLock {
+            let authenticationGeneration = chatSessionAuthenticationGenerations[
+                connectionID,
+                default: 0
+            ]
+            return authLock.withLock {
+                guard let authSession = authSessions[connectionID],
+                      case .authenticated(
+                        let deviceID,
+                        let publicKeyBase64,
+                        _,
+                        let clientCapabilities
+                      ) = authSession,
+                      clientCapabilities.contains(Self.memoryDuplicateSuggestionsCapability) else {
+                    return nil
+                }
+                return RuntimeMemoryDuplicateSuggestionsAuthorization(
+                    ownerDeviceID: deviceID,
+                    publicKeyBase64: publicKeyBase64,
+                    authenticationGeneration: authenticationGeneration,
+                    authSession: authSession
+                )
+            }
+        }
+    }
+
+    private func memorySemanticDuplicateSuggestionsAuthorization(
+        connectionID: UUID
+    ) -> RuntimeMemoryDuplicateSuggestionsAuthorization? {
+        guard requiresAuthentication else { return nil }
+        return chatSessionLifecycleLock.withLock {
+            let authenticationGeneration = chatSessionAuthenticationGenerations[
+                connectionID,
+                default: 0
+            ]
+            return authLock.withLock {
+                guard let authSession = authSessions[connectionID],
+                      case .authenticated(
+                        let deviceID,
+                        let publicKeyBase64,
+                        _,
+                        let clientCapabilities
+                      ) = authSession,
+                      clientCapabilities.contains(Self.memorySemanticDuplicateSuggestionsCapability) else {
+                    return nil
+                }
+                return RuntimeMemoryDuplicateSuggestionsAuthorization(
+                    ownerDeviceID: deviceID,
+                    publicKeyBase64: publicKeyBase64,
+                    authenticationGeneration: authenticationGeneration,
+                    authSession: authSession
+                )
+            }
+        }
+    }
+
+    private func memorySemanticDuplicateClustersAuthorization(
+        connectionID: UUID
+    ) -> RuntimeMemoryDuplicateSuggestionsAuthorization? {
+        guard requiresAuthentication else { return nil }
+        return chatSessionLifecycleLock.withLock {
+            let authenticationGeneration = chatSessionAuthenticationGenerations[
+                connectionID,
+                default: 0
+            ]
+            return authLock.withLock {
+                guard let authSession = authSessions[connectionID],
+                      case .authenticated(
+                        let deviceID,
+                        let publicKeyBase64,
+                        _,
+                        let clientCapabilities
+                      ) = authSession,
+                      clientCapabilities.contains(Self.memorySemanticDuplicateClustersCapability) else {
+                    return nil
+                }
+                return RuntimeMemoryDuplicateSuggestionsAuthorization(
+                    ownerDeviceID: deviceID,
+                    publicKeyBase64: publicKeyBase64,
+                    authenticationGeneration: authenticationGeneration,
+                    authSession: authSession
+                )
+            }
+        }
+    }
+
+    private func chatSessionMutationAuthorization(
+        connectionID: UUID
+    ) throws -> RuntimeChatSessionMutationAuthorization {
+        try chatSessionLifecycleLock.withLock {
+            guard requiresAuthentication else {
+                guard !Task.isCancelled else {
+                    throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+                }
+                return RuntimeChatSessionMutationAuthorization(
+                    connectionID: connectionID,
+                    ownerScope: RuntimeChatSessionOwnerScope(ownerDeviceID: nil),
+                    authenticationGeneration: nil,
+                    authSession: nil
+                )
+            }
+            let authSession = authLock.withLock { authSessions[connectionID] }
+            guard let authSession,
+                  case .authenticated(let deviceID, _, _, _) = authSession else {
+                throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+            }
+            let ownerScope = RuntimeChatSessionOwnerScope(ownerDeviceID: deviceID)
+            guard !Task.isCancelled,
+                  chatSessionAuthenticatedOwners[connectionID] == ownerScope else {
+                throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+            }
+            return RuntimeChatSessionMutationAuthorization(
+                connectionID: connectionID,
+                ownerScope: ownerScope,
+                authenticationGeneration: chatSessionAuthenticationGenerations[
+                    connectionID,
+                    default: 0
+                ],
+                authSession: authSession
+            )
+        }
+    }
+
+    private func revalidatedChatSessionMutationOwner(
+        _ authorization: RuntimeChatSessionMutationAuthorization,
+        connectionID: UUID,
+        requiresAuthoritativeSync: Bool
+    ) throws -> String? {
+        guard authorization.connectionID == connectionID else {
+            throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+        }
+        guard requiresAuthentication else {
+            guard !Task.isCancelled,
+                  authorization.authenticationGeneration == nil,
+                  authorization.authSession == nil else {
+                throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+            }
+            if requiresAuthoritativeSync {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Bulk chat session lifecycle requires chat.sessions.authoritative_sync.v1"
+                )
+            }
+            return nil
+        }
+        guard let authenticationGeneration = authorization.authenticationGeneration,
+              let expectedAuthSession = authorization.authSession,
+              !Task.isCancelled,
+              chatSessionAuthenticatedOwners[connectionID] == authorization.ownerScope,
+              chatSessionAuthenticationGenerations[connectionID, default: 0]
+                == authenticationGeneration,
+              authLock.withLock({ authSessions[connectionID] }) == expectedAuthSession,
+              case .authenticated(let deviceID, _, _, let clientCapabilities) = expectedAuthSession,
+              authorization.ownerScope == RuntimeChatSessionOwnerScope(ownerDeviceID: deviceID) else {
+            throw RuntimeChatSessionMutationAuthorizationError.authenticationChanged
+        }
+        if requiresAuthoritativeSync,
+           !clientCapabilities.contains(Self.authoritativeChatSessionSyncCapability) {
+            throw LocalRuntimeRouterError.invalidPayload(
+                "Bulk chat session lifecycle requires chat.sessions.authoritative_sync.v1"
+            )
+        }
+        return deviceID
+    }
+
+    private func chatSessionListAuthorization(
+        connectionID: UUID
+    ) -> (ownerDeviceID: String?, supportsAuthoritativeSync: Bool)? {
+        guard requiresAuthentication else {
+            return (ownerDeviceID: nil, supportsAuthoritativeSync: false)
+        }
+        guard let session = authenticatedSession(connectionID: connectionID) else {
+            return nil
+        }
+        return (
+            ownerDeviceID: session.deviceID,
+            supportsAuthoritativeSync: session.clientCapabilities.contains(
+                Self.authoritativeChatSessionSyncCapability
+            )
+        )
+    }
+
+    private func beginAuthoritativeChatSessionInitialRequest(
+        connectionID: UUID,
+        ownerDeviceID: String?
+    ) throws -> RuntimeChatSessionInitialRequestAuthority {
+        let scope = RuntimeChatSessionOwnerScope(ownerDeviceID: ownerDeviceID)
+        return try chatSessionLifecycleLock.withLock {
+            guard chatSessionAuthenticatedOwners[connectionID] == scope else {
+                throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
+            }
+            let initialRequestGeneration = latestChatSessionInitialRequestGenerations[
+                connectionID,
+                default: 0
+            ] &+ 1
+            latestChatSessionInitialRequestGenerations[connectionID] = initialRequestGeneration
+            return RuntimeChatSessionInitialRequestAuthority(
+                connectionID: connectionID,
+                ownerScope: scope,
+                authenticationGeneration: chatSessionAuthenticationGenerations[
+                    connectionID,
+                    default: 0
+                ],
+                initialRequestGeneration: initialRequestGeneration,
+                lifecycleGeneration: chatSessionLifecycleGenerations[scope, default: 0]
+            )
+        }
+    }
+
+    private func continueAuthoritativeChatSessionSnapshot(
+        cursor: String,
+        connectionID: UUID,
+        ownerDeviceID: String?,
+        requestID: String,
+        sink: any RuntimeMessageSink
+    ) throws {
+        let scope = RuntimeChatSessionOwnerScope(ownerDeviceID: ownerDeviceID)
+        try chatSessionLifecycleLock.withLock {
+            guard chatSessionAuthenticatedOwners[connectionID] == scope else {
+                throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
+            }
+            let page = try chatSessionPagination.continueSnapshot(
+                cursor: cursor,
+                connectionID: connectionID,
+                ownerDeviceID: ownerDeviceID
+            )
+            sink.send(chatSessionsListEnvelope(requestID: requestID, page: page))
+        }
+    }
+
+    private func publishAuthoritativeChatSessionSnapshot(
+        connectionID: UUID,
+        ownerDeviceID: String?,
+        authority: RuntimeChatSessionInitialRequestAuthority,
+        requestID: String,
+        sink: any RuntimeMessageSink,
+        context: RuntimeChatSessionSnapshotContext,
+        sessions: [RuntimeChatStoredSession],
+        pageLimit: Int
+    ) throws {
+        let scope = RuntimeChatSessionOwnerScope(ownerDeviceID: ownerDeviceID)
+        try chatSessionLifecycleLock.withLock {
+            guard authority.connectionID == connectionID,
+                  authority.ownerScope == scope,
+                  chatSessionAuthenticatedOwners[connectionID] == scope,
+                  chatSessionAuthenticationGenerations[connectionID, default: 0]
+                    == authority.authenticationGeneration else {
+                throw RuntimeChatSessionAuthoritativeSyncError.authenticationChanged
+            }
+            guard latestChatSessionInitialRequestGenerations[connectionID, default: 0]
+                    == authority.initialRequestGeneration else {
+                throw RuntimeChatSessionAuthoritativeSyncError.initialRequestSuperseded
+            }
+            guard chatSessionLifecycleGenerations[scope, default: 0]
+                    == authority.lifecycleGeneration else {
+                throw RuntimeChatSessionAuthoritativeSyncError.lifecycleChanged
+            }
+            let page = try chatSessionPagination.createSnapshot(
+                connectionID: connectionID,
+                ownerDeviceID: ownerDeviceID,
+                context: context,
+                sessions: sessions,
+                pageLimit: pageLimit
+            )
+            sink.send(chatSessionsListEnvelope(requestID: requestID, page: page))
+        }
+    }
+
+    private func invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: String?) {
+        let scope = RuntimeChatSessionOwnerScope(ownerDeviceID: ownerDeviceID)
+        chatSessionLifecycleLock.withLock {
+            chatSessionLifecycleGenerations[scope, default: 0] &+= 1
+            chatSessionPagination.invalidateOwner(ownerDeviceID)
+        }
+    }
+
     private func setChallenge(
         connectionID: UUID,
         deviceID: String,
@@ -4627,24 +5988,29 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         transportBinding: String?,
         clientCapabilities: Set<String>
     ) {
-        authLock.withLock {
-            authSessions[connectionID] = .challenged(
-                deviceID: deviceID,
-                nonce: nonce,
-                transportBinding: transportBinding,
-                clientCapabilities: clientCapabilities
-            )
+        chatSessionLifecycleLock.withLock {
+            authLock.withLock {
+                authSessions[connectionID] = .challenged(
+                    id: UUID(),
+                    deviceID: deviceID,
+                    nonce: nonce,
+                    transportBinding: transportBinding,
+                    clientCapabilities: clientCapabilities
+                )
+            }
+            invalidateChatSessionAuthentication(connectionID: connectionID)
         }
     }
 
-    private func matchingChallengeCapabilities(
+    private func matchingChallenge(
         connectionID: UUID,
         deviceID: String,
         nonce: String,
         transportBinding: String?
-    ) -> Set<String>? {
+    ) -> RuntimeAuthenticationChallenge? {
         authLock.withLock {
             guard case .challenged(
+                let id,
                 let challengedDeviceID,
                 let challengedNonce,
                 let challengedTransportBinding,
@@ -4655,7 +6021,47 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             challengedTransportBinding == transportBinding else {
                 return nil
             }
-            return clientCapabilities
+            return RuntimeAuthenticationChallenge(
+                id: id,
+                clientCapabilities: clientCapabilities
+            )
+        }
+    }
+
+    private func markAuthenticatedIfChallengeMatches(
+        connectionID: UUID,
+        deviceID: String,
+        publicKeyBase64: String,
+        challengeID: UUID,
+        nonce: String,
+        transportBinding: String?,
+        clientCapabilities: Set<String>
+    ) -> Bool {
+        chatSessionLifecycleLock.withLock {
+            let didAuthenticate = authLock.withLock { () -> Bool in
+                guard authSessions[connectionID] == .challenged(
+                    id: challengeID,
+                    deviceID: deviceID,
+                    nonce: nonce,
+                    transportBinding: transportBinding,
+                    clientCapabilities: clientCapabilities
+                ) else {
+                    return false
+                }
+                authSessions[connectionID] = .authenticated(
+                    deviceID: deviceID,
+                    publicKeyBase64: publicKeyBase64,
+                    transportBinding: transportBinding,
+                    clientCapabilities: clientCapabilities
+                )
+                return true
+            }
+            guard didAuthenticate else { return false }
+            chatSessionAuthenticationGenerations[connectionID, default: 0] &+= 1
+            chatSessionAuthenticatedOwners[connectionID] = RuntimeChatSessionOwnerScope(
+                ownerDeviceID: deviceID
+            )
+            return true
         }
     }
 
@@ -4666,14 +6072,27 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         transportBinding: String?,
         clientCapabilities: Set<String>
     ) {
-        authLock.withLock {
-            authSessions[connectionID] = .authenticated(
-                deviceID: deviceID,
-                publicKeyBase64: publicKeyBase64,
-                transportBinding: transportBinding,
-                clientCapabilities: clientCapabilities
+        chatSessionLifecycleLock.withLock {
+            authLock.withLock {
+                authSessions[connectionID] = .authenticated(
+                    deviceID: deviceID,
+                    publicKeyBase64: publicKeyBase64,
+                    transportBinding: transportBinding,
+                    clientCapabilities: clientCapabilities
+                )
+            }
+            chatSessionAuthenticationGenerations[connectionID, default: 0] &+= 1
+            chatSessionAuthenticatedOwners[connectionID] = RuntimeChatSessionOwnerScope(
+                ownerDeviceID: deviceID
             )
         }
+    }
+
+    private func invalidateChatSessionAuthentication(connectionID: UUID) {
+        chatSessionAuthenticationGenerations[connectionID, default: 0] &+= 1
+        latestChatSessionInitialRequestGenerations[connectionID, default: 0] &+= 1
+        chatSessionAuthenticatedOwners[connectionID] = nil
+        chatSessionPagination.clearConnection(connectionID)
     }
 
     private func allowAuthenticatedRouteRefresh(
@@ -4761,13 +6180,61 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func clearAuthentication(connectionID: UUID) {
-        authLock.withLock {
-            authSessions[connectionID] = nil
+        chatSessionLifecycleLock.withLock {
+            let ownerDeviceID = authLock.withLock { () -> String? in
+                let ownerDeviceID: String?
+                if case .authenticated(let deviceID, _, _, _) = authSessions[connectionID] {
+                    ownerDeviceID = deviceID
+                } else {
+                    ownerDeviceID = nil
+                }
+                authSessions[connectionID] = nil
+                return ownerDeviceID
+            }
+            if let ownerDeviceID {
+                invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: ownerDeviceID)
+            }
+            invalidateChatSessionAuthentication(connectionID: connectionID)
         }
         cancelRelayAuthorizations(
             connectionID: connectionID,
             error: RelayAuthorizationFlowError.authenticationChanged
         )
+    }
+
+    @discardableResult
+    private func clearAuthentication(
+        connectionID: UUID,
+        ifMatches expectedSession: AuthSessionState,
+        authenticationGeneration expectedAuthenticationGeneration: UInt64
+    ) -> Bool {
+        var didClear = false
+        chatSessionLifecycleLock.withLock {
+            guard chatSessionAuthenticationGenerations[connectionID, default: 0]
+                    == expectedAuthenticationGeneration else {
+                return
+            }
+            var ownerDeviceID: String?
+            authLock.withLock {
+                guard authSessions[connectionID] == expectedSession else { return }
+                if case .authenticated(let deviceID, _, _, _) = expectedSession {
+                    ownerDeviceID = deviceID
+                }
+                authSessions[connectionID] = nil
+                didClear = true
+            }
+            guard didClear else { return }
+            if let ownerDeviceID {
+                invalidateAuthoritativeChatSessionSnapshots(ownerDeviceID: ownerDeviceID)
+            }
+            invalidateChatSessionAuthentication(connectionID: connectionID)
+        }
+        guard didClear else { return false }
+        cancelRelayAuthorizations(
+            connectionID: connectionID,
+            error: RelayAuthorizationFlowError.authenticationChanged
+        )
+        return true
     }
 
     private func relayAuthorizationSnapshot(
@@ -5945,14 +7412,68 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static let clientAuthenticationResponseContextV2 = "AetherLink client auth response v2"
     private static let chatSourceAttributionsCapability = "chat.source_attributions.v1"
     private static let chatSourceAttributionResolveCapability = "chat.source_attribution.resolve.v1"
+    private static let authoritativeChatSessionSyncCapability = "chat.sessions.authoritative_sync.v1"
+    private static let memoryDuplicateSuggestionsCapability = "memory.duplicate_suggestions.v1"
+    private static let memorySemanticDuplicateSuggestionsCapability =
+        "memory.semantic_duplicate_suggestions.v1"
+    private static let memorySemanticDuplicateClustersCapability =
+        "memory.semantic_duplicate_clusters.v1"
+    private static let maximumObservedSemanticEmbeddingModelCatalogStates = 256
     private static let chatSourceAttributionResolveMessageType = "chat.source_attribution.resolve"
     private static let chatStorePersistenceFailureCode = "chat_store_unavailable"
     private static let chatStorePersistenceFailureMessage = "The runtime could not persist chat history."
     private static let chatCompactionSummaryPolicy = "llm_prepass_with_incremental_lineage_v2"
 }
 
+private struct RuntimeChatSessionOwnerScope: Hashable {
+    var ownerDeviceID: String?
+
+    init(ownerDeviceID: String?) {
+        let normalized = ownerDeviceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.ownerDeviceID = normalized?.isEmpty == false ? normalized : nil
+    }
+}
+
+private struct RuntimeChatSessionInitialRequestAuthority {
+    var connectionID: UUID
+    var ownerScope: RuntimeChatSessionOwnerScope
+    var authenticationGeneration: UInt64
+    var initialRequestGeneration: UInt64
+    var lifecycleGeneration: UInt64
+}
+
+private struct RuntimeChatSessionMutationAuthorization {
+    var connectionID: UUID
+    var ownerScope: RuntimeChatSessionOwnerScope
+    var authenticationGeneration: UInt64?
+    var authSession: AuthSessionState?
+}
+
+private enum RuntimeChatSessionMutationAuthorizationError: Error {
+    case authenticationChanged
+}
+
+private struct RuntimeAuthenticationChallenge {
+    var id: UUID
+    var clientCapabilities: Set<String>
+}
+
+private struct RuntimeMemoryDuplicateSuggestionsAuthorization {
+    var ownerDeviceID: String
+    var publicKeyBase64: String
+    var authenticationGeneration: UInt64
+    var authSession: AuthSessionState
+}
+
+private enum RuntimeChatSessionAuthoritativeSyncError: Error {
+    case lifecycleChanged
+    case authenticationChanged
+    case initialRequestSuperseded
+}
+
 private enum AuthSessionState: Equatable {
     case challenged(
+        id: UUID,
         deviceID: String,
         nonce: String,
         transportBinding: String?,
@@ -6008,11 +7529,52 @@ private struct ChatTitleRuntimeRequest {
     var request: ChatRequest
 }
 
-private struct RuntimeSemanticEmbeddingModelDescriptor {
+private struct RuntimeSemanticEmbeddingModelDescriptor: Equatable {
     var providerModelID: String
     var canonicalQualifiedModelID: String
     var modelFingerprint: String?
     var documentByteLimit: Int
+}
+
+private struct RuntimeSemanticEmbeddingModelCatalogState {
+    var descriptor: RuntimeSemanticEmbeddingModelDescriptor
+    var generation: UInt64
+}
+
+private struct RuntimeSemanticEmbeddingModelDescriptorSnapshot {
+    var descriptor: RuntimeSemanticEmbeddingModelDescriptor
+    var catalogKey: String
+    var catalogGeneration: UInt64
+}
+
+private struct RuntimeMemorySemanticDuplicateSourceIdentity: Equatable {
+    var entryID: String
+    var sourceRevision: String
+}
+
+private struct RuntimeMemorySemanticDuplicateComputation {
+    var output: RuntimeMemorySemanticDuplicateOutput
+    var cacheRecords: [RuntimeMemorySemanticEmbeddingRecord]
+    var descriptor: RuntimeSemanticEmbeddingModelDescriptor
+    var sourceIdentities: [RuntimeMemorySemanticDuplicateSourceIdentity]
+}
+
+private enum RuntimeMemorySemanticDuplicateOperation {
+    case pairs
+    case clusters
+}
+
+private enum RuntimeMemorySemanticDuplicateOutput {
+    case pairs(RuntimeMemorySemanticDuplicateSuggestionsResult)
+    case clusters(RuntimeMemorySemanticDuplicateClustersResult)
+}
+
+private enum RuntimeSemanticDuplicatePublication: Equatable {
+    case sent
+    case sourceDrift
+    case modelDrift
+    case trustChanged
+    case authorizationChanged
 }
 
 private struct RuntimeChatStorageContext {
@@ -6332,6 +7894,34 @@ private struct TrackedRuntimeRequestTask {
     var task: Task<Void, Never>?
 }
 
+private final class RuntimeRequestTaskStartGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isRegistered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilRegistered() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock { () -> Bool in
+                guard !isRegistered else { return true }
+                self.continuation = continuation
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    func markRegistered() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            isRegistered = true
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume()
+    }
+}
+
 private struct ChatTitleResult: Decodable {
     var title: String
 }
@@ -6555,6 +8145,7 @@ private let allowedChatSessionsListPayloadKeys: Set<String> = [
     "include_archived",
     "query",
     "embedding_model_id",
+    "cursor",
 ]
 
 private let allowedChatMessagesListPayloadKeys: Set<String> = [
@@ -6570,6 +8161,8 @@ private let allowedChatSourceAttributionResolvePayloadKeys: Set<String> = [
 
 private let allowedChatSessionLifecyclePayloadKeys: Set<String> = [
     "session_id",
+    "scope",
+    "limit",
 ]
 
 private let allowedChatSessionRenamePayloadKeys: Set<String> = [
@@ -6580,6 +8173,11 @@ private let allowedChatSessionRenamePayloadKeys: Set<String> = [
 private let allowedMemoryListPayloadKeys: Set<String> = [
     "query",
     "embedding_model_id",
+]
+
+private let allowedMemorySemanticDuplicateSuggestionsListPayloadKeys: Set<String> = [
+    "embedding_model_id",
+    "minimum_similarity_basis_points",
 ]
 
 private let allowedIndexDocumentsListPayloadKeys: Set<String> = [
@@ -7258,6 +8856,12 @@ private func requiredRequestInt(_ key: String, in payload: [String: JSONValue]) 
 
 private func optionalRequestInt(_ key: String, in payload: [String: JSONValue]) throws -> Int? {
     guard let value = payload[key] else { return nil }
+    if case .integer(let integer) = value {
+        guard integer >= Int64(Int.min), integer <= Int64(Int.max) else {
+            throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be an integer")
+        }
+        return Int(integer)
+    }
     guard case .number(let number) = value,
           number.isFinite,
           number.rounded(.towardZero) == number,
@@ -7266,6 +8870,21 @@ private func optionalRequestInt(_ key: String, in payload: [String: JSONValue]) 
         throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be an integer")
     }
     return Int(number)
+}
+
+private func requiredExactRequestInt(
+    _ key: String,
+    in payload: [String: JSONValue]
+) throws -> Int {
+    guard let value = payload[key] else {
+        throw LocalRuntimeRouterError.invalidPayload("Missing or invalid payload field: \(key)")
+    }
+    guard case .integer(let integer) = value,
+          integer >= Int64(Int.min),
+          integer <= Int64(Int.max) else {
+        throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be an exact JSON integer")
+    }
+    return Int(integer)
 }
 
 private func boundedWindowLimit(_ value: Int?, defaultLimit: Int, maxLimit: Int) -> Int {

@@ -209,6 +209,16 @@ let smokeBackendCredentialCanary = "Authorization: Bearer smoke-backend-credenti
 let smokeBackendAPIKeyCanary = "AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary"
 let smokeBackendURLCanary = "https://provider.example.invalid/v1/chat/completions"
 let smokeEmbeddingSearchHintModelID = "ollama:nomic-embed-text"
+let primaryClientCapabilities = [
+    "chat",
+    "streaming",
+    "attachments",
+    "chat.source_attributions.v1",
+    "chat.source_attribution.resolve.v1",
+    "memory.duplicate_suggestions.v1",
+    "memory.semantic_duplicate_suggestions.v1",
+    "memory.semantic_duplicate_clusters.v1"
+]
 let smokeRetrievalDocumentID = "smoke-retrieval-doc"
 let smokeRetrievalDocumentName = "runtime-retrieval-smoke.md"
 let smokeRetrievalSecondaryDocumentID = "smoke-memory-doc"
@@ -591,7 +601,11 @@ final class TCPClient {
     }
 
     func send(_ envelope: [String: Any]) throws {
-        var body = try JSONSerialization.data(withJSONObject: envelope, options: [])
+        try sendJSONData(JSONSerialization.data(withJSONObject: envelope, options: []))
+    }
+
+    func sendJSONData(_ jsonData: Data) throws {
+        var body = jsonData
         if var cipher = relayCipher {
             body = try cipher.encryptClientFrameBody(body)
             RelayCiphertextBoundary.recordClientFrameBody(body)
@@ -1880,6 +1894,40 @@ func sendAndReadRawPayload(
     return response
 }
 
+func sendAndReadIntegralFloatThreshold(
+    _ client: TCPClient,
+    type: String = "memory.semantic_duplicate_suggestions.list",
+    requestID: String,
+    embeddingModelID: String,
+    threshold: Int
+) throws -> [String: Any] {
+    let placeholder = "AETHERLINK_INTEGRAL_FLOAT_THRESHOLD"
+    let message = envelope(
+        type,
+        requestID: requestID,
+        payload: [
+            "embedding_model_id": embeddingModelID,
+            "minimum_similarity_basis_points": placeholder
+        ]
+    )
+    let encoded = try JSONSerialization.data(withJSONObject: message, options: [])
+    guard let json = String(data: encoded, encoding: .utf8) else {
+        throw SmokeFailure.message("\(requestID) could not encode raw integral-float request")
+    }
+    let quotedPlaceholder = "\"\(placeholder)\""
+    let rawJSON = json.replacingOccurrences(
+        of: quotedPlaceholder,
+        with: "\(threshold).0"
+    )
+    guard rawJSON != json, let rawData = rawJSON.data(using: .utf8) else {
+        throw SmokeFailure.message("\(requestID) did not replace the integral-float placeholder")
+    }
+    try client.sendJSONData(rawData)
+    let response = try client.readEnvelope()
+    try assertNoBackendLeak(response, context: requestID)
+    return response
+}
+
 func requireRuntimeHealthEnvelope(
     _ response: [String: Any],
     requestID: String,
@@ -2231,6 +2279,7 @@ func trustedHelloNonce(
     client: TCPClient,
     deviceID: String,
     requestID: String,
+    clientCapabilities: [String] = primaryClientCapabilities,
     runtimeProof: RuntimeProofExpectation? = nil
 ) throws -> String {
     let challenge = try sendAndRead(
@@ -2240,13 +2289,7 @@ func trustedHelloNonce(
         payload: addingTransportBinding([
             "device_id": deviceID,
             "device_name": "Smoke Test Client",
-            "client_capabilities": [
-                "chat",
-                "streaming",
-                "attachments",
-                "chat.source_attributions.v1",
-                "chat.source_attribution.resolve.v1"
-            ]
+            "client_capabilities": clientCapabilities
         ], from: client)
     )
     try requireType(challenge, "auth.challenge", context: requestID)
@@ -2327,6 +2370,7 @@ func authenticateFreshClient(
     deviceID: String,
     privateKey: P256.Signing.PrivateKey,
     requestPrefix: String,
+    clientCapabilities: [String] = primaryClientCapabilities,
     runtimeProof: RuntimeProofExpectation? = nil
 ) throws -> TCPClient {
     let client = try connectWithRetry(
@@ -2340,6 +2384,7 @@ func authenticateFreshClient(
             client: client,
             deviceID: deviceID,
             requestID: "\(requestPrefix)-hello",
+            clientCapabilities: clientCapabilities,
             runtimeProof: runtimeProof
         )
         let signature = try clientAuthSignature(
@@ -3384,6 +3429,23 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("trusted_source.list", "smoke-unauthenticated-trusted-source-list", [:]),
         ("trusted_source.revoke", "smoke-unauthenticated-trusted-source-revoke", [:]),
         ("memory.list", "smoke-unauthenticated-memory", [:]),
+        ("memory.duplicate_suggestions.list", "smoke-unauthenticated-memory-duplicates", [:]),
+        (
+            "memory.semantic_duplicate_suggestions.list",
+            "smoke-unauthenticated-memory-semantic-duplicates",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": 9_400
+            ]
+        ),
+        (
+            "memory.semantic_duplicate_clusters.list",
+            "smoke-unauthenticated-memory-semantic-clusters",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": 9_400
+            ]
+        ),
         ("memory.upsert", "smoke-unauthenticated-memory-upsert", [:]),
         ("memory.delete", "smoke-unauthenticated-memory-delete", [:]),
         ("memory.summary.drafts.list", "smoke-unauthenticated-memory-summary-drafts", [:]),
@@ -3431,6 +3493,61 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         "pairing_required",
         requestID: "smoke-untrusted-hello",
         context: "untrusted hello"
+    )
+}
+
+func runAuthenticatedSemanticDuplicateMissingCapabilityCheck(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey,
+    runtimeProof: RuntimeProofExpectation? = nil
+) throws {
+    print("Checking authenticated semantic duplicate pair and cluster capability closure...")
+    let client = try authenticateFreshClient(
+        host: host,
+        port: port,
+        relay: relay,
+        deviceID: deviceID,
+        privateKey: privateKey,
+        requestPrefix: "smoke-memory-semantic-duplicates-no-capability",
+        clientCapabilities: primaryClientCapabilities.filter {
+            $0 != "memory.semantic_duplicate_suggestions.v1" &&
+                $0 != "memory.semantic_duplicate_clusters.v1"
+        },
+        runtimeProof: runtimeProof
+    )
+    defer { client.close() }
+    let response = try sendAndRead(
+        client,
+        type: "memory.semantic_duplicate_suggestions.list",
+        requestID: "smoke-memory-semantic-duplicates-no-capability",
+        payload: [
+            "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            "minimum_similarity_basis_points": 9_400
+        ]
+    )
+    try requireErrorCode(
+        response,
+        "unsupported_operation",
+        requestID: "smoke-memory-semantic-duplicates-no-capability",
+        context: "authenticated memory semantic duplicate suggestions without capability"
+    )
+    let clusterResponse = try sendAndRead(
+        client,
+        type: "memory.semantic_duplicate_clusters.list",
+        requestID: "smoke-memory-semantic-clusters-no-capability",
+        payload: [
+            "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            "minimum_similarity_basis_points": 9_400
+        ]
+    )
+    try requireErrorCode(
+        clusterResponse,
+        "unsupported_operation",
+        requestID: "smoke-memory-semantic-clusters-no-capability",
+        context: "authenticated memory semantic duplicate clusters without capability"
     )
 }
 
@@ -3987,6 +4104,12 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "chat.session.delete",
         "memory.upsert",
         "memory.list",
+        "memory.duplicate_suggestions.list",
+        "memory.duplicate_suggestions.v1",
+        "memory.semantic_duplicate_suggestions.list",
+        "memory.semantic_duplicate_suggestions.v1",
+        "memory.semantic_duplicate_clusters.list",
+        "memory.semantic_duplicate_clusters.v1",
         "memory.delete",
         "memory.summary.drafts.list",
         "memory.summary.draft.generate",
@@ -5519,6 +5642,526 @@ func runAuthenticatedCompactionSmoke(client: TCPClient, chatRequestAuditFile: UR
     }
 }
 
+func runAuthenticatedMemorySemanticDuplicateSuggestionsChecks(client: TCPClient) throws {
+    print("Checking authenticated review-only semantic memory duplicate suggestions...")
+    let threshold = 9_400
+    let validPayload: [String: Any] = [
+        "embedding_model_id": smokeEmbeddingSearchHintModelID,
+        "minimum_similarity_basis_points": threshold
+    ]
+    let invalidRequests: [(requestID: String, payload: [String: Any], context: String)] = [
+        (
+            "smoke-memory-semantic-duplicates-unknown-field",
+            validPayload.merging(["include_content": true]) { _, new in new },
+            "unknown request field"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-missing-model-field",
+            ["minimum_similarity_basis_points": threshold],
+            "missing embedding model field"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-missing-threshold",
+            ["embedding_model_id": smokeEmbeddingSearchHintModelID],
+            "missing threshold field"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-unqualified-model",
+            [
+                "embedding_model_id": "nomic-embed-text",
+                "minimum_similarity_basis_points": threshold
+            ],
+            "unqualified embedding model"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-threshold-bool",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": true
+            ],
+            "boolean threshold"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-threshold-string",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": "9400"
+            ],
+            "string threshold"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-threshold-fraction",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": 9_400.5
+            ],
+            "fractional threshold"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-threshold-low",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": 7_999
+            ],
+            "threshold below lower bound"
+        ),
+        (
+            "smoke-memory-semantic-duplicates-threshold-high",
+            [
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+                "minimum_similarity_basis_points": 10_001
+            ],
+            "threshold above upper bound"
+        )
+    ]
+    for invalid in invalidRequests {
+        let response = try sendAndRead(
+            client,
+            type: "memory.semantic_duplicate_suggestions.list",
+            requestID: invalid.requestID,
+            payload: invalid.payload
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: invalid.requestID,
+            context: "memory semantic duplicate suggestions \(invalid.context)"
+        )
+    }
+    for invalid in invalidRequests {
+        let requestID = invalid.requestID.replacingOccurrences(
+            of: "semantic-duplicates",
+            with: "semantic-clusters"
+        )
+        let response = try sendAndRead(
+            client,
+            type: "memory.semantic_duplicate_clusters.list",
+            requestID: requestID,
+            payload: invalid.payload
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: requestID,
+            context: "memory semantic duplicate clusters \(invalid.context)"
+        )
+    }
+
+    for unavailableModel in [
+        ("smoke-memory-semantic-duplicates-nonembedding-model", "ollama:dev-mock"),
+        ("smoke-memory-semantic-duplicates-nonlocal-model", "lm_studio:nomic-embed-text"),
+        ("smoke-memory-semantic-duplicates-missing-model", "ollama:missing-semantic-model")
+    ] {
+        let response = try sendAndRead(
+            client,
+            type: "memory.semantic_duplicate_suggestions.list",
+            requestID: unavailableModel.0,
+            payload: [
+                "embedding_model_id": unavailableModel.1,
+                "minimum_similarity_basis_points": threshold
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "model_not_installed",
+            requestID: unavailableModel.0,
+            context: "memory semantic duplicate suggestions rejects unavailable local embedding model"
+        )
+    }
+    for unavailableModel in [
+        ("smoke-memory-semantic-clusters-nonembedding-model", "ollama:dev-mock"),
+        ("smoke-memory-semantic-clusters-nonlocal-model", "lm_studio:nomic-embed-text"),
+        ("smoke-memory-semantic-clusters-missing-model", "ollama:missing-semantic-model")
+    ] {
+        let response = try sendAndRead(
+            client,
+            type: "memory.semantic_duplicate_clusters.list",
+            requestID: unavailableModel.0,
+            payload: [
+                "embedding_model_id": unavailableModel.1,
+                "minimum_similarity_basis_points": threshold
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "model_not_installed",
+            requestID: unavailableModel.0,
+            context: "memory semantic duplicate clusters rejects unavailable local embedding model"
+        )
+    }
+
+    let exactIDs = ["smoke-memory-semdup-a", "smoke-memory-semdup-b"]
+    let semanticIDs = ["smoke-memory-semdup-c", "smoke-memory-semdup-d"]
+    let seedEntries: [(id: String, content: String)] = [
+        (exactIDs[0], "Byte exact duplicate sentinel quasar."),
+        (exactIDs[1], "Byte exact duplicate sentinel quasar."),
+        (semanticIDs[0], "semantic review cobalt ember harbor lunar"),
+        (semanticIDs[1], "semantic review cobalt ember harbor lunar prism")
+    ]
+    for seed in seedEntries {
+        let requestID = "\(seed.id)-upsert"
+        let response = try sendAndRead(
+            client,
+            type: "memory.upsert",
+            requestID: requestID,
+            payload: ["id": seed.id, "content": seed.content, "enabled": true]
+        )
+        try requireType(response, "memory.upsert", context: requestID)
+        try requireRequestID(response, requestID, context: requestID)
+    }
+
+    let memoryBefore = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-semantic-duplicates-memory-before"
+    )
+    guard seedEntries.allSatisfy({ seed in
+        memoryBefore.contains(where: {
+            $0["id"] as? String == seed.id && $0["content"] as? String == seed.content
+        })
+    }) else {
+        throw SmokeFailure.message(
+            "semantic duplicate smoke seeds were not owner-visible before review: \(memoryBefore)"
+        )
+    }
+    let memoryBeforeData = try JSONSerialization.data(
+        withJSONObject: memoryBefore,
+        options: [.sortedKeys]
+    )
+
+    let requestID = "smoke-memory-semantic-duplicates"
+    let response = try sendAndRead(
+        client,
+        type: "memory.semantic_duplicate_suggestions.list",
+        requestID: requestID,
+        payload: validPayload
+    )
+    try requireType(
+        response,
+        "memory.semantic_duplicate_suggestions.list",
+        context: "memory semantic duplicate suggestions"
+    )
+    try requireRequestID(response, requestID, context: "memory semantic duplicate suggestions")
+    let responsePayload = try payload(response, context: "memory semantic duplicate suggestions")
+    guard Set(responsePayload.keys) == Set([
+        "pairs",
+        "scanned_count",
+        "omitted_count",
+        "truncated"
+    ]) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate suggestions returned noncanonical response keys: \(response)"
+        )
+    }
+    guard try requireInt(
+        responsePayload,
+        "scanned_count",
+        context: "memory semantic duplicate suggestions"
+    ) >= seedEntries.count else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate suggestions did not scan all owner seeds: \(response)"
+        )
+    }
+    _ = try requireInt(
+        responsePayload,
+        "omitted_count",
+        context: "memory semantic duplicate suggestions"
+    )
+    try requireBool(
+        responsePayload,
+        "truncated",
+        false,
+        context: "memory semantic duplicate suggestions"
+    )
+
+    let pairObjects = try requireDictionaryArray(
+        responsePayload,
+        key: "pairs",
+        context: "memory semantic duplicate suggestions"
+    )
+    var pairs: [(first: String, second: String, score: Int)] = []
+    for pair in pairObjects {
+        guard Set(pair.keys) == Set(["entry_ids", "similarity_basis_points"]),
+              let entryIDs = pair["entry_ids"] as? [String],
+              entryIDs.count == 2,
+              entryIDs[0].utf8.lexicographicallyPrecedes(entryIDs[1].utf8) else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate suggestions returned a noncanonical pair: \(pair)"
+            )
+        }
+        let score = try requireInt(
+            pair,
+            "similarity_basis_points",
+            context: "memory semantic duplicate suggestions pair"
+        )
+        guard score >= threshold, score <= 10_000 else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate suggestions returned an out-of-contract score: \(pair)"
+            )
+        }
+        pairs.append((entryIDs[0], entryIDs[1], score))
+    }
+    for index in pairs.indices.dropFirst() {
+        let previous = pairs[pairs.index(before: index)]
+        let current = pairs[index]
+        let canonicalTieOrder = previous.first == current.first
+            ? previous.second.utf8.lexicographicallyPrecedes(current.second.utf8)
+            : previous.first.utf8.lexicographicallyPrecedes(current.first.utf8)
+        guard previous.score > current.score ||
+                (previous.score == current.score && canonicalTieOrder) else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate suggestions pairs were not canonically sorted: \(response)"
+            )
+        }
+    }
+    guard !pairs.contains(where: { [$0.first, $0.second] == exactIDs }) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate suggestions included a byte-exact content pair: \(response)"
+        )
+    }
+    guard pairs.contains(where: {
+        [$0.first, $0.second] == semanticIDs && $0.score >= threshold
+    }) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate suggestions omitted the deterministic semantic pair: \(response)"
+        )
+    }
+
+    let serializedResponse = String(
+        data: try JSONSerialization.data(withJSONObject: responsePayload, options: [.sortedKeys]),
+        encoding: .utf8
+    )?.lowercased() ?? ""
+    for forbidden in [
+        "content",
+        "vector",
+        "embedding",
+        "model",
+        "fingerprint",
+        "revision",
+        "provider",
+        "route",
+        "source",
+        "audit"
+    ] where serializedResponse.contains(forbidden) {
+        throw SmokeFailure.message(
+            "memory semantic duplicate suggestions leaked forbidden \(forbidden) metadata: \(response)"
+        )
+    }
+
+    let clusterRequestID = "smoke-memory-semantic-clusters"
+    let clusterResponse = try sendAndRead(
+        client,
+        type: "memory.semantic_duplicate_clusters.list",
+        requestID: clusterRequestID,
+        payload: validPayload
+    )
+    try requireType(
+        clusterResponse,
+        "memory.semantic_duplicate_clusters.list",
+        context: "memory semantic duplicate clusters"
+    )
+    try requireRequestID(
+        clusterResponse,
+        clusterRequestID,
+        context: "memory semantic duplicate clusters"
+    )
+    let clusterPayload = try payload(
+        clusterResponse,
+        context: "memory semantic duplicate clusters"
+    )
+    guard Set(clusterPayload.keys) == Set([
+        "clusters",
+        "scanned_count",
+        "omitted_count",
+        "truncated"
+    ]) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate clusters returned noncanonical response keys: \(clusterResponse)"
+        )
+    }
+    guard try requireInt(
+        clusterPayload,
+        "scanned_count",
+        context: "memory semantic duplicate clusters"
+    ) >= seedEntries.count else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate clusters did not scan all owner seeds: \(clusterResponse)"
+        )
+    }
+    _ = try requireInt(
+        clusterPayload,
+        "omitted_count",
+        context: "memory semantic duplicate clusters"
+    )
+    try requireBool(
+        clusterPayload,
+        "truncated",
+        false,
+        context: "memory semantic duplicate clusters"
+    )
+
+    let clusterObjects = try requireDictionaryArray(
+        clusterPayload,
+        key: "clusters",
+        context: "memory semantic duplicate clusters"
+    )
+    var clusters: [(entryIDs: [String], minimumScore: Int)] = []
+    var clusteredIDs = Set<String>()
+    let contentByID = Dictionary(
+        uniqueKeysWithValues: memoryBefore.compactMap { entry -> (String, String)? in
+            guard let id = entry["id"] as? String,
+                  let content = entry["content"] as? String else {
+                return nil
+            }
+            return (id, content)
+        }
+    )
+    for cluster in clusterObjects {
+        guard Set(cluster.keys) == Set([
+            "entry_ids",
+            "minimum_similarity_basis_points"
+        ]),
+              let entryIDs = cluster["entry_ids"] as? [String],
+              entryIDs.count >= 2,
+              entryIDs.count <= 200,
+              Set(entryIDs).count == entryIDs.count,
+              entryIDs == entryIDs.sorted(by: {
+                  $0.utf8.lexicographicallyPrecedes($1.utf8)
+              }) else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate clusters returned a noncanonical cluster: \(cluster)"
+            )
+        }
+        guard entryIDs.allSatisfy({ clusteredIDs.insert($0).inserted }) else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate clusters repeated an entry ID across clusters: \(clusterResponse)"
+            )
+        }
+        let minimumScore = try requireInt(
+            cluster,
+            "minimum_similarity_basis_points",
+            context: "memory semantic duplicate cluster"
+        )
+        guard minimumScore >= threshold, minimumScore <= 10_000 else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate clusters returned an out-of-contract minimum score: \(cluster)"
+            )
+        }
+        for firstIndex in entryIDs.indices {
+            for secondIndex in entryIDs.indices where secondIndex > firstIndex {
+                guard contentByID[entryIDs[firstIndex]] != contentByID[entryIDs[secondIndex]] else {
+                    throw SmokeFailure.message(
+                        "memory semantic duplicate clusters included byte-exact contents: \(cluster)"
+                    )
+                }
+            }
+        }
+        clusters.append((entryIDs, minimumScore))
+    }
+    func canonicalIDArrayPrecedes(_ lhs: [String], _ rhs: [String]) -> Bool {
+        for (left, right) in zip(lhs, rhs) where left != right {
+            return left.utf8.lexicographicallyPrecedes(right.utf8)
+        }
+        return lhs.count < rhs.count
+    }
+    for index in clusters.indices.dropFirst() {
+        let previous = clusters[clusters.index(before: index)]
+        let current = clusters[index]
+        guard previous.minimumScore > current.minimumScore ||
+                (previous.minimumScore == current.minimumScore &&
+                    canonicalIDArrayPrecedes(previous.entryIDs, current.entryIDs)) else {
+            throw SmokeFailure.message(
+                "memory semantic duplicate clusters were not canonically sorted: \(clusterResponse)"
+            )
+        }
+    }
+    guard clusters.contains(where: {
+        Set(semanticIDs).isSubset(of: Set($0.entryIDs)) &&
+            $0.minimumScore >= threshold
+    }) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate clusters omitted the deterministic semantic cluster: \(clusterResponse)"
+        )
+    }
+    guard !clusters.contains(where: { Set(exactIDs).isSubset(of: Set($0.entryIDs)) }) else {
+        throw SmokeFailure.message(
+            "memory semantic duplicate clusters included a byte-exact duplicate group: \(clusterResponse)"
+        )
+    }
+
+    let serializedClusterResponse = String(
+        data: try JSONSerialization.data(withJSONObject: clusterPayload, options: [.sortedKeys]),
+        encoding: .utf8
+    )?.lowercased() ?? ""
+    for forbidden in [
+        "content",
+        "vector",
+        "embedding",
+        "model",
+        "fingerprint",
+        "revision",
+        "provider",
+        "route",
+        "source",
+        "audit"
+    ] where serializedClusterResponse.contains(forbidden) {
+        throw SmokeFailure.message(
+            "memory semantic duplicate clusters leaked forbidden \(forbidden) metadata: \(clusterResponse)"
+        )
+    }
+
+    let memoryAfter = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-semantic-duplicates-memory-after"
+    )
+    let memoryAfterData = try JSONSerialization.data(
+        withJSONObject: memoryAfter,
+        options: [.sortedKeys]
+    )
+    guard memoryAfterData == memoryBeforeData else {
+        throw SmokeFailure.message(
+            "review-only semantic duplicate pair or cluster suggestions mutated authoritative memory: before=\(memoryBefore) after=\(memoryAfter)"
+        )
+    }
+
+    for seed in seedEntries {
+        let requestID = "\(seed.id)-delete"
+        let deleteResponse = try sendAndRead(
+            client,
+            type: "memory.delete",
+            requestID: requestID,
+            payload: ["id": seed.id]
+        )
+        try requireType(deleteResponse, "memory.delete", context: requestID)
+        try requireRequestID(deleteResponse, requestID, context: requestID)
+    }
+
+    let integralFloatResponse = try sendAndReadIntegralFloatThreshold(
+        client,
+        requestID: "smoke-memory-semantic-duplicates-threshold-integral-float",
+        embeddingModelID: smokeEmbeddingSearchHintModelID,
+        threshold: threshold
+    )
+    try requireErrorCode(
+        integralFloatResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-semantic-duplicates-threshold-integral-float",
+        context: "memory semantic duplicate suggestions integral-float threshold"
+    )
+    let clusterIntegralFloatResponse = try sendAndReadIntegralFloatThreshold(
+        client,
+        type: "memory.semantic_duplicate_clusters.list",
+        requestID: "smoke-memory-semantic-clusters-threshold-integral-float",
+        embeddingModelID: smokeEmbeddingSearchHintModelID,
+        threshold: threshold
+    )
+    try requireErrorCode(
+        clusterIntegralFloatResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-semantic-clusters-threshold-integral-float",
+        context: "memory semantic duplicate clusters integral-float threshold"
+    )
+}
+
 func runAuthenticatedHistoryAndMemoryChecks(
     client: TCPClient,
     chatRequestAuditFile: URL,
@@ -5941,6 +6584,111 @@ func runAuthenticatedHistoryAndMemoryChecks(
             "persistent semantic memory cache hit should embed only the query without logging text: \(embeddingAuditAfterMemoryCacheHit)"
         )
     }
+
+    let duplicateMemoryID = "smoke-memory-route-duplicate"
+    let duplicateMemoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-duplicate-upsert",
+        payload: [
+            "id": duplicateMemoryID,
+            "content": "Prefers smoke-tested concise answers.",
+            "enabled": false
+        ]
+    )
+    try requireType(
+        duplicateMemoryUpsertResponse,
+        "memory.upsert",
+        context: "memory duplicate seed upsert"
+    )
+
+    let invalidDuplicateSuggestionsResponse = try sendAndRead(
+        client,
+        type: "memory.duplicate_suggestions.list",
+        requestID: "smoke-memory-duplicates-invalid-payload",
+        payload: ["include_content": true]
+    )
+    try requireErrorCode(
+        invalidDuplicateSuggestionsResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-duplicates-invalid-payload",
+        context: "memory duplicate suggestions unknown request metadata"
+    )
+
+    let duplicateSuggestionsResponse = try sendAndRead(
+        client,
+        type: "memory.duplicate_suggestions.list",
+        requestID: "smoke-memory-duplicates"
+    )
+    try requireType(
+        duplicateSuggestionsResponse,
+        "memory.duplicate_suggestions.list",
+        context: "memory duplicate suggestions"
+    )
+    try requireRequestID(
+        duplicateSuggestionsResponse,
+        "smoke-memory-duplicates",
+        context: "memory duplicate suggestions"
+    )
+    let duplicateSuggestionsPayload = try payload(
+        duplicateSuggestionsResponse,
+        context: "memory duplicate suggestions"
+    )
+    guard Set(duplicateSuggestionsPayload.keys) == Set(["groups", "scanned_count", "truncated"]),
+          try requireInt(
+              duplicateSuggestionsPayload,
+              "scanned_count",
+              context: "memory duplicate suggestions"
+          ) >= 2 else {
+        throw SmokeFailure.message(
+            "memory duplicate suggestions returned a noncanonical top-level payload: \(duplicateSuggestionsResponse)"
+        )
+    }
+    try requireBool(
+        duplicateSuggestionsPayload,
+        "truncated",
+        false,
+        context: "memory duplicate suggestions"
+    )
+    let duplicateGroups = try requireDictionaryArray(
+        duplicateSuggestionsPayload,
+        key: "groups",
+        context: "memory duplicate suggestions"
+    )
+    guard duplicateGroups.contains(where: { group in
+        Set(group.keys) == Set(["entry_ids"])
+            && (group["entry_ids"] as? [String]) == [memoryID, duplicateMemoryID]
+    }) else {
+        throw SmokeFailure.message(
+            "memory duplicate suggestions did not return the exact sorted duplicate IDs: \(duplicateSuggestionsResponse)"
+        )
+    }
+    let serializedDuplicateSuggestions = String(describing: duplicateSuggestionsPayload)
+    for forbidden in [
+        "Prefers smoke-tested concise answers.",
+        "content_hash",
+        "embedding",
+        "model_id",
+        "source_revision",
+        "backend_url",
+        "route_token"
+    ] where serializedDuplicateSuggestions.contains(forbidden) {
+        throw SmokeFailure.message(
+            "memory duplicate suggestions leaked forbidden metadata \(forbidden): \(duplicateSuggestionsResponse)"
+        )
+    }
+
+    let duplicateMemoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-duplicate-delete",
+        payload: ["id": duplicateMemoryID]
+    )
+    try requireType(
+        duplicateMemoryDeleteResponse,
+        "memory.delete",
+        context: "memory duplicate seed cleanup"
+    )
 
     let invalidMemoryDeleteResponse = try sendAndRead(
         client,
@@ -9652,6 +10400,15 @@ func main() throws {
         relay: clientRelayConfiguration
     )
 
+    try runAuthenticatedSemanticDuplicateMissingCapabilityCheck(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey,
+        runtimeProof: runtimeProof
+    )
+
     print("Authenticating a fresh \(options.transportMode.name) connection with P-256 challenge-response...")
     do {
         let client = try authenticateFreshClient(
@@ -9674,6 +10431,7 @@ func main() throws {
 
         switch options.backendMode {
         case .mock:
+            try runAuthenticatedMemorySemanticDuplicateSuggestionsChecks(client: client)
             if options.defaultMockRoutingOnly {
                 try runDefaultMockRoutingChecks(client: client)
             } else {

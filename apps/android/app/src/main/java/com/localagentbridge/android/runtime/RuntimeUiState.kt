@@ -35,6 +35,8 @@ data class RuntimeUiState(
     val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
     val chatSessionSearchQuery: String? = null,
     val chatSessionSearchResults: List<RuntimeChatSession> = emptyList(),
+    val isLoadingChatSessions: Boolean = false,
+    val isBulkMutatingChatSessions: Boolean = false,
     val activeChatSessionId: String? = null,
     val loadingChatSessionId: String? = null,
     val messages: List<RuntimeChatMessage> = emptyList(),
@@ -45,6 +47,28 @@ data class RuntimeUiState(
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val memorySearchQuery: String? = null,
     val memorySearchResults: List<RuntimeMemoryEntry> = emptyList(),
+    val memoryDuplicateSuggestionGroups: List<RuntimeMemoryDuplicateSuggestionGroup> = emptyList(),
+    val memoryDuplicateSuggestionsScannedCount: Int = 0,
+    val memoryDuplicateSuggestionsTruncated: Boolean = false,
+    val hasMemoryDuplicateSuggestionsResult: Boolean = false,
+    val isScanningMemoryDuplicateSuggestions: Boolean = false,
+    val memoryDuplicateSuggestionsAvailable: Boolean = false,
+    val memorySemanticDuplicateSuggestionPairs: List<RuntimeMemorySemanticDuplicateSuggestionPair> = emptyList(),
+    val memorySemanticDuplicateSuggestionsScannedCount: Int = 0,
+    val memorySemanticDuplicateSuggestionsOmittedCount: Int = 0,
+    val memorySemanticDuplicateSuggestionsTruncated: Boolean = false,
+    val memorySemanticDuplicateSuggestionsThresholdBasisPoints: Int = 9_000,
+    val hasMemorySemanticDuplicateSuggestionsResult: Boolean = false,
+    val isScanningMemorySemanticDuplicateSuggestions: Boolean = false,
+    val memorySemanticDuplicateSuggestionsAvailable: Boolean = false,
+    val memorySemanticDuplicateClusters: List<RuntimeMemorySemanticDuplicateCluster> = emptyList(),
+    val memorySemanticDuplicateClustersScannedCount: Int = 0,
+    val memorySemanticDuplicateClustersOmittedCount: Int = 0,
+    val memorySemanticDuplicateClustersTruncated: Boolean = false,
+    val memorySemanticDuplicateClustersThresholdBasisPoints: Int = 9_000,
+    val hasMemorySemanticDuplicateClustersResult: Boolean = false,
+    val isScanningMemorySemanticDuplicateClusters: Boolean = false,
+    val memorySemanticDuplicateClustersAvailable: Boolean = false,
     val memorySummaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
     val generatingMemorySummaryDraftIds: Set<String> = emptySet(),
     val approvingMemorySummaryDraftIds: Set<String> = emptySet(),
@@ -73,6 +97,9 @@ data class RuntimeUiState(
     val activeRouteKind: RuntimeActiveRouteKind? = null,
     val error: RuntimeUiError? = null,
 ) {
+    val isChatHistoryActionPending: Boolean
+        get() = isLoadingChatSessions || isBulkMutatingChatSessions
+
     val isLoadingActiveChatMessages: Boolean
         get() = activeChatSessionId != null && loadingChatSessionId == activeChatSessionId
 }
@@ -281,6 +308,20 @@ data class RuntimeMemoryEntry(
     val searchRank: Int? = null,
     val searchSnippet: String? = null,
     val searchMatchedFields: List<String> = emptyList(),
+)
+
+data class RuntimeMemoryDuplicateSuggestionGroup(
+    val entryIds: List<String>,
+)
+
+data class RuntimeMemorySemanticDuplicateSuggestionPair(
+    val entryIds: List<String>,
+    val similarityBasisPoints: Int,
+)
+
+data class RuntimeMemorySemanticDuplicateCluster(
+    val entryIds: List<String>,
+    val minimumSimilarityBasisPoints: Int,
 )
 
 data class RuntimeMemoryEntrySource(

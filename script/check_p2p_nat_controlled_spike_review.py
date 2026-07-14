@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the closed, unselected P2P/NAT controlled-spike review packet."""
+"""Validate the controlled-spike proposal, approval, and bounded phase-A handoff."""
 
 from __future__ import annotations
 
@@ -16,10 +16,18 @@ REVIEW_ROOT = ROOT / "docs/security-hardening/production-p2p-nat-v1/controlled-n
 REVIEW_PATH = REVIEW_ROOT / "review-v1.json"
 MARKDOWN_PATH = REVIEW_ROOT / "review-v1.md"
 HANDOFF_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v3.json"
+DECISION_PATH = REVIEW_ROOT / "decision-v1.json"
+DECISION_MARKDOWN_PATH = REVIEW_ROOT / "decision-v1.md"
+CURRENT_HANDOFF_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v4.json"
+CURRENT_HANDOFF_MARKDOWN_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v4.md"
 HANDOFF_SHA256 = "07a45cd49f6c42fe9c4ad722d78a0bf7595b0d38a0d88287d2e0ceeb94e4513c"
 GENERATED_ARTIFACT_SHA256 = {
     REVIEW_PATH: "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62",
     MARKDOWN_PATH: "9fd1d76b94fc834d72cd0c714113fab1e0e4c6e8ec3cee55e213a1a9cb6c781f",
+    DECISION_PATH: "1fd24be7252e25381552d1732c5282f141ef0e9b02118f8c65b246b81a055228",
+    DECISION_MARKDOWN_PATH: "95ecd696a1617989e5f354e76fb58f8cc59aa40b69ed110c7af9a883bee4b7d9",
+    CURRENT_HANDOFF_PATH: "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd",
+    CURRENT_HANDOFF_MARKDOWN_PATH: "9d185df0d11b49bcdbd1fe0e623d17f28ca6b41272830a72f9ae2e104e108187",
 }
 
 DECISION_ORDER = (
@@ -33,6 +41,58 @@ RECOMMENDATIONS = {
     "session_cryptography_library_selection": "platform-native-p256-hkdf-sha256-aes256gcm",
     "isolated_harness_design": "linux-netns-twin-agent-local-services",
     "socket_destination_and_egress_controls": "numeric-endpoint-allowlist-plus-os-egress-witness",
+}
+PHASE_A_EVIDENCE = [
+    "libjuice_supply_chain_and_source_audit",
+    "android_macos_compile_only_integration",
+    "cross_platform_session_crypto_vectors",
+    "static_harness_and_egress_policy",
+    "phase_a_security_review",
+]
+DECISION_AUTHORIZATION = {
+    "conditionalLibrarySelectionAuthorized": True,
+    "offlineSourceInspectionAuthorized": True,
+    "sourceAcquisitionNetworkIOAllowed": False,
+    "compileOnlyIntegrationAuthorized": True,
+    "phaseAHarnessImplementationAuthorized": True,
+    "controlledSpikeNetworkIOAllowed": False,
+    "controlledSpikeSocketExecutionAuthorized": False,
+    "phaseBExecutionAuthorized": False,
+    "productionNetworkIOAllowed": False,
+    "productionDeploymentAuthorized": False,
+    "handoffV4CreationAuthorized": True,
+}
+HANDOFF_AUTHORIZATION = {
+    key: value
+    for key, value in DECISION_AUTHORIZATION.items()
+    if key != "handoffV4CreationAuthorized"
+}
+HANDOFF_AUTHORIZATION["implementationAuthorized"] = True
+PHASE_A_CONTRACT = {
+    "sourceMaterialMode": "offline_user_provided_or_preexisting_workspace_only",
+    "offlineSourceInspectionAuthorized": True,
+    "sourceAcquisitionNetworkIOAllowed": False,
+    "compileOnlyIntegrationAuthorized": True,
+    "sessionCryptoVectorImplementationAuthorized": True,
+    "staticHarnessImplementationAuthorized": True,
+    "sourceExecutionAllowed": False,
+    "socketCreationAllowed": False,
+    "runtimeNetworkIOAllowed": False,
+    "harnessNetworkIOAllowed": False,
+    "outputs": [
+        "pinned_source_and_supply_chain_manifest",
+        "line_referenced_source_audit",
+        "android_macos_compile_only_logs",
+        "cross_platform_session_crypto_vectors",
+        "static_harness_and_egress_policy_evidence",
+    ],
+}
+PHASE_B_CONTRACT = {
+    "status": "blocked_on_phase_a_evidence_and_separate_versioned_decision",
+    "executionAuthorized": False,
+    "networkIOAllowed": False,
+    "socketExecutionAuthorized": False,
+    "externalEgressAllowed": False,
 }
 EXPECTED_PROPOSED_CONTRACTS = {
     "networking_library_selection": {
@@ -493,6 +553,143 @@ def validate_document(document: Any) -> None:
         fail("review-v1.immutability: closed proposal contract drifted")
 
 
+def validate_approval_rows(value: Any, label: str, include_recommendation: bool) -> None:
+    if not isinstance(value, list) or len(value) != len(DECISION_ORDER):
+        fail(f"{label}: expected exactly four approvals")
+    for index, decision_id in enumerate(DECISION_ORDER):
+        expected_keys = {"decisionId", "status", "resolution", "approvalSource"}
+        if include_recommendation:
+            expected_keys.add("recommendedOptionId")
+        approval = exact_keys(value[index], expected_keys, f"{label}[{index}]")
+        expected = {
+            "decisionId": decision_id,
+            "status": "approved_for_bounded_phase_a_evidence",
+            "resolution": RECOMMENDATIONS[decision_id],
+            "approvalSource": "explicit_user_instruction",
+        }
+        if include_recommendation:
+            expected["recommendedOptionId"] = RECOMMENDATIONS[decision_id]
+        if not type_exact_equal(approval, expected):
+            fail(f"{label}[{index}]: approval order or resolution drifted")
+
+
+def validate_decision(document: Any) -> None:
+    root = exact_keys(
+        document,
+        {
+            "documentType", "schemaVersion", "decisionId", "profileId", "sourceReviewId",
+            "sourceReviewPath", "sourceHandoffId", "sourceHandoffPath", "status",
+            "approvalSource", "decisionScope", "measurementStatus", "decisionOrder",
+            "approvals", "authorization", "requiredPhaseAEvidence", "failurePolicy",
+            "nextStep", "immutability",
+        },
+        "decision-v1",
+    )
+    expected_root = {
+        "documentType": "aetherlink.p2p-nat-controlled-network-spike-approval-decision",
+        "schemaVersion": "1.0",
+        "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+        "profileId": "production_p2p_nat_v1_recommended",
+        "sourceReviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+        "sourceReviewPath": "review-v1.json",
+        "sourceHandoffId": "production_p2p_nat_v1_handoff_v3",
+        "sourceHandoffPath": "../implementation/handoff-v3.json",
+        "status": "closed",
+        "approvalSource": "explicit_user_instruction",
+        "decisionScope": "bounded_phase_a_evidence_authorization",
+        "measurementStatus": "not_started",
+        "decisionOrder": list(DECISION_ORDER),
+        "authorization": DECISION_AUTHORIZATION,
+        "requiredPhaseAEvidence": PHASE_A_EVIDENCE,
+        "failurePolicy": "reject_failed_option_and_require_a_new_versioned_decision_without_socket_or_network_execution",
+        "nextStep": "collect_bounded_phase_a_evidence_before_a_separate_socket_execution_decision",
+        "immutability": {
+            "recordState": "closed",
+            "amendmentPolicy": "supersede_with_new_versioned_decision",
+        },
+    }
+    for field, expected in expected_root.items():
+        if not type_exact_equal(root[field], expected):
+            fail(f"decision-v1.{field}: canonical approval boundary drifted")
+    validate_approval_rows(root["approvals"], "decision-v1.approvals", include_recommendation=True)
+
+
+def validate_handoff_v4(document: Any) -> None:
+    root = exact_keys(
+        document,
+        {
+            "documentType", "schemaVersion", "handoffId", "supersedesPath", "profileId",
+            "selectionDecisionPath", "preNetworkApprovalDecisionPath", "controlledSpikeReviewPath",
+            "controlledSpikeDecisionPath", "status", "productionDesignStatus", "measurementStatus",
+            "activeProtocolNamespace", "authorization", "packages", "preNetworkDecisions",
+            "controlledSpikeApprovals", "nextDecision", "immutability",
+        },
+        "handoff-v4",
+    )
+    expected_root = {
+        "documentType": "aetherlink.p2p-nat-bounded-handoff",
+        "schemaVersion": "1.0",
+        "handoffId": "production_p2p_nat_v1_handoff_v4",
+        "supersedesPath": "handoff-v3.json",
+        "profileId": "production_p2p_nat_v1_recommended",
+        "selectionDecisionPath": "../selection-decision.json",
+        "preNetworkApprovalDecisionPath": "../pre-network/decision-v1.json",
+        "controlledSpikeReviewPath": "../controlled-network-spike/review-v1.json",
+        "controlledSpikeDecisionPath": "../controlled-network-spike/decision-v1.json",
+        "status": "closed",
+        "productionDesignStatus": "not_implemented",
+        "measurementStatus": "not_started",
+        "activeProtocolNamespace": ["route.refresh"],
+        "authorization": HANDOFF_AUTHORIZATION,
+        "nextDecision": {
+            "status": "required_after_phase_a_evidence_before_socket_execution",
+            "requiredEvidence": PHASE_A_EVIDENCE,
+            "networkIOAllowedBeforeDecision": False,
+            "socketExecutionAuthorizedBeforeDecision": False,
+        },
+        "immutability": {
+            "recordState": "closed",
+            "amendmentPolicy": "supersede_with_new_versioned_handoff",
+        },
+    }
+    for field, expected in expected_root.items():
+        if not type_exact_equal(root[field], expected):
+            fail(f"handoff-v4.{field}: canonical bounded handoff drifted")
+
+    source_handoff = parse_json(HANDOFF_PATH.read_text(encoding="utf-8"), "handoff-v3")
+    packages = root["packages"]
+    if not isinstance(packages, list) or len(packages) != 3:
+        fail("handoff-v4.packages: expected exactly three packages")
+    if not type_exact_equal(packages[:2], source_handoff["packages"][:2]):
+        fail("handoff-v4.packages: completed handoff-v3 evidence drifted")
+    spike = exact_keys(
+        packages[2],
+        {
+            "packageId", "authorizationStatus", "executionStatus", "executionAuthorized",
+            "selectedOptions", "phaseA", "phaseB",
+        },
+        "handoff-v4 controlled-network-spike",
+    )
+    expected_spike = {
+        "packageId": "controlled-network-spike",
+        "authorizationStatus": "authorized_phase_a_evidence_only",
+        "executionStatus": "not_started",
+        "executionAuthorized": True,
+        "selectedOptions": RECOMMENDATIONS,
+        "phaseA": PHASE_A_CONTRACT,
+        "phaseB": PHASE_B_CONTRACT,
+    }
+    if not type_exact_equal(spike, expected_spike):
+        fail("handoff-v4 controlled-network-spike phase boundary drifted")
+    if not type_exact_equal(root["preNetworkDecisions"], source_handoff["preNetworkDecisions"]):
+        fail("handoff-v4 pre-network decisions drifted from handoff-v3")
+    validate_approval_rows(
+        root["controlledSpikeApprovals"],
+        "handoff-v4.controlledSpikeApprovals",
+        include_recommendation=False,
+    )
+
+
 def validate_markdown(raw: bytes) -> None:
     text = raw.decode("utf-8")
     headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
@@ -526,18 +723,80 @@ def validate_markdown(raw: bytes) -> None:
             fail(f"review-v1.md: forbidden claim {snippet!r}")
 
 
+def validate_decision_markdown(raw: bytes) -> None:
+    text = raw.decode("utf-8")
+    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
+    if headings != [
+        "Closed Decision",
+        "Phase A Authorization",
+        "Closed Execution Gates",
+        "Required Evidence",
+        "Next Gate",
+    ]:
+        fail(f"decision-v1.md: heading order drifted; got {headings}")
+    required = (
+        "explicit user instruction", "all four", "bounded phase A evidence",
+        "libjuice-1.7.2-static-c-abi", "platform-native-p256-hkdf-sha256-aes256gcm",
+        "linux-netns-twin-agent-local-services", "numeric-endpoint-allowlist-plus-os-egress-witness",
+        "offline source inspection", "sourceAcquisitionNetworkIOAllowed=false",
+        "controlledSpikeNetworkIOAllowed=false", "controlledSpikeSocketExecutionAuthorized=false",
+        "phaseBExecutionAuthorized=false", "productionDeploymentAuthorized=false",
+        "separate versioned decision",
+    )
+    for snippet in required:
+        if snippet.lower() not in text.lower():
+            fail(f"decision-v1.md: missing {snippet!r}")
+    for snippet in (
+        "controlledSpikeNetworkIOAllowed=true", "controlledSpikeSocketExecutionAuthorized=true",
+        "phaseBExecutionAuthorized=true", "productionDeploymentAuthorized=true", "production ready",
+    ):
+        if snippet.lower() in text.lower():
+            fail(f"decision-v1.md: forbidden claim {snippet!r}")
+
+
+def validate_handoff_v4_markdown(raw: bytes) -> None:
+    text = raw.decode("utf-8")
+    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
+    if headings != [
+        "Closed Status", "Preserved Evidence", "Authorized Phase A",
+        "Closed Network Boundary", "Next Decision",
+    ]:
+        fail(f"handoff-v4.md: heading order drifted; got {headings}")
+    required = (
+        "supersedes `handoff-v3`", "not_implemented", "route.refresh",
+        "inspect and hash-pin", "user out of band", "sourceAcquisitionNetworkIOAllowed=false",
+        "without sockets", "may not execute",
+        "controlledSpikeNetworkIOAllowed=false", "controlledSpikeSocketExecutionAuthorized=false",
+        "phaseBExecutionAuthorized=false", "productionDeploymentAuthorized=false",
+        "separate versioned decision",
+    )
+    for snippet in required:
+        if snippet.lower() not in text.lower():
+            fail(f"handoff-v4.md: missing {snippet!r}")
+    for snippet in (
+        "controlledSpikeNetworkIOAllowed=true", "controlledSpikeSocketExecutionAuthorized=true",
+        "phaseBExecutionAuthorized=true", "productionDeploymentAuthorized=true", "production ready",
+    ):
+        if snippet.lower() in text.lower():
+            fail(f"handoff-v4.md: forbidden claim {snippet!r}")
+
+
 def main() -> int:
     try:
         validate_source_handoff()
         document = parse_json(REVIEW_PATH.read_text(encoding="utf-8"), "review-v1.json")
         validate_document(document)
         validate_markdown(MARKDOWN_PATH.read_bytes())
+        validate_decision(parse_json(DECISION_PATH.read_text(encoding="utf-8"), "decision-v1.json"))
+        validate_decision_markdown(DECISION_MARKDOWN_PATH.read_bytes())
+        validate_handoff_v4(parse_json(CURRENT_HANDOFF_PATH.read_text(encoding="utf-8"), "handoff-v4.json"))
+        validate_handoff_v4_markdown(CURRENT_HANDOFF_MARKDOWN_PATH.read_bytes())
         for path, expected in GENERATED_ARTIFACT_SHA256.items():
             validate_file_hash(path, expected)
     except (OSError, UnicodeError, ReviewValidationError) as error:
         print(f"P2P/NAT controlled-spike review check failed: {error}", file=sys.stderr)
         return 1
-    print("P2P/NAT controlled-spike review passed (4 recommendations proposed; 0 selected; socket gate closed)")
+    print("P2P/NAT controlled-spike approval passed (4 recommendations approved for phase A; handoff-v4 closed; socket gate closed)")
     return 0
 
 

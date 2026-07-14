@@ -216,7 +216,7 @@ Rules:
 33. The client app may dismiss one long-inactivity memory summary draft without writing runtime-owned memory with `memory.summary.draft.dismiss`.
 34. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `index.documents.list`, `retrieval.query`, `source_anchor.resolve`, `citation.resolve`, `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, `trusted_source.revoke`, `chat.send`, `chat.source_attribution.resolve`, `chat.sessions.list`, `chat.messages.list`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, `memory.list`, `memory.upsert`, `memory.delete`, `memory.summary.drafts.list`, `memory.summary.draft.generate`, `memory.summary.draft.approve`, `memory.summary.draft.dismiss`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `index.documents.list`, `retrieval.query`, `source_anchor.resolve`, `citation.resolve`, `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, `trusted_source.revoke`, `chat.send`, `chat.source_attribution.resolve`, `chat.sessions.list`, `chat.messages.list`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, `memory.list`, `memory.upsert`, `memory.delete`, `memory.duplicate_suggestions.list`, `memory.semantic_duplicate_suggestions.list`, `memory.semantic_duplicate_clusters.list`, `memory.summary.drafts.list`, `memory.summary.draft.generate`, `memory.summary.draft.approve`, `memory.summary.draft.dismiss`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -975,7 +975,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 This reads runtime-host-owned session summaries. It is not a model backend request, and the client must be authenticated before it can list sessions.
 
-`chat.sessions.list.payload` accepts only `limit`, `include_archived`, `query`, and `embedding_model_id`. `limit` must be an integer, `include_archived` must be a boolean, and `query` plus `embedding_model_id` must be strings when present; malformed allowed fields return `invalid_payload` instead of being coerced or ignored. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session listing is a runtime-owned chat store query; backend/provider routing, source indexing, workspace context, and permission grants remain outside this active payload.
+An initial `chat.sessions.list.payload` accepts only `limit`, `include_archived`, `query`, and `embedding_model_id`. A continuation payload accepts only `cursor`; it must not combine the opaque cursor with any initial-request field. `limit` must be an integer, `include_archived` must be a boolean, and `query`, `embedding_model_id`, plus `cursor` must be strings when present. Cursors are nonblank and bounded to 512 UTF-8 bytes. Malformed allowed fields return `invalid_payload` instead of being coerced or ignored. Neither request shape may carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session listing is a runtime-owned chat store query; backend/provider routing, source indexing, workspace context, and permission grants remain outside this active payload.
 
 Request:
 
@@ -1003,6 +1003,7 @@ Response:
   "request_id": "req_sessions_001",
   "timestamp": "2026-06-23T09:02:06Z",
   "payload": {
+    "snapshot_count": 2,
     "sessions": [
       {
         "session_id": "default",
@@ -1035,11 +1036,27 @@ Response:
 }
 ```
 
+Clients advertising `chat.sessions.authoritative_sync.v1` receive `snapshot_count` on every accepted page and an opaque `next_cursor` when another page exists. A continuation sends only that cursor with a fresh request id:
+
+```json
+{
+  "version": 1,
+  "type": "chat.sessions.list",
+  "request_id": "req_sessions_002",
+  "timestamp": "2026-06-23T09:02:07Z",
+  "payload": {
+    "cursor": "v1.6d203dd2-6998-4263-bf20-05fdde0f7646.100.1782191047.17e44c47d4d82037df39c693da90e8e270a988dc51637351376fd4d8e7333a80"
+  }
+}
+```
+
+The runtime materializes the complete deterministic ranking once, assigns absolute search ranks before slicing, and binds the fixed-field HMAC-SHA-256 cursor to the authenticated connection, normalized owner, search mode and filters, embedding-model hint, page limit, snapshot count, snapshot id, offset, and expiry. A process restart, connection or authentication change, lifecycle mutation, expiration, eviction, noncanonical token, or authentication-code mismatch invalidates continuation instead of silently restarting from page one. Snapshots expire after 120 monotonic seconds while retaining the signed wall-clock expiry, contain at most 10,000 rows, and are limited to one per connection and eight globally. Reauthentication invalidates the current snapshot and any in-flight initial publication; a per-connection initial generation prevents an older slow request from evicting a newer snapshot. A trusted authentication response is accepted only if the exact challenge identity, device, nonce, transport binding, and advertised capabilities still match after the awaited trusted-device lookup. The client must reject duplicate session ids, cursor loops, count drift, a terminal accumulated count different from `snapshot_count`, and a `sessions`-only response after authoritative support was established; it must not publish or persist a partial full-history or search snapshot. After such a downgrade, bulk authority remains disabled until a fresh unqueried capable snapshot completes. Clients issue session-list and transcript reads in dedicated request-id namespaces. A current matching history request takes precedence over an older closed correlation; otherwise an error in either history namespace is discarded before payload validation even after bounded closed-correlation diagnostics evict the original record. Current history errors still apply normal authentication-loss handling. Clients that do not advertise the capability continue receiving the legacy `sessions`-only response.
+
 `include_archived` defaults to `false`. When it is `false`, archived sessions are omitted. When it is `true`, the runtime may return active and archived sessions with `status`; deleted sessions are never returned. Archived summaries include `archived_at` when known. `last_activity_at` remains the last chat activity timestamp, not necessarily the archive timestamp.
 
 `query` is optional. When present, the runtime filters within the authenticated device's owner scope after applying the normal active/archived/deleted lifecycle rules. `embedding_model_id` is optional and should be sent only with a real search query when the client has a selected runtime-host-local embedding model. When present, the runtime resolves that provider-qualified installed local embedding model, batch-embeds the query plus bounded owner-scoped candidate documents, and ranks candidates by cosine similarity. This remains a runtime-host operation, not a `chat.send` model override and not a direct client-to-provider request. The runtime ignores `embedding_model_id` when there is no real nonblank `query`, must not silently fall back to lexical search after an embedding failure, and must not echo the model id or vectors in response payloads. Query responses may include per-session `search` metadata with a 1-based `rank`, a bounded `snippet`, and stable `matched_fields` names such as `title`, `model`, `transcript`, `reasoning`, `attachment`, or `semantic`. Semantic search is bounded to the latest 200 lifecycle-eligible sessions, 100 stored messages per candidate, a selected-model-context-derived candidate ceiling capped at 8,192 UTF-8 bytes with a 1,024-byte fallback when metadata is absent, 256 query characters, and 16 distinct query terms. The runtime reads each owner's candidate sessions/messages from one store snapshot, gives newer messages priority within the byte budget, accepts one semantic search per connection and at most four globally, and cancels tracked inference when the connection closes. Runtime-only system context, compaction metadata, and inline attachment bytes are excluded from semantic documents. Without `embedding_model_id`, the SQLite/FTS default event-store backend continues using its deterministic lexical candidate/rank/snippet path. With a canonical lowercase Ollama artifact digest, candidate vectors persist under owner/session/canonical-model/model-fingerprint/document-fingerprint keys and can be reused after reopen; query vectors never persist. The source event sequence is revalidated in the write transaction, append/lifecycle changes invalidate rows, and cancellation is checked before commit. Providers without a strong immutable revision, including the current documented LM Studio model-list shape, continue on-demand semantic search without persistent writes. Android treats queried responses as transient search results; only unqueried list responses replace the complete locally cached runtime summary list.
 
-`limit` is optional. The runtime clamps it to an implementation-defined maximum, and `0` returns an empty result window. `title` is runtime-owned metadata when a `chat.title.request` result has been generated and saved by the runtime; otherwise it should remain a neutral placeholder such as `New chat` instead of exposing the first user prompt verbatim.
+`limit` is optional. The runtime clamps it to an implementation-defined maximum. A legacy one-page request may use `0` for an empty result window; a client advertising `chat.sessions.authoritative_sync.v1` must use a capable initial page size from 1 through 200 because a zero-sized page cannot advance an authoritative snapshot. `title` is runtime-owned metadata when a `chat.title.request` result has been generated and saved by the runtime; otherwise it should remain a neutral placeholder such as `New chat` instead of exposing the first user prompt verbatim.
 
 Runtime summaries may include processing metadata: `last_event`, `last_finish_reason`, and `last_error_code`. `last_event` describes the latest runtime-side processing event for that session, such as `done`, `cancelled`, or `error`. These fields let a client show runtime-owned processing state without making the client the durable transcript store.
 
@@ -1215,7 +1232,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 This archives a runtime-owned chat session on the runtime host. Archived sessions are omitted from the default `chat.sessions.list` response, but can be returned to authenticated clients that request `include_archived: true`. They should not be used as active memory/research context unless explicitly restored by the user.
 
-`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`. `session_id` must be a non-blank string; malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. They must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session lifecycle commands mutate runtime-owned chat store state; backend/provider routing, source indexing, workspace context, and permission grants remain outside these active payloads.
+Single-session `chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`. `session_id` must be a non-blank string; malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. A client that has advertised `chat.sessions.authoritative_sync.v1` and received an authoritative list response may instead send the bounded bulk archive shape `{ "scope": "all_active", "limit": 200 }` or bulk delete shape `{ "scope": "all_archived", "limit": 200 }`. `limit` is optional and bounded to `1...200`; bulk restore is not defined. The runtime derives the target set from the authenticated owner scope and never accepts client session ids as the definition of “all.” Before either single-session or bulk mutation commits, the runtime revalidates request-task cancellation, exact owner scope, authentication generation, authenticated session, and, for bulk, authoritative-sync capability under the lifecycle lock; reauthentication, connection closure, owner change, or capability downgrade fails closed. Connection closure cancels tracked request tasks instead of retaining permanent per-connection tombstones. No lifecycle payload may carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session lifecycle commands mutate runtime-owned chat store state; backend/provider routing, source indexing, workspace context, and permission grants remain outside these active payloads.
 
 Request:
 
@@ -1230,6 +1247,39 @@ Request:
   }
 }
 ```
+
+Runtime-authoritative bulk archive request and acknowledgement:
+
+```json
+{
+  "version": 1,
+  "type": "chat.session.archive",
+  "request_id": "req_archive_all_001",
+  "timestamp": "2026-06-23T09:03:01Z",
+  "payload": {
+    "scope": "all_active",
+    "limit": 200
+  }
+}
+```
+
+```json
+{
+  "version": 1,
+  "type": "chat.session.archive",
+  "request_id": "req_archive_all_001",
+  "timestamp": "2026-06-23T09:03:01Z",
+  "payload": {
+    "scope": "all_active",
+    "status": "archived",
+    "affected_count": 200,
+    "remaining_count": 12,
+    "completed_at": "2026-06-23T09:03:01Z"
+  }
+}
+```
+
+Each bulk request selects one deterministic owner-scoped batch and commits that batch atomically. When `remaining_count` is positive, the client may send a new request id for the next batch. The client must not optimistically mutate runtime-owned rows, automatically retry a request whose delivery is ambiguous, or treat a partial response as success. A lost, malformed, stale, or failed acknowledgement requires a fresh authoritative list reconciliation. A terminal acknowledgement may update local-only presentation and must then be followed by a complete unqueried paginated refresh.
 
 Acknowledgement:
 
@@ -1271,7 +1321,7 @@ Acknowledgement payload:
 }
 ```
 
-`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` acknowledgement payloads accept only `session_id`, `status`, `archived_at`, `restored_at`, and `deleted_at`. Runtime lifecycle acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata.
+Single-session `chat.session.archive`, `chat.session.restore`, and `chat.session.delete` acknowledgement payloads accept only `session_id`, `status`, `archived_at`, `restored_at`, and `deleted_at`. Bulk archive/delete acknowledgements accept only `scope`, `status`, `affected_count`, `remaining_count`, and `completed_at`; `all_active` binds to `archived`, and `all_archived` binds to `deleted`. Runtime lifecycle acknowledgements must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, tool results, retrieval context, or direct-store metadata.
 
 ## `chat.session.delete`
 
@@ -1296,6 +1346,8 @@ Acknowledgement payload:
   "deleted_at": "2026-06-23T09:05:00Z"
 }
 ```
+
+The bulk delete request uses `{ "scope": "all_archived", "limit": 200 }` and returns `status: "deleted"` with nonnegative `affected_count`, nonnegative `remaining_count`, and RFC 3339 `completed_at`. The same bounded batching, no-optimistic-mutation, no-automatic-retry, and mandatory reconciliation rules apply.
 
 ## `chat.cancel`
 
@@ -1452,6 +1504,136 @@ Response:
 ```
 
 When `query` is nonblank, returned entries include `search.rank`, a bounded `search.snippet`, and `search.matched_fields`. Search metadata is response-only and must not be persisted by clients as memory content. Semantic results use the existing `content` matched-field shape and do not expose model, vector, cache, or source-revision metadata. Lexical matches may still include `source_title`, `source_range`, or `source_excerpt` when the query matches source audit metadata.
+
+### `memory.duplicate_suggestions.list`
+
+Returns bounded, review-only suggestions for runtime-owned memory entries whose stored `content` is byte-for-byte identical. The command is authenticated, owner-scoped, and available only to a connection that advertised `memory.duplicate_suggestions.v1` in `hello.client_capabilities`. It is not semantic clustering, does not call an embedding or chat model, and never merges, edits, enables, disables, or deletes memory.
+
+The request payload is empty. Unknown request fields return `invalid_payload` before memory-store access.
+
+```json
+{
+  "version": 1,
+  "type": "memory.duplicate_suggestions.list",
+  "request_id": "req_memory_duplicates_001",
+  "timestamp": "2026-07-14T07:00:00Z",
+  "payload": {}
+}
+```
+
+The production JSONL runtime reads at most 8 MiB of memory event-log input for this operation, considers at most the latest 200 entries for the authenticated owner, and fails closed if the selected candidates exceed 1 MiB of stored UTF-8 content. Content has already passed the memory store's outer-whitespace trimming boundary; this operation performs no additional case folding, inner-whitespace normalization, Unicode normalization, tokenization, or similarity thresholding. `truncated` is `true` when the owner has more entries than were scanned. IDs within each group are unique and sorted by unsigned UTF-8 byte order, groups contain at least two IDs and are sorted by the same ordering of their first ID, and one ID cannot appear in multiple groups. Existing memory IDs remain unbounded individually for compatibility, while the aggregate UTF-8 bytes of all IDs returned in duplicate groups must not exceed 128 KiB.
+
+```json
+{
+  "version": 1,
+  "type": "memory.duplicate_suggestions.list",
+  "request_id": "req_memory_duplicates_001",
+  "timestamp": "2026-07-14T07:00:01Z",
+  "payload": {
+    "groups": [
+      {
+        "entry_ids": ["memory-1", "memory-7"]
+      }
+    ],
+    "scanned_count": 12,
+    "truncated": false
+  }
+}
+```
+
+The response payload contains exactly `groups`, `scanned_count`, and `truncated`. It must not expose memory content, content hashes, vectors, embedding or chat model identifiers, source revisions, source/audit metadata, backend/provider configuration, credentials, route material, workspace or permission state, or direct-store metadata. After storage work and before publishing IDs, the runtime rechecks both the exact authenticated session and the trusted-device public key; trust removal or same-ID key replacement fails closed without a success response. Clients enable the action only after accepting a current-authority unqueried `memory.list`; queried search results cannot grant availability. They accept only the exact pending request response, namespace duplicate-scan request IDs so every noncurrent namespaced error is discarded before global authentication handling even after bounded correlation-history eviction, keep suggestions transient, and validate every returned ID against that authoritative memory list. They disable the feature for the current authority when the runtime returns correlated `unknown_message_type` or `unsupported_operation`, and clear suggestions on a new scan, memory mutation, authoritative memory refresh, disconnect, authentication loss, or channel replacement. Suggestions are review aids only; any later removal remains an explicit existing `memory.delete` action.
+
+### `memory.semantic_duplicate_suggestions.list`
+
+Returns bounded, review-only pair suggestions for approved runtime memory whose full trimmed content is similar under one explicitly selected installed runtime-host-local embedding model. This is a separate operation negotiated by `memory.semantic_duplicate_suggestions.v1`; it does not widen or reinterpret exact `memory.duplicate_suggestions.v1`. Similarity is non-transitive, so the response is a list of pairs rather than clusters. The same memory ID may appear in multiple distinct pairs.
+
+```json
+{
+  "version": 1,
+  "type": "memory.semantic_duplicate_suggestions.list",
+  "request_id": "req_memory_semantic_duplicates_001",
+  "timestamp": "2026-07-14T09:00:00Z",
+  "payload": {
+    "embedding_model_id": "ollama:nomic-embed-text",
+    "minimum_similarity_basis_points": 9000
+  }
+}
+```
+
+The request payload is closed to the two required fields above. `embedding_model_id` is a nonblank provider-qualified string of at most 256 Unicode code points. `minimum_similarity_basis_points` is an exact JSON integer from 8000 through 10000; booleans, strings, fractional numbers, and integral floating-point spellings are invalid. Standard JSON Schema treats mathematically integral spellings such as `9000.0` as integers, so the schema carries `x-aetherlink-wire-kind: exact-json-integer-token` and transport codecs must preserve and enforce the original number token kind. The runtime rejects missing, nonlocal, nonembedding, or uninstalled models without lexical or exact-scan fallback.
+
+The host reads at most 8 MiB of the authenticated owner's production memory event log and considers only the latest 200 persisted entries, including enabled and disabled entries. Generated drafts, source excerpts, and audit text are not candidates. A candidate is omitted rather than prefixed when its full trimmed content is blank, exceeds the selected model document limit, or would exceed the 1 MiB selected-content budget. Embedding calls contain at most 64 documents and 262,144 UTF-8 bytes, and returned vectors are limited to 65,536 dimensions. Providers with a strong immutable model fingerprint may reuse owner/model/document/source-revision-bound cached vectors; weak-revision providers run on demand without durable cache reuse and fail closed when the selected candidates would require more than one embedding batch. The runtime shares the existing one-semantic-operation-per-connection and four-global-operation limit.
+
+Byte-identical stored-content pairs are excluded because the exact operation already reports them. Cosine similarity is normalized with finite, dimension-consistent vectors and quantized to integer basis points. At most 100 unique pairs are returned. IDs inside each pair use unsigned UTF-8 order; pairs use score descending, then both IDs in unsigned UTF-8 order. Returned ID bytes are capped at 128 KiB. `scanned_count` and `omitted_count` are each bounded to 0...200, and `truncated` reports candidate or pair truncation.
+
+```json
+{
+  "version": 1,
+  "type": "memory.semantic_duplicate_suggestions.list",
+  "request_id": "req_memory_semantic_duplicates_001",
+  "timestamp": "2026-07-14T09:00:01Z",
+  "payload": {
+    "pairs": [
+      {
+        "entry_ids": ["memory-1", "memory-7"],
+        "similarity_basis_points": 9342
+      }
+    ],
+    "scanned_count": 12,
+    "omitted_count": 1,
+    "truncated": false
+  }
+}
+```
+
+The response payload contains exactly `pairs`, `scanned_count`, `omitted_count`, and `truncated`; each pair contains exactly `entry_ids` and `similarity_basis_points`. It never exposes content, vectors, model identifiers or fingerprints, cache state, source revisions, provider configuration, source/audit metadata, credentials, route material, workspace state, or permission state. After inference, the runtime rechecks the selected model identity and source revisions, retrying once on drift. Final publication holds an atomic trusted-device actor snapshot, the selected model's latest runtime-observed descriptor generation, the exact authentication generation/session, and a lifecycle lock that serializes the final source-identity read with runtime-owned memory upsert, delete, and summary approval. Model generations use resolved canonical provider-qualified identities, retain no failed lookup, and cap observed valid states at 256 with fail-closed eviction. The model token covers runtime catalog observations; this no-device contract does not claim live-provider state or quality between provider observations.
+
+Android makes the semantic action available only after a current-authority unqueried `memory.list` and selection of an installed runtime-host-local embedding model. It correlates request ID, channel identity, connection generation, authority generation, model ID, and integer threshold; a response score below that correlated threshold or an ID absent from the current authoritative list fails closed. Semantic state is transient and separate from exact suggestions and device persistence. A new semantic scan, model change, memory mutation, authoritative refresh, disconnect, authentication loss, or channel replacement clears it. Correlated `unknown_message_type` or `unsupported_operation` disables only the semantic capability for that authority. There is no automatic merge, edit, enable, disable, delete, lexical fallback, or first-version cancel operation.
+
+### `memory.semantic_duplicate_clusters.list`
+
+Returns bounded, review-only complete-link clusters under the independently negotiated `memory.semantic_duplicate_clusters.v1` capability. This operation does not reinterpret exact duplicate groups or the existing non-transitive semantic-pair response. The request is exactly the same provider-qualified installed runtime-host-local embedding model plus exact JSON integer 8000...10000 threshold used by semantic pair review.
+
+```json
+{
+  "version": 1,
+  "type": "memory.semantic_duplicate_clusters.list",
+  "request_id": "req_memory_semantic_clusters_001",
+  "timestamp": "2026-07-14T10:00:00Z",
+  "payload": {
+    "embedding_model_id": "ollama:nomic-embed-text",
+    "minimum_similarity_basis_points": 9000
+  }
+}
+```
+
+The host uses the same owner-scoped latest-200 candidate set, 8 MiB event-log cap, 1 MiB selected-content cap, full-document admission, 64-document and 262,144-byte embedding batches, 65,536-dimension vector cap, strong-revision cache keys, weak-revision one-batch rule, and semantic-operation concurrency slots as pair review. It scores every admitted byte-nonexact pair before any pair-response limit is applied. Exact-content pairs are ineligible because exact duplicate review owns them.
+
+Clustering is deterministic complete-link agglomeration. It starts with singleton candidates ordered by unsigned UTF-8 ID bytes. A merge is eligible only when every cross-cluster pair meets the threshold and is byte-nonexact. At each step the host selects the eligible merged cluster with the greatest minimum internal similarity; ties use the complete canonical merged ID array. Singletons are omitted. Consequently every two entries returned in one cluster directly meet the request threshold; threshold chains cannot place dissimilar endpoints together.
+
+```json
+{
+  "version": 1,
+  "type": "memory.semantic_duplicate_clusters.list",
+  "request_id": "req_memory_semantic_clusters_001",
+  "timestamp": "2026-07-14T10:00:01Z",
+  "payload": {
+    "clusters": [
+      {
+        "entry_ids": ["memory-1", "memory-4", "memory-7"],
+        "minimum_similarity_basis_points": 9124
+      }
+    ],
+    "scanned_count": 12,
+    "omitted_count": 1,
+    "truncated": false
+  }
+}
+```
+
+The response payload contains exactly `clusters`, `scanned_count`, `omitted_count`, and `truncated`. Each cluster contains exactly two through 200 canonical unique `entry_ids` and an exact integer `minimum_similarity_basis_points`; IDs cannot repeat across clusters. At most 100 clusters and 128 KiB of aggregate ID bytes are returned. Clusters order by minimum score descending and then the full canonical ID array. `truncated` reports candidate/source omission; a response-bound overflow fails closed instead of returning a partial cluster partition.
+
+The operation reuses semantic pair review's selected-model/source retry, atomic trusted-device snapshot, canonical observed-model generation, exact authentication generation/session, and final memory-mutation lifecycle lock. It returns no content, vectors, model/cache/source identity, backend, credential, route, workspace, permission, or audit metadata and never mutates memory. Android correlates the exact channel, connection authority, selected model, and threshold; validates every ID against the current unqueried authoritative memory list; rejects below-threshold scores, repeated or unknown IDs, byte-identical members, and stale model or authority responses; and keeps cluster state transient. Unsupported cluster operation disables only this capability. New scans, model changes, memory mutations or authoritative refreshes, disconnect, authentication loss, and channel replacement clear the result. Manual existing row controls remain the only mutation path.
 
 ### `memory.upsert`
 
@@ -1768,7 +1950,7 @@ Response:
 
 Runtime-side chat history and basic memory CRUD are active. The broader namespaces below remain reserved until their product, privacy, and permission models are designed.
 
-- Advanced memory: `memory.search`, automatic or unreviewed memory extraction, memory reflection, embedding-backed recall, memory compaction, richer dismiss/review policy, and project-scoped memory. Explicit review-required long-inactivity summary generation is active, but archived sessions remain excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
+- Advanced memory: `memory.search`, automatic or unreviewed memory extraction, live-model cluster-threshold calibration, memory reflection, embedding-backed recall, memory compaction, richer dismiss/review policy, and project-scoped memory. Exact byte-identical groups, model-dependent review-only semantic pairs, deterministic complete-link review-only semantic clusters, and explicit review-required long-inactivity summary generation are active; none performs automatic merge or unreviewed extraction. Live-model calibration and automatic merge policy remain future work. Archived sessions remain excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
 - Session compaction: known model context windows now use conservative UTF-8/framing accounting, a bounded output reserve, a hard input budget, adaptive oldest-whole-turn compaction, fixed runtime provenance plus an untrusted assistant historical summary, a bounded same-model LLM summary prepass with deterministic fallback, an owner/session/model/policy-scoped durable sidecar cache with exact full-lineage reuse and strict-prefix incremental evolution committed only after successful primary completion, request-bound `adaptive_backend_only_summary_v3` source fingerprints, append-only effective terminal resolution, and pre-backend `chat_context_window_exceeded` rejection. Missing context-window metadata retains the legacy 24,000-character heuristic; v1/v2, the previous v3 summary policy, and resolution-free events remain readable. Provider-tokenizer parity and richer context-window policies remain future work. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
 - Embeddings/research: reserve the `embeddings.` namespace, keep `retrieval.query` as the only active document retrieval message with legacy lexical and explicit approved semantic modes, reserve unsupported `retrieval.*` beyond it, keep `index.documents.list` as the only active `index.*` catalog message, and reserve `research.*`. `citation.resolve` is the only active `citation.*` message; `source_anchor.resolve` is the only active `source_anchor.*` message; `chat.source_attribution.resolve` is the only active `chat.source_attribution.*` message; and `trusted_source.approve`, `trusted_source.dismiss`, `trusted_source.list`, and `trusted_source.revoke` are the only active `trusted_source.*` messages. Every other message in those namespaces, including `citation.sources.list` and `source_anchor.metadata.get`, remains reserved, as does `source_control.*`. `retrieval.query` returns canonical source anchors without paths, while the active citation flow adds only opaque revision-bound handles and authenticated-device `chat_context` grants. Embedding models remain separate from chat models. Protocol schema hygiene rejects unsupported namespace entries while validating the exact active citation and trusted-source request/response unions.
 - Compatibility wording: the current `chat.sessions.list` and `memory.list` `embedding_model_id` hints are consumed by bounded semantic ranking; Android retries only a strict unknown-field rejection from an older memory runtime without the hint, while deterministic lexical fallbacks and `retrieval.query` remain available.

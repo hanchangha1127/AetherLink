@@ -51,6 +51,14 @@ public actor TrustedDeviceStore {
         try save(try load().filter { $0.id != deviceID })
     }
 
+    public func withTrustedDeviceSnapshot<Result: Sendable>(
+        deviceID: String,
+        operation: @Sendable (TrustedDevice?) throws -> Result
+    ) throws -> Result {
+        let device = try load().first { $0.id == deviceID }
+        return try operation(device)
+    }
+
     private func save(_ devices: [TrustedDevice]) throws {
         try secureDirectory()
         try encoder.encode(devices).write(to: fileURL, options: [.atomic])

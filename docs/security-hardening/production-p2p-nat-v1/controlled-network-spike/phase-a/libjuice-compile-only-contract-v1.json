@@ -1,0 +1,289 @@
+{
+  "documentType": "aetherlink.p2p-nat-libjuice-compile-only-contract",
+  "schemaVersion": "1.0",
+  "contractId": "production_p2p_nat_v1_libjuice_compile_only_contract_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceReview": {
+    "path": "../review-v1.json",
+    "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+    "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62"
+  },
+  "sourceDecision": {
+    "path": "../decision-v1.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+    "sha256": "1fd24be7252e25381552d1732c5282f141ef0e9b02118f8c65b246b81a055228"
+  },
+  "sourceHandoff": {
+    "path": "../../implementation/handoff-v4.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v4",
+    "sha256": "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd"
+  },
+  "offlineSourceIntake": {
+    "path": "offline-source-intake-v1.json",
+    "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v1",
+    "sha256": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850",
+    "requiredBeforeReviewedManifest": true,
+    "currentDeclaredStatus": "blocked_missing_offline_source",
+    "sourcePresence": "absent",
+    "auditStatus": "not_started",
+    "compileStatus": "not_started",
+    "linkedArtifactPresent": true,
+    "linkageRule": "this_hash_pins_only_the_canonical_blocked_intake_supersede_with_a_new_version_that_pins_the_completed_reviewed_intake_before_any_compile_invocation"
+  },
+  "currentStatus": {
+    "android_macos_compile_only_integration": "blocked_missing_reviewed_source",
+    "executionStatus": "not_executed",
+    "evidenceStatus": "absent",
+    "compilationEvidence": [],
+    "recordedEnvironmentSnapshot": {
+      "recordedAt": "2026-07-13",
+      "scope": "creation_time_filesystem_observation_not_revalidated_by_static_contract_checker",
+      "libjuiceSourcePresent": false,
+      "libjuiceHeaderPresent": false,
+      "nativeBuildIntegrationPresent": false,
+      "androidNdkInstalled": false,
+      "androidCmakeInstalled": false,
+      "appleClangPresent": true,
+      "compilationEvidencePresent": false
+    }
+  },
+  "authorization": {
+    "contractDefinitionAuthorized": true,
+    "compileOnlyIntegrationAuthorizedByApprovalChain": true,
+    "currentCompilerInvocationAuthorized": false,
+    "currentArchiveInvocationAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "sourceExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "testExecutableBuildAllowed": false,
+    "testExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "dnsAllowed": false,
+    "proxyAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "reviewedSourceManifestPrerequisite": {
+    "required": true,
+    "currentStatus": "absent",
+    "approvalRequiredBeforeCompilation": true,
+    "manifestMustPinExactKeys": [
+      "upstreamRepositoryIdentity",
+      "releaseTag",
+      "commitSha",
+      "archiveSha256",
+      "sourceTreeSha256",
+      "licenseFilePathsAndSha256",
+      "orderedSourceFilesAndSha256",
+      "orderedPublicHeadersAndSha256",
+      "orderedPrivateHeadersAndSha256",
+      "generatedFilesAndSha256",
+      "transitiveDependencyClosure",
+      "exactBuildDefines",
+      "exactIncludeDirectories",
+      "exactCompilerFlags",
+      "exactSymbolExportAllowlist",
+      "androidNdkVersionAndPackageSha256",
+      "androidToolPathsAndSha256",
+      "macosClangSdkToolPathsAndSha256"
+    ],
+    "sourceDiscovery": "ordered_manifest_entries_only",
+    "globDiscoveryAllowed": false,
+    "directoryScanDiscoveryAllowed": false,
+    "implicitSourceFilesAllowed": false,
+    "implicitBuildDefinesAllowed": false,
+    "manifestHashRequired": true,
+    "independentReviewRequired": true,
+    "failureRule": "remain_blocked_missing_reviewed_source"
+  },
+  "futureCompilationContract": {
+    "activationRule": "new_versioned_contract_after_completed_intake_and_reviewed_exact_source_manifest_hash_pins",
+    "strategy": "direct_compile_each_exact_source_then_static_archive",
+    "compileMode": "compile_only_c11",
+    "compileInvocation": "one_direct_compiler_dash_c_invocation_per_ordered_manifest_source",
+    "archiveInvocation": "one_static_archive_created_from_the_exact_ordered_object_list",
+    "symbolInspection": "nm_over_static_archive_without_loading_or_executing_code",
+    "configureAllowed": false,
+    "cmakeExecutionAllowed": false,
+    "gradleNativeBuildWiringAllowed": false,
+    "swiftPackageManagerWiringAllowed": false,
+    "testExecutableLinkAllowed": false,
+    "sourceExecutionAllowed": false,
+    "ctestAllowed": false,
+    "nativeTestsAllowed": false,
+    "smokeExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "networkIOAllowed": false,
+    "dnsAllowed": false,
+    "proxyAllowed": false,
+    "environmentProxyAllowed": false,
+    "urlFetchAllowed": false,
+    "redirectAllowed": false,
+    "sourceOrder": "exact_reviewed_manifest_order",
+    "buildDefines": "exact_reviewed_manifest_values_only",
+    "failureRule": "fail_closed_without_fallback_download_configure_link_or_execution"
+  },
+  "platformMatrix": {
+    "android": {
+      "minimumSdk": 26,
+      "proofMode": "compile_objects_archive_and_nm_only",
+      "abis": [
+        {
+          "abi": "arm64-v8a",
+          "targetTriple": "aarch64-linux-android26"
+        },
+        {
+          "abi": "x86_64",
+          "targetTriple": "x86_64-linux-android26"
+        }
+      ],
+      "requiredExactPins": [
+        "ndkVersion",
+        "ndkPackageSha256",
+        "clangPath",
+        "clangSha256",
+        "llvmArPath",
+        "llvmArSha256",
+        "llvmNmPath",
+        "llvmNmSha256",
+        "sysrootPath",
+        "sysrootDigest",
+        "orderedSourceFilesAndSha256",
+        "orderedObjectFiles",
+        "exactBuildDefines",
+        "exactIncludeDirectories",
+        "exactCompilerFlags"
+      ],
+      "sameCAbiRequiredAcrossAbis": true
+    },
+    "macos": {
+      "minimumDeploymentTarget": "14.0",
+      "proofMode": "compile_objects_archive_and_nm_only",
+      "architectures": [
+        {
+          "architecture": "arm64",
+          "target": "arm64-apple-macos14.0"
+        },
+        {
+          "architecture": "x86_64",
+          "target": "x86_64-apple-macos14.0"
+        }
+      ],
+      "requiredExactPins": [
+        "appleClangVersion",
+        "clangPath",
+        "clangSha256",
+        "arPath",
+        "arSha256",
+        "nmPath",
+        "nmSha256",
+        "sdkVersion",
+        "sdkPath",
+        "sdkDigest",
+        "orderedSourceFilesAndSha256",
+        "orderedObjectFiles",
+        "exactBuildDefines",
+        "exactIncludeDirectories",
+        "exactCompilerFlags"
+      ],
+      "sameCAbiRequiredAcrossArchitectures": true
+    },
+    "crossPlatformRule": "one_identical_versioned_c_abi_and_export_allowlist_for_all_four_targets"
+  },
+  "abiBoundary": {
+    "language": "c11",
+    "opaqueHandleRule": "public_header_exposes_only_incomplete_struct_pointer_handles",
+    "fixedWidthIntegerRule": "cross_boundary_integer_fields_use_stdint_fixed_width_types_only",
+    "bufferRule": "every_buffer_is_pointer_plus_explicit_size_t_length_with_no_sentinel_or_implicit_length",
+    "numericEndpointRule": "endpoint_input_is_numeric_address_family_packed_address_bytes_and_uint16_port_only_no_hostname_url_or_route_token",
+    "allocatorOwnershipRule": "creator_owned_handles_have_explicit_destroy_and_each_buffer_has_one_documented_allocator_and_release_owner",
+    "callbackThreadingRule": "callbacks_identify_the_single_documented_callback_thread_and_must_not_reenter_destroy_or_transfer_ownership",
+    "cancellationRule": "cancel_is_idempotent_nonblocking_and_followed_by_bounded_teardown_before_destroy_returns",
+    "teardownRule": "destroy_unregisters_callbacks_releases_owned_memory_and_permits_no_callback_after_return",
+    "errorRule": "errors_are_int32_t_numeric_codes_in_the_closed_range_0_through_255_with_unknown_mapped_to_255",
+    "symbolVisibilityRule": "compile_with_hidden_visibility_by_default_and_export_only_the_exact_allowlist",
+    "exactExportAllowlist": [
+      "aetherlink_juice_abi_version",
+      "aetherlink_juice_context_create",
+      "aetherlink_juice_context_cancel",
+      "aetherlink_juice_context_destroy",
+      "aetherlink_juice_agent_create",
+      "aetherlink_juice_agent_set_numeric_endpoint",
+      "aetherlink_juice_agent_cancel",
+      "aetherlink_juice_agent_destroy",
+      "aetherlink_juice_buffer_release",
+      "aetherlink_juice_error_string"
+    ],
+    "routeTokenAuthorityAllowed": false,
+    "applicationPayloadAuthorityAllowed": false,
+    "routeTokenBoundaryRule": "routeToken_must_not_cross_or_configure_the_c_abi_boundary",
+    "applicationPayloadBoundaryRule": "the_adapter_must_not_accept_interpret_authorize_encrypt_decrypt_or_emit_application_payload"
+  },
+  "outputPolicy": {
+    "allowedArtifactClasses": [
+      "object_file",
+      "static_archive",
+      "nm_symbol_report",
+      "content_free_command_tool_source_digest_log"
+    ],
+    "contentFreeLogExactKeys": [
+      "targetId",
+      "stepId",
+      "commandTemplateSha256",
+      "toolSha256",
+      "sourceManifestSha256",
+      "sourceFileSha256",
+      "objectFileSha256",
+      "archiveSha256",
+      "symbolReportSha256",
+      "exitCode",
+      "diagnosticDigest"
+    ],
+    "rawCommandLineRetentionAllowed": false,
+    "environmentRetentionAllowed": false,
+    "sourceContentRetentionAllowed": false,
+    "applicationContentRetentionAllowed": false,
+    "packetContentRetentionAllowed": false,
+    "executableArtifactAllowed": false,
+    "sharedLibraryArtifactAllowed": false,
+    "testArtifactAllowed": false,
+    "runtimeLogAllowed": false,
+    "maximumExitCode": 255,
+    "digestFormat": "sha256_lowercase_hex"
+  },
+  "prohibitedRepositoryArtifacts": [
+    "fabricated_juice_header",
+    "fabricated_c_adapter_header",
+    "fabricated_c_adapter_source",
+    "cmake_wiring",
+    "gradle_native_wiring",
+    "swiftpm_wiring",
+    "test_executable",
+    "runtime_smoke_harness"
+  ],
+  "transitionPolicy": {
+    "blockedStateExitRequires": [
+      "completed_offline_source_intake_with_exact_hash_pin",
+      "independently_reviewed_exact_source_manifest_with_exact_hash_pin",
+      "new_versioned_compile_only_contract",
+      "all_four_platform_targets_have_exact_tool_and_source_pins"
+    ],
+    "inPlaceStatusMutationAllowed": false,
+    "fallbackDownloadAllowed": false,
+    "fallbackLibrarySelectionAllowed": false,
+    "nextStateOnAnyMissingPin": "blocked_missing_reviewed_source",
+    "phaseBUnlockAllowed": false,
+    "productionUnlockAllowed": false
+  },
+  "immutability": {
+    "recordState": "closed",
+    "artifactHashAuthority": "script/check_p2p_nat_libjuice_compile_only.py",
+    "hashAlgorithm": "sha256",
+    "coveredArtifacts": [
+      "libjuice-compile-only-contract-v1.json",
+      "libjuice-compile-only-contract-v1.md"
+    ],
+    "amendmentPolicy": "supersede_with_new_versioned_contract_after_reviewed_source_manifest"
+  }
+}

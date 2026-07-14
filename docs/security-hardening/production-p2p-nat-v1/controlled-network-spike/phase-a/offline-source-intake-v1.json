@@ -1,0 +1,282 @@
+{
+  "documentType": "aetherlink.p2p-nat-phase-a-offline-source-intake",
+  "schemaVersion": "1.0",
+  "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceReview": {
+    "path": "../review-v1.json",
+    "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+    "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62"
+  },
+  "sourceDecision": {
+    "path": "../decision-v1.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+    "sha256": "1fd24be7252e25381552d1732c5282f141ef0e9b02118f8c65b246b81a055228"
+  },
+  "sourceHandoff": {
+    "path": "../../implementation/handoff-v4.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v4",
+    "sha256": "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd"
+  },
+  "artifactStatus": "blocked_missing_offline_source",
+  "sourcePresence": "absent",
+  "auditStatus": "not_started",
+  "compileStatus": "not_started",
+  "expectedIntakeRoot": "build/offline-source/libjuice-1.7.2",
+  "candidate": {
+    "candidateId": "libjuice-1.7.2-static-c-abi",
+    "project": "libjuice",
+    "version": "1.7.2",
+    "releaseTag": "v1.7.2",
+    "commitSha1": null,
+    "licenseCandidateSpdx": "MPL-2.0",
+    "officialUrls": {
+      "repository": "https://github.com/paullouisageneau/libjuice",
+      "releaseTag": "https://github.com/paullouisageneau/libjuice/releases/tag/v1.7.2",
+      "archive": "https://github.com/paullouisageneau/libjuice/archive/refs/tags/v1.7.2.tar.gz"
+    },
+    "officialUrlUse": "provenance_metadata_only_no_fetch"
+  },
+  "authorization": {
+    "offlineInspectionAuthorized": true,
+    "manualOfflineIntakeAuthorized": true,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "urlFetchAllowed": false,
+    "redirectFollowingAllowed": false,
+    "packageManagerAcquisitionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "buildExecutionAllowedBeforeReviewedManifest": false,
+    "compileExecutionAllowedBeforeReviewedManifest": false,
+    "processLaunchAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "dynamicImportAllowed": false
+  },
+  "intakePolicy": {
+    "discoveryMode": "exact_paths_only_no_glob_or_recursive_discovery",
+    "rootPresentDisposition": "fail_closed_require_new_reviewed_versioned_manifest",
+    "checkerRootBehavior": "reject_without_reading_or_consuming_present_root",
+    "absolutePathsAllowed": false,
+    "parentTraversalAllowed": false,
+    "backslashPathsAllowed": false,
+    "emptyPathSegmentsAllowed": false,
+    "symlinksAllowed": false,
+    "hardlinksAllowed": false,
+    "specialFilesAllowed": false,
+    "archiveExtractionByCheckerAllowed": false,
+    "generatedManifestByCheckerAllowed": false
+  },
+  "requiredFutureLayout": {
+    "originalArchive": "original/libjuice-1.7.2.tar.gz",
+    "extractedSource": "source",
+    "sourceProvenance": "source-provenance.json"
+  },
+  "requiredFutureProvenanceSchema": {
+    "topLevelKeys": [
+      "documentType",
+      "schemaVersion",
+      "candidateId",
+      "releaseTag",
+      "commitSha1",
+      "originalArchive",
+      "extractedSource",
+      "fileDigests",
+      "licenseReview",
+      "generatedFiles",
+      "dependencies",
+      "buildFlags"
+    ],
+    "documentType": "aetherlink.libjuice-offline-source-provenance",
+    "schemaVersion": "1.0",
+    "candidateId": "libjuice-1.7.2-static-c-abi",
+    "releaseTag": {
+      "value": "v1.7.2",
+      "verification": "exact_archive_and_extracted_source_match_required"
+    },
+    "commitSha1": {
+      "currentValue": null,
+      "requiredFormat": "lowercase_hex_40_non_null_in_reviewed_manifest",
+      "verification": "tag_resolution_and_extracted_source_match_required"
+    },
+    "originalArchive": {
+      "topLevelKeys": [
+        "relativePath",
+        "sha256",
+        "sizeBytes"
+      ],
+      "relativePath": "original/libjuice-1.7.2.tar.gz",
+      "sha256": null,
+      "sha256RequiredFormat": "lowercase_hex_64_non_null_in_reviewed_manifest",
+      "sizeBytes": null,
+      "sizeBytesRequiredType": "exact_positive_integer_within_limits"
+    },
+    "extractedSource": {
+      "topLevelKeys": [
+        "relativePath",
+        "treeSha256",
+        "fileCount",
+        "totalBytes"
+      ],
+      "relativePath": "source",
+      "treeSha256": null,
+      "treeDigestRule": "sha256_over_length_prefixed_utf8_relative_path_mode_size_and_file_sha256_records_in_bytewise_path_order",
+      "fileCount": null,
+      "totalBytes": null,
+      "numericFieldsRequiredType": "exact_positive_integers_within_limits"
+    },
+    "fileDigests": {
+      "topLevelKeys": [
+        "algorithm",
+        "ordering",
+        "entries"
+      ],
+      "algorithm": "sha256",
+      "ordering": "utf8_relative_path_bytes_ascending_unique",
+      "entryKeys": [
+        "path",
+        "fileType",
+        "mode",
+        "sizeBytes",
+        "sha256"
+      ],
+      "pathRule": "normalized_relative_posix_path_beneath_source_no_symlink_hardlink_or_special_file",
+      "fileType": "regular_file_only",
+      "modeRule": "four_digit_lowercase_octal_string",
+      "sizeBytesRule": "exact_non_negative_integer_within_limits",
+      "sha256": null,
+      "sha256RequiredFormat": "lowercase_hex_64_non_null_per_entry_in_reviewed_manifest"
+    },
+    "licenseReview": {
+      "topLevelKeys": [
+        "status",
+        "declaredSpdx",
+        "files"
+      ],
+      "requiredStatus": "reviewed",
+      "declaredSpdx": "MPL-2.0",
+      "fileEntryKeys": [
+        "path",
+        "sha256",
+        "classification"
+      ],
+      "filePathRule": "normalized_relative_posix_path_present_in_file_digests",
+      "fileSha256": null,
+      "classificationValues": [
+        "project_license",
+        "third_party_notice",
+        "file_level_license"
+      ]
+    },
+    "generatedFiles": {
+      "topLevelKeys": [
+        "status",
+        "entries"
+      ],
+      "requiredStatus": "reviewed",
+      "entryKeys": [
+        "path",
+        "classification",
+        "generator",
+        "generatorVersion",
+        "inputSha256",
+        "sha256"
+      ],
+      "classificationValues": [
+        "source",
+        "generated",
+        "vendored_generated"
+      ],
+      "nullableFieldsWhenClassificationIsSource": [
+        "generator",
+        "generatorVersion",
+        "inputSha256"
+      ],
+      "sha256": null,
+      "digestRule": "every_entry_must_match_file_digests"
+    },
+    "dependencies": {
+      "topLevelKeys": [
+        "status",
+        "direct",
+        "transitive"
+      ],
+      "requiredStatus": "reviewed",
+      "entryKeys": [
+        "name",
+        "version",
+        "relationship",
+        "sourcePath",
+        "sourceSha256",
+        "licenseSpdx",
+        "buildOnly"
+      ],
+      "relationshipValues": [
+        "bundled",
+        "system",
+        "toolchain"
+      ],
+      "sourcePathRule": "null_or_normalized_relative_posix_path_present_in_file_digests",
+      "sourceSha256": null,
+      "buildOnlyRequiredType": "exact_boolean"
+    },
+    "buildFlags": {
+      "topLevelKeys": [
+        "status",
+        "androidMinSdk26",
+        "macos"
+      ],
+      "requiredStatus": "reviewed",
+      "platformEntryKeys": [
+        "compiler",
+        "compilerVersion",
+        "target",
+        "cFlags",
+        "preprocessorDefinitions",
+        "linkerFlags",
+        "networkTestsEnabled",
+        "sourceExecutionAllowed"
+      ],
+      "argumentRule": "ordered_non_empty_literal_strings_no_shell_expansion_response_files_or_environment_substitution",
+      "networkTestsEnabled": false,
+      "sourceExecutionAllowed": false
+    }
+  },
+  "currentEvidence": {
+    "commitSha1": null,
+    "originalArchiveSha256": null,
+    "extractedTreeSha256": null,
+    "fileDigestSetSha256": null,
+    "sourceProvenanceSha256": null,
+    "licenseReviewResult": null,
+    "generatedFileReviewResult": null,
+    "dependencyReviewResult": null,
+    "androidBuildFlags": null,
+    "macosBuildFlags": null
+  },
+  "limits": {
+    "maximumArchiveBytes": 16777216,
+    "maximumExtractedBytes": 67108864,
+    "maximumRegularFiles": 4096,
+    "maximumSingleFileBytes": 8388608,
+    "maximumRelativePathUtf8Bytes": 240,
+    "maximumPathDepth": 16,
+    "maximumLicenseFiles": 64,
+    "maximumGeneratedFileRecords": 4096,
+    "maximumDirectDependencies": 64,
+    "maximumTransitiveDependencies": 256,
+    "maximumBuildArgumentsPerPlatform": 256,
+    "maximumBuildArgumentUtf8Bytes": 1024
+  },
+  "failurePolicy": {
+    "onExpectedRootPresent": "reject_without_consumption_and_require_new_reviewed_versioned_manifest",
+    "onSchemaOrDigestDrift": "reject_and_require_new_reviewed_versioned_manifest",
+    "onUnsafePathOrFileType": "reject_entire_intake",
+    "onLimitExceeded": "reject_entire_intake_without_relaxation",
+    "onAuditFailure": "reject_libjuice_and_open_new_versioned_fallback_review",
+    "completionClaimsAllowed": false
+  },
+  "immutability": {
+    "recordState": "blocked_canonical",
+    "amendmentPolicy": "supersede_with_new_reviewed_versioned_manifest_after_offline_intake"
+  }
+}

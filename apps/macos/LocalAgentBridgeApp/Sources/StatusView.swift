@@ -190,7 +190,11 @@ struct StatusView: View {
                 transcriptMessages: model.runtimeChatTranscriptMessages,
                 transcriptErrors: model.runtimeChatTranscriptErrors,
                 errorMessage: model.runtimeChatSessionsError,
+                retentionStatus: model.runtimeChatRetentionStatus,
                 onRefresh: model.refreshRuntimeChatSessions,
+                onRunRetentionMaintenance: {
+                    await model.runRuntimeChatRetentionMaintenance()
+                },
                 onLoadTranscriptPreview: { sessionID in
                     model.refreshRuntimeChatTranscriptPreview(sessionID: sessionID)
                 }
@@ -945,7 +949,9 @@ struct RuntimeHistoryInspectorSheet: View {
     let transcriptMessages: [String: [RuntimeChatStoredMessage]]
     let transcriptErrors: [String: String]
     let errorMessage: String?
+    let retentionStatus: CompanionRuntimeChatRetentionStatus
     let onRefresh: () -> Void
+    let onRunRetentionMaintenance: () async -> Void
     let onLoadTranscriptPreview: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var selectedSessionID: String?
@@ -995,6 +1001,11 @@ struct RuntimeHistoryInspectorSheet: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            RuntimeHistoryRetentionControl(
+                status: retentionStatus,
+                onRunMaintenance: onRunRetentionMaintenance
+            )
 
             if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
                 Label(cleanError, systemImage: "exclamationmark.triangle.fill")
@@ -1109,6 +1120,70 @@ struct RuntimeHistoryInspectorSheet: View {
         .padding(24)
         .frame(minWidth: 760, minHeight: 500)
     }
+}
+
+private struct RuntimeHistoryRetentionControl: View {
+    let status: CompanionRuntimeChatRetentionStatus
+    let onRunMaintenance: () async -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("Deleted Chat Retention", comment: ""))
+                        .font(.headline)
+                    Text(runtimeHistoryRetentionDetail(status))
+                        .font(.callout)
+                        .foregroundStyle(status.state == .failed ? .orange : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } icon: {
+                Image(systemName: status.state == .failed ? "exclamationmark.triangle" : "clock.arrow.circlepath")
+                    .foregroundStyle(status.state == .failed ? .orange : .secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+                Task { await onRunMaintenance() }
+            } label: {
+                Label(NSLocalizedString("Clean Deleted History", comment: ""), systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .disabled(status.state == .running)
+            .help(runtimeHistoryRetentionActionAccessibilityHint())
+            .accessibilityValue(Text(runtimeHistoryRetentionDetail(status)))
+            .accessibilityHint(Text(runtimeHistoryRetentionActionAccessibilityHint()))
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+func runtimeHistoryRetentionDetail(_ status: CompanionRuntimeChatRetentionStatus) -> String {
+    switch status.state {
+    case .notRun:
+        return NSLocalizedString(
+            "Deleted chats are kept for 90 days, then removed automatically from this runtime host.",
+            comment: ""
+        )
+    case .running:
+        return NSLocalizedString("Cleaning expired deleted chats.", comment: "")
+    case .completed:
+        guard status.prunedDeletedSessionCount > 0 else {
+            return NSLocalizedString("Cleanup finished. No expired deleted chats were found.", comment: "")
+        }
+        return String(
+            format: NSLocalizedString("Cleanup finished. %@ removed.", comment: ""),
+            localizedRuntimeDeletedChatCount(status.prunedDeletedSessionCount)
+        )
+    case .failed:
+        return NSLocalizedString("Cleanup failed. Check Activity and try again.", comment: "")
+    }
+}
+
+func runtimeHistoryRetentionActionAccessibilityHint() -> String {
+    NSLocalizedString("Remove chats deleted at least 90 days ago from this runtime host.", comment: "")
 }
 
 private struct RuntimeHistoryInspectorSummary: View {

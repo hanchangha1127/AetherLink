@@ -2,6 +2,7 @@ import Foundation
 
 public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
+    case integer(Int64)
     case number(Double)
     case bool(Bool)
     case object([String: JSONValue])
@@ -30,6 +31,8 @@ public enum JSONValue: Codable, Equatable, Sendable {
         switch self {
         case .string(let value):
             try container.encode(value)
+        case .integer(let value):
+            try container.encode(value)
         case .number(let value):
             try container.encode(value)
         case .bool(let value):
@@ -43,4 +46,3 @@ public enum JSONValue: Codable, Equatable, Sendable {
         }
     }
 }
-

@@ -41,7 +41,20 @@ public struct ProtocolCodec: Sendable {
     }
 
     public func decodeEnvelope(_ data: Data) throws -> ProtocolEnvelope {
-        try decoder.decode(ProtocolEnvelope.self, from: data)
+        var envelope = try decoder.decode(ProtocolEnvelope.self, from: data)
+        if [
+            MessageType.memorySemanticDuplicateSuggestionsList,
+            MessageType.memorySemanticDuplicateClustersList,
+        ].contains(envelope.type),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let payload = object["payload"] as? [String: Any],
+           let number = payload["minimum_similarity_basis_points"] as? NSNumber,
+           CFGetTypeID(number) != CFBooleanGetTypeID(),
+           !["d", "f"].contains(String(cString: number.objCType)),
+           let integer = Int64(number.stringValue) {
+            envelope.payload["minimum_similarity_basis_points"] = .integer(integer)
+        }
+        return envelope
     }
 
     public func decodeFrame(_ frame: Data) throws -> ProtocolEnvelope {

@@ -1,0 +1,169 @@
+{
+  "document_type": "aetherlink.chat-sessions-authoritative-sync-wire-smoke",
+  "schema_version": 1,
+  "capability": "chat.sessions.authoritative_sync.v1",
+  "wire_transcript": {
+    "initial_request": {
+      "limit": 1,
+      "include_archived": true
+    },
+    "active_pages": [
+      {
+        "sessions": [
+          {
+            "session_id": "wire-session-001",
+            "title": "Wire session 1",
+            "model": "ollama:llama3.1:8b",
+            "last_activity_at": "2026-07-14T00:00:01.000Z",
+            "message_count": 1,
+            "status": "active",
+            "last_event": "request"
+          }
+        ],
+        "snapshot_count": 2,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000002.1.1783987200.2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "sessions": [
+          {
+            "session_id": "wire-session-000",
+            "title": "Wire session 0",
+            "model": "ollama:llama3.1:8b",
+            "last_activity_at": "2026-07-14T00:00:00.000Z",
+            "message_count": 1,
+            "status": "active",
+            "last_event": "request"
+          }
+        ],
+        "snapshot_count": 2
+      }
+    ],
+    "archive_result": {
+      "scope": "all_active",
+      "status": "archived",
+      "affected_count": 2,
+      "remaining_count": 0,
+      "completed_at": "2026-07-14T00:10:00Z"
+    },
+    "archived_pages": [
+      {
+        "sessions": [
+          {
+            "session_id": "wire-session-001",
+            "title": "Wire session 1",
+            "model": "ollama:llama3.1:8b",
+            "last_activity_at": "2026-07-14T00:00:01.000Z",
+            "message_count": 1,
+            "status": "archived",
+            "last_event": "request",
+            "archived_at": "2026-07-14T00:10:00Z"
+          }
+        ],
+        "snapshot_count": 2,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000002.1.1783987200.3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      {
+        "sessions": [
+          {
+            "session_id": "wire-session-000",
+            "title": "Wire session 0",
+            "model": "ollama:llama3.1:8b",
+            "last_activity_at": "2026-07-14T00:00:00.000Z",
+            "message_count": 1,
+            "status": "archived",
+            "last_event": "request",
+            "archived_at": "2026-07-14T00:10:00Z"
+          }
+        ],
+        "snapshot_count": 2
+      }
+    ],
+    "delete_result": {
+      "scope": "all_archived",
+      "status": "deleted",
+      "affected_count": 2,
+      "remaining_count": 0,
+      "completed_at": "2026-07-14T00:10:00Z"
+    },
+    "final_page": {
+      "sessions": [],
+      "snapshot_count": 0
+    }
+  },
+  "session_series": {
+    "count": 201,
+    "id_prefix": "wire-session-",
+    "id_width": 3,
+    "title_prefix": "Wire session ",
+    "model": "ollama:llama3.1:8b",
+    "base_timestamp": "2026-07-14T00:00:00Z",
+    "timestamp_step_seconds": 1,
+    "message_count": 1,
+    "last_event": "request"
+  },
+  "pagination": {
+    "initial_request": {
+      "limit": 100,
+      "include_archived": true
+    },
+    "continuation_request_keys": [
+      "cursor"
+    ],
+    "pages": [
+      {
+        "offset": 0,
+        "count": 100,
+        "snapshot_count": 201,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000001.100.1783987200.0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "offset": 100,
+        "count": 100,
+        "snapshot_count": 201,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000001.200.1783987200.1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "offset": 200,
+        "count": 1,
+        "snapshot_count": 201
+      }
+    ]
+  },
+  "bulk": {
+    "limit": 200,
+    "archive": {
+      "scope": "all_active",
+      "status": "archived",
+      "batches": [
+        {
+          "affected_count": 200,
+          "remaining_count": 1
+        },
+        {
+          "affected_count": 1,
+          "remaining_count": 0
+        }
+      ]
+    },
+    "delete": {
+      "scope": "all_archived",
+      "status": "deleted",
+      "batches": [
+        {
+          "affected_count": 200,
+          "remaining_count": 1
+        },
+        {
+          "affected_count": 1,
+          "remaining_count": 0
+        }
+      ]
+    }
+  },
+  "dynamic_values": {
+    "completed_at_placeholder": "<completed_at>",
+    "archived_at_placeholder": "<archived_at>",
+    "sample_timestamp": "2026-07-14T00:10:00Z"
+  },
+  "final_snapshot_count": 0
+}

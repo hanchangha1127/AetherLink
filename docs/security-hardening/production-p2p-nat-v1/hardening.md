@@ -192,6 +192,9 @@ The immutable [pre-network approval decision](pre-network/decision-v1.md)
 selects all seven recommended policies, and `handoff-v3` supersedes
 `handoff-v2` to record that selection. It does not select a production library,
 authorize sockets or deployment, or provide network implementation evidence.
+The separate controlled-spike decision and `handoff-v4` conditionally select
+the four phase A candidates without claiming required evidence or opening any
+runtime, harness, socket, phase B, measurement, or production network gate.
 
 No recommendation closes a security gap until the selected protocol is
 implemented and revalidated on real networks and devices.
@@ -199,12 +202,15 @@ The explicit selection authorizes only the bounded handoff scope.
 
 ## Next Decisions
 
-Preserve the completed canonical-contract and no-network conformance evidence and
-keep the network gate closed until the separate library and isolated-harness
-review is explicitly selected. The closed
-[controlled-spike review v1](controlled-network-spike/review-v1.md) is the
-decision-ready source packet for that step; it proposes four recommendations,
-selects zero, and authorizes no source acquisition, implementation, or socket.
+Preserve the completed canonical-contract and no-network conformance evidence.
+The [controlled-spike review v1](controlled-network-spike/review-v1.md) remains
+the immutable source packet; it proposes four recommendations and selects zero.
+The separate [phase A approval decision](controlled-network-spike/decision-v1.md)
+and `handoff-v4` conditionally select all four for offline inspection of
+user-provided or pre-existing workspace source, compile-only,
+session-cryptography vector, and static harness/egress evidence. They authorize
+no source-acquisition network I/O, inspected-code execution, socket, runtime or
+harness network I/O, phase B, measurement, or production deployment.
 
 The [pre-network review v1](pre-network/review-v1.md) remains the immutable
 `proposed_not_selected` source packet. The separate closed approval decision
@@ -232,7 +238,7 @@ keeps network, library, socket, and deployment authorization false.
   restrictive NAT, carrier NAT, VPN, IPv4, IPv6, NAT64, Wi-Fi/cellular changes,
   suspend/resume, consent loss, TURN outage, signaling replay, and service
   compromise simulations.
-- Keep `implementation/` limited to the three closed versioned handoff pairs:
+- Keep `implementation/` limited to the four closed versioned handoff pairs:
   `handoff-v1`, its `handoff-v2` completion record, and the policy-selected
-  `handoff-v3`. Do not select a concrete
-  production library or add executable implementation code under that directory.
+  `handoff-v3`, plus the phase-A-only `handoff-v4`. Do not execute the
+  conditionally selected library or add socket-capable implementation code under that directory.

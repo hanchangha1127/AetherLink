@@ -1134,6 +1134,38 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Close Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Refresh Runtime History Inspector")
+            XCTAssertEqual(NSLocalizedString("Deleted Chat Retention", comment: ""), "Deleted Chat Retention")
+            XCTAssertEqual(NSLocalizedString("Clean Deleted History", comment: ""), "Clean Deleted History")
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(CompanionRuntimeChatRetentionStatus()),
+                "Deleted chats are kept for 90 days, then removed automatically from this runtime host."
+            )
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(CompanionRuntimeChatRetentionStatus(state: .running)),
+                "Cleaning expired deleted chats."
+            )
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 0)
+                ),
+                "Cleanup finished. No expired deleted chats were found."
+            )
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 2)
+                ),
+                "Cleanup finished. 2 deleted chats removed."
+            )
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(CompanionRuntimeChatRetentionStatus(state: .failed)),
+                "Cleanup failed. Check Activity and try again."
+            )
+            XCTAssertEqual(
+                runtimeHistoryRetentionActionAccessibilityHint(),
+                "Remove chats deleted at least 90 days ago from this runtime host."
+            )
+            XCTAssertEqual(localizedRuntimeDeletedChatCount(1), "1 deleted chat")
+            XCTAssertEqual(localizedRuntimeDeletedChatCount(2), "2 deleted chats")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "No runtime chat sessions")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "No runtime chat sessions are stored on AetherLink Runtime.")
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "Runtime history summary. %@. %@")
@@ -1193,6 +1225,15 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "런타임 기록 점검")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "런타임 기록 점검 닫기")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "런타임 기록 점검 새로 고침")
+            XCTAssertEqual(NSLocalizedString("Deleted Chat Retention", comment: ""), "삭제된 채팅 보존")
+            XCTAssertEqual(NSLocalizedString("Clean Deleted History", comment: ""), "삭제된 기록 정리")
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 2)
+                ),
+                "정리 완료: 삭제된 채팅 2개 제거됨."
+            )
+            XCTAssertEqual(localizedRuntimeDeletedChatCount(1), "삭제된 채팅 1개")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "런타임 채팅 세션 없음")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime에 저장된 런타임 채팅 세션이 없습니다.")
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "런타임 기록 요약. %@. %@")
@@ -1223,6 +1264,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタ")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを閉じる")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを更新")
+            XCTAssertEqual(NSLocalizedString("Deleted Chat Retention", comment: ""), "削除済みチャットの保持")
+            XCTAssertEqual(NSLocalizedString("Clean Deleted History", comment: ""), "削除済み履歴をクリーンアップ")
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 2)
+                ),
+                "クリーンアップが完了しました。2件の削除済みチャットを削除しました。"
+            )
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "ランタイムチャットセッションはありません")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime にランタイムチャットセッションは保存されていません。")
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "ランタイム履歴の概要。%@。%@")
@@ -1253,6 +1302,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "关闭运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "刷新运行时历史检查器")
+            XCTAssertEqual(NSLocalizedString("Deleted Chat Retention", comment: ""), "已删除聊天保留")
+            XCTAssertEqual(NSLocalizedString("Clean Deleted History", comment: ""), "清理已删除历史记录")
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 2)
+                ),
+                "清理完成。已移除2条已删除聊天。"
+            )
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "没有运行时聊天会话")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime 中没有已保存的运行时聊天会话。")
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "运行时历史摘要。%@。%@")
@@ -1283,6 +1340,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Fermer l’inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Actualiser l’inspecteur d’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("Deleted Chat Retention", comment: ""), "Conservation des chats supprimés")
+            XCTAssertEqual(NSLocalizedString("Clean Deleted History", comment: ""), "Nettoyer l’historique supprimé")
+            XCTAssertEqual(
+                runtimeHistoryRetentionDetail(
+                    CompanionRuntimeChatRetentionStatus(state: .completed, prunedDeletedSessionCount: 2)
+                ),
+                "Nettoyage terminé : 2 chats supprimés."
+            )
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "Aucune session de chat du runtime")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "Aucune session de chat du runtime n’est stockée dans AetherLink Runtime.")
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "Résumé de l’historique du runtime. %@. %@")

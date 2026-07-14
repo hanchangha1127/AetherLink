@@ -135,9 +135,6 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            lock.withLock {
-                completedProviderUsageSources[request.generationID] = nil
-            }
             let reservation = RuntimeAggregateGenerationReservation()
             let task = Task {
                 await reservation.waitUntilActivated()
@@ -200,6 +197,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             reservation.task = task
             let registered = lock.withLock {
                 guard generationReservations[request.generationID] == nil else { return false }
+                completedProviderUsageSources[request.generationID] = nil
                 generationReservations[request.generationID] = reservation
                 return true
             }

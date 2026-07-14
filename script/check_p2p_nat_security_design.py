@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -12,8 +13,44 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-p2p-nat-v1"
-CURRENT_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v3.json"
-EVIDENCE_COLLECTION_SHA256 = "b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4"
+PRE_NETWORK_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v3.json"
+CURRENT_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v4.json"
+SESSION_CRYPTO_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_session_crypto_vectors.py"
+HARNESS_EGRESS_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_phase_a_harness_egress.py"
+OFFLINE_SOURCE_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libjuice_offline_source.py"
+COMPILE_ONLY_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libjuice_compile_only.py"
+PHASE_A_STATIC_PYTHON_PATHS = (
+    SESSION_CRYPTO_VALIDATOR_PATH,
+    ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
+    HARNESS_EGRESS_VALIDATOR_PATH,
+    ROOT / "script/test_p2p_nat_phase_a_harness_egress.py",
+    OFFLINE_SOURCE_VALIDATOR_PATH,
+    ROOT / "script/test_p2p_nat_libjuice_offline_source.py",
+    COMPILE_ONLY_VALIDATOR_PATH,
+    ROOT / "script/test_p2p_nat_libjuice_compile_only.py",
+)
+PHASE_A_STATIC_EVIDENCE_SHA256 = {
+    ROOT / "apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift": "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb",
+    ROOT / "apps/macos/P2PNATContracts/Tests/P2PNATSessionCryptoVectorTests.swift": "c39c4e37a3f022698d9994804972a0bafd14000d010baa99bc6928066ef87acd",
+    ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCrypto.kt": "a7222474e0b38e061a1d04ba5993af844f8f1cebaed36496403ae3bf47bd5b93",
+    ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCryptoVectorTest.kt": "3a28cef4d942dac397bd443ec3b7e0f9c96e2a0c9ccda836ec3c49f178367bf4",
+    ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-session-crypto-vectors.json": "4693f71330b5f40f9b99b4445c24fba8fa0939c4ae76f8b9bf3c9644b08f29c9",
+    SESSION_CRYPTO_VALIDATOR_PATH: "c8f51de5a77599617eb24df3f767569e778e3ac327a8eae7e3fdad6fcad949ee",
+    ROOT / "script/test_p2p_nat_session_crypto_vectors.py": "37ba5844a7822d65bca27b312718c7a43c30febc2c0ca83976b91a246e09b526",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.json": "6934995f310449fa675348c0314ea5bac2991693f1e1d080aa469d7d856ec9f5",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.md": "0578c5f6b89bc3db5cb1ce6ed24f62bad32898b923411759dbf55f946d2fb61b",
+    HARNESS_EGRESS_VALIDATOR_PATH: "052b4e3358cd7803e640a491e55bd1cab28a0a6ef5f4cc8cbbdd1f960f00bdf1",
+    ROOT / "script/test_p2p_nat_phase_a_harness_egress.py": "597888e9600c2b7aabd459959ad05f91b0d0f51e696a6a233bc95ac99c95f608",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/offline-source-intake-v1.json": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/offline-source-intake-v1.md": "c186c4bed45a6edd9d270062ac9927839ab1f5c8f5c66eab966dfc9a61c0d2ee",
+    OFFLINE_SOURCE_VALIDATOR_PATH: "229d703b6d1ac789bbd34d7ce64fed6adbd52153ebb7358ae55ba71b5486eda1",
+    ROOT / "script/test_p2p_nat_libjuice_offline_source.py": "93b7572d795114f92d6dae4e3b8de51a30fe2bdfc2a3d08f8c72b8f521204045",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json": "2664736c7b783d650eabcd8bc4ad5391babd456d3b7df596dff2171eba7d84b4",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.md": "6e181de962f961ccf1b35f020e83e2cceb3829e13bf824c7fa68f17677d09420",
+    COMPILE_ONLY_VALIDATOR_PATH: "2fd88bf6aa418920cb13f244215ce91a97f135a94c6a9c79d3658b62e3d570eb",
+    ROOT / "script/test_p2p_nat_libjuice_compile_only.py": "df9dfd78cd2b35274d5fe5d08c4114d091fd27db75f5856794e3cf215b134c13",
+}
+EVIDENCE_COLLECTION_SHA256 = "8741927642b8697e517dccee7dc639d279037f530b442f9ddf9873cbd2294a92"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
@@ -104,6 +141,19 @@ EXPECTED_SPIKE_REVIEWS = [
     "isolated_harness_design",
     "socket_destination_and_egress_controls",
 ]
+EXPECTED_SPIKE_RESOLUTIONS = {
+    "networking_library_selection": "libjuice-1.7.2-static-c-abi",
+    "session_cryptography_library_selection": "platform-native-p256-hkdf-sha256-aes256gcm",
+    "isolated_harness_design": "linux-netns-twin-agent-local-services",
+    "socket_destination_and_egress_controls": "numeric-endpoint-allowlist-plus-os-egress-witness",
+}
+EXPECTED_PHASE_A_EVIDENCE = [
+    "libjuice_supply_chain_and_source_audit",
+    "android_macos_compile_only_integration",
+    "cross_platform_session_crypto_vectors",
+    "static_harness_and_egress_policy",
+    "phase_a_security_review",
+]
 EXPECTED_SELECTION_PROFILE_KEYS = {
     "documentType",
     "schemaVersion",
@@ -159,6 +209,8 @@ EXPECTED_IMPLEMENTATION_FILES = {
     "handoff-v2.md",
     "handoff-v3.json",
     "handoff-v3.md",
+    "handoff-v4.json",
+    "handoff-v4.md",
 }
 EXPECTED_PACKAGE_STATES = {
     "canonical-contracts": ("authorized", "not_started", True),
@@ -478,6 +530,21 @@ def require_exact_keys(value: object, expected: set[str], label: str) -> dict[st
     return value
 
 
+def type_exact_equal(actual: object, expected: object) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(actual) == set(expected) and all(
+            type_exact_equal(actual[key], expected[key]) for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            type_exact_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
+
+
 def validate_tradeoffs(option: dict[str, object], label: str) -> None:
     tradeoffs = option.get("tradeoffs")
     if not isinstance(tradeoffs, list) or len(tradeoffs) != 6:
@@ -571,6 +638,8 @@ def validate_json(artifact_count: int) -> set[str]:
             "selectionProfilePath", "selectionProfileStatus", "selectionDecisionPath",
             "handoffPath", "implementationAuthorized", "networkIOAllowed",
             "librarySelectionAuthorized", "productionDeploymentAuthorized",
+            "conditionalLibrarySelectionAuthorized", "controlledSpikePhaseAAuthorized",
+            "offlineSourceInspectionAuthorized", "sourceAcquisitionNetworkIOAllowed",
             "controlledNetworkSpikeSocketExecutionAuthorized", "notImplemented",
         },
         "hardening.json implementationBoundary",
@@ -588,9 +657,16 @@ def validate_json(artifact_count: int) -> set[str]:
         fail("hardening.json selectionProfileStatus is not a recognized lifecycle state")
     if boundary.get("implementationAuthorized") is not True:
         fail("hardening.json bounded implementation authorization must remain true")
+    if boundary.get("conditionalLibrarySelectionAuthorized") is not True:
+        fail("hardening.json must authorize only the conditional phase-A library selection")
+    if boundary.get("controlledSpikePhaseAAuthorized") is not True:
+        fail("hardening.json must authorize the bounded controlled-spike phase A")
+    if boundary.get("offlineSourceInspectionAuthorized") is not True:
+        fail("hardening.json must authorize only offline source inspection")
     for field in (
         "networkIOAllowed", "librarySelectionAuthorized",
-        "productionDeploymentAuthorized", "controlledNetworkSpikeSocketExecutionAuthorized",
+        "productionDeploymentAuthorized", "sourceAcquisitionNetworkIOAllowed",
+        "controlledNetworkSpikeSocketExecutionAuthorized",
     ):
         if boundary.get(field) is not False:
             fail(f"hardening.json implementationBoundary.{field} must remain false")
@@ -888,7 +964,7 @@ def validate_selection_profile() -> None:
         "selectionProfileStatus": status,
         "implementationAuthorized": profile["implementationAuthorized"],
         "selectionDecisionPath": "selection-decision.json",
-        "handoffPath": "implementation/handoff-v3.json",
+        "handoffPath": "implementation/handoff-v4.json",
     }
     for field, expected in expected_boundary.items():
         if boundary.get(field) != expected:
@@ -954,7 +1030,7 @@ def validate_approved_handoff(profile: dict[str, object], decision_ids: set[str]
     actual_dirs = [path for path in implementation_root.rglob("*") if path.is_dir()]
     if actual_files != EXPECTED_IMPLEMENTATION_FILES or actual_dirs:
         fail(
-            "implementation/ must contain only the three closed versioned handoff pairs; "
+            "implementation/ must contain only the four closed versioned handoff pairs; "
             f"actual={sorted(actual_files)}"
         )
 
@@ -1307,7 +1383,7 @@ def validate_active_protocol_namespace() -> None:
 
 def validate_current_pre_network_handoff(handoff: object | None = None) -> None:
     if handoff is None:
-        handoff = load_json(CURRENT_HANDOFF_PATH, "implementation/handoff-v3.json")
+        handoff = load_json(PRE_NETWORK_HANDOFF_PATH, "implementation/handoff-v3.json")
     root = require_exact_keys(
         handoff,
         {
@@ -1431,6 +1507,255 @@ def validate_current_pre_network_handoff(handoff: object | None = None) -> None:
         fail("handoff-v3 immutability boundary drifted")
 
 
+def validate_current_controlled_spike_handoff(handoff: object | None = None) -> None:
+    if handoff is None:
+        handoff = load_json(CURRENT_HANDOFF_PATH, "implementation/handoff-v4.json")
+    root = require_exact_keys(
+        handoff,
+        {
+            "documentType", "schemaVersion", "handoffId", "supersedesPath", "profileId",
+            "selectionDecisionPath", "preNetworkApprovalDecisionPath", "controlledSpikeReviewPath",
+            "controlledSpikeDecisionPath", "status", "productionDesignStatus", "measurementStatus",
+            "activeProtocolNamespace", "authorization", "packages", "preNetworkDecisions",
+            "controlledSpikeApprovals", "nextDecision", "immutability",
+        },
+        "implementation/handoff-v4.json",
+    )
+    expected_root = {
+        "documentType": "aetherlink.p2p-nat-bounded-handoff",
+        "schemaVersion": "1.0",
+        "handoffId": "production_p2p_nat_v1_handoff_v4",
+        "supersedesPath": "handoff-v3.json",
+        "profileId": SELECTION_PROFILE_ID,
+        "selectionDecisionPath": "../selection-decision.json",
+        "preNetworkApprovalDecisionPath": "../pre-network/decision-v1.json",
+        "controlledSpikeReviewPath": "../controlled-network-spike/review-v1.json",
+        "controlledSpikeDecisionPath": "../controlled-network-spike/decision-v1.json",
+        "status": "closed",
+        "productionDesignStatus": "not_implemented",
+        "measurementStatus": "not_started",
+        "activeProtocolNamespace": ["route.refresh"],
+    }
+    for field, expected in expected_root.items():
+        if root[field] != expected:
+            fail(f"handoff-v4 {field} must remain {expected!r}")
+
+    expected_authorization = {
+        "implementationAuthorized": True,
+        "conditionalLibrarySelectionAuthorized": True,
+        "offlineSourceInspectionAuthorized": True,
+        "sourceAcquisitionNetworkIOAllowed": False,
+        "compileOnlyIntegrationAuthorized": True,
+        "phaseAHarnessImplementationAuthorized": True,
+        "controlledSpikeNetworkIOAllowed": False,
+        "controlledSpikeSocketExecutionAuthorized": False,
+        "phaseBExecutionAuthorized": False,
+        "productionNetworkIOAllowed": False,
+        "productionDeploymentAuthorized": False,
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["authorization"], set(expected_authorization), "handoff-v4 authorization"
+        ),
+        expected_authorization,
+    ):
+        fail("handoff-v4 phase-A and production authorization boundary drifted")
+
+    previous = load_json(PRE_NETWORK_HANDOFF_PATH, "implementation/handoff-v3.json")
+    packages = root["packages"]
+    if not isinstance(packages, list) or len(packages) != 3:
+        fail("handoff-v4 must contain exactly three packages")
+    if not type_exact_equal(packages[:2], previous["packages"][:2]):
+        fail("handoff-v4 must preserve completed handoff-v3 package evidence exactly")
+    spike = require_exact_keys(
+        packages[2],
+        {
+            "packageId", "authorizationStatus", "executionStatus", "executionAuthorized",
+            "selectedOptions", "phaseA", "phaseB",
+        },
+        "handoff-v4 controlled network spike",
+    )
+    if any((
+        spike["packageId"] != "controlled-network-spike",
+        spike["authorizationStatus"] != "authorized_phase_a_evidence_only",
+        spike["executionStatus"] != "not_started",
+        spike["executionAuthorized"] is not True,
+        not type_exact_equal(spike["selectedOptions"], EXPECTED_SPIKE_RESOLUTIONS),
+    )):
+        fail("handoff-v4 controlled network spike selection drifted")
+    expected_phase_a = {
+        "sourceMaterialMode": "offline_user_provided_or_preexisting_workspace_only",
+        "offlineSourceInspectionAuthorized": True,
+        "sourceAcquisitionNetworkIOAllowed": False,
+        "compileOnlyIntegrationAuthorized": True,
+        "sessionCryptoVectorImplementationAuthorized": True,
+        "staticHarnessImplementationAuthorized": True,
+        "sourceExecutionAllowed": False,
+        "socketCreationAllowed": False,
+        "runtimeNetworkIOAllowed": False,
+        "harnessNetworkIOAllowed": False,
+        "outputs": [
+            "pinned_source_and_supply_chain_manifest",
+            "line_referenced_source_audit",
+            "android_macos_compile_only_logs",
+            "cross_platform_session_crypto_vectors",
+            "static_harness_and_egress_policy_evidence",
+        ],
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            spike["phaseA"], set(expected_phase_a), "handoff-v4 phase A"
+        ),
+        expected_phase_a,
+    ):
+        fail("handoff-v4 phase A scope drifted")
+    expected_phase_b = {
+        "status": "blocked_on_phase_a_evidence_and_separate_versioned_decision",
+        "executionAuthorized": False,
+        "networkIOAllowed": False,
+        "socketExecutionAuthorized": False,
+        "externalEgressAllowed": False,
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            spike["phaseB"], set(expected_phase_b), "handoff-v4 phase B"
+        ),
+        expected_phase_b,
+    ):
+        fail("handoff-v4 phase B socket gate drifted")
+    if not type_exact_equal(root["preNetworkDecisions"], previous["preNetworkDecisions"]):
+        fail("handoff-v4 pre-network decision history drifted")
+
+    approvals = root["controlledSpikeApprovals"]
+    if not isinstance(approvals, list) or len(approvals) != len(EXPECTED_SPIKE_REVIEWS):
+        fail("handoff-v4 must retain all four phase-A approvals")
+    for approval, decision_id in zip(approvals, EXPECTED_SPIKE_REVIEWS):
+        expected = {
+            "decisionId": decision_id,
+            "status": "approved_for_bounded_phase_a_evidence",
+            "resolution": EXPECTED_SPIKE_RESOLUTIONS[decision_id],
+            "approvalSource": "explicit_user_instruction",
+        }
+        if not type_exact_equal(
+            require_exact_keys(
+                approval, set(expected), f"handoff-v4 approval {decision_id}"
+            ),
+            expected,
+        ):
+            fail(f"handoff-v4 approval {decision_id} drifted")
+    expected_next = {
+        "status": "required_after_phase_a_evidence_before_socket_execution",
+        "requiredEvidence": EXPECTED_PHASE_A_EVIDENCE,
+        "networkIOAllowedBeforeDecision": False,
+        "socketExecutionAuthorizedBeforeDecision": False,
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["nextDecision"], set(expected_next), "handoff-v4 next decision"
+        ),
+        expected_next,
+    ):
+        fail("handoff-v4 next socket decision boundary drifted")
+    expected_immutability = {
+        "recordState": "closed",
+        "amendmentPolicy": "supersede_with_new_versioned_handoff",
+    }
+    if require_exact_keys(
+        root["immutability"], set(expected_immutability), "handoff-v4 immutability"
+    ) != expected_immutability:
+        fail("handoff-v4 immutability boundary drifted")
+
+
+def qualified_ast_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = qualified_ast_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return None
+
+
+def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
+    allowed_imports = {
+        "ast", "copy", "hashlib", "hmac", "ipaddress", "json", "re", "stat",
+        "struct", "sys", "unittest",
+    }
+    allowed_from_imports = {
+        "__future__": {"annotations"},
+        "pathlib": {"Path", "PurePosixPath"},
+        "typing": {"Any"},
+        "script": {
+            "check_p2p_nat_libjuice_compile_only",
+            "check_p2p_nat_libjuice_offline_source",
+            "check_p2p_nat_phase_a_harness_egress",
+            "check_p2p_nat_security_design",
+            "check_p2p_nat_session_crypto_vectors",
+        },
+    }
+    forbidden_names = {
+        "__builtins__", "__import__", "compile", "delattr", "eval", "exec", "getattr",
+        "globals", "locals", "open", "setattr", "vars",
+    }
+    forbidden_method_names = {
+        "CDLL", "PyDLL", "accept", "bind", "call", "check_call", "check_output",
+        "chmod", "connect", "connect_ex", "create_connection", "create_subprocess_exec",
+        "create_subprocess_shell", "extract", "extractall", "fork", "fork_exec", "forkpty",
+        "execl", "execle", "execlp", "execlpe", "execv", "execve", "execvp", "execvpe",
+        "glob", "hardlink_to", "iglob", "import_module", "link_to", "listen", "make_archive",
+        "mkdir", "open", "popen", "posix_spawn", "posix_spawnp", "recv", "recvfrom",
+        "rename", "replace", "request", "rglob", "rmdir", "rmtree", "run", "send",
+        "sendall", "sendto",
+        "socket", "spawn", "symlink_to", "system", "touch", "unlink", "unpack_archive",
+        "urlopen", "urlretrieve", "write_bytes", "write_text",
+    }
+    forbidden_qualified_prefixes = ("sys.modules",)
+    try:
+        tree = ast.parse(raw, filename=label)
+    except SyntaxError as error:
+        fail(f"{label} has invalid Python syntax: {error}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name not in allowed_imports:
+                    fail(f"{label} imports module outside static allowlist {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            allowed_names = allowed_from_imports.get(module, set())
+            if not allowed_names or any(
+                alias.name == "*" or alias.name not in allowed_names for alias in node.names
+            ):
+                fail(f"{label} imports from module outside static allowlist {module}")
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in forbidden_names:
+                fail(f"{label} contains forbidden dynamic/capability reference {node.id}")
+        elif isinstance(node, ast.Attribute):
+            name = qualified_ast_name(node)
+            final_name = name.rsplit(".", 1)[-1] if name else ""
+            if final_name in forbidden_method_names or any(
+                name == prefix or name.startswith(f"{prefix}.")
+                for prefix in forbidden_qualified_prefixes
+            ):
+                fail(f"{label} contains forbidden network/process/file capability {name}")
+        elif isinstance(node, ast.Call):
+            name = qualified_ast_name(node.func)
+            final_name = name.rsplit(".", 1)[-1] if name else ""
+            if name in forbidden_names or final_name in forbidden_method_names:
+                fail(f"{label} contains forbidden dynamic/network/process/file call {name}")
+
+
+def validate_phase_a_static_evidence_preflight() -> None:
+    for path, expected_digest in PHASE_A_STATIC_EVIDENCE_SHA256.items():
+        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual_digest != expected_digest:
+            fail(
+                f"Phase A static evidence hash drifted for {path.relative_to(ROOT)}: "
+                f"expected {expected_digest}, got {actual_digest}"
+            )
+    for path in PHASE_A_STATIC_PYTHON_PATHS:
+        raw = path.read_text(encoding="utf-8")
+        validate_phase_a_static_python_ast(raw, str(path.relative_to(ROOT)))
+
+
 def main() -> int:
     try:
         artifact_count = validate_evidence_manifest()
@@ -1441,6 +1766,8 @@ def main() -> int:
         validate_no_absolute_paths_outside_context()
         validate_active_protocol_namespace()
         validate_current_pre_network_handoff()
+        validate_current_controlled_spike_handoff()
+        validate_phase_a_static_evidence_preflight()
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         print(f"Production P2P NAT security design check failed: {error}", file=sys.stderr)
         return 1
@@ -1448,7 +1775,9 @@ def main() -> int:
     print(
         "Production P2P NAT security design OK: "
         "13 evidence artifacts, 2 opportunities, 6 options, "
-        "8 structurally distinct diagrams; bounded handoff approved; network gate closed."
+        "8 structurally distinct diagrams; bounded phase-A handoff approved; "
+        "offline source/compile blocked state, session crypto, and static harness policy verified; "
+        "socket gate closed."
     )
     return 0
 

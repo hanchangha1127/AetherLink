@@ -36,7 +36,22 @@ class ProtocolCodec(
     }
 
     fun decode(bytes: ByteArray): ProtocolEnvelope {
-        val element = json.parseToJsonElement(bytes.decodeToString())
+        val body = bytes.decodeToString()
+        val rawInspection = RawJsonObjectInspector(body).inspect()
+        val duplicateKeyStrictMessageType = when {
+            MessageType.MemorySemanticDuplicateSuggestionsList in rawInspection.topLevelTypeValues ->
+                MessageType.MemorySemanticDuplicateSuggestionsList
+            MessageType.MemorySemanticDuplicateClustersList in rawInspection.topLevelTypeValues ->
+                MessageType.MemorySemanticDuplicateClustersList
+            else -> null
+        }
+        if (duplicateKeyStrictMessageType != null && rawInspection.firstDuplicateKeyPath != null) {
+            throw IllegalArgumentException(
+                "$duplicateKeyStrictMessageType contains duplicate JSON object key: " +
+                    rawInspection.firstDuplicateKeyPath,
+            )
+        }
+        val element = json.parseToJsonElement(body)
         val envelopeObject = element as? JsonObject
             ?: throw IllegalArgumentException("Protocol envelope must be a JSON object")
         validateEnvelopeFields(envelopeObject)
@@ -140,6 +155,173 @@ class ProtocolCodec(
             "timestamp",
             "payload",
         )
+    }
+}
+
+private data class RawJsonObjectInspection(
+    val topLevelTypeValues: Set<String>,
+    val firstDuplicateKeyPath: String?,
+)
+
+private class RawJsonObjectInspector(
+    private val source: String,
+) {
+    private var index = 0
+    private val topLevelTypeValues = mutableSetOf<String>()
+    private var firstDuplicateKeyPath: String? = null
+
+    fun inspect(): RawJsonObjectInspection {
+        parseValue(path = "$", depth = 0)
+        skipWhitespace()
+        require(index == source.length) { "Unexpected trailing JSON content" }
+        return RawJsonObjectInspection(
+            topLevelTypeValues = topLevelTypeValues,
+            firstDuplicateKeyPath = firstDuplicateKeyPath,
+        )
+    }
+
+    private fun parseValue(path: String, depth: Int): String? {
+        require(depth <= MAX_JSON_NESTING_DEPTH) {
+            "JSON nesting exceeds the protocol limit"
+        }
+        skipWhitespace()
+        require(index < source.length) { "Unexpected end of JSON input" }
+        return when (source[index]) {
+            '"' -> parseString()
+            '{' -> {
+                parseObject(path, depth)
+                null
+            }
+            '[' -> {
+                parseArray(path, depth)
+                null
+            }
+            else -> {
+                parsePrimitive()
+                null
+            }
+        }
+    }
+
+    private fun parseObject(path: String, depth: Int) {
+        expect('{')
+        skipWhitespace()
+        if (consumeIf('}')) return
+
+        val keys = mutableSetOf<String>()
+        while (true) {
+            skipWhitespace()
+            require(index < source.length && source[index] == '"') {
+                "JSON object key must be a string"
+            }
+            val key = parseString()
+            if (!keys.add(key) && firstDuplicateKeyPath == null) {
+                firstDuplicateKeyPath = "$path.$key"
+            }
+            skipWhitespace()
+            expect(':')
+            val stringValue = parseValue("$path.$key", depth + 1)
+            if (path == "$" && key == "type" && stringValue != null) {
+                topLevelTypeValues += stringValue
+            }
+            skipWhitespace()
+            when {
+                consumeIf('}') -> return
+                consumeIf(',') -> Unit
+                else -> throw IllegalArgumentException("JSON object entries must be comma-separated")
+            }
+        }
+    }
+
+    private fun parseArray(path: String, depth: Int) {
+        expect('[')
+        skipWhitespace()
+        if (consumeIf(']')) return
+
+        var elementIndex = 0
+        while (true) {
+            parseValue("$path[$elementIndex]", depth + 1)
+            elementIndex += 1
+            skipWhitespace()
+            when {
+                consumeIf(']') -> return
+                consumeIf(',') -> Unit
+                else -> throw IllegalArgumentException("JSON array elements must be comma-separated")
+            }
+        }
+    }
+
+    private fun parseString(): String {
+        expect('"')
+        val result = StringBuilder()
+        while (index < source.length) {
+            val character = source[index++]
+            when {
+                character == '"' -> return result.toString()
+                character == '\\' -> result.append(parseEscape())
+                character < ' ' -> throw IllegalArgumentException("JSON strings must not contain control characters")
+                else -> result.append(character)
+            }
+        }
+        throw IllegalArgumentException("Unterminated JSON string")
+    }
+
+    private fun parseEscape(): Char {
+        require(index < source.length) { "Unterminated JSON escape" }
+        return when (val escaped = source[index++]) {
+            '"', '\\', '/' -> escaped
+            'b' -> '\b'
+            'f' -> '\u000c'
+            'n' -> '\n'
+            'r' -> '\r'
+            't' -> '\t'
+            'u' -> parseUnicodeEscape()
+            else -> throw IllegalArgumentException("Invalid JSON escape: \\$escaped")
+        }
+    }
+
+    private fun parseUnicodeEscape(): Char {
+        require(index + 4 <= source.length) { "Incomplete JSON Unicode escape" }
+        var value = 0
+        repeat(4) {
+            val digit = source[index++].digitToIntOrNull(radix = 16)
+                ?: throw IllegalArgumentException("Invalid JSON Unicode escape")
+            value = (value shl 4) or digit
+        }
+        return value.toChar()
+    }
+
+    private fun parsePrimitive() {
+        val start = index
+        while (index < source.length && source[index] !in JSON_VALUE_DELIMITERS) {
+            index += 1
+        }
+        require(index > start) { "Expected JSON value" }
+    }
+
+    private fun skipWhitespace() {
+        while (index < source.length && source[index] in JSON_WHITESPACE) {
+            index += 1
+        }
+    }
+
+    private fun expect(expected: Char) {
+        require(index < source.length && source[index] == expected) {
+            "Expected '$expected' in JSON input"
+        }
+        index += 1
+    }
+
+    private fun consumeIf(expected: Char): Boolean {
+        if (index >= source.length || source[index] != expected) return false
+        index += 1
+        return true
+    }
+
+    private companion object {
+        const val MAX_JSON_NESTING_DEPTH = 128
+        val JSON_WHITESPACE = setOf(' ', '\t', '\r', '\n')
+        val JSON_VALUE_DELIMITERS = JSON_WHITESPACE + setOf(',', ']', '}')
     }
 }
 

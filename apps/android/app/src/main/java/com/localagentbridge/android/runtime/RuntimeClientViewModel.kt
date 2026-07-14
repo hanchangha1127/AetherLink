@@ -19,6 +19,7 @@ import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY
 import com.localagentbridge.android.core.protocol.CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY
+import com.localagentbridge.android.core.protocol.CHAT_SESSIONS_SYNC_CAPABILITY
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
@@ -26,12 +27,15 @@ import com.localagentbridge.android.core.protocol.ChatMessagesListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionRenamePayload
+import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionPayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionResolveRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSourceAttributionResolveResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
+import com.localagentbridge.android.core.protocol.ChatSessionsBulkLifecyclePayload
+import com.localagentbridge.android.core.protocol.ChatSessionsBulkLifecycleResultPayload
 import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.CitationResolveRequestPayload
@@ -43,6 +47,14 @@ import com.localagentbridge.android.core.protocol.IndexDocumentsListResultPayloa
 import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryDeletePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
+import com.localagentbridge.android.core.protocol.MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MemoryDuplicateSuggestionsListResultPayload
+import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateSuggestionsListRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateSuggestionsListResultPayload
+import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateClustersListRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySemanticDuplicateClustersListResultPayload
 import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
@@ -82,6 +94,7 @@ import com.localagentbridge.android.core.protocol.TrustedSourceListResultPayload
 import com.localagentbridge.android.core.protocol.TrustedSourcePayload
 import com.localagentbridge.android.core.protocol.TrustedSourceRevokeRequestPayload
 import com.localagentbridge.android.core.protocol.TrustedSourceRevokeResultPayload
+import com.localagentbridge.android.core.protocol.isCanonicalProviderQualifiedModelId
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.DeviceIdentityStore
 import com.localagentbridge.android.core.pairing.INITIAL_PAIRING_PROOF_SCHEME
@@ -200,21 +213,128 @@ internal fun interface RuntimeRelayReachabilityChecker {
     ): RuntimeRelayProbeResult
 }
 
-private data class PendingChatSessionLifecycleMutation(
-    val sessionId: String,
-    val type: String,
+private sealed interface PendingChatSessionMutation {
+    val sessionId: String
+    val sequence: Long
+}
+
+private data class PendingChatSessionsListRun(
+    var requestId: String,
+    val query: String?,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    val summaries: MutableList<ChatSessionSummaryPayload> = mutableListOf(),
+    val sessionIds: MutableSet<String> = mutableSetOf(),
+    val cursors: MutableSet<String> = mutableSetOf(),
+    var snapshotCount: Int? = null,
+    var pageCount: Int = 0,
 )
 
+private data class PendingChatSessionsBulkLifecycle(
+    var requestId: String,
+    val type: String,
+    val scope: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    var batchCount: Int = 0,
+    var cumulativeAffectedCount: Int = 0,
+)
+
+private data class RuntimeChatHistoryRequestCorrelation(
+    val requestId: String,
+    val type: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
+private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(
+    MessageType.PairingRequest,
+    MessageType.Hello,
+    MessageType.AuthResponse,
+    MessageType.ChatSessionsList,
+    MessageType.ChatMessagesList,
+    MessageType.ChatTitleRequest,
+    MessageType.ChatSessionRename,
+    MessageType.ChatSessionArchive,
+    MessageType.ChatSessionRestore,
+    MessageType.ChatSessionDelete,
+    MessageType.ModelsList,
+    MessageType.MemoryList,
+    MessageType.MemoryDuplicateSuggestionsList,
+    MessageType.MemorySemanticDuplicateClustersList,
+    MessageType.MemorySummaryDraftsList,
+    MessageType.MemorySummaryDraftGenerate,
+    MessageType.MemorySummaryDraftApprove,
+    MessageType.MemorySummaryDraftDismiss,
+    MessageType.IndexDocumentsList,
+    MessageType.RetrievalQuery,
+    MessageType.CitationResolve,
+    MessageType.ChatSourceAttributionResolve,
+    MessageType.TrustedSourceApprove,
+    MessageType.TrustedSourceDismiss,
+    MessageType.TrustedSourceList,
+    MessageType.TrustedSourceRevoke,
+    MessageType.RouteRefresh,
+    MessageType.RelayAllocationAuthorization,
+)
+
+private data class PendingChatSessionLifecycleMutation(
+    override val sessionId: String,
+    override val sequence: Long,
+    val type: String,
+    val previousSession: PersistedChatSession,
+    val restoreAsActive: Boolean,
+) : PendingChatSessionMutation
+
 private data class PendingChatSessionRenameMutation(
-    val sessionId: String,
+    override val sessionId: String,
+    override val sequence: Long,
     val previousTitle: String,
     val previousTitleManuallyEdited: Boolean,
     val previousTitleGenerated: Boolean,
-)
+    val previousUpdatedAtMillis: Long,
+) : PendingChatSessionMutation
 
 private data class PendingMemorySummaryDraftGeneration(
     val draft: RuntimeMemorySummaryDraft,
     val modelId: String,
+)
+
+private data class PendingMemoryDuplicateSuggestionsRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
+private data class PendingModelsListRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
+private data class PendingMemorySemanticDuplicateSuggestionsRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    val embeddingModelId: String,
+    val minimumSimilarityBasisPoints: Int,
+)
+
+private data class PendingMemorySemanticDuplicateClustersRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    val memoryCatalogGeneration: Long,
+    val modelCatalogGeneration: Long,
+    val embeddingModelId: String,
+    val minimumSimilarityBasisPoints: Int,
 )
 
 private data class PendingSourceReview(
@@ -736,7 +856,19 @@ private fun JsonObject.runtimeHealthUnknownMetadataKey(): String? {
     return null
 }
 
-private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf("sessions")
+private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "sessions",
+    "snapshot_count",
+    "next_cursor",
+)
+
+private val CHAT_SESSIONS_BULK_LIFECYCLE_RESULT_PAYLOAD_KEYS = setOf(
+    "scope",
+    "status",
+    "affected_count",
+    "remaining_count",
+    "completed_at",
+)
 
 private val CHAT_SESSION_SUMMARY_PAYLOAD_KEYS = setOf(
     "session_id",
@@ -772,6 +904,10 @@ private fun JsonObject.chatSessionsListUnknownMetadataKey(): String? {
         }
     }
     return null
+}
+
+private fun JsonObject.chatSessionsBulkLifecycleResultUnknownMetadataKey(): String? {
+    return keys.firstOrNull { it !in CHAT_SESSIONS_BULK_LIFECYCLE_RESULT_PAYLOAD_KEYS }
 }
 
 private val CHAT_MESSAGES_LIST_RUNTIME_ONLY_PAYLOAD_KEYS = setOf(
@@ -990,6 +1126,38 @@ private fun JsonObject.retrievalQueryResultUnknownMetadataKey(): String? {
 
 private val MEMORY_LIST_RESULT_PAYLOAD_KEYS = setOf("entries")
 
+private val MEMORY_DUPLICATE_SUGGESTIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "groups",
+    "scanned_count",
+    "truncated",
+)
+
+private val MEMORY_DUPLICATE_SUGGESTION_GROUP_PAYLOAD_KEYS = setOf("entry_ids")
+
+private val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "pairs",
+    "scanned_count",
+    "omitted_count",
+    "truncated",
+)
+
+private val MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_PAYLOAD_KEYS = setOf(
+    "entry_ids",
+    "similarity_basis_points",
+)
+
+private val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_LIST_RESULT_PAYLOAD_KEYS = setOf(
+    "clusters",
+    "scanned_count",
+    "omitted_count",
+    "truncated",
+)
+
+private val MEMORY_SEMANTIC_DUPLICATE_CLUSTER_PAYLOAD_KEYS = setOf(
+    "entry_ids",
+    "minimum_similarity_basis_points",
+)
+
 private val MEMORY_UPSERT_RESULT_PAYLOAD_KEYS = setOf("entry")
 
 private val MEMORY_DELETE_RESULT_PAYLOAD_KEYS = setOf(
@@ -1132,6 +1300,46 @@ private fun JsonObject.memoryListResultUnknownMetadataKey(): String? {
     return null
 }
 
+private fun JsonObject.memoryDuplicateSuggestionsListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull { it !in MEMORY_DUPLICATE_SUGGESTIONS_LIST_RESULT_PAYLOAD_KEYS }?.let { return it }
+    val groups = this["groups"] as? JsonArray ?: return null
+    groups.forEachIndexed { groupIndex, element ->
+        val group = element as? JsonObject ?: return@forEachIndexed
+        group.keys.firstOrNull { it !in MEMORY_DUPLICATE_SUGGESTION_GROUP_PAYLOAD_KEYS }?.let {
+            return "groups[$groupIndex].$it"
+        }
+    }
+    return null
+}
+
+private fun JsonObject.memorySemanticDuplicateSuggestionsListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull {
+        it !in MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_LIST_RESULT_PAYLOAD_KEYS
+    }?.let { return it }
+    val pairs = this["pairs"] as? JsonArray ?: return null
+    pairs.forEachIndexed { pairIndex, element ->
+        val pair = element as? JsonObject ?: return@forEachIndexed
+        pair.keys.firstOrNull {
+            it !in MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_PAYLOAD_KEYS
+        }?.let { return "pairs[$pairIndex].$it" }
+    }
+    return null
+}
+
+private fun JsonObject.memorySemanticDuplicateClustersListResultUnknownMetadataKey(): String? {
+    keys.firstOrNull {
+        it !in MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_LIST_RESULT_PAYLOAD_KEYS
+    }?.let { return it }
+    val clusters = this["clusters"] as? JsonArray ?: return null
+    clusters.forEachIndexed { clusterIndex, element ->
+        val cluster = element as? JsonObject ?: return@forEachIndexed
+        cluster.keys.firstOrNull {
+            it !in MEMORY_SEMANTIC_DUPLICATE_CLUSTER_PAYLOAD_KEYS
+        }?.let { return "clusters[$clusterIndex].$it" }
+    }
+    return null
+}
+
 private fun JsonObject.memoryUpsertResultUnknownMetadataKey(): String? {
     keys.firstOrNull { it !in MEMORY_UPSERT_RESULT_PAYLOAD_KEYS }?.let { return it }
     val entry = this["entry"] as? JsonObject ?: return null
@@ -1173,6 +1381,9 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.TrustedSourceList,
     MessageType.TrustedSourceRevoke,
     MessageType.MemoryList,
+    MessageType.MemoryDuplicateSuggestionsList,
+    MessageType.MemorySemanticDuplicateSuggestionsList,
+    MessageType.MemorySemanticDuplicateClustersList,
     MessageType.MemoryUpsert,
     MessageType.MemoryDelete,
     MessageType.MemorySummaryDraftsList,
@@ -1182,6 +1393,10 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     "chat.attachments",
     CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY,
     CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY,
+    CHAT_SESSIONS_SYNC_CAPABILITY,
+    MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY,
+    MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY,
+    MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY,
 )
 
 internal fun runtimeClientCapabilities(authenticatedRouteRefreshEnabled: Boolean): List<String> {
@@ -1193,6 +1408,29 @@ internal fun runtimeClientCapabilities(authenticatedRouteRefreshEnabled: Boolean
 }
 
 internal const val ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS = 60_000L
+private const val CHAT_SESSIONS_BULK_SCOPE_ALL_ACTIVE = "all_active"
+private const val CHAT_SESSIONS_BULK_SCOPE_ALL_ARCHIVED = "all_archived"
+private const val MAX_RUNTIME_CHAT_SESSION_PAGE_SIZE = 200
+private const val MAX_RUNTIME_CHAT_SESSIONS_BULK_BATCH_SIZE = 200
+private const val MAX_RUNTIME_CHAT_SESSION_LIST_PAGES = 100
+private const val MAX_RUNTIME_CHAT_SESSION_BULK_BATCHES = 50
+private const val MAX_RUNTIME_CHAT_SESSION_BULK_AFFECTED = 10_000
+private const val MAX_CLOSED_RUNTIME_CHAT_HISTORY_REQUESTS = 128
+private const val MAX_CLOSED_MEMORY_DUPLICATE_SUGGESTIONS_REQUESTS = 32
+private const val MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUESTS = 32
+private const val MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUESTS = 32
+private val MEMORY_DUPLICATE_SUGGESTIONS_UNSUPPORTED_ERROR_CODES = setOf(
+    "unknown_message_type",
+    "unsupported_operation",
+)
+private val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_UNSUPPORTED_ERROR_CODES = setOf(
+    "unknown_message_type",
+    "unsupported_operation",
+)
+private val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_UNSUPPORTED_ERROR_CODES = setOf(
+    "unknown_message_type",
+    "unsupported_operation",
+)
 internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
 internal const val ROUTE_REFRESH_RETRY_DELAY_MS = 10_000L
 internal const val ROUTE_REFRESH_REQUEST_TIMEOUT_MS = 15_000L
@@ -1290,15 +1528,46 @@ class RuntimeClientViewModel internal constructor(
     private var pendingPairingDiscoveryTimeoutJob: Job? = null
     private var pendingPairingRetryAttempts = 0
     private var pendingModelPullRequestId: String? = null
+    private var pendingModelsListRequest: PendingModelsListRequest? = null
     private var pendingChatSessionsRequestId: String? = null
     private var pendingChatSessionsQuery: String? = null
+    private var pendingChatSessionsListRun: PendingChatSessionsListRun? = null
+    private var pendingChatSessionsBulkLifecycle: PendingChatSessionsBulkLifecycle? = null
+    private var runtimeChatSessionsAuthoritativeSyncSupported = false
+    private var runtimeChatSessionsBulkAuthorityEnabled = false
+    private var runtimeChatSearchSummariesById: Map<String, ChatSessionSummaryPayload> = emptyMap()
     private var pendingChatMessagesRequestId: String? = null
     private var pendingChatMessagesSessionId: String? = null
+    private var pendingChatMessagesRequestCorrelation: RuntimeChatHistoryRequestCorrelation? = null
+    private val closedRuntimeChatHistoryRequests = mutableListOf<RuntimeChatHistoryRequestCorrelation>()
     private var pendingTitleRequestId: String? = null
     private var pendingTitleSessionId: String? = null
     private var pendingMemoryListRequestId: String? = null
     private var pendingMemoryListQuery: String? = null
     private var pendingMemoryListEmbeddingModelId: String? = null
+    private var pendingMemoryListChannel: RuntimeProtocolChannel? = null
+    private var pendingMemoryListConnectionGeneration: Long? = null
+    private var pendingMemoryListAuthorityGeneration: Long? = null
+    private var pendingMemoryDuplicateSuggestionsRequest: PendingMemoryDuplicateSuggestionsRequest? = null
+    private val closedMemoryDuplicateSuggestionsRequests =
+        mutableListOf<PendingMemoryDuplicateSuggestionsRequest>()
+    private var memoryDuplicateSuggestionsListAcceptedAuthorityGeneration: Long? = null
+    private var memoryDuplicateSuggestionsUnsupportedAuthorityGeneration: Long? = null
+    private var pendingMemorySemanticDuplicateSuggestionsRequest:
+        PendingMemorySemanticDuplicateSuggestionsRequest? = null
+    private val closedMemorySemanticDuplicateSuggestionsRequests =
+        mutableListOf<PendingMemorySemanticDuplicateSuggestionsRequest>()
+    private var memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration: Long? = null
+    private var memorySemanticDuplicateSuggestionsUnsupportedAuthorityGeneration: Long? = null
+    private var pendingMemorySemanticDuplicateClustersRequest:
+        PendingMemorySemanticDuplicateClustersRequest? = null
+    private val closedMemorySemanticDuplicateClustersRequests =
+        mutableListOf<PendingMemorySemanticDuplicateClustersRequest>()
+    private var memorySemanticDuplicateClustersListAcceptedAuthorityGeneration: Long? = null
+    private var memorySemanticDuplicateClustersUnsupportedAuthorityGeneration: Long? = null
+    private var memoryCatalogGeneration = 0L
+    private var modelCatalogGeneration = 0L
+    private var modelCatalogAcceptedAuthorityGeneration: Long? = null
     private var pendingMemorySummaryDraftsRequestId: String? = null
     private var pendingDocumentCatalogRequestId: String? = null
     private var pendingDocumentSearchRequestId: String? = null
@@ -1328,9 +1597,11 @@ class RuntimeClientViewModel internal constructor(
     private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
     private val pendingChatSessionLifecycleMutationsByRequestId = mutableMapOf<String, PendingChatSessionLifecycleMutation>()
     private val pendingChatSessionRenameMutationsByRequestId = mutableMapOf<String, PendingChatSessionRenameMutation>()
+    private var pendingChatSessionMutationSequence = 0L
     private val pendingAttachmentsBySession = mutableMapOf<String?, List<RuntimePendingAttachment>>()
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
+    private var runtimeSessionAuthorityGeneration = 0L
     private var persistedRuntimeData = PersistedRuntimeData()
     private var shouldRestoreTrustedRuntimeConnection = true
     private var didAttemptTrustedRuntimeRestore = false
@@ -1640,14 +1911,15 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    fun openPreviousChat(sessionId: String) {
+    fun openPreviousChat(sessionId: String): Boolean {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
-            return
+            return false
         }
-        if (persistedRuntimeData.sessions.none { it.id == sessionId && it.archivedAtMillis == null }) {
+        val session = runtimeChatSessionForAction(sessionId)
+        if (session == null || session.archivedAtMillis != null) {
             showError("chat_session_not_found")
-            return
+            return false
         }
         clearPendingHistoricalSourceAttributionResolve()
         rememberPendingAttachmentsForCurrentSession()
@@ -1663,18 +1935,17 @@ class RuntimeClientViewModel internal constructor(
             )
         }
         requestRuntimeChatMessages(sessionId)
+        return true
     }
 
-    fun selectChatSession(sessionId: String) {
-        openPreviousChat(sessionId)
-    }
+    fun selectChatSession(sessionId: String): Boolean = openPreviousChat(sessionId)
 
     fun renameChatSession(sessionId: String, title: String) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
             return
         }
-        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        val session = runtimeChatSessionForAction(sessionId)
         if (session == null) {
             showError("chat_session_not_found")
             return
@@ -1697,7 +1968,7 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
-        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        val session = runtimeChatSessionForAction(sessionId)
         if (session == null) {
             showError("chat_session_not_found")
             return
@@ -1733,12 +2004,13 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
-        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        val session = runtimeChatSessionForAction(sessionId)
         if (session == null) {
             showError("chat_session_not_found")
             return
         }
         if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
+        val restoreAsActive = persistedRuntimeData.activeSessionId == session.id
         clearPendingAttachmentsForSession(sessionId)
         publishPersistedRuntimeData(
             persistedRuntimeData.withArchivedChatSession(sessionId, nowMillis()),
@@ -1747,6 +2019,7 @@ class RuntimeClientViewModel internal constructor(
         sendRuntimeChatSessionLifecycleIfNeeded(
             session = session,
             type = MessageType.ChatSessionArchive,
+            restoreAsActive = restoreAsActive,
         )
         if (state.value.activeChatSessionId == null) {
             val cleanDraft = clearComposerDraft(sessionId = null)
@@ -1766,6 +2039,23 @@ class RuntimeClientViewModel internal constructor(
         }
         val sessionsToArchive = persistedRuntimeData.sessions.filter { it.archivedAtMillis == null }
         if (isRuntimeOwnedChatMutationBlocked(sessionsToArchive)) return
+        val includesRuntimeOwnedSessions = sessionsToArchive.any { it.runtimeOwned }
+        if (runtimeChatSessionsAuthoritativeSyncSupported && includesRuntimeOwnedSessions) {
+            if (!runtimeChatSessionsBulkAuthorityEnabled) {
+                showError("chat_history_loading")
+                return
+            }
+            if (beginRuntimeChatSessionsBulkLifecycle(
+                    type = MessageType.ChatSessionArchive,
+                    scope = CHAT_SESSIONS_BULK_SCOPE_ALL_ACTIVE,
+                )
+            ) {
+                return
+            }
+            showError("chat_history_loading")
+            return
+        }
+        val activeSessionIdBeforeArchive = persistedRuntimeData.activeSessionId
         sessionsToArchive.forEach { clearPendingAttachmentsForSession(it.id) }
         clearPendingAttachmentsForSession(null)
         publishPersistedRuntimeData(
@@ -1776,6 +2066,7 @@ class RuntimeClientViewModel internal constructor(
             sendRuntimeChatSessionLifecycleIfNeeded(
                 session = session,
                 type = MessageType.ChatSessionArchive,
+                restoreAsActive = activeSessionIdBeforeArchive == session.id,
             )
         }
         val cleanDraft = clearComposerDraft(sessionId = null)
@@ -1792,7 +2083,7 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
-        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        val session = runtimeChatSessionForAction(sessionId)
         if (session == null) {
             showError("chat_session_not_found")
             return
@@ -1815,6 +2106,22 @@ class RuntimeClientViewModel internal constructor(
         }
         val archivedSessionsToDelete = persistedRuntimeData.sessions.filter { it.archivedAtMillis != null }
         if (isRuntimeOwnedChatMutationBlocked(archivedSessionsToDelete)) return
+        val includesRuntimeOwnedSessions = archivedSessionsToDelete.any { it.runtimeOwned }
+        if (runtimeChatSessionsAuthoritativeSyncSupported && includesRuntimeOwnedSessions) {
+            if (!runtimeChatSessionsBulkAuthorityEnabled) {
+                showError("chat_history_loading")
+                return
+            }
+            if (beginRuntimeChatSessionsBulkLifecycle(
+                    type = MessageType.ChatSessionDelete,
+                    scope = CHAT_SESSIONS_BULK_SCOPE_ALL_ARCHIVED,
+                )
+            ) {
+                return
+            }
+            showError("chat_history_loading")
+            return
+        }
         archivedSessionsToDelete.forEach { clearPendingAttachmentsForSession(it.id) }
         clearPendingAttachmentsForSession(null)
         val now = nowMillis()
@@ -1841,6 +2148,9 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         sendEnvelope(
             envelope(
                 type = MessageType.MemoryUpsert,
@@ -1864,6 +2174,9 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         sendEnvelope(
             envelope(
                 type = MessageType.MemoryDelete,
@@ -1883,6 +2196,9 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         sendEnvelope(
             envelope(
                 type = MessageType.MemoryUpsert,
@@ -1926,6 +2242,153 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         requestRuntimeMemorySummaryDrafts()
+    }
+
+    fun scanRuntimeMemoryDuplicateSuggestions() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeMemoryCommand() || !state.value.memoryDuplicateSuggestionsAvailable) {
+            showError("memory_runtime_required")
+            return
+        }
+        val channel = activeChannel ?: return
+        val requestId = MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX + UUID.randomUUID()
+        closePendingMemoryDuplicateSuggestionsRequest()
+        pendingMemoryDuplicateSuggestionsRequest = PendingMemoryDuplicateSuggestionsRequest(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        mutableState.update {
+            it.copy(
+                memoryDuplicateSuggestionGroups = emptyList(),
+                memoryDuplicateSuggestionsScannedCount = 0,
+                memoryDuplicateSuggestionsTruncated = false,
+                hasMemoryDuplicateSuggestionsResult = false,
+                isScanningMemoryDuplicateSuggestions = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            ProtocolEnvelope(
+                type = MessageType.MemoryDuplicateSuggestionsList,
+                requestId = requestId,
+            )
+        )
+    }
+
+    fun scanRuntimeMemorySemanticDuplicateSuggestions(
+        minimumSimilarityBasisPoints: Int = 9_000,
+    ) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (minimumSimilarityBasisPoints !in 8_000..10_000) {
+            showError("invalid_payload")
+            return
+        }
+        val current = state.value
+        val embeddingModelId = current.selectedEmbeddingModelId
+        if (
+            !canSendRuntimeMemoryCommand() ||
+            !current.memorySemanticDuplicateSuggestionsAvailable ||
+            embeddingModelId == null ||
+            !hasEligibleMemorySemanticDuplicateSuggestionsModel(current, embeddingModelId)
+        ) {
+            showError("memory_runtime_required")
+            return
+        }
+        val channel = activeChannel ?: return
+        val requestId = MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX + UUID.randomUUID()
+        clearMemorySemanticDuplicateSuggestions()
+        pendingMemorySemanticDuplicateSuggestionsRequest =
+            PendingMemorySemanticDuplicateSuggestionsRequest(
+                requestId = requestId,
+                channel = channel,
+                connectionGeneration = activeConnectionGeneration,
+                authorityGeneration = runtimeSessionAuthorityGeneration,
+                embeddingModelId = embeddingModelId,
+                minimumSimilarityBasisPoints = minimumSimilarityBasisPoints,
+            )
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateSuggestionsThresholdBasisPoints =
+                    minimumSimilarityBasisPoints,
+                isScanningMemorySemanticDuplicateSuggestions = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySemanticDuplicateSuggestionsList,
+                serializer = MemorySemanticDuplicateSuggestionsListRequestPayload.serializer(),
+                payload = MemorySemanticDuplicateSuggestionsListRequestPayload(
+                    embeddingModelId = embeddingModelId,
+                    minimumSimilarityBasisPoints = minimumSimilarityBasisPoints,
+                ),
+                requestId = requestId,
+            )
+        )
+    }
+
+    fun scanRuntimeMemorySemanticDuplicateClusters(
+        minimumSimilarityBasisPoints: Int = 9_000,
+    ) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (minimumSimilarityBasisPoints !in 8_000..10_000) {
+            showError("invalid_payload")
+            return
+        }
+        val current = state.value
+        val embeddingModelId = current.selectedEmbeddingModelId
+        if (
+            !canSendRuntimeMemoryCommand() ||
+            !current.memorySemanticDuplicateClustersAvailable ||
+            embeddingModelId == null ||
+            !hasEligibleMemorySemanticDuplicateSuggestionsModel(current, embeddingModelId)
+        ) {
+            showError("memory_runtime_required")
+            return
+        }
+        val channel = activeChannel ?: return
+        val requestId = MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUEST_ID_PREFIX + UUID.randomUUID()
+        clearMemorySemanticDuplicateClusters()
+        pendingMemorySemanticDuplicateClustersRequest = PendingMemorySemanticDuplicateClustersRequest(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+            memoryCatalogGeneration = memoryCatalogGeneration,
+            modelCatalogGeneration = modelCatalogGeneration,
+            embeddingModelId = embeddingModelId,
+            minimumSimilarityBasisPoints = minimumSimilarityBasisPoints,
+        )
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateClustersThresholdBasisPoints =
+                    minimumSimilarityBasisPoints,
+                isScanningMemorySemanticDuplicateClusters = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySemanticDuplicateClustersList,
+                serializer = MemorySemanticDuplicateClustersListRequestPayload.serializer(),
+                payload = MemorySemanticDuplicateClustersListRequestPayload(
+                    embeddingModelId = embeddingModelId,
+                    minimumSimilarityBasisPoints = minimumSimilarityBasisPoints,
+                ),
+                requestId = requestId,
+            )
+        )
     }
 
     fun refreshRuntimeDocumentCatalog() {
@@ -2352,6 +2815,7 @@ class RuntimeClientViewModel internal constructor(
                 ?: trustedRuntimeConnectionTarget(current)
             if (target == null) {
                 if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return@launch
+                revokeAuthenticatedRuntimeSessionState()
                 showError("pairing_required")
                 return@launch
             }
@@ -2929,18 +3393,24 @@ class RuntimeClientViewModel internal constructor(
         cancelPendingPairingRetry()
         readJob?.cancel()
         readJob = null
+        resetMemoryDuplicateSuggestionsAuthority()
+        resetMemorySemanticDuplicateSuggestionsAuthority()
+        resetMemorySemanticDuplicateClustersAuthority()
         activeChannel?.close()
         activeChannel = null
         activeConnectionGeneration += 1L
         client.close()
         isSessionAuthenticated = false
+        runtimeSessionAuthorityGeneration += 1L
+        runtimeChatSessionsAuthoritativeSyncSupported = false
+        runtimeChatSessionsBulkAuthorityEnabled = false
         clearPendingRuntimeAuthentication()
         closedRuntimeAuthenticationRequestIds.clear()
         cancelPendingPairingDiscoveryTimeout()
         pendingModelPullRequestId = null
-        pendingMemoryListRequestId = null
-        pendingMemoryListQuery = null
-        pendingMemoryListEmbeddingModelId = null
+        clearPendingModelsListRequest()
+        modelCatalogAcceptedAuthorityGeneration = null
+        clearPendingMemoryListRequest()
         pendingMemorySummaryDraftsRequestId = null
         clearPendingRuntimeDocumentRequests()
         pendingMemorySummaryDraftGenerationsByRequestId.clear()
@@ -2950,11 +3420,9 @@ class RuntimeClientViewModel internal constructor(
         pendingPairingPayload = null
         clearPendingPairingRequest()
         clearPendingRuntimeHistoryRequests()
-        pendingChatSessionLifecycleRequestIds.clear()
-        pendingChatSessionRenameRequestIds.clear()
-        pendingChatSessionLifecycleMutationsByRequestId.clear()
-        pendingChatSessionRenameMutationsByRequestId.clear()
-        clearPendingTitleRequest()
+        clearPendingChatSessionsBulkLifecycle()
+        clearRuntimeChatSearchAuthority()
+        rollbackAndClearPendingRuntimeChatSessionMutations()
         modelIdToSelectAfterRefresh = null
         mutableState.update {
             it.withClearedPendingPairing().copy(
@@ -2964,6 +3432,12 @@ class RuntimeClientViewModel internal constructor(
                 installingModelId = null,
                 activeRequestId = null,
                 memorySummaryDrafts = emptyList(),
+                memoryDuplicateSuggestionGroups = emptyList(),
+                memoryDuplicateSuggestionsScannedCount = 0,
+                memoryDuplicateSuggestionsTruncated = false,
+                hasMemoryDuplicateSuggestionsResult = false,
+                isScanningMemoryDuplicateSuggestions = false,
+                memoryDuplicateSuggestionsAvailable = false,
                 generatingMemorySummaryDraftIds = emptySet(),
                 approvingMemorySummaryDraftIds = emptySet(),
                 dismissingMemorySummaryDraftIds = emptySet(),
@@ -3006,22 +3480,47 @@ class RuntimeClientViewModel internal constructor(
             showError("authentication_required")
             return
         }
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        val requestId = MODELS_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingModelsListRequest = PendingModelsListRequest(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
         mutableState.update {
             it.copy(
                 isLoadingModels = true,
                 error = null,
             )
         }
-        sendEnvelope(ProtocolEnvelope(type = MessageType.ModelsList))
+        sendEnvelope(ProtocolEnvelope(type = MessageType.ModelsList, requestId = requestId))
     }
 
     private fun requestRuntimeChatSessions(query: String? = null) {
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
-        if (pendingChatSessionsRequestId != null) return
-        val requestId = UUID.randomUUID().toString()
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        if (pendingChatSessionsBulkLifecycle != null) {
+            showError("chat_history_loading")
+            return
+        }
+        clearPendingChatSessionsListRun()
+        val requestId = CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
         val normalizedQuery = query?.trim()?.ifBlank { null }
         pendingChatSessionsRequestId = requestId
         pendingChatSessionsQuery = normalizedQuery
+        pendingChatSessionsListRun = PendingChatSessionsListRun(
+            requestId = requestId,
+            query = normalizedQuery,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        mutableState.update {
+            it.copy(
+                isLoadingChatSessions = true,
+            )
+        }
         val embeddingModelId = normalizedQuery?.let { state.value.selectedEmbeddingModelId }
         sendEnvelope(
             envelope(
@@ -3038,14 +3537,46 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
+    private fun requestRuntimeChatSessionsContinuation(
+        run: PendingChatSessionsListRun,
+        cursor: String,
+    ) {
+        if (!run.hasCurrentRuntimeAuthority()) {
+            clearPendingChatSessionsListRun(run)
+            return
+        }
+        closeRuntimeChatHistoryRequest(run.correlation())
+        val requestId = CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
+        run.requestId = requestId
+        pendingChatSessionsRequestId = requestId
+        pendingChatSessionsQuery = run.query
+        sendEnvelope(
+            envelope(
+                type = MessageType.ChatSessionsList,
+                requestId = requestId,
+                serializer = ChatSessionsListRequestPayload.serializer(),
+                payload = ChatSessionsListRequestPayload(cursor = cursor),
+            )
+        )
+    }
+
     private fun requestRuntimeChatMessages(sessionId: String) {
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
         if (sessionId.isBlank()) return
         val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
         if (session?.runtimeOwned != true || session.archivedAtMillis != null) return
-        val requestId = UUID.randomUUID().toString()
+        clearPendingChatMessagesRequest()
+        val requestId = CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
         pendingChatMessagesRequestId = requestId
         pendingChatMessagesSessionId = sessionId
+        pendingChatMessagesRequestCorrelation = RuntimeChatHistoryRequestCorrelation(
+            requestId = requestId,
+            type = MessageType.ChatMessagesList,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
         mutableState.update { current ->
             if (current.activeChatSessionId == sessionId) {
                 current.copy(
@@ -3070,11 +3601,30 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun requestRuntimeMemory(query: String? = null, allowEmbeddingModel: Boolean = true) {
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        val channel = activeChannel
+        if (!isSessionAuthenticated || channel?.isConnected != true) return
         if (pendingMemoryListRequestId != null) return
+        val normalizedQuery = query?.trim()?.ifBlank { null }
+        if (normalizedQuery == null) {
+            memoryDuplicateSuggestionsListAcceptedAuthorityGeneration = null
+            memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration = null
+            memorySemanticDuplicateClustersListAcceptedAuthorityGeneration = null
+            clearMemoryDuplicateSuggestions()
+            clearMemorySemanticDuplicateSuggestions()
+            clearMemorySemanticDuplicateClusters()
+            mutableState.update {
+                it.copy(
+                    memoryDuplicateSuggestionsAvailable = false,
+                    memorySemanticDuplicateSuggestionsAvailable = false,
+                    memorySemanticDuplicateClustersAvailable = false,
+                )
+            }
+        }
         val requestId = UUID.randomUUID().toString()
         pendingMemoryListRequestId = requestId
-        val normalizedQuery = query?.trim()?.ifBlank { null }
+        pendingMemoryListChannel = channel
+        pendingMemoryListConnectionGeneration = activeConnectionGeneration
+        pendingMemoryListAuthorityGeneration = runtimeSessionAuthorityGeneration
         pendingMemoryListQuery = normalizedQuery
         val embeddingModelId = normalizedQuery
             ?.takeIf { allowEmbeddingModel }
@@ -3180,6 +3730,7 @@ class RuntimeClientViewModel internal constructor(
     private fun sendRuntimeChatSessionLifecycleIfNeeded(
         session: PersistedChatSession,
         type: String,
+        restoreAsActive: Boolean = false,
     ) {
         if (!session.runtimeOwned) return
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
@@ -3187,7 +3738,10 @@ class RuntimeClientViewModel internal constructor(
         pendingChatSessionLifecycleRequestIds += requestId
         pendingChatSessionLifecycleMutationsByRequestId[requestId] = PendingChatSessionLifecycleMutation(
             sessionId = session.id,
+            sequence = ++pendingChatSessionMutationSequence,
             type = type,
+            previousSession = session,
+            restoreAsActive = restoreAsActive,
         )
         sendEnvelope(
             envelope(
@@ -3209,9 +3763,11 @@ class RuntimeClientViewModel internal constructor(
         pendingChatSessionRenameRequestIds += requestId
         pendingChatSessionRenameMutationsByRequestId[requestId] = PendingChatSessionRenameMutation(
             sessionId = session.id,
+            sequence = ++pendingChatSessionMutationSequence,
             previousTitle = session.title,
             previousTitleManuallyEdited = session.titleManuallyEdited,
             previousTitleGenerated = session.titleGenerated,
+            previousUpdatedAtMillis = session.updatedAtMillis,
         )
         sendEnvelope(
             envelope(
@@ -3227,11 +3783,22 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun isRuntimeOwnedChatMutationBlocked(sessions: List<PersistedChatSession>): Boolean {
+        if (state.value.isChatHistoryActionPending) {
+            showError("chat_history_loading")
+            return true
+        }
         val loadingSessionId = state.value.loadingChatSessionId
         if (
             loadingSessionId != null &&
             sessions.any { session -> session.runtimeOwned && session.id == loadingSessionId }
         ) {
+            showError("chat_history_loading")
+            return true
+        }
+        val pendingMutationSessionIds =
+            pendingChatSessionLifecycleMutationsByRequestId.values.mapTo(mutableSetOf()) { it.sessionId } +
+                pendingChatSessionRenameMutationsByRequestId.values.map { it.sessionId }
+        if (sessions.any { session -> session.runtimeOwned && session.id in pendingMutationSessionIds }) {
             showError("chat_history_loading")
             return true
         }
@@ -3284,7 +3851,11 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val model = state.value.models.firstOrNull { it.id == modelId }
-        if (model == null || !model.isEmbeddingModel()) {
+        if (
+            model == null ||
+            !isCanonicalProviderQualifiedModelId(model.id) ||
+            !model.isEmbeddingModel()
+        ) {
             showError("select_embedding_model")
             return
         }
@@ -3607,10 +4178,9 @@ class RuntimeClientViewModel internal constructor(
         activeChannel = null
         activeConnectionGeneration += 1L
         client.close()
-        isSessionAuthenticated = false
         clearPendingRuntimeAuthentication()
         closedRuntimeAuthenticationRequestIds.clear()
-        clearTrustedSourceSessionState()
+        revokeAuthenticatedRuntimeSessionState()
 
         val preflightError = relayReachabilityPreflightError(target)
         if (preflightError != null) {
@@ -3783,19 +4353,14 @@ class RuntimeClientViewModel internal constructor(
                             activeConnectionGeneration == connectionGeneration
                         ) {
                             Log.e(TAG, "Runtime receive failed", error)
-                            isSessionAuthenticated = false
                             clearPendingRuntimeAuthentication()
                             closedRuntimeAuthenticationRequestIds.clear()
-                            clearPendingRuntimeHistoryRequests()
-                            pendingMemoryListRequestId = null
-                            pendingMemoryListQuery = null
-                            pendingMemoryListEmbeddingModelId = null
+                            revokeAuthenticatedRuntimeSessionState()
+                            clearPendingMemoryListRequest()
                             pendingMemorySummaryDraftsRequestId = null
                             pendingMemorySummaryDraftGenerationsByRequestId.clear()
                             clearPendingRuntimeDocumentRequests()
-                            clearPendingRouteRefreshRequest()
                             clearPendingPairingRequest()
-                            cancelRuntimeRouteRefreshLease()
                             clearPendingTitleRequest()
                             val current = state.value
                             val uiError = current.runtimeReceiveFailureUiError(error)
@@ -3881,7 +4446,11 @@ class RuntimeClientViewModel internal constructor(
             )
             MessageType.PairingResult -> handlePairingResult(envelope)
             MessageType.RuntimeHealth -> handleRuntimeHealth(envelope)
-            MessageType.ModelsList, MessageType.ModelsResult -> handleModels(envelope)
+            MessageType.ModelsList, MessageType.ModelsResult -> handleModels(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.ModelsPull -> handleModelPull(envelope)
             MessageType.RelayAllocationChallenge -> handleRelayAllocationChallenge(envelope)
             MessageType.RouteRefresh -> handleRouteRefresh(envelope)
@@ -3908,7 +4477,28 @@ class RuntimeClientViewModel internal constructor(
             MessageType.TrustedSourceDismiss -> handleTrustedSourceDismiss(envelope)
             MessageType.TrustedSourceList -> handleTrustedSourceList(envelope)
             MessageType.TrustedSourceRevoke -> handleTrustedSourceRevoke(envelope)
-            MessageType.MemoryList -> handleMemoryList(envelope)
+            MessageType.MemoryList -> handleMemoryList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.MemoryDuplicateSuggestionsList -> handleMemoryDuplicateSuggestionsList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.MemorySemanticDuplicateSuggestionsList ->
+                handleMemorySemanticDuplicateSuggestionsList(
+                    envelope,
+                    sourceChannel,
+                    sourceConnectionGeneration,
+                )
+            MessageType.MemorySemanticDuplicateClustersList ->
+                handleMemorySemanticDuplicateClustersList(
+                    envelope,
+                    sourceChannel,
+                    sourceConnectionGeneration,
+                )
             MessageType.MemorySummaryDraftsList -> handleMemorySummaryDraftsList(envelope)
             MessageType.MemorySummaryDraftGenerate -> handleMemorySummaryDraftGenerate(envelope)
             MessageType.MemorySummaryDraftApprove -> handleMemorySummaryDraftApprove(envelope)
@@ -4069,6 +4659,12 @@ class RuntimeClientViewModel internal constructor(
         if (payload.accepted == true) {
             closeRuntimeAuthentication(pending)
             isSessionAuthenticated = true
+            runtimeSessionAuthorityGeneration += 1L
+            clearPendingModelsListRequest()
+            modelCatalogAcceptedAuthorityGeneration = null
+            resetMemoryDuplicateSuggestionsAuthority()
+            resetMemorySemanticDuplicateSuggestionsAuthority()
+            resetMemorySemanticDuplicateClustersAuthority()
             mutableState.update {
                 it.copy(
                     runtimeStatus = "authenticated",
@@ -4123,10 +4719,7 @@ class RuntimeClientViewModel internal constructor(
     ) {
         if (pendingRuntimeAuthentication?.helloRequestId != pending.helloRequestId) return
         closeRuntimeAuthentication(pending)
-        isSessionAuthenticated = false
-        clearTrustedSourceSessionState()
-        cancelRuntimeRouteRefreshLease()
-        clearPendingRouteRefreshRequest()
+        revokeAuthenticatedRuntimeSessionState()
         if (errorCode != null) showError(errorCode, detail)
         if (
             retry &&
@@ -4224,7 +4817,7 @@ class RuntimeClientViewModel internal constructor(
             pendingPairingPayload = null
             clearPendingPairingRequest()
             clearPersistedPendingPairingRoute()
-            isSessionAuthenticated = false
+            revokeAuthenticatedRuntimeSessionState()
             publishPersistedRuntimeData(
                 persistedRuntimeData.withPairingOnboardingCompleted(),
                 save = true,
@@ -4596,6 +5189,7 @@ class RuntimeClientViewModel internal constructor(
     private fun publishRouteRefreshLeaseExpired(current: RuntimeUiState) {
         val trustedRuntime = current.trustedRuntime ?: return
         if (!trustedRuntime.hasCompleteRemoteRouteMaterial()) return
+        revokeAuthenticatedRuntimeSessionState()
         mutableState.update {
             it.copy(
                 isConnected = false,
@@ -4631,10 +5225,7 @@ class RuntimeClientViewModel internal constructor(
         }
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
         if (payload.status.isPairingRequiredRuntimeCode()) {
-            isSessionAuthenticated = false
-            clearTrustedSourceSessionState()
-            cancelRuntimeRouteRefreshLease()
-            clearPendingRouteRefreshRequest()
+            revokeAuthenticatedRuntimeSessionState()
             mutableState.update {
                 it.withPairingRequiredRuntimeState(detail = null)
             }
@@ -4661,13 +5252,30 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleModels(envelope: ProtocolEnvelope) {
+    private fun handleModels(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingModelsListRequest ?: return
+        if (!pending.matchesCurrentModelsAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
         envelope.payload.modelsResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "models.result response contains unsupported metadata: $unknownKey")
-            mutableState.update { it.copy(isLoadingModels = false) }
+            clearPendingModelsListRequest()
             return
         }
-        val payload = decodePayload(ModelsResultPayload.serializer(), envelope.payload) ?: return
+        val payload = decodePayload(ModelsResultPayload.serializer(), envelope.payload) ?: run {
+            clearPendingModelsListRequest()
+            return
+        }
+        clearPendingModelsListRequest()
+        modelCatalogGeneration += 1L
+        modelCatalogAcceptedAuthorityGeneration = runtimeSessionAuthorityGeneration
         val models = payload.models.map {
             val provider = it.provider?.takeIf(String::isNotBlank)
                 ?: it.backend?.takeIf(String::isNotBlank)
@@ -4729,6 +5337,22 @@ class RuntimeClientViewModel internal constructor(
         }
         persistSelectedModel(reconciledSelections.selectedModelId, publish = false)
         persistSelectedEmbeddingModel(reconciledSelections.selectedEmbeddingModelId, publish = false)
+        if (pendingMemorySemanticDuplicateClustersRequest != null) {
+            clearMemorySemanticDuplicateClusters()
+        }
+        val refreshedEmbeddingModelId = state.value.selectedEmbeddingModelId
+        if (
+            refreshedEmbeddingModelId != null &&
+            !hasEligibleMemorySemanticDuplicateSuggestionsModel(
+                state.value,
+                refreshedEmbeddingModelId,
+            )
+        ) {
+            clearMemorySemanticDuplicateSuggestions()
+            clearMemorySemanticDuplicateClusters()
+        }
+        updateMemorySemanticDuplicateSuggestionsAvailability()
+        updateMemorySemanticDuplicateClustersAvailability()
     }
 
     private fun handleModelPull(envelope: ProtocolEnvelope) {
@@ -4778,26 +5402,164 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleChatSessionsList(envelope: ProtocolEnvelope) {
-        if (pendingChatSessionsRequestId != null && pendingChatSessionsRequestId != envelope.requestId) return
-        val requestedQuery = pendingChatSessionsQuery
-        pendingChatSessionsRequestId = null
-        pendingChatSessionsQuery = null
-        envelope.payload.chatSessionsListUnknownMetadataKey()?.let { unknownKey ->
-            showError("invalid_payload", "chat.sessions.list response contains unsupported metadata: $unknownKey")
+        val run = pendingChatSessionsListRun ?: return
+        if (run.requestId != envelope.requestId || !run.hasCurrentRuntimeAuthority()) return
+        run.pageCount += 1
+        if (run.pageCount > MAX_RUNTIME_CHAT_SESSION_LIST_PAGES) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response exceeded the 100-page budget")
             return
         }
-        val payload = decodePayload(ChatSessionsListResultPayload.serializer(), envelope.payload) ?: return
+        envelope.payload.chatSessionsListUnknownMetadataKey()?.let { unknownKey ->
+            failPendingChatSessionsListRun(
+                run,
+                "chat.sessions.list response contains unsupported metadata: $unknownKey",
+            )
+            return
+        }
+        val payload = decodePayload(ChatSessionsListResultPayload.serializer(), envelope.payload) ?: run {
+            clearPendingChatSessionsListRun(run)
+            return
+        }
+        if (payload.sessions.size > MAX_RUNTIME_CHAT_SESSION_PAGE_SIZE) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response page exceeds 200 sessions")
+            return
+        }
+        val pageIds = payload.sessions.map(ChatSessionSummaryPayload::sessionId)
+        if (pageIds.toSet().size != pageIds.size || pageIds.any(run.sessionIds::contains)) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response contains duplicate session IDs")
+            return
+        }
+        val snapshotCount = payload.snapshotCount
+        if (snapshotCount == null) {
+            if (runtimeChatSessionsAuthoritativeSyncSupported) {
+                runtimeChatSessionsBulkAuthorityEnabled = false
+                failPendingChatSessionsListRun(
+                    run,
+                    "chat.sessions.list response omitted snapshot_count after authoritative sync was established",
+                )
+                return
+            }
+            if (run.snapshotCount != null || run.summaries.isNotEmpty()) {
+                failPendingChatSessionsListRun(run, "chat.sessions.list response snapshot_count changed between pages")
+                return
+            }
+            run.summaries += payload.sessions
+            run.sessionIds += pageIds
+            completePendingChatSessionsListRun(run, capable = false)
+            return
+        }
+        val expectedSnapshotCount = run.snapshotCount
+        if (expectedSnapshotCount != null && expectedSnapshotCount != snapshotCount) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response snapshot_count changed between pages")
+            return
+        }
+        run.snapshotCount = snapshotCount
+        val accumulatedCount = run.summaries.size + payload.sessions.size
+        if (accumulatedCount > snapshotCount) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response exceeded snapshot_count")
+            return
+        }
+        val nextCursor = payload.nextCursor
+        if (nextCursor != null) {
+            if (payload.sessions.isEmpty()) {
+                failPendingChatSessionsListRun(run, "chat.sessions.list response has an empty nonterminal page")
+                return
+            }
+            if (accumulatedCount >= snapshotCount) {
+                failPendingChatSessionsListRun(run, "chat.sessions.list response cursor exceeds snapshot_count")
+                return
+            }
+            if (!run.cursors.add(nextCursor)) {
+                failPendingChatSessionsListRun(run, "chat.sessions.list response repeated a cursor")
+                return
+            }
+            run.summaries += payload.sessions
+            run.sessionIds += pageIds
+            requestRuntimeChatSessionsContinuation(run, nextCursor)
+            return
+        }
+        if (accumulatedCount != snapshotCount) {
+            failPendingChatSessionsListRun(run, "chat.sessions.list response final count does not match snapshot_count")
+            return
+        }
+        run.summaries += payload.sessions
+        run.sessionIds += pageIds
+        completePendingChatSessionsListRun(run, capable = true)
+    }
+
+    private fun PendingChatSessionsListRun.hasCurrentRuntimeAuthority(): Boolean {
+        return pendingChatSessionsListRun === this &&
+            activeChannel === channel &&
+            channel.isConnected &&
+            activeConnectionGeneration == connectionGeneration &&
+            isSessionAuthenticated &&
+            runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun clearPendingChatSessionsListRun(run: PendingChatSessionsListRun? = pendingChatSessionsListRun) {
+        if (run == null) {
+            if (pendingChatSessionsListRun != null) return
+            pendingChatSessionsRequestId = null
+            pendingChatSessionsQuery = null
+            mutableState.update { it.copy(isLoadingChatSessions = false) }
+            return
+        }
+        if (pendingChatSessionsListRun !== run) return
+        closeRuntimeChatHistoryRequest(run.correlation())
+        pendingChatSessionsListRun = null
+        pendingChatSessionsRequestId = null
+        pendingChatSessionsQuery = null
+        mutableState.update { it.copy(isLoadingChatSessions = false) }
+    }
+
+    private fun failPendingChatSessionsListRun(
+        run: PendingChatSessionsListRun,
+        detail: String?,
+    ) {
+        clearPendingChatSessionsListRun(run)
+        showError("invalid_payload", detail)
+    }
+
+    private fun completePendingChatSessionsListRun(
+        run: PendingChatSessionsListRun,
+        capable: Boolean,
+    ) {
+        if (!run.hasCurrentRuntimeAuthority()) return
+        clearPendingChatSessionsListRun(run)
+        if (capable && run.query == null) {
+            runtimeChatSessionsAuthoritativeSyncSupported = true
+            runtimeChatSessionsBulkAuthorityEnabled = true
+        }
+        publishRuntimeChatSessionsSnapshot(
+            summaries = run.summaries,
+            requestedQuery = run.query,
+        )
+    }
+
+    private fun publishRuntimeChatSessionsSnapshot(
+        summaries: List<ChatSessionSummaryPayload>,
+        requestedQuery: String?,
+    ) {
         if (requestedQuery != null) {
             val searchData = persistedRuntimeData.withRuntimeChatSessionSummaries(
-                sessions = payload.sessions,
+                sessions = summaries,
                 nowMillis = nowMillis(),
             )
             val resultsById = (
                 runtimeChatSessions(searchData) + archivedRuntimeChatSessions(searchData)
                 ).associateBy(RuntimeChatSession::id)
-            val orderedResults = payload.sessions
+            val remoteResultIds = searchData.sessions
+                .filter(PersistedChatSession::runtimeOwned)
+                .mapTo(mutableSetOf(), PersistedChatSession::id)
+            val orderedResults = summaries
+                .filter { it.sessionId in remoteResultIds }
                 .mapNotNull { resultsById[it.sessionId] }
                 .distinctBy(RuntimeChatSession::id)
+            val resultIDs = orderedResults.mapTo(mutableSetOf(), RuntimeChatSession::id)
+            runtimeChatSearchSummariesById = summaries
+                .filter { it.sessionId in resultIDs }
+                .distinctBy(ChatSessionSummaryPayload::sessionId)
+                .associateBy(ChatSessionSummaryPayload::sessionId)
             mutableState.update {
                 it.copy(
                     chatSessionSearchQuery = requestedQuery,
@@ -4807,7 +5569,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val syncedData = persistedRuntimeData.withRuntimeChatSessionSummaries(
-            sessions = payload.sessions,
+            sessions = summaries,
             nowMillis = nowMillis(),
         )
         publishPersistedRuntimeData(
@@ -4815,21 +5577,14 @@ class RuntimeClientViewModel internal constructor(
             save = true,
             clearError = false,
         )
-        mutableState.update {
-            it.copy(
-                chatSessionSearchQuery = null,
-                chatSessionSearchResults = emptyList(),
-            )
-        }
+        clearRuntimeChatSearchAuthority()
         activeRuntimeSessionId(syncedData)?.let(::requestRuntimeChatMessages)
     }
 
     private fun handleChatMessagesList(envelope: ProtocolEnvelope) {
         if (pendingChatMessagesRequestId != envelope.requestId) return
         val expectedSessionId = pendingChatMessagesSessionId
-        pendingChatMessagesRequestId = null
-        pendingChatMessagesSessionId = null
-        clearChatMessagesLoading(expectedSessionId)
+        clearPendingChatMessagesRequest()
         envelope.payload.chatMessagesListUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "chat.messages.list response contains unsupported metadata: $unknownKey")
             return
@@ -4959,18 +5714,48 @@ class RuntimeClientViewModel internal constructor(
             ),
             save = true,
         )
-        requestRuntimeChatSessions()
+        requestFreshRuntimeChatSessionsAfterMutationCompletion()
     }
 
     private fun handleChatSessionRename(envelope: ProtocolEnvelope) {
         if (envelope.requestId !in pendingChatSessionRenameRequestIds) return
+        val mutation = pendingChatSessionRenameMutationsByRequestId[envelope.requestId] ?: run {
+            pendingChatSessionRenameRequestIds -= envelope.requestId
+            return
+        }
         envelope.payload.chatSessionRenameResultUnknownMetadataKey()?.let { unknownKey ->
-            showError("invalid_payload", "chat.session.rename response contains unsupported metadata: $unknownKey")
+            pendingChatSessionRenameRequestIds -= envelope.requestId
+            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = "chat.session.rename response contains unsupported metadata: $unknownKey",
+                renameMutation = mutation,
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        val payload = decodePayload(ChatSessionRenamePayload.serializer(), envelope.payload) ?: run {
+            val detail = state.value.error?.technicalDetail
+            pendingChatSessionRenameRequestIds -= envelope.requestId
+            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = detail,
+                renameMutation = mutation,
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        if (payload.sessionId != mutation.sessionId) {
+            pendingChatSessionRenameRequestIds -= envelope.requestId
+            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = "chat.session.rename response did not match the pending session",
+                renameMutation = mutation,
+                errorCode = "invalid_payload",
+            )
             return
         }
         pendingChatSessionRenameRequestIds -= envelope.requestId
         pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
-        val payload = decodePayload(ChatSessionRenamePayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
             persistedRuntimeData.withRenamedChatSession(
                 sessionId = payload.sessionId,
@@ -4979,18 +5764,52 @@ class RuntimeClientViewModel internal constructor(
             ),
             save = true,
         )
-        requestRuntimeChatSessions()
+        requestFreshRuntimeChatSessionsAfterMutationCompletion()
     }
 
     private fun handleChatSessionLifecycle(envelope: ProtocolEnvelope) {
+        if (pendingChatSessionsBulkLifecycle?.requestId == envelope.requestId) {
+            handleChatSessionsBulkLifecycle(envelope)
+            return
+        }
         if (envelope.requestId !in pendingChatSessionLifecycleRequestIds) return
+        val mutation = pendingChatSessionLifecycleMutationsByRequestId[envelope.requestId] ?: run {
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            return
+        }
         envelope.payload.chatSessionLifecycleResultUnknownMetadataKey()?.let { unknownKey ->
-            showError("invalid_payload", "${envelope.type} response contains unsupported metadata: $unknownKey")
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = "${envelope.type} response contains unsupported metadata: $unknownKey",
+                lifecycleMutation = mutation,
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        val payload = decodePayload(ChatSessionLifecyclePayload.serializer(), envelope.payload) ?: run {
+            val detail = state.value.error?.technicalDetail
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = detail,
+                lifecycleMutation = mutation,
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        if (!payload.matchesPendingRuntimeChatSessionLifecycle(envelope.type, mutation)) {
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = "${envelope.type} response did not match the pending session lifecycle operation",
+                lifecycleMutation = mutation,
+                errorCode = "invalid_payload",
+            )
             return
         }
         pendingChatSessionLifecycleRequestIds -= envelope.requestId
         pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
-        val payload = decodePayload(ChatSessionLifecyclePayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeChatSessionLifecycleResult(
                 result = payload,
@@ -4998,7 +5817,223 @@ class RuntimeClientViewModel internal constructor(
             ),
             save = true,
         )
+        requestFreshRuntimeChatSessionsAfterMutationCompletion()
+    }
+
+    private fun beginRuntimeChatSessionsBulkLifecycle(
+        type: String,
+        scope: String,
+    ): Boolean {
+        if (!isSessionAuthenticated) return false
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return false
+        if (
+            pendingChatSessionsListRun != null ||
+            pendingChatSessionsBulkLifecycle != null ||
+            pendingTitleRequestId != null ||
+            pendingChatSessionLifecycleRequestIds.isNotEmpty() ||
+            pendingChatSessionRenameRequestIds.isNotEmpty()
+        ) {
+            return false
+        }
+        val requestId = UUID.randomUUID().toString()
+        val pending = PendingChatSessionsBulkLifecycle(
+            requestId = requestId,
+            type = type,
+            scope = scope,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        pendingChatSessionsBulkLifecycle = pending
+        mutableState.update {
+            it.copy(
+                isBulkMutatingChatSessions = true,
+                error = null,
+            )
+        }
+        sendRuntimeChatSessionsBulkLifecycleBatch(pending)
+        return true
+    }
+
+    private fun sendRuntimeChatSessionsBulkLifecycleBatch(
+        pending: PendingChatSessionsBulkLifecycle,
+    ) {
+        if (!pending.hasCurrentRuntimeAuthority()) {
+            clearPendingChatSessionsBulkLifecycle(pending)
+            return
+        }
+        sendEnvelope(
+            envelope(
+                type = pending.type,
+                requestId = pending.requestId,
+                serializer = ChatSessionsBulkLifecyclePayload.serializer(),
+                payload = ChatSessionsBulkLifecyclePayload(
+                    scope = pending.scope,
+                    limit = MAX_RUNTIME_CHAT_SESSIONS_BULK_BATCH_SIZE,
+                ),
+            )
+        )
+    }
+
+    private fun handleChatSessionsBulkLifecycle(envelope: ProtocolEnvelope) {
+        val pending = pendingChatSessionsBulkLifecycle ?: return
+        if (
+            pending.requestId != envelope.requestId ||
+            envelope.type != pending.type ||
+            !pending.hasCurrentRuntimeAuthority()
+        ) {
+            return
+        }
+        envelope.payload.chatSessionsBulkLifecycleResultUnknownMetadataKey()?.let { unknownKey ->
+            failPendingChatSessionsBulkLifecycle(
+                pending,
+                "${envelope.type} bulk response contains unsupported metadata: $unknownKey",
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        val payload = decodePayload(
+            ChatSessionsBulkLifecycleResultPayload.serializer(),
+            envelope.payload,
+        ) ?: run {
+            clearPendingChatSessionsBulkLifecycle(pending)
+            reconcileRuntimeChatSessionsAfterBulkFailure()
+            return
+        }
+        if (
+            payload.scope != pending.scope ||
+            payload.status != pending.expectedStatus() ||
+            payload.affectedCount > MAX_RUNTIME_CHAT_SESSIONS_BULK_BATCH_SIZE ||
+            (payload.remainingCount > 0 && payload.affectedCount == 0)
+        ) {
+            failPendingChatSessionsBulkLifecycle(
+                pending,
+                "${envelope.type} bulk response did not match the pending lifecycle operation",
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        pending.batchCount += 1
+        pending.cumulativeAffectedCount += payload.affectedCount
+        if (pending.cumulativeAffectedCount > MAX_RUNTIME_CHAT_SESSION_BULK_AFFECTED) {
+            failPendingChatSessionsBulkLifecycle(
+                pending,
+                "${envelope.type} bulk response exceeded the 10000-row budget",
+                errorCode = "invalid_payload",
+            )
+            return
+        }
+        if (payload.remainingCount > 0) {
+            if (pending.batchCount >= MAX_RUNTIME_CHAT_SESSION_BULK_BATCHES) {
+                failPendingChatSessionsBulkLifecycle(
+                    pending,
+                    "${envelope.type} bulk response exceeded the 50-batch budget",
+                    errorCode = "invalid_payload",
+                )
+                return
+            }
+            pending.requestId = UUID.randomUUID().toString()
+            sendRuntimeChatSessionsBulkLifecycleBatch(pending)
+            return
+        }
+        clearPendingChatSessionsBulkLifecycle(pending)
+        applyCompletedRuntimeChatSessionsBulkLifecycle(pending)
         requestRuntimeChatSessions()
+    }
+
+    private fun PendingChatSessionsBulkLifecycle.expectedStatus(): String {
+        return when (scope) {
+            CHAT_SESSIONS_BULK_SCOPE_ALL_ACTIVE -> "archived"
+            CHAT_SESSIONS_BULK_SCOPE_ALL_ARCHIVED -> "deleted"
+            else -> ""
+        }
+    }
+
+    private fun PendingChatSessionsBulkLifecycle.hasCurrentRuntimeAuthority(): Boolean {
+        return pendingChatSessionsBulkLifecycle === this &&
+            activeChannel === channel &&
+            channel.isConnected &&
+            activeConnectionGeneration == connectionGeneration &&
+            isSessionAuthenticated &&
+            runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun clearPendingChatSessionsBulkLifecycle(
+        pending: PendingChatSessionsBulkLifecycle? = pendingChatSessionsBulkLifecycle,
+    ) {
+        if (pending == null || pendingChatSessionsBulkLifecycle !== pending) return
+        pendingChatSessionsBulkLifecycle = null
+        mutableState.update { it.copy(isBulkMutatingChatSessions = false) }
+    }
+
+    private fun failPendingChatSessionsBulkLifecycle(
+        pending: PendingChatSessionsBulkLifecycle,
+        detail: String?,
+        errorCode: String = "chat_session_sync_failed",
+    ) {
+        clearPendingChatSessionsBulkLifecycle(pending)
+        showError(errorCode, detail)
+        reconcileRuntimeChatSessionsAfterBulkFailure()
+    }
+
+    private fun reconcileRuntimeChatSessionsAfterBulkFailure() {
+        if (isSessionAuthenticated && activeChannel?.isConnected == true) {
+            requestRuntimeChatSessions()
+        }
+    }
+
+    private fun applyCompletedRuntimeChatSessionsBulkLifecycle(
+        pending: PendingChatSessionsBulkLifecycle,
+    ) {
+        when (pending.scope) {
+            CHAT_SESSIONS_BULK_SCOPE_ALL_ACTIVE -> {
+                persistedRuntimeData.sessions
+                    .filter { it.archivedAtMillis == null }
+                    .forEach { clearPendingAttachmentsForSession(it.id) }
+                clearPendingAttachmentsForSession(null)
+                publishPersistedRuntimeData(
+                    persistedRuntimeData.withArchivedChatSessions(nowMillis()),
+                    save = true,
+                )
+                val cleanDraft = clearComposerDraft(sessionId = null)
+                mutableState.update {
+                    it.copy(
+                        chatInput = cleanDraft,
+                        pendingAttachments = emptyList(),
+                    )
+                }
+            }
+            CHAT_SESSIONS_BULK_SCOPE_ALL_ARCHIVED -> {
+                persistedRuntimeData.sessions
+                    .filter { it.archivedAtMillis != null }
+                    .forEach { clearPendingAttachmentsForSession(it.id) }
+                clearPendingAttachmentsForSession(null)
+                publishPersistedRuntimeData(
+                    persistedRuntimeData.withoutArchivedChatSessions(nowMillis = nowMillis()),
+                    save = true,
+                )
+            }
+        }
+        clearRuntimeChatSearchAuthority()
+    }
+
+    private fun ChatSessionLifecyclePayload.matchesPendingRuntimeChatSessionLifecycle(
+        envelopeType: String,
+        mutation: PendingChatSessionLifecycleMutation,
+    ): Boolean {
+        if (envelopeType != mutation.type || sessionId != mutation.sessionId) return false
+        val cleanStatus = status?.trim()?.lowercase()
+        if (cleanStatus != null && cleanStatus !in setOf("archived", "restored", "deleted")) return false
+        val archiveSignal = cleanStatus == "archived" || archivedAt != null
+        val restoreSignal = cleanStatus == "restored" || restoredAt != null
+        val deleteSignal = cleanStatus == "deleted" || deletedAt != null
+        if (listOf(archiveSignal, restoreSignal, deleteSignal).count { it } != 1) return false
+        return when (mutation.type) {
+            MessageType.ChatSessionArchive -> archiveSignal
+            MessageType.ChatSessionRestore -> restoreSignal
+            MessageType.ChatSessionDelete -> deleteSignal
+            else -> false
+        }
     }
 
     private fun handleIndexDocumentsList(envelope: ProtocolEnvelope) {
@@ -5304,12 +6339,24 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleMemoryList(envelope: ProtocolEnvelope) {
-        if (pendingMemoryListRequestId != envelope.requestId) return
+    private fun handleMemoryList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        if (
+            pendingMemoryListRequestId != envelope.requestId ||
+            pendingMemoryListChannel !== sourceChannel ||
+            pendingMemoryListConnectionGeneration != sourceConnectionGeneration ||
+            pendingMemoryListAuthorityGeneration != runtimeSessionAuthorityGeneration ||
+            activeChannel !== sourceChannel ||
+            activeConnectionGeneration != sourceConnectionGeneration ||
+            !isSessionAuthenticated
+        ) {
+            return
+        }
         val requestedQuery = pendingMemoryListQuery
-        pendingMemoryListRequestId = null
-        pendingMemoryListQuery = null
-        pendingMemoryListEmbeddingModelId = null
+        clearPendingMemoryListRequest()
         envelope.payload.memoryListResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.list response contains unsupported metadata: $unknownKey")
             return
@@ -5329,6 +6376,15 @@ class RuntimeClientViewModel internal constructor(
             }
             return
         }
+        memoryCatalogGeneration += 1L
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
+        memoryDuplicateSuggestionsListAcceptedAuthorityGeneration = runtimeSessionAuthorityGeneration
+        memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration =
+            runtimeSessionAuthorityGeneration
+        memorySemanticDuplicateClustersListAcceptedAuthorityGeneration =
+            runtimeSessionAuthorityGeneration
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntries(payload.entries, nowMillis()),
             save = true,
@@ -5337,6 +6393,198 @@ class RuntimeClientViewModel internal constructor(
             it.copy(
                 memorySearchQuery = null,
                 memorySearchResults = emptyList(),
+                memoryDuplicateSuggestionsAvailable =
+                    memoryDuplicateSuggestionsListAcceptedAuthorityGeneration == runtimeSessionAuthorityGeneration &&
+                    memoryDuplicateSuggestionsUnsupportedAuthorityGeneration != runtimeSessionAuthorityGeneration,
+                memorySemanticDuplicateSuggestionsAvailable =
+                    isMemorySemanticDuplicateSuggestionsAvailable(it),
+                memorySemanticDuplicateClustersAvailable =
+                    isMemorySemanticDuplicateClustersAvailable(it),
+            )
+        }
+    }
+
+    private fun handleMemoryDuplicateSuggestionsList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        if (!isCurrentMemoryDuplicateSuggestionsRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        closePendingMemoryDuplicateSuggestionsRequest()
+        mutableState.update { it.copy(isScanningMemoryDuplicateSuggestions = false) }
+        envelope.payload.memoryDuplicateSuggestionsListResultUnknownMetadataKey()?.let { unknownKey ->
+            showError(
+                "invalid_payload",
+                "memory.duplicate_suggestions.list response contains unsupported metadata: $unknownKey",
+            )
+            return
+        }
+        val payload = decodePayload(
+            MemoryDuplicateSuggestionsListResultPayload.serializer(),
+            envelope.payload,
+        ) ?: return
+        val authoritativeEntryIds = state.value.memoryEntries.mapTo(mutableSetOf(), RuntimeMemoryEntry::id)
+        val unknownEntryId = payload.groups
+            .asSequence()
+            .flatMap { it.entryIds.asSequence() }
+            .firstOrNull { it !in authoritativeEntryIds }
+        if (unknownEntryId != null) {
+            showError(
+                "invalid_payload",
+                "memory.duplicate_suggestions.list response references unknown memory entry ID",
+            )
+            return
+        }
+        mutableState.update {
+            it.copy(
+                memoryDuplicateSuggestionGroups = payload.groups.map { group ->
+                    RuntimeMemoryDuplicateSuggestionGroup(entryIds = group.entryIds)
+                },
+                memoryDuplicateSuggestionsScannedCount = payload.scannedCount,
+                memoryDuplicateSuggestionsTruncated = payload.truncated,
+                hasMemoryDuplicateSuggestionsResult = true,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleMemorySemanticDuplicateSuggestionsList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingMemorySemanticDuplicateSuggestionsRequest
+        if (!isCurrentMemorySemanticDuplicateSuggestionsRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        closePendingMemorySemanticDuplicateSuggestionsRequest()
+        mutableState.update { it.copy(isScanningMemorySemanticDuplicateSuggestions = false) }
+        envelope.payload.memorySemanticDuplicateSuggestionsListResultUnknownMetadataKey()?.let {
+            unknownKey ->
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_suggestions.list response contains unsupported metadata: $unknownKey",
+            )
+            return
+        }
+        val payload = decodePayload(
+            MemorySemanticDuplicateSuggestionsListResultPayload.serializer(),
+            envelope.payload,
+        ) ?: return
+        val minimumSimilarityBasisPoints = pending?.minimumSimilarityBasisPoints ?: return
+        if (payload.pairs.any { it.similarityBasisPoints < minimumSimilarityBasisPoints }) {
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_suggestions.list response score is below the requested threshold",
+            )
+            return
+        }
+        val authoritativeEntryIds = state.value.memoryEntries.mapTo(mutableSetOf(), RuntimeMemoryEntry::id)
+        if (payload.pairs.any { pair -> pair.entryIds.any { it !in authoritativeEntryIds } }) {
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_suggestions.list response references unknown memory entry ID",
+            )
+            return
+        }
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateSuggestionPairs = payload.pairs.map { pair ->
+                    RuntimeMemorySemanticDuplicateSuggestionPair(
+                        entryIds = pair.entryIds,
+                        similarityBasisPoints = pair.similarityBasisPoints,
+                    )
+                },
+                memorySemanticDuplicateSuggestionsScannedCount = payload.scannedCount,
+                memorySemanticDuplicateSuggestionsOmittedCount = payload.omittedCount,
+                memorySemanticDuplicateSuggestionsTruncated = payload.truncated,
+                memorySemanticDuplicateSuggestionsThresholdBasisPoints =
+                    minimumSimilarityBasisPoints,
+                hasMemorySemanticDuplicateSuggestionsResult = true,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleMemorySemanticDuplicateClustersList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingMemorySemanticDuplicateClustersRequest
+        if (!isCurrentMemorySemanticDuplicateClustersRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        closePendingMemorySemanticDuplicateClustersRequest()
+        mutableState.update { it.copy(isScanningMemorySemanticDuplicateClusters = false) }
+        envelope.payload.memorySemanticDuplicateClustersListResultUnknownMetadataKey()?.let { unknownKey ->
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_clusters.list response contains unsupported metadata: $unknownKey",
+            )
+            return
+        }
+        val payload = decodePayload(
+            MemorySemanticDuplicateClustersListResultPayload.serializer(),
+            envelope.payload,
+        ) ?: return
+        val minimumSimilarityBasisPoints = pending?.minimumSimilarityBasisPoints ?: return
+        if (payload.clusters.any { it.minimumSimilarityBasisPoints < minimumSimilarityBasisPoints }) {
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_clusters.list response score is below the requested threshold",
+            )
+            return
+        }
+        val authoritativeEntriesById = state.value.memoryEntries.associateBy(RuntimeMemoryEntry::id)
+        if (payload.clusters.any { cluster -> cluster.entryIds.any { it !in authoritativeEntriesById } }) {
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_clusters.list response references unknown memory entry ID",
+            )
+            return
+        }
+        val hasByteIdenticalContents = payload.clusters.any { cluster ->
+            val encodedContents = mutableListOf<ByteArray>()
+            cluster.entryIds.any { entryId ->
+                val content = authoritativeEntriesById.getValue(entryId).content.toByteArray(Charsets.UTF_8)
+                val duplicate = encodedContents.any { existing -> existing.contentEquals(content) }
+                encodedContents += content
+                duplicate
+            }
+        }
+        if (hasByteIdenticalContents) {
+            showError(
+                "invalid_payload",
+                "memory.semantic_duplicate_clusters.list response contains byte-identical memory contents",
+            )
+            return
+        }
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateClusters = payload.clusters.map { cluster ->
+                    RuntimeMemorySemanticDuplicateCluster(
+                        entryIds = cluster.entryIds,
+                        minimumSimilarityBasisPoints = cluster.minimumSimilarityBasisPoints,
+                    )
+                },
+                memorySemanticDuplicateClustersScannedCount = payload.scannedCount,
+                memorySemanticDuplicateClustersOmittedCount = payload.omittedCount,
+                memorySemanticDuplicateClustersTruncated = payload.truncated,
+                memorySemanticDuplicateClustersThresholdBasisPoints = minimumSimilarityBasisPoints,
+                hasMemorySemanticDuplicateClustersResult = true,
+                error = null,
             )
         }
     }
@@ -5420,6 +6668,9 @@ class RuntimeClientViewModel internal constructor(
         }
         val approvedDraftId = payload.draftId.trim().ifBlank { pendingDraftId }
         val draftIdsToClear = setOfNotNull(pendingDraftId, approvedDraftId)
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
             save = true,
@@ -5458,6 +6709,9 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemoryUpsert(envelope: ProtocolEnvelope) {
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         envelope.payload.memoryUpsertResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.upsert response contains unsupported metadata: $unknownKey")
             return
@@ -5470,6 +6724,9 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun handleMemoryDelete(envelope: ProtocolEnvelope) {
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         envelope.payload.memoryDeleteResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.delete response contains unsupported metadata: $unknownKey")
             return
@@ -5525,6 +6782,66 @@ class RuntimeClientViewModel internal constructor(
                 )
                 return
             }
+        pendingModelsListRequest
+            ?.takeIf { pending ->
+                pending.matchesCurrentModelsAuthority(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            }
+            ?.let {
+                envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                    clearPendingModelsListRequest()
+                    showError(
+                        "invalid_payload",
+                        "error response contains unsupported metadata: $unknownKey",
+                    )
+                    return
+                }
+                val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                    clearPendingModelsListRequest()
+                    return
+                }
+                clearPendingModelsListRequest()
+                if (payload.code.isPairingRequiredRuntimeCode()) {
+                    revokeAuthenticatedRuntimeSessionState()
+                }
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+        if (envelope.requestId.startsWith(MODELS_LIST_REQUEST_ID_PREFIX)) return
+        if (shouldIgnoreClosedMemoryDuplicateSuggestionsError(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        if (shouldIgnoreClosedMemorySemanticDuplicateSuggestionsError(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        if (shouldIgnoreClosedMemorySemanticDuplicateClustersError(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        if (
+            shouldIgnoreStaleRuntimeChatHistoryError(
+                envelope.requestId,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+        ) {
+            return
+        }
         val pendingRevocationAnchorId = pendingTrustedSourceRevocationsByRequestId[envelope.requestId]
         val isPendingTrustedSourceRequest = envelope.requestId == pendingCitationResolveRequestId ||
             envelope.requestId == pendingHistoricalSourceAttributionResolve?.requestId ||
@@ -5546,10 +6863,7 @@ class RuntimeClientViewModel internal constructor(
             null
         }
         if (trustedSourceErrorPayload?.code.isPairingRequiredRuntimeCode()) {
-            isSessionAuthenticated = false
-            clearTrustedSourceSessionState()
-            cancelRuntimeRouteRefreshLease()
-            clearPendingRouteRefreshRequest()
+            revokeAuthenticatedRuntimeSessionState()
             mutableState.value = state.value.withRuntimeError(
                 envelope,
                 trustedSourceErrorPayload,
@@ -5670,6 +6984,15 @@ class RuntimeClientViewModel internal constructor(
                 originalPayload?.embeddingModelId != null &&
                 payload.message.trim() == LEGACY_RETRIEVAL_EMBEDDING_UNSUPPORTED_MESSAGE
             clearPendingRuntimeDocumentSearch()
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             if (shouldRetryWithoutEmbedding) {
                 requestRuntimeDocumentSearch(
                     payload = requireNotNull(originalPayload).copy(embeddingModelId = null),
@@ -5683,56 +7006,173 @@ class RuntimeClientViewModel internal constructor(
         }
         if (envelope.requestId.startsWith(DOCUMENT_SEARCH_REQUEST_ID_PREFIX)) return
         envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
-            showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
+            val detail = "error response contains unsupported metadata: $unknownKey"
+            if (isCurrentMemoryDuplicateSuggestionsRequest(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            ) {
+                closePendingMemoryDuplicateSuggestionsRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemoryDuplicateSuggestions = false)
+                }
+                showError("invalid_payload", detail)
+                return
+            }
+            if (isCurrentMemorySemanticDuplicateClustersRequest(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            ) {
+                closePendingMemorySemanticDuplicateClustersRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemorySemanticDuplicateClusters = false)
+                }
+                showError("invalid_payload", detail)
+                return
+            }
+            pendingChatSessionsBulkLifecycle
+                ?.takeIf { it.requestId == envelope.requestId }
+                ?.let { pending ->
+                    failPendingChatSessionsBulkLifecycle(pending, detail, errorCode = "invalid_payload")
+                    return
+                }
+            pendingChatSessionsListRun
+                ?.takeIf { it.requestId == envelope.requestId }
+                ?.let { run ->
+                    failPendingChatSessionsListRun(run, detail)
+                    return
+                }
+            if (pendingChatMessagesRequestId == envelope.requestId) {
+                clearPendingChatMessagesRequest()
+                showError("invalid_payload", detail)
+                return
+            }
+            showError("invalid_payload", detail)
             return
         }
+        pendingChatSessionsBulkLifecycle
+            ?.takeIf { it.requestId == envelope.requestId }
+            ?.let { pending ->
+                val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+                if (payload?.code.isPairingRequiredRuntimeCode()) {
+                    revokeAuthenticatedRuntimeSessionState()
+                    mutableState.value = state.value.withRuntimeError(
+                        envelope,
+                        payload,
+                        pendingModelPullRequestId,
+                    )
+                } else {
+                    failPendingChatSessionsBulkLifecycle(pending, payload?.message)
+                }
+                return
+            }
         if (pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)) {
             val mutation = pendingChatSessionLifecycleMutationsByRequestId.remove(envelope.requestId)
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            val authenticationLost = payload?.code.isPairingRequiredRuntimeCode()
+            if (authenticationLost) {
+                revokeAuthenticatedRuntimeSessionState(listOfNotNull(mutation))
+            }
             handleRuntimeChatSessionMutationFailure(
                 detail = payload?.message,
-                lifecycleMutation = mutation,
+                lifecycleMutation = mutation.takeUnless { authenticationLost },
             )
+            if (authenticationLost) {
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+            }
             return
         }
         if (pendingChatSessionRenameRequestIds.remove(envelope.requestId)) {
             val mutation = pendingChatSessionRenameMutationsByRequestId.remove(envelope.requestId)
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            val authenticationLost = payload?.code.isPairingRequiredRuntimeCode()
+            if (authenticationLost) {
+                revokeAuthenticatedRuntimeSessionState(listOfNotNull(mutation))
+            }
             handleRuntimeChatSessionMutationFailure(
                 detail = payload?.message,
-                renameMutation = mutation,
+                renameMutation = mutation.takeUnless { authenticationLost },
             )
+            if (authenticationLost) {
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+            }
             return
         }
         if (pendingTitleRequestId == envelope.requestId) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             clearPendingTitleRequest()
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+            }
             return
         }
         if (pendingChatSessionsRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            pendingChatSessionsRequestId = null
-            pendingChatSessionsQuery = null
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            clearPendingChatSessionsListRun()
             showError("chat_history_load_failed", payload?.message)
             return
         }
         if (pendingChatMessagesRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            val expectedSessionId = pendingChatMessagesSessionId
-            pendingChatMessagesRequestId = null
-            pendingChatMessagesSessionId = null
-            clearChatMessagesLoading(expectedSessionId)
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            clearPendingChatMessagesRequest()
             showError("chat_history_load_failed", payload?.message)
             return
         }
-        if (pendingMemoryListRequestId == envelope.requestId) {
+        if (isCurrentMemoryListRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             val retryQuery = pendingMemoryListQuery
             val unsupportedEmbeddingHint = payload?.code == "invalid_payload" &&
                 pendingMemoryListEmbeddingModelId != null &&
                 payload.message.orEmpty().contains("embedding_model_id")
-            pendingMemoryListRequestId = null
-            pendingMemoryListQuery = null
-            pendingMemoryListEmbeddingModelId = null
+            clearPendingMemoryListRequest()
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             if (unsupportedEmbeddingHint && retryQuery != null) {
                 requestRuntimeMemory(retryQuery, allowEmbeddingModel = false)
                 return
@@ -5740,9 +7180,158 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_load_failed", payload?.message)
             return
         }
+        if (isCurrentMemoryDuplicateSuggestionsRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                closePendingMemoryDuplicateSuggestionsRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemoryDuplicateSuggestions = false)
+                }
+                showError(
+                    "invalid_payload",
+                    "error response contains unsupported metadata: $unknownKey",
+                )
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            closePendingMemoryDuplicateSuggestionsRequest()
+            mutableState.update { state ->
+                state.copy(isScanningMemoryDuplicateSuggestions = false)
+            }
+            if (payload?.code in MEMORY_DUPLICATE_SUGGESTIONS_UNSUPPORTED_ERROR_CODES) {
+                memoryDuplicateSuggestionsUnsupportedAuthorityGeneration =
+                    runtimeSessionAuthorityGeneration
+                mutableState.update { state ->
+                    state.copy(
+                        memoryDuplicateSuggestionGroups = emptyList(),
+                        memoryDuplicateSuggestionsScannedCount = 0,
+                        memoryDuplicateSuggestionsTruncated = false,
+                        hasMemoryDuplicateSuggestionsResult = false,
+                        memoryDuplicateSuggestionsAvailable = false,
+                    )
+                }
+                return
+            }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            showError("memory_load_failed", payload?.message)
+            return
+        }
+        if (isCurrentMemorySemanticDuplicateSuggestionsRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                closePendingMemorySemanticDuplicateSuggestionsRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemorySemanticDuplicateSuggestions = false)
+                }
+                showError(
+                    "invalid_payload",
+                    "error response contains unsupported metadata: $unknownKey",
+                )
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            closePendingMemorySemanticDuplicateSuggestionsRequest()
+            mutableState.update { state ->
+                state.copy(isScanningMemorySemanticDuplicateSuggestions = false)
+            }
+            if (payload?.code in MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_UNSUPPORTED_ERROR_CODES) {
+                memorySemanticDuplicateSuggestionsUnsupportedAuthorityGeneration =
+                    runtimeSessionAuthorityGeneration
+                clearMemorySemanticDuplicateSuggestions()
+                mutableState.update { state ->
+                    state.copy(memorySemanticDuplicateSuggestionsAvailable = false)
+                }
+                return
+            }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            showError("memory_load_failed", payload?.message)
+            return
+        }
+        if (isCurrentMemorySemanticDuplicateClustersRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                closePendingMemorySemanticDuplicateClustersRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemorySemanticDuplicateClusters = false)
+                }
+                showError(
+                    "invalid_payload",
+                    "error response contains unsupported metadata: $unknownKey",
+                )
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                closePendingMemorySemanticDuplicateClustersRequest()
+                mutableState.update { state ->
+                    state.copy(isScanningMemorySemanticDuplicateClusters = false)
+                }
+                return
+            }
+            closePendingMemorySemanticDuplicateClustersRequest()
+            mutableState.update { state ->
+                state.copy(isScanningMemorySemanticDuplicateClusters = false)
+            }
+            if (payload.code in MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_UNSUPPORTED_ERROR_CODES) {
+                memorySemanticDuplicateClustersUnsupportedAuthorityGeneration =
+                    runtimeSessionAuthorityGeneration
+                clearMemorySemanticDuplicateClusters()
+                mutableState.update { state ->
+                    state.copy(memorySemanticDuplicateClustersAvailable = false)
+                }
+                return
+            }
+            if (payload.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            showError("memory_load_failed", payload.message)
+            return
+        }
         if (pendingMemorySummaryDraftsRequestId == envelope.requestId) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             pendingMemorySummaryDraftsRequestId = null
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             showError("memory_summary_drafts_load_failed", payload?.message)
             return
         }
@@ -5750,6 +7339,15 @@ class RuntimeClientViewModel internal constructor(
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             pendingDocumentCatalogRequestId = null
             mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             showError("document_catalog_load_failed", payload?.message)
             return
         }
@@ -5760,6 +7358,15 @@ class RuntimeClientViewModel internal constructor(
                 it.copy(
                     generatingMemorySummaryDraftIds = it.generatingMemorySummaryDraftIds - draftId,
                 )
+            }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
             }
             showError("memory_summary_draft_generation_failed", payload?.message)
             if (payload?.code == "memory_summary_draft_stale") {
@@ -5772,6 +7379,15 @@ class RuntimeClientViewModel internal constructor(
             mutableState.update {
                 it.copy(approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - draftId)
             }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             showError("memory_summary_draft_approval_failed", payload?.message)
             return
         }
@@ -5780,6 +7396,15 @@ class RuntimeClientViewModel internal constructor(
             mutableState.update {
                 it.copy(dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - draftId)
             }
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
             showError("memory_summary_draft_dismiss_failed", payload?.message)
             return
         }
@@ -5787,9 +7412,7 @@ class RuntimeClientViewModel internal constructor(
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             clearPendingRouteRefreshRequest()
             if (payload?.code.isPairingRequiredRuntimeCode()) {
-                isSessionAuthenticated = false
-                clearTrustedSourceSessionState()
-                cancelRuntimeRouteRefreshLease()
+                revokeAuthenticatedRuntimeSessionState()
                 mutableState.value = state.value.withRuntimeError(
                     envelope,
                     payload?.withoutRouteRefreshSensitiveDetail(),
@@ -5812,10 +7435,7 @@ class RuntimeClientViewModel internal constructor(
             modelIdToSelectAfterRefresh = null
         }
         if (payload?.code.isPairingRequiredRuntimeCode()) {
-            isSessionAuthenticated = false
-            clearTrustedSourceSessionState()
-            cancelRuntimeRouteRefreshLease()
-            clearPendingRouteRefreshRequest()
+            revokeAuthenticatedRuntimeSessionState()
         }
         val updatedState = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
         mutableState.value = updatedState
@@ -5840,8 +7460,16 @@ class RuntimeClientViewModel internal constructor(
 
     private fun sendEnvelope(envelope: ProtocolEnvelope) {
         val channelAtDispatch = activeChannel
+        val connectionGenerationAtDispatch = activeConnectionGeneration
+        val runtimeSessionAuthorityGenerationAtDispatch = runtimeSessionAuthorityGeneration
+            .takeIf { isSessionAuthenticated }
         viewModelScope.launch {
-            sendEnvelopeInternal(envelope, channelAtDispatch)
+            sendEnvelopeInternal(
+                envelope = envelope,
+                channelAtDispatch = channelAtDispatch,
+                expectedConnectionGeneration = connectionGenerationAtDispatch,
+                expectedRuntimeSessionAuthorityGeneration = runtimeSessionAuthorityGenerationAtDispatch,
+            )
         }
     }
 
@@ -5849,20 +7477,11 @@ class RuntimeClientViewModel internal constructor(
         detail: String?,
         lifecycleMutation: PendingChatSessionLifecycleMutation? = null,
         renameMutation: PendingChatSessionRenameMutation? = null,
+        errorCode: String = "chat_session_sync_failed",
     ) {
-        var repairedData = persistedRuntimeData
-        if (lifecycleMutation?.type == MessageType.ChatSessionDelete) {
-            repairedData = repairedData.withoutRuntimeChatSessionSuppression(lifecycleMutation.sessionId)
-        }
-        if (renameMutation != null) {
-            repairedData = repairedData.withRevertedRuntimeChatSessionRename(
-                sessionId = renameMutation.sessionId,
-                previousTitle = renameMutation.previousTitle,
-                previousTitleManuallyEdited = renameMutation.previousTitleManuallyEdited,
-                previousTitleGenerated = renameMutation.previousTitleGenerated,
-                nowMillis = nowMillis(),
-            )
-        }
+        val repairedData = persistedRuntimeData.revertingRuntimeChatSessionMutations(
+            listOfNotNull(lifecycleMutation, renameMutation),
+        )
         if (repairedData != persistedRuntimeData) {
             publishPersistedRuntimeData(
                 repairedData,
@@ -5870,7 +7489,13 @@ class RuntimeClientViewModel internal constructor(
                 clearError = false,
             )
         }
-        showError("chat_session_sync_failed", detail)
+        showError(errorCode, detail)
+        requestFreshRuntimeChatSessionsAfterMutationCompletion()
+    }
+
+    private fun requestFreshRuntimeChatSessionsAfterMutationCompletion() {
+        clearPendingChatSessionsListRun()
+        clearRuntimeChatSearchAuthority()
         requestRuntimeChatSessions()
     }
 
@@ -5878,6 +7503,7 @@ class RuntimeClientViewModel internal constructor(
         envelope: ProtocolEnvelope,
         channelAtDispatch: RuntimeProtocolChannel?,
         expectedConnectionGeneration: Long? = null,
+        expectedRuntimeSessionAuthorityGeneration: Long? = null,
     ): Boolean {
         val result = runCatching {
             Log.d(TAG, "Sending ${envelope.type} request_id=${envelope.requestId}")
@@ -5888,10 +7514,32 @@ class RuntimeClientViewModel internal constructor(
                     "Runtime connection changed before send"
                 }
             }
+            if (expectedRuntimeSessionAuthorityGeneration != null) {
+                check(runtimeSessionAuthorityGeneration == expectedRuntimeSessionAuthorityGeneration) {
+                    "Runtime session authority changed before send"
+                }
+            }
             channel.send(envelope)
         }
             .onFailure { error ->
                 Log.e(TAG, "Runtime send failed", error)
+                if (
+                    activeChannel !== channelAtDispatch ||
+                    (expectedConnectionGeneration != null &&
+                        activeConnectionGeneration != expectedConnectionGeneration) ||
+                    (expectedRuntimeSessionAuthorityGeneration != null &&
+                        runtimeSessionAuthorityGeneration != expectedRuntimeSessionAuthorityGeneration)
+                ) {
+                    return@onFailure
+                }
+                if (
+                    !isSessionAuthenticated &&
+                    envelope.type != MessageType.PairingRequest &&
+                    envelope.type != MessageType.Hello &&
+                    envelope.type != MessageType.AuthResponse
+                ) {
+                    return@onFailure
+                }
                 val current = state.value
                 val isActiveChatSend = envelope.type == MessageType.ChatSend &&
                     current.activeRequestId == envelope.requestId
@@ -5903,6 +7551,14 @@ class RuntimeClientViewModel internal constructor(
                 val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
                 val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
                     pendingMemoryListRequestId == envelope.requestId
+                val isModelsListRequest = envelope.type == MessageType.ModelsList &&
+                    pendingModelsListRequest?.requestId == envelope.requestId
+                val isMemoryDuplicateSuggestionsRequest =
+                    envelope.type == MessageType.MemoryDuplicateSuggestionsList &&
+                        pendingMemoryDuplicateSuggestionsRequest?.requestId == envelope.requestId
+                val isMemorySemanticDuplicateClustersRequest =
+                    envelope.type == MessageType.MemorySemanticDuplicateClustersList &&
+                        pendingMemorySemanticDuplicateClustersRequest?.requestId == envelope.requestId
                 val isMemorySummaryDraftsRequest = envelope.type == MessageType.MemorySummaryDraftsList &&
                     pendingMemorySummaryDraftsRequestId == envelope.requestId
                 val isDocumentCatalogRequest = envelope.type == MessageType.IndexDocumentsList &&
@@ -5954,16 +7610,22 @@ class RuntimeClientViewModel internal constructor(
                             (envelope.type == MessageType.AuthResponse &&
                                 pending.challengeRequestId == envelope.requestId))
                 }
-                val isPairingRequest = envelope.type == MessageType.PairingRequest
-                val isRuntimeHistoryRequest = (
+                val isCurrentPairingRequest = envelope.type == MessageType.PairingRequest &&
+                    pendingInitialPairingRequest?.requestId == envelope.requestId
+                val chatSessionsListRun = pendingChatSessionsListRun?.takeIf { pending ->
                     envelope.type == MessageType.ChatSessionsList &&
-                        pendingChatSessionsRequestId == envelope.requestId
-                    ) || (
+                        pending.requestId == envelope.requestId
+                }
+                val isCurrentChatMessagesListRequest =
                     envelope.type == MessageType.ChatMessagesList &&
                         pendingChatMessagesRequestId == envelope.requestId
-                    )
-                if (isPairingRequest) {
+                val bulkLifecycleRequest = pendingChatSessionsBulkLifecycle?.takeIf { pending ->
+                    pending.requestId == envelope.requestId && pending.type == envelope.type
+                }
+                if (isCurrentPairingRequest) {
                     clearPendingPairingRequest()
+                    showError("send_failed", error.message)
+                    return@onFailure
                 }
                 if (runtimeAuthenticationRequest != null) {
                     failRuntimeAuthentication(
@@ -5973,15 +7635,39 @@ class RuntimeClientViewModel internal constructor(
                     )
                     return@onFailure
                 }
-                if (isRuntimeHistoryRequest) {
-                    clearPendingRuntimeHistoryRequests()
+                if (chatSessionsListRun != null) {
+                    clearPendingChatSessionsListRun(chatSessionsListRun)
                     showError("chat_history_load_failed", error.message)
                     return@onFailure
                 }
+                if (isCurrentChatMessagesListRequest) {
+                    clearPendingChatMessagesRequest()
+                    showError("chat_history_load_failed", error.message)
+                    return@onFailure
+                }
+                if (bulkLifecycleRequest != null) {
+                    failPendingChatSessionsBulkLifecycle(bulkLifecycleRequest, error.message)
+                    return@onFailure
+                }
                 if (isMemoryListRequest) {
-                    pendingMemoryListRequestId = null
-                    pendingMemoryListQuery = null
-                    pendingMemoryListEmbeddingModelId = null
+                    clearPendingMemoryListRequest()
+                    showError("memory_load_failed", error.message)
+                    return@onFailure
+                }
+                if (isModelsListRequest) {
+                    clearPendingModelsListRequest()
+                    showError("send_failed", error.message)
+                    return@onFailure
+                }
+                if (isMemoryDuplicateSuggestionsRequest) {
+                    closePendingMemoryDuplicateSuggestionsRequest()
+                    mutableState.update { it.copy(isScanningMemoryDuplicateSuggestions = false) }
+                    showError("memory_load_failed", error.message)
+                    return@onFailure
+                }
+                if (isMemorySemanticDuplicateClustersRequest) {
+                    closePendingMemorySemanticDuplicateClustersRequest()
+                    mutableState.update { it.copy(isScanningMemorySemanticDuplicateClusters = false) }
                     showError("memory_load_failed", error.message)
                     return@onFailure
                 }
@@ -6092,6 +7778,12 @@ class RuntimeClientViewModel internal constructor(
                         detail = error.message,
                         renameMutation = renameMutation,
                     )
+                    return@onFailure
+                }
+                if (
+                    envelope.type in REQUEST_BOUND_SEND_FAILURE_TYPES ||
+                    (envelope.type == MessageType.ChatSend && !isActiveChatSend)
+                ) {
                     return@onFailure
                 }
                 val cleanedMessages = if (isActiveChatSend) {
@@ -6249,6 +7941,7 @@ class RuntimeClientViewModel internal constructor(
             return false
         }
         val trustedRuntimeWithoutExpiredRelay = current.trustedRuntime?.withoutRemoteRoutes()
+        revokeAuthenticatedRuntimeSessionState()
         mutableState.update {
             val expiredState = it.copy(
                 isConnected = false,
@@ -6273,12 +7966,177 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun clearPendingRuntimeHistoryRequests() {
+        clearPendingChatSessionsListRun()
+        clearPendingChatMessagesRequest()
+    }
+
+    private fun PendingChatSessionsListRun.correlation(): RuntimeChatHistoryRequestCorrelation {
+        return RuntimeChatHistoryRequestCorrelation(
+            requestId = requestId,
+            type = MessageType.ChatSessionsList,
+            channel = channel,
+            connectionGeneration = connectionGeneration,
+            authorityGeneration = authorityGeneration,
+        )
+    }
+
+    private fun clearPendingChatMessagesRequest() {
         val loadingSessionId = pendingChatMessagesSessionId
-        pendingChatSessionsRequestId = null
-        pendingChatSessionsQuery = null
+        pendingChatMessagesRequestCorrelation?.let(::closeRuntimeChatHistoryRequest)
         pendingChatMessagesRequestId = null
         pendingChatMessagesSessionId = null
+        pendingChatMessagesRequestCorrelation = null
         clearChatMessagesLoading(loadingSessionId)
+    }
+
+    private fun closeRuntimeChatHistoryRequest(correlation: RuntimeChatHistoryRequestCorrelation) {
+        closedRuntimeChatHistoryRequests.removeAll { closed ->
+            closed.requestId == correlation.requestId &&
+                closed.type == correlation.type &&
+                closed.channel === correlation.channel &&
+                closed.connectionGeneration == correlation.connectionGeneration &&
+                closed.authorityGeneration == correlation.authorityGeneration
+        }
+        closedRuntimeChatHistoryRequests += correlation
+        while (closedRuntimeChatHistoryRequests.size > MAX_CLOSED_RUNTIME_CHAT_HISTORY_REQUESTS) {
+            closedRuntimeChatHistoryRequests.removeAt(0)
+        }
+    }
+
+    private fun isClosedRuntimeChatHistoryRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return closedRuntimeChatHistoryRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
+    }
+
+    private fun shouldIgnoreStaleRuntimeChatHistoryError(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        val currentSessionsRequest = pendingChatSessionsListRun?.let { run ->
+            run.requestId == requestId &&
+                run.channel === sourceChannel &&
+                run.connectionGeneration == sourceConnectionGeneration
+        } == true
+        val currentMessagesRequest = pendingChatMessagesRequestCorrelation?.let { correlation ->
+            correlation.requestId == requestId &&
+                correlation.channel === sourceChannel &&
+                correlation.connectionGeneration == sourceConnectionGeneration
+        } == true
+        if (currentSessionsRequest || currentMessagesRequest) return false
+
+        return requestId.startsWith(CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX) ||
+            requestId.startsWith(CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX) ||
+            isClosedRuntimeChatHistoryRequest(
+                requestId,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+    }
+
+    private fun clearRuntimeChatSearchAuthority() {
+        runtimeChatSearchSummariesById = emptyMap()
+        mutableState.update {
+            it.copy(
+                chatSessionSearchQuery = null,
+                chatSessionSearchResults = emptyList(),
+            )
+        }
+    }
+
+    private fun consumeRuntimeChatSearchSummary(sessionId: String) {
+        runtimeChatSearchSummariesById = runtimeChatSearchSummariesById - sessionId
+        mutableState.update {
+            it.copy(
+                chatSessionSearchResults = it.chatSessionSearchResults.filterNot { result ->
+                    result.id == sessionId
+                },
+            )
+        }
+    }
+
+    private fun PersistedRuntimeData.revertingRuntimeChatSessionMutations(
+        mutations: Collection<PendingChatSessionMutation>,
+    ): PersistedRuntimeData {
+        return mutations
+            .sortedByDescending(PendingChatSessionMutation::sequence)
+            .fold(this) { repairedData, mutation ->
+                when (mutation) {
+                    is PendingChatSessionLifecycleMutation -> repairedData.copy(
+                        activeSessionId = if (
+                            mutation.restoreAsActive && repairedData.activeSessionId == null
+                        ) {
+                            mutation.sessionId
+                        } else {
+                            repairedData.activeSessionId
+                        },
+                        sessions = listOf(mutation.previousSession) + repairedData.sessions.filterNot { session ->
+                            session.id == mutation.sessionId
+                        },
+                        suppressedRuntimeSessions = repairedData.suppressedRuntimeSessions.filterNot { suppression ->
+                            suppression.sessionId == mutation.sessionId
+                        },
+                    ).sanitized()
+
+                    is PendingChatSessionRenameMutation -> repairedData.withRevertedRuntimeChatSessionRename(
+                        sessionId = mutation.sessionId,
+                        previousTitle = mutation.previousTitle,
+                        previousTitleManuallyEdited = mutation.previousTitleManuallyEdited,
+                        previousTitleGenerated = mutation.previousTitleGenerated,
+                        previousUpdatedAtMillis = mutation.previousUpdatedAtMillis,
+                    )
+                }
+            }
+    }
+
+    private fun rollbackAndClearPendingRuntimeChatSessionMutations(
+        additionalMutations: Collection<PendingChatSessionMutation> = emptyList(),
+    ) {
+        val pendingMutations =
+            pendingChatSessionLifecycleMutationsByRequestId.values +
+                pendingChatSessionRenameMutationsByRequestId.values +
+                additionalMutations
+        pendingChatSessionLifecycleRequestIds.clear()
+        pendingChatSessionRenameRequestIds.clear()
+        pendingChatSessionLifecycleMutationsByRequestId.clear()
+        pendingChatSessionRenameMutationsByRequestId.clear()
+        clearPendingTitleRequest()
+        val repairedData = persistedRuntimeData.revertingRuntimeChatSessionMutations(pendingMutations)
+        if (repairedData != persistedRuntimeData) {
+            publishPersistedRuntimeData(
+                data = repairedData,
+                save = true,
+                clearError = false,
+            )
+        }
+    }
+
+    private fun revokeAuthenticatedRuntimeSessionState(
+        additionalMutations: Collection<PendingChatSessionMutation> = emptyList(),
+    ) {
+        isSessionAuthenticated = false
+        runtimeSessionAuthorityGeneration += 1L
+        clearPendingModelsListRequest()
+        modelCatalogAcceptedAuthorityGeneration = null
+        resetMemoryDuplicateSuggestionsAuthority()
+        resetMemorySemanticDuplicateSuggestionsAuthority()
+        resetMemorySemanticDuplicateClustersAuthority()
+        runtimeChatSessionsAuthoritativeSyncSupported = false
+        runtimeChatSessionsBulkAuthorityEnabled = false
+        clearTrustedSourceSessionState()
+        clearPendingRuntimeHistoryRequests()
+        clearPendingChatSessionsBulkLifecycle()
+        clearRuntimeChatSearchAuthority()
+        rollbackAndClearPendingRuntimeChatSessionMutations(additionalMutations)
+        cancelRuntimeRouteRefreshLease()
+        clearPendingRouteRefreshRequest()
     }
 
     private fun clearPendingRuntimeDocumentRequests() {
@@ -6291,6 +8149,342 @@ class RuntimeClientViewModel internal constructor(
         pendingDocumentSearchRequestId = null
         pendingDocumentSearchPayload = null
         pendingDocumentSearchCanRetryWithoutEmbedding = false
+    }
+
+    private fun clearPendingMemoryListRequest() {
+        pendingMemoryListRequestId = null
+        pendingMemoryListQuery = null
+        pendingMemoryListEmbeddingModelId = null
+        pendingMemoryListChannel = null
+        pendingMemoryListConnectionGeneration = null
+        pendingMemoryListAuthorityGeneration = null
+    }
+
+    private fun clearPendingModelsListRequest() {
+        pendingModelsListRequest = null
+        mutableState.update { it.copy(isLoadingModels = false) }
+    }
+
+    private fun PendingModelsListRequest.matchesCurrentModelsAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return this.requestId == requestId &&
+            channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
+    }
+
+    private fun isCurrentMemoryListRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return pendingMemoryListRequestId == requestId &&
+            pendingMemoryListChannel === sourceChannel &&
+            pendingMemoryListConnectionGeneration == sourceConnectionGeneration &&
+            pendingMemoryListAuthorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
+    }
+
+    private fun isCurrentMemoryDuplicateSuggestionsRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        val pending = pendingMemoryDuplicateSuggestionsRequest ?: return false
+        return pending.requestId == requestId &&
+            pending.channel === sourceChannel &&
+            pending.connectionGeneration == sourceConnectionGeneration &&
+            pending.authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
+    }
+
+    private fun isCurrentMemorySemanticDuplicateSuggestionsRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        val pending = pendingMemorySemanticDuplicateSuggestionsRequest ?: return false
+        val current = state.value
+        return pending.requestId == requestId &&
+            pending.channel === sourceChannel &&
+            pending.connectionGeneration == sourceConnectionGeneration &&
+            pending.authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            current.selectedEmbeddingModelId == pending.embeddingModelId &&
+            hasEligibleMemorySemanticDuplicateSuggestionsModel(
+                current,
+                pending.embeddingModelId,
+            )
+    }
+
+    private fun isCurrentMemorySemanticDuplicateClustersRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        val pending = pendingMemorySemanticDuplicateClustersRequest ?: return false
+        val current = state.value
+        return pending.requestId == requestId &&
+            pending.channel === sourceChannel &&
+            pending.connectionGeneration == sourceConnectionGeneration &&
+            pending.authorityGeneration == runtimeSessionAuthorityGeneration &&
+            pending.memoryCatalogGeneration == memoryCatalogGeneration &&
+            pending.modelCatalogGeneration == modelCatalogGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            current.selectedEmbeddingModelId == pending.embeddingModelId &&
+            current.memorySemanticDuplicateClustersThresholdBasisPoints ==
+                pending.minimumSimilarityBasisPoints &&
+            hasEligibleMemorySemanticDuplicateSuggestionsModel(
+                current,
+                pending.embeddingModelId,
+            )
+    }
+
+    private fun shouldIgnoreClosedMemoryDuplicateSuggestionsError(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        if (isCurrentMemoryDuplicateSuggestionsRequest(
+                requestId = requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return false
+        if (requestId.startsWith(MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX)) return true
+        return closedMemoryDuplicateSuggestionsRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
+    }
+
+    private fun closePendingMemoryDuplicateSuggestionsRequest() {
+        val pending = pendingMemoryDuplicateSuggestionsRequest ?: return
+        pendingMemoryDuplicateSuggestionsRequest = null
+        closedMemoryDuplicateSuggestionsRequests.removeAll { closed ->
+            closed.requestId == pending.requestId &&
+                closed.channel === pending.channel &&
+                closed.connectionGeneration == pending.connectionGeneration &&
+                closed.authorityGeneration == pending.authorityGeneration
+        }
+        closedMemoryDuplicateSuggestionsRequests += pending
+        while (
+            closedMemoryDuplicateSuggestionsRequests.size >
+            MAX_CLOSED_MEMORY_DUPLICATE_SUGGESTIONS_REQUESTS
+        ) {
+            closedMemoryDuplicateSuggestionsRequests.removeAt(0)
+        }
+    }
+
+    private fun shouldIgnoreClosedMemorySemanticDuplicateSuggestionsError(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        if (isCurrentMemorySemanticDuplicateSuggestionsRequest(
+                requestId = requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return false
+        if (requestId.startsWith(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX)) {
+            return true
+        }
+        return closedMemorySemanticDuplicateSuggestionsRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
+    }
+
+    private fun closePendingMemorySemanticDuplicateSuggestionsRequest() {
+        val pending = pendingMemorySemanticDuplicateSuggestionsRequest ?: return
+        pendingMemorySemanticDuplicateSuggestionsRequest = null
+        closedMemorySemanticDuplicateSuggestionsRequests.removeAll { closed ->
+            closed.requestId == pending.requestId &&
+                closed.channel === pending.channel &&
+                closed.connectionGeneration == pending.connectionGeneration &&
+                closed.authorityGeneration == pending.authorityGeneration
+        }
+        closedMemorySemanticDuplicateSuggestionsRequests += pending
+        while (
+            closedMemorySemanticDuplicateSuggestionsRequests.size >
+            MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUESTS
+        ) {
+            closedMemorySemanticDuplicateSuggestionsRequests.removeAt(0)
+        }
+    }
+
+    private fun shouldIgnoreClosedMemorySemanticDuplicateClustersError(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        if (isCurrentMemorySemanticDuplicateClustersRequest(
+                requestId = requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return false
+        if (requestId.startsWith(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUEST_ID_PREFIX)) {
+            return true
+        }
+        return closedMemorySemanticDuplicateClustersRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
+    }
+
+    private fun closePendingMemorySemanticDuplicateClustersRequest() {
+        val pending = pendingMemorySemanticDuplicateClustersRequest ?: return
+        pendingMemorySemanticDuplicateClustersRequest = null
+        closedMemorySemanticDuplicateClustersRequests.removeAll { closed ->
+            closed.requestId == pending.requestId &&
+                closed.channel === pending.channel &&
+                closed.connectionGeneration == pending.connectionGeneration &&
+                closed.authorityGeneration == pending.authorityGeneration
+        }
+        closedMemorySemanticDuplicateClustersRequests += pending
+        while (
+            closedMemorySemanticDuplicateClustersRequests.size >
+            MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUESTS
+        ) {
+            closedMemorySemanticDuplicateClustersRequests.removeAt(0)
+        }
+    }
+
+    private fun resetMemoryDuplicateSuggestionsAuthority() {
+        memoryDuplicateSuggestionsListAcceptedAuthorityGeneration = null
+        memoryDuplicateSuggestionsUnsupportedAuthorityGeneration = null
+        clearMemoryDuplicateSuggestions()
+        mutableState.update { it.copy(memoryDuplicateSuggestionsAvailable = false) }
+    }
+
+    private fun resetMemorySemanticDuplicateSuggestionsAuthority() {
+        memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration = null
+        memorySemanticDuplicateSuggestionsUnsupportedAuthorityGeneration = null
+        clearMemorySemanticDuplicateSuggestions()
+        mutableState.update { it.copy(memorySemanticDuplicateSuggestionsAvailable = false) }
+    }
+
+    private fun resetMemorySemanticDuplicateClustersAuthority() {
+        memorySemanticDuplicateClustersListAcceptedAuthorityGeneration = null
+        memorySemanticDuplicateClustersUnsupportedAuthorityGeneration = null
+        clearMemorySemanticDuplicateClusters()
+        mutableState.update { it.copy(memorySemanticDuplicateClustersAvailable = false) }
+    }
+
+    private fun clearMemoryDuplicateSuggestions() {
+        closePendingMemoryDuplicateSuggestionsRequest()
+        mutableState.update {
+            it.copy(
+                memoryDuplicateSuggestionGroups = emptyList(),
+                memoryDuplicateSuggestionsScannedCount = 0,
+                memoryDuplicateSuggestionsTruncated = false,
+                hasMemoryDuplicateSuggestionsResult = false,
+                isScanningMemoryDuplicateSuggestions = false,
+            )
+        }
+    }
+
+    private fun clearMemorySemanticDuplicateSuggestions() {
+        closePendingMemorySemanticDuplicateSuggestionsRequest()
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateSuggestionPairs = emptyList(),
+                memorySemanticDuplicateSuggestionsScannedCount = 0,
+                memorySemanticDuplicateSuggestionsOmittedCount = 0,
+                memorySemanticDuplicateSuggestionsTruncated = false,
+                hasMemorySemanticDuplicateSuggestionsResult = false,
+                isScanningMemorySemanticDuplicateSuggestions = false,
+            )
+        }
+    }
+
+    private fun clearMemorySemanticDuplicateClusters() {
+        closePendingMemorySemanticDuplicateClustersRequest()
+        mutableState.update {
+            it.copy(
+                memorySemanticDuplicateClusters = emptyList(),
+                memorySemanticDuplicateClustersScannedCount = 0,
+                memorySemanticDuplicateClustersOmittedCount = 0,
+                memorySemanticDuplicateClustersTruncated = false,
+                memorySemanticDuplicateClustersThresholdBasisPoints = 9_000,
+                hasMemorySemanticDuplicateClustersResult = false,
+                isScanningMemorySemanticDuplicateClusters = false,
+            )
+        }
+    }
+
+    private fun hasEligibleMemorySemanticDuplicateSuggestionsModel(
+        candidateState: RuntimeUiState,
+        modelId: String,
+    ): Boolean {
+        return candidateState.models.any { model ->
+            model.id == modelId &&
+                isCanonicalProviderQualifiedModelId(model.id) &&
+                model.installed &&
+                model.isEmbeddingModel() &&
+                model.isRuntimeHostLocalModel()
+        }
+    }
+
+    private fun isMemorySemanticDuplicateSuggestionsAvailable(
+        candidateState: RuntimeUiState,
+    ): Boolean {
+        val modelId = candidateState.selectedEmbeddingModelId ?: return false
+        return memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration ==
+            runtimeSessionAuthorityGeneration &&
+            memorySemanticDuplicateSuggestionsUnsupportedAuthorityGeneration !=
+            runtimeSessionAuthorityGeneration &&
+            modelCatalogAcceptedAuthorityGeneration == runtimeSessionAuthorityGeneration &&
+            hasEligibleMemorySemanticDuplicateSuggestionsModel(candidateState, modelId)
+    }
+
+    private fun updateMemorySemanticDuplicateSuggestionsAvailability() {
+        mutableState.update { candidateState ->
+            candidateState.copy(
+                memorySemanticDuplicateSuggestionsAvailable =
+                    isMemorySemanticDuplicateSuggestionsAvailable(candidateState),
+            )
+        }
+    }
+
+    private fun isMemorySemanticDuplicateClustersAvailable(
+        candidateState: RuntimeUiState,
+    ): Boolean {
+        val modelId = candidateState.selectedEmbeddingModelId ?: return false
+        return memorySemanticDuplicateClustersListAcceptedAuthorityGeneration ==
+            runtimeSessionAuthorityGeneration &&
+            memorySemanticDuplicateClustersUnsupportedAuthorityGeneration !=
+            runtimeSessionAuthorityGeneration &&
+            modelCatalogAcceptedAuthorityGeneration == runtimeSessionAuthorityGeneration &&
+            hasEligibleMemorySemanticDuplicateSuggestionsModel(candidateState, modelId)
+    }
+
+    private fun updateMemorySemanticDuplicateClustersAvailability() {
+        mutableState.update { candidateState ->
+            candidateState.copy(
+                memorySemanticDuplicateClustersAvailable =
+                    isMemorySemanticDuplicateClustersAvailable(candidateState),
+            )
+        }
     }
 
     private fun clearTrustedSourceSessionState() {
@@ -6429,6 +8623,34 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
+    private fun runtimeChatSessionForAction(sessionId: String): PersistedChatSession? {
+        persistedRuntimeData.sessions
+            .firstOrNull { it.id == sessionId && it.runtimeOwned }
+            ?.let { current ->
+                consumeRuntimeChatSearchSummary(sessionId)
+                return current
+            }
+        val summary = runtimeChatSearchSummariesById[sessionId]
+        if (summary != null) {
+            val mergedData = persistedRuntimeData.withRuntimeChatSessionSummary(
+                summary = summary,
+                nowMillis = nowMillis(),
+            )
+            val mergedSession = mergedData.sessions
+                .firstOrNull { it.id == sessionId }
+                ?.takeIf { it.runtimeOwned }
+                ?: return null
+            publishPersistedRuntimeData(
+                data = mergedData,
+                save = false,
+                clearError = false,
+            )
+            consumeRuntimeChatSearchSummary(sessionId)
+            return mergedSession
+        }
+        return persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+    }
+
     private fun persistComposerDraft(
         value: String,
         sessionId: String? = state.value.activeChatSessionId,
@@ -6481,13 +8703,25 @@ class RuntimeClientViewModel internal constructor(
 
     private fun persistSelectedEmbeddingModel(modelId: String?, publish: Boolean = true) {
         val cleanData = persistedRuntimeData.withSelectedEmbeddingModelId(modelId)
+        val selectionChanged = cleanData.selectedEmbeddingModelId !=
+            persistedRuntimeData.selectedEmbeddingModelId
         persistedRuntimeData = cleanData
         localStore.save(cleanData)
+        if (selectionChanged) {
+            clearMemorySemanticDuplicateSuggestions()
+            clearMemorySemanticDuplicateClusters()
+        }
         if (publish) {
             mutableState.update {
-                it.copy(
+                val nextState = it.copy(
                     selectedEmbeddingModelId = cleanData.selectedEmbeddingModelId,
                     error = null,
+                )
+                nextState.copy(
+                    memorySemanticDuplicateSuggestionsAvailable =
+                        isMemorySemanticDuplicateSuggestionsAvailable(nextState),
+                    memorySemanticDuplicateClustersAvailable =
+                        isMemorySemanticDuplicateClustersAvailable(nextState),
                 )
             }
         }
@@ -6535,6 +8769,15 @@ class RuntimeClientViewModel internal constructor(
         const val MAX_RUNTIME_TRUSTED_SOURCES = 100
         const val MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS = 1024
         private const val DOCUMENT_SEARCH_REQUEST_ID_PREFIX = "retrieval-query-"
+        private const val MODELS_LIST_REQUEST_ID_PREFIX = "models-list-"
+        private const val MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX =
+            "memory-duplicate-suggestions-list-"
+        private const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX =
+            "memory-semantic-duplicate-suggestions-list-"
+        private const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUEST_ID_PREFIX =
+            "memory-semantic-duplicate-clusters-list-"
+        private const val CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX = "chat-sessions-list-"
+        private const val CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX = "chat-messages-list-"
         private const val CITATION_RESOLVE_REQUEST_ID_PREFIX = "citation-resolve-"
         private const val HISTORICAL_SOURCE_ATTRIBUTION_RESOLVE_REQUEST_ID_PREFIX =
             "chat-source-attribution-resolve-"
@@ -8149,6 +10392,7 @@ internal fun reconcileModelSelections(
     }
     val selectedEmbeddingModelId = when {
         currentSelectedEmbeddingModelId == null -> null
+        !isCanonicalProviderQualifiedModelId(currentSelectedEmbeddingModelId) -> null
         models.any { it.id == currentSelectedEmbeddingModelId && !it.isEmbeddingModel() } -> null
         models.any { it.id == currentSelectedEmbeddingModelId && it.isEmbeddingModel() && !it.installed } -> null
         models.any { it.id == currentSelectedEmbeddingModelId && it.isEmbeddingModel() && !it.isRuntimeHostLocalModel() } -> null

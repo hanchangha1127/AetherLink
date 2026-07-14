@@ -104,6 +104,35 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
+    func testRejectedDuplicateGenerationDoesNotEraseOriginalProviderUsageSource() async throws {
+        let source = ChatProviderUsageSource(
+            provider: .ollama,
+            providerModelID: "qwen-local",
+            wireMode: .ollamaChat
+        )
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsChatsOpenAfterDone: true,
+            providerUsageSource: source
+        )
+        let backend = AggregatingLlmBackend([ollama])
+        let request = chatRequest(model: "ollama:qwen-local")
+        var original = backend.chat(request: request).makeAsyncIterator()
+        let originalDone = try await original.next()
+        XCTAssertEqual(originalDone, .done(inputTokens: 1, outputTokens: 1))
+
+        do {
+            _ = try await collect(backend.chat(request: request))
+            XCTFail("Expected duplicate generation rejection")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.code, "generation_already_active")
+        }
+
+        XCTAssertEqual(backend.takeProviderUsageSource(generationID: request.generationID), source)
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
+    }
+
     func testManualUnloadClearsActiveResidentModelAndEmitsManualEvent() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -655,6 +684,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let models: [ModelInfo]
     private let unloadErrors: [String: Error]
     private let holdsChatsOpen: Bool
+    private let holdsChatsOpenAfterDone: Bool
     private let holdsModelListingOpen: Bool
     private let providerUsageSource: ChatProviderUsageSource?
     private let modelListStarted = DispatchSemaphore(value: 0)
@@ -687,6 +717,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         models: [ModelInfo] = [],
         unloadErrors: [String: Error] = [:],
         holdsChatsOpen: Bool = false,
+        holdsChatsOpenAfterDone: Bool = false,
         holdsModelListingOpen: Bool = false,
         providerUsageSource: ChatProviderUsageSource? = nil
     ) {
@@ -694,6 +725,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         self.models = models
         self.unloadErrors = unloadErrors
         self.holdsChatsOpen = holdsChatsOpen
+        self.holdsChatsOpenAfterDone = holdsChatsOpenAfterDone
         self.holdsModelListingOpen = holdsModelListingOpen
         self.providerUsageSource = providerUsageSource
     }
@@ -747,6 +779,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
                 }
             }
             continuation.yield(.done(inputTokens: 1, outputTokens: 1))
+            guard !holdsChatsOpenAfterDone else { return }
             continuation.finish()
         }
     }

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import hashlib
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -23173,6 +23174,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
     failures: list[str] = []
     android_store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     android_viewmodel_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    android_main_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     android_protocol_path = ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
     android_protocol_test_path = ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
@@ -23232,6 +23234,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
     required_paths = (
         android_store_path,
         android_viewmodel_path,
+        android_main_path,
         android_protocol_path,
         android_protocol_test_path,
         android_test_path,
@@ -23277,6 +23280,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     android_store_text = android_store_path.read_text(encoding="utf-8", errors="replace")
     android_viewmodel_text = android_viewmodel_path.read_text(encoding="utf-8", errors="replace")
+    android_main_text = android_main_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
     android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
@@ -23377,8 +23381,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime message sync must replace only the existing runtime-owned session transcript.",
         ),
         (
-            "val searchRank = summary.search?.rank?.takeIf { it > 0 }",
+            "val searchRank = summary.search?.rank?.takeIf { includeSearchMetadata && it > 0 }",
             "Runtime session summary sync must preserve query search rank metadata for UI state.",
+        ),
+        (
+            "includeSearchMetadata = false",
+            "Promoted search-only runtime sessions must discard transient query metadata before entering the full cache.",
         ),
         (
             "runtimeSearchSnippet = null",
@@ -23577,6 +23585,70 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android chat.sessions.list request payload must pass the selected embedding model search hint.",
         ),
         (
+            "private var runtimeChatSearchSummariesById: Map<String, ChatSessionSummaryPayload> = emptyMap()",
+            "Android runtime search must retain only the current authoritative search summaries for user actions.",
+        ),
+        (
+            "persistedRuntimeData.withRuntimeChatSessionSummary(",
+            "Android runtime search actions must promote one authoritative summary without replacing the full cache.",
+        ),
+        (
+            "if (run.requestId != envelope.requestId || !run.hasCurrentRuntimeAuthority()) return",
+            "Android runtime search responses must exactly match the current pending request.",
+        ),
+        (
+            "private fun clearRuntimeChatSearchAuthority()",
+            "Android runtime search authority must have a centralized connection-lifetime revocation seam.",
+        ),
+        (
+            "private fun revokeAuthenticatedRuntimeSessionState(\n        additionalMutations:",
+            "Android authentication loss must centrally revoke pending history, runtime search authority, and concurrent mutations.",
+        ),
+        (
+            "private fun rollbackAndClearPendingRuntimeChatSessionMutations(",
+            "Android runtime authority revocation must roll back and invalidate pending lifecycle and rename mutations.",
+        ),
+        (
+            "private fun requestFreshRuntimeChatSessionsAfterMutationCompletion()",
+            "Android runtime mutation success and failure must supersede stale pending search or list requests before full reconciliation.",
+        ),
+        (
+            "private fun ChatSessionLifecyclePayload.matchesPendingRuntimeChatSessionLifecycle(",
+            "Android lifecycle acknowledgements must bind the response session and operation to the pending mutation journal.",
+        ),
+        (
+            "pendingMutationSessionIds",
+            "Android runtime chat mutations must serialize operations targeting the same session.",
+        ),
+        (
+            "previousUpdatedAtMillis = mutation.previousUpdatedAtMillis",
+            "Android rename rollback must restore the exact pre-mutation ordering timestamp.",
+        ),
+        (
+            "expectedRuntimeSessionAuthorityGeneration = runtimeSessionAuthorityGenerationAtDispatch",
+            "Android asynchronous sends must bind failures to the authenticated runtime-session authority generation.",
+        ),
+        (
+            "envelope.type in REQUEST_BOUND_SEND_FAILURE_TYPES",
+            "Android completed or superseded request-bound send failures must not reach generic active-stream mutation.",
+        ),
+        (
+            "MessageType.PairingRequest,\n    MessageType.Hello,\n    MessageType.AuthResponse,",
+            "Android completed pre-auth pairing and authentication sends must be included in stale request-bound failure rejection.",
+        ),
+        (
+            "private fun consumeRuntimeChatSearchSummary(sessionId: String)",
+            "Android runtime search promotion must consume internal and visible stale search authority before later lifecycle actions.",
+        ),
+        (
+            "if (!trustedRuntime.hasCompleteRemoteRouteMaterial()) return\n        revokeAuthenticatedRuntimeSessionState()",
+            "Android route-refresh lease expiry must revoke runtime search authority.",
+        ),
+        (
+            "val trustedRuntimeWithoutExpiredRelay = current.trustedRuntime?.withoutRemoteRoutes()\n        revokeAuthenticatedRuntimeSessionState()",
+            "Android trusted-route expiry must revoke runtime search authority before publishing failure state.",
+        ),
+        (
             "fun refreshRuntimeMemory(query: String?)",
             "Android runtime memory refresh must expose a query-capable overload.",
         ),
@@ -23677,6 +23749,36 @@ def runtime_history_storage_guard_failures() -> list[str]:
         if snippet not in android_viewmodel_text:
             failures.append(f"{android_viewmodel_relative}: {guidance}")
 
+    required_android_search_authority_snippets = (
+        (
+            android_store_text,
+            android_store_path,
+            "if (sessions.any { it.id == sessionId && !it.runtimeOwned }) return this",
+            "Android runtime search promotion must preserve local-only sessions on identity collision.",
+        ),
+        (
+            android_store_text,
+            android_store_path,
+            ".filterNot { it.sessionId in localOnlySessionIds }",
+            "Android runtime summary sync must not replace a local-only identity collision.",
+        ),
+        (
+            android_viewmodel_text,
+            android_viewmodel_path,
+            ".filter { it.sessionId in remoteResultIds }",
+            "Android runtime search results must exclude local-only identity collisions.",
+        ),
+        (
+            android_main_text,
+            android_main_path,
+            "if (viewModel.selectChatSession(sessionId))",
+            "Android Settings navigation must enter chat only after session selection succeeds.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_android_search_authority_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
     required_android_protocol_test_snippets = (
         'query = "relay route"',
         'assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)',
@@ -23745,6 +23847,21 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "assertEquals(selectedEmbeddingModel.id, queryPayload.embeddingModelId)",
         "runtimeMemorySearchResultsStayTransientAndIgnoreLateResponses",
         "malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults",
+        "authoritativeSearchOnlyRuntimeChatCanOpenAndLoadTranscript",
+        'assertEquals("runtime-search-only", messagesPayload.sessionId)',
+        "completedRuntimeChatSearchResponseCannotReplayAsFullHistorySync",
+        "runtimeReceiveFailureRevokesSearchOnlySessionAuthority",
+        "runtimeConnectionReplacementRevokesSearchOnlySessionAuthority",
+        "delayedRevokedSessionSendFailureCannotMutateReauthenticatedState",
+        "completedMutationDelayedSendFailureCannotMutateActiveStream",
+        "completedHelloSendFailureCannotMutateAuthenticatedState",
+        "completedPairingSendFailureCannotMutateAuthenticatedState",
+        "runtimeChatHistoryAuthenticationLossRevokesSearchOnlySessionAuthority",
+        "runtimeMemoryAuthenticationLossRevokesSearchAndPendingHistoryAuthority",
+        "runtimeMutationFailureSupersedesPendingSearchAndRestoresOptimisticState",
+        "runtimeAuthenticationLossRollsBackConcurrentChatSessionMutations",
+        "promotedSearchSummaryIsConsumedBeforeRuntimeLifecycleActions",
+        "remoteSearchSummaryCannotReplaceLocalOnlySessionWithSameId",
         "ChatSessionSearchPayload(",
         "assertNull(savedRedaction.runtimeSearchSnippet)",
     )
@@ -23802,6 +23919,14 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             "func runtimeSearchMatch(\n        _ query: RuntimeChatSessionSearchQuery",
             "Runtime session search must keep deterministic query scoring and snippet generation.",
+        ),
+        (
+            "return lhs.session.sessionID < rhs.session.sessionID",
+            "Runtime lexical search must use session id as the final total-order tie-break before limiting results.",
+        ),
+        (
+            "return lhs.sessionID < rhs.sessionID",
+            "Runtime base session lists must use session id as the final total-order tie-break.",
         ),
         (
             "snippet: result.match.snippet",
@@ -24172,10 +24297,28 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Progress docs must record the persistent prior-chat semantic cache slice.",
         ),
         (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "v0.2 Deterministic Session Search And Search-Only Sync Polish",
+            "Roadmap docs must record deterministic ranking and search-only session sync.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "v0.2 Deterministic Session Search And Search-Only Sync No-Device Gate",
+            "Progress docs must record deterministic ranking and search-only session sync.",
+        ),
+        (
             docs_qa_evidence_text,
             docs_qa_evidence_relative,
             "Persistent Runtime Chat Semantic Embedding Cache",
             "QA evidence must record persistent prior-chat semantic cache verification.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "v0.2 Deterministic Session Search And Search-Only Sync No-Device Checklist",
+            "QA evidence must record deterministic ranking and search-only session sync verification.",
         ),
         (
             docs_roadmap_text,
@@ -24258,8 +24401,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             android_viewmodel_text,
             android_viewmodel_relative,
-            "if (pendingMemoryListRequestId != envelope.requestId) return",
-            "Android must reject late or unsolicited memory.list responses.",
+            "pendingMemoryListAuthorityGeneration != runtimeSessionAuthorityGeneration ||",
+            "Android must reject late, unsolicited, or stale-authority memory.list responses.",
         ),
         (
             android_viewmodel_text,
@@ -24380,8 +24523,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime history SQLite backend must expose JSONL-to-SQLite backfill before production migration.",
         ),
         (
-            "JSONLRuntimeChatEventStore.events(from: legacyJSONLFileURL)",
-            "Runtime history SQLite backfill must reuse JSONL decoding and validation semantics.",
+            "let snapshot = try legacyJSONLSnapshot(from: legacyJSONLFileURL)",
+            "Runtime history SQLite backfill must reuse bounded snapshot decoding and validation semantics.",
         ),
         (
             "skipExisting: true",
@@ -24416,6 +24559,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime history SQLite backend must keep deterministic rank/snippet semantics after FTS candidate selection.",
         ),
         (
+            "return lhs.session.sessionID < rhs.session.sessionID",
+            "Runtime history SQLite lexical search must use session id as its final total-order tie-break.",
+        ),
+        (
             "owner_key = ?",
             "Runtime history SQLite FTS queries must remain scoped to the authenticated owner key.",
         ),
@@ -24444,8 +24591,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime history SQLite retention pruning must wrap tombstone/delete work in a transaction.",
         ),
         (
-            "lifecycleEvent.event.timestamp < cutoff",
-            "Runtime history SQLite retention pruning must honor a strict deleted-before cutoff.",
+            "AND timestamp < ?",
+            "Runtime history SQLite retention pruning must honor a strict deleted-before cutoff in bounded SQL.",
         ),
     )
     for snippet, guidance in required_macos_sqlite_store_snippets:
@@ -24962,6 +25109,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "testSQLiteStoreListsMessagesAndStripsInlineAttachmentData",
         "testSQLiteStoreScopesLifecycleAndMutationsByOwnerDevice",
         "testSQLiteStorePreservesAppendOrderForSameTimestampTitles",
+        "testJSONLStoreUsesSessionIDTieBreakForEqualActivityAndLexicalScores",
+        "testSQLiteStoreUsesSessionIDTieBreakAfterReopenForEqualActivityAndLexicalScores",
         "testSQLiteStoreUsesFTSSearchWithRankSnippetsAndRuntimeContextExclusion",
         "testSQLiteStoreCreatesDatabaseWithOwnerOnlyPermissions",
         "testSQLiteStoreCorrectsBroadDatabasePermissionsOnOpen",
@@ -25066,6 +25215,37 @@ def runtime_history_storage_guard_failures() -> list[str]:
     if "deterministic ranking, bounded snippets" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention runtime-owned chat session ranking/snippet coverage."
+        )
+    if "authoritativeSearchOnlyRuntimeChatCanOpenAndLoadTranscript" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run the authoritative search-only session open regression."
+        )
+    for regression in (
+        "completedRuntimeChatSearchResponseCannotReplayAsFullHistorySync",
+        "runtimeReceiveFailureRevokesSearchOnlySessionAuthority",
+        "runtimeConnectionReplacementRevokesSearchOnlySessionAuthority",
+        "delayedRevokedSessionSendFailureCannotMutateReauthenticatedState",
+        "completedMutationDelayedSendFailureCannotMutateActiveStream",
+        "completedHelloSendFailureCannotMutateAuthenticatedState",
+        "completedPairingSendFailureCannotMutateAuthenticatedState",
+        "runtimeChatHistoryAuthenticationLossRevokesSearchOnlySessionAuthority",
+        "runtimeMemoryAuthenticationLossRevokesSearchAndPendingHistoryAuthority",
+        "runtimeMutationFailureSupersedesPendingSearchAndRestoresOptimisticState",
+        "runtimeAuthenticationLossRollsBackConcurrentChatSessionMutations",
+        "promotedSearchSummaryIsConsumedBeforeRuntimeLifecycleActions",
+        "remoteSearchSummaryCannotReplaceLocalOnlySessionWithSameId",
+    ):
+        if regression not in no_device_text:
+            failures.append(
+                f"{no_device_relative}: Default no-device gate must run runtime search authority regression {regression}."
+            )
+    if "exact pending-response matching including stale old-channel rejection, connection-, authentication-, and route-lifetime search authority revocation with pending-history reset across request-specific errors, request-bound mutation acknowledgements, malformed-ack rollback, same-session mutation serialization, stale pending-search and pre-mutation-list supersession, delayed revoked-session, completed-request, and completed pre-auth pairing/hello send-failure rejection, exact rename timestamp rollback, optimistic lifecycle rollback, visible search-row consumption, one-shot search-summary promotion before lifecycle actions, local-only identity-collision preservation" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must describe runtime search authority lifetime and collision coverage."
+        )
+    if "authoritative search-only session in-memory promotion" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must describe search-only session promotion and transcript loading."
         )
     if "swift test --filter SQLiteRuntimeChatEventStoreTests" not in no_device_text:
         failures.append(
@@ -28765,7 +28945,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             )
     required_runtime_load_view_model_snippets = (
         'showError("chat_history_load_failed", payload?.message)',
-        "clearChatMessagesLoading(expectedSessionId)",
+        "clearPendingChatMessagesRequest()",
         'showError("memory_load_failed", payload?.message)',
         'showError("memory_load_failed", error.message)',
         'showError("memory_summary_drafts_load_failed", payload?.message)',
@@ -32931,6 +33111,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch",
         "testRejectedDuplicateGenerationCannotRemoveOriginalReservation",
         "testProviderUsageSourceForwardsThroughAggregateAndIsConsumedOnce",
+        "testRejectedDuplicateGenerationDoesNotEraseOriginalProviderUsageSource",
     ):
         if snippet not in aggregate_backend_tests_text:
             failures.append(
@@ -33230,6 +33411,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "LocalRuntimeMessageRouterTests/testProviderUsageAboveInputBudgetDoesNotCommitGeneratedCompactionSummary",
                 "LocalRuntimeMessageRouterTests/testMismatchedProviderUsageDoesNotCalibrateOrCommitGeneratedCompactionSummary",
                 "AggregatingLlmBackendResidencyTests/testProviderUsageSourceForwardsThroughAggregateAndIsConsumedOnce",
+                "AggregatingLlmBackendResidencyTests/testRejectedDuplicateGenerationDoesNotEraseOriginalProviderUsageSource",
                 "SQLiteRuntimeChatEventStoreTests/testStoresRoundTripProviderUsageCalibration",
                 "SQLiteRuntimeChatEventStoreTests/testStoresRejectInvalidProviderUsageCalibrationShapes",
                 "SQLiteRuntimeChatCompactionSummaryCacheTests",
@@ -37802,6 +37984,15 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     docs_protocol_path = ROOT / "docs/protocol.md"
     schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
+    macos_pagination_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatSessionPagination.swift"
+    macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
+    macos_sqlite_store_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift"
+    macos_router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    macos_store_test_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
+    authoritative_session_sync_wire_fixture_path = (
+        ROOT / "shared/protocol/fixtures/chat-sessions-authoritative-sync-smoke-v1.json"
+    )
     required_paths = (
         android_protocol_path,
         android_protocol_test_path,
@@ -37815,6 +38006,13 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         docs_protocol_path,
         schema_path,
         protocol_schema_check_path,
+        macos_pagination_path,
+        macos_router_path,
+        macos_store_path,
+        macos_sqlite_store_path,
+        macos_router_test_path,
+        macos_store_test_path,
+        authoritative_session_sync_wire_fixture_path,
     )
     if any(not path.exists() for path in required_paths):
         return ["Android protocol model metadata guard files are missing."]
@@ -37833,6 +38031,20 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     docs_protocol_text = docs_protocol_path.read_text(encoding="utf-8", errors="replace")
     schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
     protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
+    macos_pagination_text = macos_pagination_path.read_text(encoding="utf-8", errors="replace")
+    macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
+    macos_store_text = macos_store_path.read_text(encoding="utf-8", errors="replace")
+    macos_sqlite_store_text = macos_sqlite_store_path.read_text(encoding="utf-8", errors="replace")
+    macos_router_test_text = macos_router_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_store_test_text = macos_store_test_path.read_text(encoding="utf-8", errors="replace")
+    authoritative_session_sync_wire_fixture_bytes = authoritative_session_sync_wire_fixture_path.read_bytes()
+    try:
+        authoritative_session_sync_wire_fixture_text = authoritative_session_sync_wire_fixture_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        return [
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Exact wire fixture "
+            f"must be canonical UTF-8: {error}."
+        ]
 
     required_route_refresh_scalar_decode_protocol_snippets = (
         "RouteRefreshOpaqueValueSerializer",
@@ -38652,7 +38864,9 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             )
 
     required_chat_sessions_response_app_path_snippets = (
-        "private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(\"sessions\")",
+        "private val CHAT_SESSIONS_LIST_RESULT_PAYLOAD_KEYS = setOf(",
+        '"snapshot_count"',
+        '"next_cursor"',
         "private val CHAT_SESSION_SUMMARY_PAYLOAD_KEYS = setOf(",
         "private val CHAT_SESSION_SEARCH_PAYLOAD_KEYS = setOf(",
         "chatSessionsListUnknownMetadataKey",
@@ -38746,6 +38960,437 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             f"{roadmap_path.relative_to(ROOT)}: Roadmap must record the latest Android chat.sessions.list "
             "closed-payload app-path gate."
         )
+
+    required_authoritative_session_sync_protocol_snippets = (
+        'const val CHAT_SESSIONS_SYNC_CAPABILITY = "chat.sessions.authoritative_sync.v1"',
+        "private const val MAX_CHAT_SESSION_CURSOR_BYTES = 512",
+        "private const val MAX_CHAT_SESSION_SNAPSHOT_COUNT = 10_000",
+        "ChatSessionsListRequestPayloadSerializer",
+        "ChatSessionsListResultPayloadSerializer",
+        "ChatSessionsBulkLifecyclePayloadSerializer",
+        "ChatSessionsBulkLifecycleResultPayloadSerializer",
+        "chat.sessions.list response sessions must contain at most 200 entries",
+        "chat.sessions.list response session_id values must be unique",
+        "chat.sessions bulk lifecycle result affected_count must be between 0 and 200",
+    )
+    for snippet in required_authoritative_session_sync_protocol_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing runtime-authoritative chat-session "
+                f"pagination or bulk lifecycle contract {snippet!r}."
+            )
+
+    required_authoritative_session_sync_android_test_snippets = (
+        "chatSessionsListPaginationResponseRejectsInvalidMetadata",
+        "chatSessionsBulkLifecyclePayloadsRejectInvalidDomainsAndBounds",
+        "refreshRuntimeChatHistorySupersedesPendingListAndRejectsStaleResponse",
+        "capableRuntimeChatHistoryPublishesFullSnapshotOnlyAfterMoreThan100RowsComplete",
+        "capableRuntimeChatQueryPublishesTransientResultsOnlyAfterMoreThan100RowsComplete",
+        "capableRuntimeChatHistoryRejectsDuplicateCountCursorOverflowAndFinalMismatch",
+        "capableRuntimeChatHistoryRejectsEmptyNonterminalPage",
+        "capableRuntimeChatHistoryStopsAt100PageBudget",
+        "capableRuntimeBulkArchiveBatchesUntilTerminalAckThenReconciles",
+        "capableRuntimeBulkRejectsStaleMalformedAndErrorWithoutOptimisticMutation",
+        "capableRuntimeBulkStopsAt50BatchBudgetWithoutApplyingMutation",
+        "legacyRuntimeBulkFallsBackToOptimisticPerCachedSessionLifecycle",
+        "observedCapableRuntimeKeepsLocalOnlyBulkAvailableOffline",
+        "authoritativeRuntimeRejectsLegacyDowngradeUntilFreshFullSnapshotCompletes",
+        "authoritativeRuntimeQuarantineBlocksDeleteAllUntilFreshFullSnapshotCompletes",
+        "chatSessionsListSendFailurePreservesConcurrentTranscriptRequest",
+        "chatMessagesListSendFailurePreservesConcurrentSessionsListRun",
+        "staleChatSessionsListSendFailureCannotRevokeNewAuthoritativeAuthority",
+        "supersededChatSessionsListAuthenticationErrorCannotRevokeNewerAuthority",
+        "completedChatMessagesListPairingErrorCannotRevokeNewerAuthority",
+        "currentChatMessagesListAuthenticationErrorStillRevokesAuthority",
+        "reusedClosedChatSessionsRequestIdCannotMaskCurrentAuthenticationError",
+        "closedRuntimeChatHistoryRequestCorrelationIsBounded",
+        "closedChatSessionsErrorIsIgnoredBeforeUnknownMetadataValidation",
+        "currentChatMessagesUnknownMetadataErrorClosesRequestAndRejectsLateSuccess",
+        "currentAuthenticationErrorWithChatHistoryPrefixIsNotIgnored",
+        "authoritativeSessionSyncConsumesExactMacOSWireTranscriptPayloads",
+        "authoritativeSessionSyncConsumesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle",
+    )
+    for snippet in required_authoritative_session_sync_android_test_snippets[:2]:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing runtime-authoritative "
+                f"chat-session protocol regression {snippet!r}."
+            )
+    for snippet in required_authoritative_session_sync_android_test_snippets[2:]:
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing runtime-authoritative "
+                f"chat-session client regression {snippet!r}."
+            )
+
+    required_authoritative_session_sync_viewmodel_snippets = (
+        "PendingChatSessionsListRun",
+        "runtimeChatSessionsAuthoritativeSyncSupported",
+        "runtimeChatSessionsBulkAuthorityEnabled",
+        "chat.sessions.list response omitted snapshot_count after authoritative sync was established",
+        "MAX_RUNTIME_CHAT_SESSION_LIST_PAGES = 100",
+        "MAX_RUNTIME_CHAT_SESSION_BULK_BATCHES = 50",
+        "MAX_RUNTIME_CHAT_SESSION_BULK_AFFECTED = 10_000",
+        "ChatSessionsBulkLifecycleResultPayload.serializer()",
+        "reconcileRuntimeChatSessionsAfterBulkFailure()",
+        "closedRuntimeChatHistoryRequests",
+        "MAX_CLOSED_RUNTIME_CHAT_HISTORY_REQUESTS",
+        "isClosedRuntimeChatHistoryRequest",
+        "CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX",
+        "CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX",
+        "shouldIgnoreStaleRuntimeChatHistoryError",
+    )
+    for snippet in required_authoritative_session_sync_viewmodel_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing runtime-authoritative chat-session "
+                f"client state guard {snippet!r}."
+            )
+
+    required_authoritative_session_sync_macos_snippets = (
+        (macos_pagination_path, macos_pagination_text, "static let maximumSnapshotCount = 10_000"),
+        (macos_pagination_path, macos_pagination_text, "static let maximumCursorUTF8Bytes = 512"),
+        (macos_pagination_path, macos_pagination_text, "static let snapshotTTL: TimeInterval = 120"),
+        (macos_pagination_path, macos_pagination_text, "static let maximumGlobalSnapshots = 8"),
+        (macos_pagination_path, macos_pagination_text, "expiresAtMonotonicSeconds"),
+        (macos_pagination_path, macos_pagination_text, "ProcessInfo.processInfo.systemUptime"),
+        (macos_pagination_path, macos_pagination_text, "String(snapshot.sessions.count)"),
+        (macos_router_path, macos_router_text, "RuntimeChatSessionPagination.maximumSnapshotCount + 1"),
+        (macos_router_path, macos_router_text, "Authoritative chat.sessions.list limit must be an integer from 1 through 200"),
+        (macos_router_path, macos_router_text, "chatSessionAuthenticationGenerations"),
+        (macos_router_path, macos_router_text, "latestChatSessionInitialRequestGenerations"),
+        (macos_router_path, macos_router_text, "invalidateChatSessionAuthentication"),
+        (macos_router_path, macos_router_text, "publishAuthoritativeChatSessionSnapshot"),
+        (macos_router_path, macos_router_text, "RuntimeChatSessionMutationAuthorization"),
+        (macos_router_path, macos_router_text, "revalidatedChatSessionMutationOwner"),
+        (macos_router_path, macos_router_text, "markAuthenticatedIfChallengeMatches"),
+        (macos_router_path, macos_router_text, "challengeID: challenge.id"),
+        (macos_router_path, macos_router_text, "Task.isCancelled"),
+        (macos_router_path, macos_router_text, "RuntimeRequestTaskStartGate"),
+        (macos_router_path, macos_router_text, "await startGate.waitUntilRegistered()"),
+        (
+            macos_router_path,
+            macos_router_text,
+            "cancelActiveChats(for: connectionID)\n        requestTasks.forEach { $0.cancel() }\n        chatSessionLifecycleLock.withLock {",
+        ),
+        (macos_router_path, macos_router_text, "beforeCommit: { [chatCompactionSummaryCache] targetSessionIDs in"),
+        (macos_store_path, macos_store_text, "appendBatchAtomicallyUnlocked"),
+        (macos_sqlite_store_path, macos_sqlite_store_text, 'try Self.execute(database, "BEGIN IMMEDIATE")'),
+    )
+    for path, source_text, snippet in required_authoritative_session_sync_macos_snippets:
+        if snippet not in source_text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing runtime-authoritative chat-session host/store guard {snippet!r}."
+            )
+    if "closedChatSessionConnections" in macos_router_text:
+        failures.append(
+            f"{macos_router_path.relative_to(ROOT)}: Runtime-authoritative lifecycle must not retain "
+            "unbounded closed-connection UUID tombstones."
+        )
+
+    required_authoritative_session_sync_macos_test_snippets = (
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeChatSessionCursorTraversesSnapshotWithAbsoluteRanksAndRejectsTampering"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeSessionSyncWireTranscriptMatchesSharedExactPayloads"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeSessionSyncMatchesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativePaginationRejectsExpiredEvictedAndCrossOwnerCursors"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativePaginationExpiresAfterMonotonicTTLWhenWallClockRollsBack"),
+        (macos_router_test_path, macos_router_test_text, "testReauthenticationChallengeInvalidatesCursorAndSuppressesInFlightInitialPublication"),
+        (macos_router_test_path, macos_router_test_text, "testNewerAuthoritativeInitialRequestRetainsAuthorityOverOlderSlowRequest"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeSessionListRejectsOversizedCursorAndSnapshotOverflow"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeBulkLifecycleUsesBoundedFreshRequestBatchesAndReportsRemaining"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeBulkLifecycleRejectsAuthorityCapturedBeforeCapabilityDowngrade"),
+        (macos_router_test_path, macos_router_test_text, "testSingleSessionLifecycleRejectsAuthorityCapturedBeforeReauthentication"),
+        (macos_router_test_path, macos_router_test_text, "testChatSessionRenameRejectsAuthorityCapturedBeforeDifferentOwnerReauthentication"),
+        (macos_router_test_path, macos_router_test_text, "testDevelopmentChatSessionRenameRejectsConnectionClosedAfterAuthorityCapture"),
+        (macos_router_test_path, macos_router_test_text, "testDevelopmentChatSessionRenameRejectsCloseDuringRequestTaskRegistration"),
+        (macos_router_test_path, macos_router_test_text, "testDevelopmentSingleSessionLifecycleRejectsConnectionClosedAfterAuthorityCapture"),
+        (macos_router_test_path, macos_router_test_text, "testTrustedAuthResponseRejectsChallengeSupersededDuringTrustedDeviceLookup"),
+        (macos_router_test_path, macos_router_test_text, "testAuthoritativeBulkDeletePurgeFailurePreventsLifecycleMutation"),
+        (macos_store_test_path, macos_store_test_text, "testSQLiteBulkLifecycleRollsBackEntireBatchOnInsertFailure"),
+        (macos_store_test_path, macos_store_test_text, "testBulkLifecyclePreCommitFailureReceivesExactTargetsAndWritesNothing"),
+    )
+    for path, source_text, snippet in required_authoritative_session_sync_macos_test_snippets:
+        if snippet not in source_text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing runtime-authoritative chat-session regression {snippet!r}."
+            )
+
+    def reject_authoritative_wire_duplicate_names(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON name {key!r}")
+            result[key] = value
+        return result
+
+    expected_authoritative_wire_fixture_sha256 = (
+        "630c2724c456b84a45c635a9ded3aa0e96b9e0cc9a09467c5dff25e422a9d308"
+    )
+    actual_authoritative_wire_fixture_sha256 = hashlib.sha256(
+        authoritative_session_sync_wire_fixture_bytes
+    ).hexdigest()
+    if actual_authoritative_wire_fixture_sha256 != expected_authoritative_wire_fixture_sha256:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Canonical exact-payload "
+            "wire fixture bytes drifted; review the transcript and refresh its pinned SHA-256 deliberately."
+        )
+    try:
+        authoritative_wire_fixture = json.loads(
+            authoritative_session_sync_wire_fixture_text,
+            object_pairs_hook=reject_authoritative_wire_duplicate_names,
+        )
+    except (json.JSONDecodeError, TypeError, ValueError) as error:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Invalid "
+            f"runtime-authoritative cross-platform wire fixture JSON: {error}."
+        )
+        authoritative_wire_fixture = {}
+    expected_authoritative_wire_top_level_keys = {
+        "document_type",
+        "schema_version",
+        "capability",
+        "wire_transcript",
+        "session_series",
+        "pagination",
+        "bulk",
+        "dynamic_values",
+        "final_snapshot_count",
+    }
+    if set(authoritative_wire_fixture) != expected_authoritative_wire_top_level_keys:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Exact wire fixture "
+            "top-level fields drifted."
+        )
+    expected_wire_fixture_contract = {
+        "document_type": "aetherlink.chat-sessions-authoritative-sync-wire-smoke",
+        "schema_version": 1,
+        "capability": "chat.sessions.authoritative_sync.v1",
+        "session_count": 201,
+        "initial_limit": 100,
+        "bulk_limit": 200,
+        "archive_scope": "all_active",
+        "delete_scope": "all_archived",
+        "completed_at_placeholder": "<completed_at>",
+        "archived_at_placeholder": "<archived_at>",
+        "final_snapshot_count": 0,
+    }
+    actual_wire_fixture_contract = {
+        "document_type": authoritative_wire_fixture.get("document_type"),
+        "schema_version": authoritative_wire_fixture.get("schema_version"),
+        "capability": authoritative_wire_fixture.get("capability"),
+        "session_count": authoritative_wire_fixture.get("session_series", {}).get("count"),
+        "initial_limit": authoritative_wire_fixture.get("pagination", {})
+        .get("initial_request", {})
+        .get("limit"),
+        "bulk_limit": authoritative_wire_fixture.get("bulk", {}).get("limit"),
+        "archive_scope": authoritative_wire_fixture.get("bulk", {})
+        .get("archive", {})
+        .get("scope"),
+        "delete_scope": authoritative_wire_fixture.get("bulk", {})
+        .get("delete", {})
+        .get("scope"),
+        "completed_at_placeholder": authoritative_wire_fixture.get("dynamic_values", {})
+        .get("completed_at_placeholder"),
+        "archived_at_placeholder": authoritative_wire_fixture.get("dynamic_values", {})
+        .get("archived_at_placeholder"),
+        "final_snapshot_count": authoritative_wire_fixture.get("final_snapshot_count"),
+    }
+    if actual_wire_fixture_contract != expected_wire_fixture_contract:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Runtime-authoritative "
+            "cross-platform wire fixture contract drifted."
+        )
+    exact_wire_scalar_types = (
+        (authoritative_wire_fixture.get("schema_version"), int, "schema_version"),
+        (authoritative_wire_fixture.get("session_series", {}).get("count"), int, "session_series.count"),
+        (authoritative_wire_fixture.get("pagination", {}).get("initial_request", {}).get("limit"), int, "pagination.initial_request.limit"),
+        (authoritative_wire_fixture.get("pagination", {}).get("initial_request", {}).get("include_archived"), bool, "pagination.initial_request.include_archived"),
+        (authoritative_wire_fixture.get("bulk", {}).get("limit"), int, "bulk.limit"),
+        (authoritative_wire_fixture.get("final_snapshot_count"), int, "final_snapshot_count"),
+    )
+    for value, expected_type, field_name in exact_wire_scalar_types:
+        if type(value) is not expected_type:
+            failures.append(
+                f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: {field_name} must "
+                f"have exact JSON type {expected_type.__name__}."
+            )
+    wire_pages = authoritative_wire_fixture.get("pagination", {}).get("pages")
+    expected_wire_page_counts = [
+        {"offset": 0, "count": 100, "snapshot_count": 201},
+        {"offset": 100, "count": 100, "snapshot_count": 201},
+        {"offset": 200, "count": 1, "snapshot_count": 201},
+    ]
+    actual_wire_page_counts = [
+        {key: page.get(key) for key in ("offset", "count", "snapshot_count")}
+        for page in wire_pages
+    ] if isinstance(wire_pages, list) and all(isinstance(page, dict) for page in wire_pages) else []
+    if actual_wire_page_counts != expected_wire_page_counts:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Runtime-authoritative "
+            "wire fixture must preserve the 201-session three-page transcript."
+        )
+    expected_wire_page_keys = [
+        {"offset", "count", "snapshot_count", "next_cursor"},
+        {"offset", "count", "snapshot_count", "next_cursor"},
+        {"offset", "count", "snapshot_count"},
+    ]
+    if not isinstance(wire_pages, list) or len(wire_pages) != len(expected_wire_page_keys):
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Lifecycle fixture "
+            "must contain exactly three pages."
+        )
+    else:
+        for page_index, (page, expected_keys) in enumerate(zip(wire_pages, expected_wire_page_keys)):
+            if set(page) != expected_keys or any(type(page.get(key)) is not int for key in ("offset", "count", "snapshot_count")):
+                failures.append(
+                    f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Page {page_index + 1} "
+                    "must preserve exact fields and integer scalar types."
+                )
+    cursor_pattern = re.compile(
+        r"v1\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\."
+        r"([1-9][0-9]*)\.([1-9][0-9]*)\.[0-9a-f]{64}"
+    )
+    for page_index, page in enumerate(wire_pages[:-1] if isinstance(wire_pages, list) else []):
+        cursor = page.get("next_cursor") if isinstance(page, dict) else None
+        match = cursor_pattern.fullmatch(cursor) if isinstance(cursor, str) else None
+        expected_offset = page.get("offset", 0) + page.get("count", 0) if isinstance(page, dict) else -1
+        if not match or int(match.group(1)) != expected_offset or len(cursor.encode("utf-8")) > 512:
+            failures.append(
+                f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Page {page_index + 1} "
+                "must use a bounded non-secret cursor representative matching the macOS wire shape and page offset."
+            )
+    if isinstance(wire_pages, list) and wire_pages and "next_cursor" in wire_pages[-1]:
+        failures.append(
+            f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Terminal wire page must omit next_cursor."
+        )
+    expected_wire_batches = [
+        {"affected_count": 200, "remaining_count": 1},
+        {"affected_count": 1, "remaining_count": 0},
+    ]
+    for operation in ("archive", "delete"):
+        batches = authoritative_wire_fixture.get("bulk", {}).get(operation, {}).get("batches")
+        if (
+            batches != expected_wire_batches
+            or not isinstance(batches, list)
+            or any(
+                set(batch) != {"affected_count", "remaining_count"}
+                or any(type(batch.get(key)) is not int for key in ("affected_count", "remaining_count"))
+                for batch in batches
+                if isinstance(batch, dict)
+            )
+        ):
+            failures.append(
+                f"{authoritative_session_sync_wire_fixture_path.relative_to(ROOT)}: Runtime-authoritative "
+                f"wire fixture must preserve the two {operation} batches."
+            )
+    required_swift_wire_tests = {
+        "testAuthoritativeSessionSyncWireTranscriptMatchesSharedExactPayloads",
+        "testAuthoritativeSessionSyncMatchesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle",
+    }
+    swift_selector_prefix = "\trun swift test --filter '"
+    swift_selector_lines = [
+        line
+        for line in no_device_text.splitlines()
+        if line.startswith(swift_selector_prefix) and line.endswith("'")
+    ]
+    registered_swift_selectors = set()
+    for selector_line in swift_selector_lines:
+        registered_swift_selectors.update(
+            selector_line[len(swift_selector_prefix):-1].split("|")
+        )
+    for swift_wire_test in required_swift_wire_tests:
+        qualified_test = f"LocalRuntimeMessageRouterTests/{swift_wire_test}"
+        if qualified_test not in registered_swift_selectors:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device Swift selector must execute "
+                f"{qualified_test}."
+            )
+    expected_android_authoritative_gate_line = (
+        "\trun ./gradlew --no-daemon :app:testDebugUnitTest "
+        "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest "
+        "--tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest "
+        "--tests com.localagentbridge.android.AppNavigationTest"
+    )
+    if expected_android_authoritative_gate_line not in no_device_text.splitlines():
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Default no-device gate must keep the complete "
+            "three-class Android authoritative command so both shared-fixture regressions execute."
+        )
+    for direct_fixture_marker in (
+        'payload = page.jsonObject',
+        'payload = transcript.getValue("archive_result").jsonObject',
+        'payload = transcript.getValue("delete_result").jsonObject',
+        'payload = transcript.getValue("final_page").jsonObject',
+    ):
+        if direct_fixture_marker not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Exact wire transcript must be "
+                f"consumed directly by Android ({direct_fixture_marker!r})."
+            )
+    if "Covered runtime-authoritative chat session cross-platform wire transcript addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Default no-device gate must report the shared "
+            "runtime-authoritative cross-platform wire transcript coverage."
+        )
+    for path, source_text in (
+        (roadmap_path, roadmap_text),
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for marker in (
+            "chat-sessions-authoritative-sync-smoke-v1.json",
+            "exact two-session payload transcript",
+            "201-session",
+            "no-device",
+        ):
+            if marker not in source_text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing authoritative exact-wire evidence marker {marker!r}."
+                )
+
+    if "chat.sessions.authoritative_sync.v1" not in docs_protocol_text:
+        failures.append(
+            f"{docs_protocol_path.relative_to(ROOT)}: Missing runtime-authoritative chat-session capability documentation."
+        )
+    for snippet in (
+        "snapshot_count",
+        "next_cursor",
+        "all_active",
+        "all_archived",
+    ):
+        if snippet not in docs_protocol_text or snippet not in schema_text or snippet not in protocol_schema_check_text:
+            failures.append(
+                "Runtime-authoritative chat-session protocol documentation, schema, and checker must all "
+                f"preserve {snippet!r}."
+            )
+
+    for path, source_text in (
+        (roadmap_path, roadmap_text),
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        if "Runtime-Authoritative Session Pagination And Bulk Lifecycle" not in source_text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing runtime-authoritative session pagination and bulk lifecycle record."
+            )
+    if "Covered runtime-authoritative chat session pagination and bulk lifecycle addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Default no-device gate must report runtime-authoritative "
+            "chat-session pagination and bulk lifecycle coverage."
+        )
+    for snippet in (
+        "trusted-device lookup cannot publish a superseded authentication challenge",
+        "authoritative downgrade quarantine blocks runtime-owned archive-all and delete-all",
+        "rename plus single and bulk lifecycle mutations revalidate exact owner, authentication generation, capability, and request-task cancellation under the host lifecycle lock",
+        "request task dispatch starts behind its registration barrier, and connection close claims active backend generations before cancelling tracked request tasks and clearing lifecycle authority",
+        "bounded closed-history correlation ignores delayed superseded or completed errors while current request IDs take precedence, including current authentication errors whose request IDs use a history namespace",
+        "dedicated history request namespaces keep evicted stale errors harmless and discard closed errors before payload validation",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must preserve the latest "
+                f"runtime-authoritative authority remediation; missing {snippet!r}."
+            )
 
     required_chat_messages_protocol_snippets = (
         "private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500",
@@ -39700,6 +40345,11 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     required_chat_session_mutation_result_test_snippets = (
         "chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication",
         "chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication",
+        "lifecycleAckMustMatchJournaledSessionAndOperation",
+        "renameAckMustMatchJournaledSession",
+        "malformedLifecycleAckRollsBackDeleteTombstoneAndRequestsFreshFullList",
+        "lifecycleWaitsForPendingListThenRequestsFreshReconciliation",
+        "sameSessionMutationWaitsForPendingAcknowledgement",
         'put("backend_url", "http://127.0.0.1:11434")',
         'put("workspace_id", "workspace-canary")',
         "Leaky Runtime Title",
@@ -43715,6 +44365,14 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "pre_network_tests": ROOT / "script/test_p2p_nat_pre_network_review.py",
         "spike_review_validator": ROOT / "script/check_p2p_nat_controlled_spike_review.py",
         "spike_review_tests": ROOT / "script/test_p2p_nat_controlled_spike_review.py",
+        "session_crypto_validator": ROOT / "script/check_p2p_nat_session_crypto_vectors.py",
+        "session_crypto_tests": ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
+        "harness_egress_validator": ROOT / "script/check_p2p_nat_phase_a_harness_egress.py",
+        "harness_egress_tests": ROOT / "script/test_p2p_nat_phase_a_harness_egress.py",
+        "offline_source_validator": ROOT / "script/check_p2p_nat_libjuice_offline_source.py",
+        "offline_source_tests": ROOT / "script/test_p2p_nat_libjuice_offline_source.py",
+        "compile_only_validator": ROOT / "script/check_p2p_nat_libjuice_compile_only.py",
+        "compile_only_tests": ROOT / "script/test_p2p_nat_libjuice_compile_only.py",
         "gate": ROOT / "script/check_no_device_quality.sh",
         "context": design_root / "context.md",
         "threat_model": design_root / "threat-model.md",
@@ -43727,12 +44385,22 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "handoff_v1": design_root / "implementation/handoff-v1.json",
         "handoff_v2": design_root / "implementation/handoff-v2.json",
         "handoff_v3": design_root / "implementation/handoff-v3.json",
+        "handoff_v4": design_root / "implementation/handoff-v4.json",
         "pre_network_review_json": design_root / "pre-network/review-v1.json",
         "pre_network_review_md": design_root / "pre-network/review-v1.md",
         "pre_network_decision_json": design_root / "pre-network/decision-v1.json",
         "pre_network_decision_md": design_root / "pre-network/decision-v1.md",
         "spike_review_json": design_root / "controlled-network-spike/review-v1.json",
         "spike_review_md": design_root / "controlled-network-spike/review-v1.md",
+        "spike_decision_json": design_root / "controlled-network-spike/decision-v1.json",
+        "spike_decision_md": design_root / "controlled-network-spike/decision-v1.md",
+        "session_crypto_vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-session-crypto-vectors.json",
+        "harness_egress_json": design_root / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.json",
+        "harness_egress_md": design_root / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.md",
+        "offline_source_json": design_root / "controlled-network-spike/phase-a/offline-source-intake-v1.json",
+        "offline_source_md": design_root / "controlled-network-spike/phase-a/offline-source-intake-v1.md",
+        "compile_only_json": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json",
+        "compile_only_md": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.md",
         "vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-vectors.json",
         "manifest": design_root / "evidence.sha256",
         "roadmap": ROOT / "docs/roadmap.md",
@@ -43759,6 +44427,15 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "reject_duplicate_names",
             "object_pairs_hook=reject_duplicate_names",
             "validate_current_pre_network_handoff",
+            "validate_current_controlled_spike_handoff",
+            "validate_phase_a_static_evidence_preflight",
+            "validate_phase_a_static_python_ast",
+            "PHASE_A_STATIC_EVIDENCE_SHA256",
+            "allowed_from_imports",
+            "check_p2p_nat_session_crypto_vectors.py",
+            "check_p2p_nat_phase_a_harness_egress.py",
+            "check_p2p_nat_libjuice_offline_source.py",
+            "check_p2p_nat_libjuice_compile_only.py",
             "EXPECTED_PRE_NETWORK_DECISION_RESOLUTIONS",
             '"controlled-network-spike"',
             'DESIGN_ROOT / "implementation"',
@@ -43799,7 +44476,9 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "REQUIRED_SOURCE_URLS",
             "GENERATED_ARTIFACT_SHA256",
             "validate_source_handoff",
-            "4 recommendations proposed; 0 selected; socket gate closed",
+            "validate_decision",
+            "validate_handoff_v4",
+            "4 recommendations approved for phase A; handoff-v4 closed; socket gate closed",
         ),
         "spike_review_tests": (
             "test_missing_unknown_and_duplicate_names_fail",
@@ -43809,6 +44488,95 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "test_official_source_set_and_verification_date_fail",
             "test_measurement_and_outcome_claims_fail",
             "test_markdown_claim_and_heading_drift_fail",
+            "test_approval_decision_chain_and_duplicate_names_fail",
+            "test_approval_decision_authorization_measurement_and_evidence_drift_fail",
+            "test_handoff_v4_phase_a_and_closed_network_gates_fail",
+            "test_security_design_validator_independently_rejects_handoff_v4_authority_drift",
+        ),
+        "session_crypto_validator": (
+            "production-p2p-nat-v1-session-crypto-vectors.json",
+            "P2P/NAT Phase A session crypto vectors passed",
+            "aetherlink-p2p-v1/session-keys/v1",
+            "EXPECTED_AES",
+            "forbidden_swift",
+            "named JCA provider",
+        ),
+        "session_crypto_tests": (
+            "test_canonical_fixture_and_sources_pass",
+            "test_algorithm_scalar_public_key_and_shared_secret_drift_fail",
+            "test_transcript_hkdf_key_and_confirmation_drift_fail",
+            "test_aes_nonce_aad_ciphertext_tag_and_type_confusion_fail",
+            "test_negative_vector_completeness_and_order_fail",
+            "test_network_dynamic_import_and_provider_bypass_markers_fail",
+            "test_independent_alp1_encoder_rejects_noncanonical_transcript_fields",
+        ),
+        "harness_egress_validator": (
+            "static-harness-egress-policy-v1.json",
+            "P2P/NAT Phase A static harness/egress validation passed",
+            "staticHarnessImplementationAuthorized",
+            "full_ice_regular_nomination_single_component_udp",
+            "retainedRuntimeEvents",
+            "phaseBExecutionAuthorized",
+        ),
+        "harness_egress_tests": (
+            "test_canonical_artifacts_sources_and_ast_pass",
+            "test_exact_source_references_fail_on_any_drift",
+            "test_every_execution_authorization_gate_is_exact_false",
+            "test_exact_tuple_set_rejects_protocol_address_port_and_shape_drift",
+            "test_every_required_deny_vector_is_mutation_guarded",
+            "test_external_udp_deny_vectors_reject_omission_order_and_tuple_drift",
+            "test_evidence_regex_bounds_counters_and_empty_runtime_events_are_exact",
+            "test_phase_b_remains_unproven_blocked_and_unexecuted",
+        ),
+        "offline_source_validator": (
+            "offline-source-intake-v1.json",
+            "P2P/NAT Phase A libjuice offline-source validation passed",
+            "EXPECTED_INTAKE_ROOT_RELATIVE",
+            "validate_intake_root_absent",
+            "validate_intake_ancestor_metadata",
+            "validate_intake_ancestor_values",
+            "EXPECTED_SEMANTIC_SHA256",
+            "ALLOWED_FROM_IMPORTS",
+        ),
+        "offline_source_tests": (
+            "test_canonical_blocked_absent_state_and_checker_pass",
+            "test_root_present_is_fail_closed_without_consumption",
+            "test_ancestor_type_owner_and_write_permissions_fail_closed",
+            "test_all_limits_reject_relaxation_bool_float_missing_and_unknown",
+            "test_future_provenance_schema_rejects_missing_unknown_hash_and_contract_drift",
+            "test_ast_self_scan_rejects_capability_and_discovery_constructs",
+            "SECURITY_CHECKER.validate_phase_a_static_python_ast",
+            "_posixsubprocess",
+            "unpack_archive",
+            "write_text",
+            "replace_once",
+            "raw = Path",
+            "from pathlib import os",
+            "os.remove",
+            "unreviewed_helper",
+        ),
+        "compile_only_validator": (
+            "libjuice-compile-only-contract-v1.json",
+            "P2P/NAT libjuice compile-only contract validation passed",
+            "blocked_missing_reviewed_source",
+            "EXPECTED_EXPORTS",
+            "validate_owned_python_ast",
+            "sourceAcquisitionNetworkIOAllowed",
+        ),
+        "compile_only_tests": (
+            "test_canonical_blocked_state_returns_success_without_compilation",
+            "test_offline_intake_is_future_link_only_and_untrusted_now",
+            "test_future_procedure_is_direct_compile_archive_nm_and_never_executes",
+            "test_android_matrix_requires_min_sdk_26_two_abis_and_exact_ndk_tools",
+            "test_ast_scanner_rejects_process_network_native_and_dynamic_capabilities",
+            "_posixsubprocess",
+            "unpack_archive",
+            "write_text",
+            "replace_once",
+            "raw = Path",
+            "from pathlib import os",
+            "os.remove",
+            "unreviewed_helper",
         ),
         "gate": (
             "script/check_p2p_nat_contract_vectors.py",
@@ -43816,10 +44584,21 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "script/test_p2p_nat_pre_network_review.py",
             "script/check_p2p_nat_controlled_spike_review.py",
             "script/test_p2p_nat_controlled_spike_review.py",
+            "script/check_p2p_nat_session_crypto_vectors.py",
+            "script/test_p2p_nat_session_crypto_vectors.py",
+            "script/check_p2p_nat_phase_a_harness_egress.py",
+            "script/test_p2p_nat_phase_a_harness_egress.py",
+            "script/check_p2p_nat_libjuice_offline_source.py",
+            "script/test_p2p_nat_libjuice_offline_source.py",
+            "script/check_p2p_nat_libjuice_compile_only.py",
+            "script/test_p2p_nat_libjuice_compile_only.py",
             "script/check_p2p_nat_security_design.py",
             "Covered production P2P/NAT bounded no-network handoff addendum:",
             "Covered production P2P/NAT pre-network approval addendum:",
             "Covered production P2P/NAT controlled-spike review addendum:",
+            "Covered production P2P/NAT controlled-spike phase A approval addendum:",
+            "Covered production P2P/NAT controlled-spike phase A crypto and static-policy addendum:",
+            "Covered production P2P/NAT controlled-spike phase A offline-source and compile-boundary addendum:",
             "Handoff-v2 records canonical-contracts and no-network-conformance completed",
             "controlled-network-spike remains blocked",
             "decision-v1 resolves all seven",
@@ -43831,7 +44610,10 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "handoff-v3 hash-pins Android P2pNatContract.kt",
             "the security-design validator directly verifies canonical handoff closure",
             "10-test mutation suite",
+            "17-test mutation suite",
             "librarySelectionAuthorized, harnessImplementationAuthorized, networkIOAllowed",
+            "sourceAcquisitionNetworkIOAllowed",
+            "controlledSpikeNetworkIOAllowed, controlledSpikeSocketExecutionAuthorized",
         ),
         "analysis": (
             '"analysisId": "production_p2p_nat_v1_20260711"',
@@ -43845,7 +44627,11 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"librarySelectionAuthorized": false',
             '"productionDeploymentAuthorized": false',
             '"controlledNetworkSpikeSocketExecutionAuthorized": false',
-            '"handoffPath": "implementation/handoff-v3.json"',
+            '"conditionalLibrarySelectionAuthorized": true',
+            '"controlledSpikePhaseAAuthorized": true',
+            '"offlineSourceInspectionAuthorized": true',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+            '"handoffPath": "implementation/handoff-v4.json"',
         ),
         "selection_profile": (
             "explicitly approved for a bounded handoff",
@@ -43894,6 +44680,20 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"isolated_harness_design"',
             '"socket_destination_and_egress_controls"',
             'P2pNatContract.kt',
+        ),
+        "handoff_v4": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v4"',
+            '"supersedesPath": "handoff-v3.json"',
+            '"controlledSpikeDecisionPath": "../controlled-network-spike/decision-v1.json"',
+            '"authorizationStatus": "authorized_phase_a_evidence_only"',
+            '"sourceMaterialMode": "offline_user_provided_or_preexisting_workspace_only"',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+            '"controlledSpikeNetworkIOAllowed": false',
+            '"controlledSpikeSocketExecutionAuthorized": false',
+            '"phaseBExecutionAuthorized": false',
+            '"productionNetworkIOAllowed": false',
+            '"productionDeploymentAuthorized": false',
+            '"approved_for_bounded_phase_a_evidence"',
         ),
         "pre_network_review_json": (
             '"reviewId": "production_p2p_nat_v1_pre_network_review_v1"',
@@ -43953,6 +44753,88 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "socketExecutionAuthorized=false",
             "separate_versioned_decision_before_socket_execution",
         ),
+        "spike_decision_json": (
+            '"decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1"',
+            '"approvalSource": "explicit_user_instruction"',
+            '"decisionScope": "bounded_phase_a_evidence_authorization"',
+            '"approved_for_bounded_phase_a_evidence"',
+            '"offlineSourceInspectionAuthorized": true',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+            '"compileOnlyIntegrationAuthorized": true',
+            '"controlledSpikeNetworkIOAllowed": false',
+            '"controlledSpikeSocketExecutionAuthorized": false',
+            '"phaseBExecutionAuthorized": false',
+            '"productionDeploymentAuthorized": false',
+        ),
+        "spike_decision_md": (
+            "Controlled-Network Spike Approval Decision V1",
+            "bounded phase A evidence",
+            "offline source inspection",
+            "sourceAcquisitionNetworkIOAllowed=false",
+            "controlledSpikeNetworkIOAllowed=false",
+            "controlledSpikeSocketExecutionAuthorized=false",
+            "phaseBExecutionAuthorized=false",
+            "separate versioned decision",
+        ),
+        "session_crypto_vectors": (
+            '"schema": "aetherlink-production-p2p-nat-v1-session-crypto-vectors"',
+            '"androidProviderPolicy": "provider_neutral_jca_no_named_provider_no_android_keystore_dependency"',
+            '"id": "direct"',
+            '"id": "relay"',
+            '"id": "provider_failure"',
+        ),
+        "harness_egress_json": (
+            '"artifactId": "production_p2p_nat_v1_phase_a_static_harness_egress_policy_v1"',
+            '"staticHarnessImplementationAuthorized": true',
+            '"controlledSpikeSocketExecutionAuthorized": false',
+            '"requiredIceBehavior": "full_ice_regular_nomination_single_component_udp"',
+            '"retainedRuntimeEvents": []',
+            '"phaseBExecutionAuthorized": false',
+        ),
+        "harness_egress_md": (
+            "Static Harness And Egress Policy V1",
+            "static_design_complete",
+            "not_executed",
+            "full_ice_regular_nomination_single_component_udp",
+            "retainedRuntimeEvents=[]",
+            "phaseBExecutionAuthorized=false",
+        ),
+        "offline_source_json": (
+            '"artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v1"',
+            '"artifactStatus": "blocked_missing_offline_source"',
+            '"expectedIntakeRoot": "build/offline-source/libjuice-1.7.2"',
+            '"rootPresentDisposition": "fail_closed_require_new_reviewed_versioned_manifest"',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+            '"completionClaimsAllowed": false',
+        ),
+        "offline_source_md": (
+            "Phase A libjuice Offline Source Intake v1",
+            "blocked_missing_offline_source",
+            "build/offline-source/libjuice-1.7.2",
+            "provenance metadata",
+            "fails closed",
+            "do not authorize fetching",
+        ),
+        "compile_only_json": (
+            '"contractId": "production_p2p_nat_v1_libjuice_compile_only_contract_v1"',
+            '"android_macos_compile_only_integration": "blocked_missing_reviewed_source"',
+            '"executionStatus": "not_executed"',
+            '"recordedEnvironmentSnapshot"',
+            '"scope": "creation_time_filesystem_observation_not_revalidated_by_static_contract_checker"',
+            '"minimumSdk": 26',
+            '"minimumDeploymentTarget": "14.0"',
+            '"routeTokenAuthorityAllowed": false',
+        ),
+        "compile_only_md": (
+            "Phase A libjuice Compile-Only C ABI Contract v1",
+            "blocked_missing_reviewed_source",
+            "The canonical blocked state is a successful checker result",
+            "creation-time filesystem snapshot",
+            "does not revalidate that environment snapshot",
+            "arm64-v8a",
+            "x86_64",
+            "authorizes no current compiler or archive invocation",
+        ),
         "vectors": (
             '"schema": "aetherlink-production-p2p-nat-v1-vectors"',
             '"expectedCanonicalHex"',
@@ -43979,7 +44861,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "transport-neutral identity-bound secure session",
             "approved_for_bounded_handoff",
             "selection-profile.json",
-            "handoff-v3",
+            "handoff-v4",
         ),
     }
     for name, snippets in required_snippets.items():
@@ -43988,11 +44870,50 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             if snippet.lower() not in text.lower():
                 failures.append(f"{paths[name].relative_to(ROOT)} is missing {snippet!r}.")
 
+    phase_a_gate_order = (
+        "run python3 script/check_p2p_nat_security_design.py",
+        "run python3 script/check_p2p_nat_libjuice_offline_source.py",
+        "run python3 -m unittest script/test_p2p_nat_libjuice_offline_source.py",
+        "run python3 script/check_p2p_nat_libjuice_compile_only.py",
+        "run python3 -m unittest script/test_p2p_nat_libjuice_compile_only.py",
+        "run python3 script/check_p2p_nat_session_crypto_vectors.py",
+        "run python3 -m unittest script/test_p2p_nat_session_crypto_vectors.py",
+        "run python3 script/check_p2p_nat_phase_a_harness_egress.py",
+        "run python3 -m unittest script/test_p2p_nat_phase_a_harness_egress.py",
+        "--tests 'com.localagentbridge.android.core.protocol.p2pnat.*' \\",
+        "run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'",
+    )
+    gate_text = texts.get("gate", "")
+    executable_gate_lines = [
+        line.strip()
+        for line in gate_text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    phase_a_gate_positions: list[int] = []
+    phase_a_gate_order_valid = True
+    for command in phase_a_gate_order:
+        positions = [
+            index for index, line in enumerate(executable_gate_lines) if line == command
+        ]
+        if len(positions) != 1:
+            phase_a_gate_order_valid = False
+            continue
+        phase_a_gate_positions.append(positions[0])
+    if (
+        not phase_a_gate_order_valid
+        or len(phase_a_gate_positions) != len(phase_a_gate_order)
+        or phase_a_gate_positions != sorted(phase_a_gate_positions)
+    ):
+        failures.append(
+            "Default no-device gate must run the P2P/NAT security-design preflight before "
+            "the offline-source, compile-only, crypto, and static harness validators/tests."
+        )
+
     manifest_lines = [line for line in texts.get("manifest", "").splitlines() if line]
     if len(manifest_lines) != 13:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
-    expected_manifest_hash = "b86bd38b3a60c49144fd3ce06a9c5c17293106dffcd7bc3b5df997ce180d74b4"
+    expected_manifest_hash = "8741927642b8697e517dccee7dc639d279037f530b442f9ddf9873cbd2294a92"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -44106,9 +45027,9 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
                     f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
                 )
     spike_review_sections = {
-        "roadmap": "Production P2P/NAT Controlled-Spike Review (Selection Pending)",
-        "progress": "2026-07-12 Production P2P/NAT Controlled-Spike Review (Selection Pending)",
-        "qa": "2026-07-12 Production P2P/NAT Controlled-Spike Review No-Device Checklist",
+        "roadmap": "Production P2P/NAT Controlled-Spike Review (Historical Proposal)",
+        "progress": "2026-07-12 Production P2P/NAT Controlled-Spike Review (Historical Proposal)",
+        "qa": "2026-07-12 Production P2P/NAT Controlled-Spike Review Historical Checklist",
     }
     for name, heading in spike_review_sections.items():
         section = section_text(name, heading)
@@ -44121,6 +45042,70 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "networkIOAllowed=false",
             "socketExecutionAuthorized=false",
             "10",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    spike_approval_sections = {
+        "roadmap": "Production P2P/NAT Controlled-Spike Phase A Approved (No Sockets)",
+        "progress": "2026-07-13 Production P2P/NAT Controlled-Spike Phase A Approval (No Sockets)",
+        "qa": "2026-07-13 Production P2P/NAT Controlled-Spike Phase A Approval No-Device Checklist",
+    }
+    for name, heading in spike_approval_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "controlled-network-spike/decision-v1.json",
+            "handoff-v4",
+            "explicit_user_instruction",
+            "approved_for_bounded_phase_a_evidence",
+            "sourceAcquisitionNetworkIOAllowed=false",
+            "controlledSpikeNetworkIOAllowed=false",
+            "controlledSpikeSocketExecutionAuthorized=false",
+            "phaseBExecutionAuthorized=false",
+            "productionDeploymentAuthorized=false",
+            "17",
+            "separate versioned decision",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    phase_a_static_sections = {
+        "roadmap": "Production P2P/NAT Phase A Crypto And Static Policy Evidence (No Sockets)",
+        "progress": "2026-07-13 Production P2P/NAT Phase A Crypto And Static Policy Evidence (No Sockets)",
+        "qa": "2026-07-13 Production P2P/NAT Phase A Crypto And Static Policy No-Device Checklist",
+    }
+    for name, heading in phase_a_static_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "production-p2p-nat-v1-session-crypto-vectors.json",
+            "static-harness-egress-policy-v1.json",
+            "staticHarnessImplementationAuthorized=true",
+            "blocked_missing_offline_source",
+            "blocked_missing_reviewed_source",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    phase_a_source_compile_sections = {
+        "roadmap": "Production P2P/NAT Phase A Offline Source And Compile Boundary (No Source, No Compilation)",
+        "progress": "2026-07-13 Production P2P/NAT Phase A Offline Source And Compile Boundary (No Source, No Compilation)",
+        "qa": "2026-07-13 Production P2P/NAT Phase A Offline Source And Compile Boundary No-Device Checklist",
+    }
+    for name, heading in phase_a_source_compile_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "offline-source-intake-v1.json",
+            "libjuice-compile-only-contract-v1.json",
+            "build/offline-source/libjuice-1.7.2",
+            "blocked_missing_offline_source",
+            "blocked_missing_reviewed_source",
+            "minSdk 26",
             "no-device",
         ):
             if snippet not in section:
@@ -45162,7 +46147,737 @@ def macos_runtime_connection_manager_guard_failures() -> list[str]:
     return failures
 
 
+def runtime_chat_retention_production_ownership_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_snippets = {
+        "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift": (
+            "public static func runProductionMaintenance(\n        on store: any RuntimeChatEventStore,\n        now: Date = Date(),",
+            "deletedSessionPruneResult: try sqliteStore.pruneDeletedSessionsBatch(\n                deletedBefore: cutoff,",
+            "ownerDeviceID: String?",
+            "RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL)",
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeEventLogFileProtection.swift": (
+            "static func withExclusiveFileAccess<T>(",
+            "O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW",
+            "F_SETLKW",
+            "NSRecursiveLock",
+        ),
+        "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+            "public func pruneDeletedSessions(\n        deletedBefore cutoff: Date,",
+            "scope: .allOwners",
+            "retentionCandidatesUnlocked(",
+            "ROW_NUMBER() OVER (",
+            "LIMIT ?",
+            "recordRetentionTombstoneUnlocked(",
+            "deleteSemanticEmbeddingsUnlocked(",
+            "deleteSearchRowUnlocked(",
+            "compactLegacyJSONLIfNeeded(database)",
+            "legacyCompactionTiming: .whenBatchDrained",
+            "deferLegacyJSONLCompaction",
+            "result.prunedSessionCount < limit",
+            'legacyCompactionMetadataKey = "legacy_jsonl_retention_compacted"',
+        ),
+        "apps/macos/CompanionCore/Sources/CompanionAppModel.swift": (
+            "@Published public private(set) var runtimeChatRetentionStatus",
+            "if !hasScheduledRuntimeChatRetentionMaintenance",
+            "runtimeChatRetentionMaintenanceIntervalNanoseconds",
+            "runtimeChatRetentionMaintenanceTask = Task { [weak self, store] in",
+            "Self.pruneExpiredDeletedRuntimeChats(",
+            "try await Task.sleep(nanoseconds: interval)",
+            "public func runRuntimeChatRetentionMaintenance() async",
+            "withThrowingTaskGroup(of: Int.self)",
+            "group.addTask(priority: .utility)",
+            "try Task.checkCancellation()",
+            "RuntimeChatEventStoreDefaults.runProductionMaintenance(",
+            "total += result.prunedDeletedSessionCount",
+            "await Task.yield()",
+            "completeRuntimeChatRetentionMaintenance(prunedSessionCount:",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift": (
+            "RuntimeHistoryRetentionControl(",
+            "Clean Deleted History",
+            ".disabled(status.state == .running)",
+            "runtimeHistoryRetentionDetail",
+            "Remove chats deleted at least 90 days ago from this runtime host.",
+        ),
+        "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift": (
+            "testSQLiteAllOwnerRetentionUsesGlobalLimitAndDeterministicOwnerTieBreak",
+            "testSQLiteAllOwnerRetentionUsesBoundedMetadataQueryAndTargetedFTSDeletion",
+            "testProductionAllOwnerMaintenanceOverloadPrunesAcrossOwnersWithOneLimit",
+            "testProductionRetentionCompactsLegacyJSONLOnlyAfterCommitAndPreservesAppendBackfill",
+            "testLegacyCompactionCoordinatesConcurrentCrossInstanceAppendWithoutDataLoss",
+            "testProductionRetentionDefersLegacyCompactionUntilFinalBatchDrain",
+            "all-owner-device-a-resurrection",
+            "all-owner-legacy-resurrection",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testCompanionAppModelRunsAllOwnerRuntimeChatRetentionMaintenance",
+            "testCompanionAppModelRetentionMaintenanceDoesNotRescanRuntimeDataSummary",
+            "testCompanionAppModelRetentionScheduleDoesNotKeepModelAlive",
+            "model.start()",
+            "XCTAssertEqual(model.runtimeChatRetentionStatus.prunedDeletedSessionCount, 105)",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift": (
+            "localizedRuntimeDeletedChatCount(2)",
+            "Cleanup finished. 2 deleted chats removed.",
+            "정리 완료: 삭제된 채팅 2개 제거됨.",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift": (
+            "testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances",
+            "retentionStatus: CompanionRuntimeChatRetentionStatus(",
+        ),
+        "script/check_no_device_quality.sh": (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRunsAllOwnerRuntimeChatRetentionMaintenance",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRetentionMaintenanceDoesNotRescanRuntimeDataSummary",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRetentionScheduleDoesNotKeepModelAlive",
+            "SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesGlobalLimitAndDeterministicOwnerTieBreak",
+            "SQLiteRuntimeChatEventStoreTests/testSQLiteAllOwnerRetentionUsesBoundedMetadataQueryAndTargetedFTSDeletion",
+            "SQLiteRuntimeChatEventStoreTests/testProductionAllOwnerMaintenanceOverloadPrunesAcrossOwnersWithOneLimit",
+            "SQLiteRuntimeChatEventStoreTests/testProductionRetentionCompactsLegacyJSONLOnlyAfterCommitAndPreservesAppendBackfill",
+            "SQLiteRuntimeChatEventStoreTests/testLegacyCompactionCoordinatesConcurrentCrossInstanceAppendWithoutDataLoss",
+            "SQLiteRuntimeChatEventStoreTests/testProductionRetentionDefersLegacyCompactionUntilFinalBatchDrain",
+            "macOS runtime chat retention production ownership addendum",
+        ),
+        "docs/roadmap.md": (
+            "macOS Runtime Chat Retention Production Ownership",
+            "bounded 100-session SQL batches",
+            "no-device macOS SwiftPM/storage/model/localization/render evidence only",
+        ),
+        "docs/progress.md": (
+            "macOS Runtime Chat Retention Production Ownership No-Device Gate",
+            "P2P Phase A source audit and actual Android/macOS C ABI compilation remain separately blocked",
+        ),
+        "docs/qa-evidence.md": (
+            "macOS Runtime Chat Retention Production Ownership No-Device Checklist",
+            "All-owner storage boundary",
+            "macOS runtime chat retention production ownership addendum",
+        ),
+    }
+    for relative, snippets in required_snippets.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative}: missing runtime chat retention production artifact.")
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing runtime chat retention production ownership snippet {snippet!r}."
+                )
+
+    for locale in ("en", "ko", "ja", "zh-Hans", "fr"):
+        relative = (
+            "apps/macos/LocalAgentBridgeApp/Sources/Resources/"
+            f"{locale}.lproj/Localizable.strings"
+        )
+        contents = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+        for key in ("Deleted Chat Retention", "Clean Deleted History", "1 deleted chat", "%d deleted chats"):
+            if f'"{key}" = ' not in contents:
+                failures.append(f"{relative}: missing localized runtime retention key {key!r}.")
+
+    return failures
+
+
+def review_only_memory_duplicate_suggestions_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_snippets = {
+        "packages/protocol-schema/protocol.schema.json": (
+            '"memory.duplicate_suggestions.list"',
+            '"memoryDuplicateSuggestionsListPayload"',
+            '"scanned_count": { "type": "integer", "minimum": 0, "maximum": 200 }',
+            '"maxItems": 100',
+            '"uniqueItems": true',
+        ),
+        "apps/macos/Protocol/Sources/ProtocolEnvelope.swift": (
+            'memoryDuplicateSuggestionsList = "memory.duplicate_suggestions.list"',
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemoryExactDuplicateSuggestions.swift": (
+            "public static let candidateLimit = 200",
+            "maximumSourceEventLogByteCount = 8 * 1_024 * 1_024",
+            "maximumCandidateContentUTF8ByteCount = 1 * 1_024 * 1_024",
+            "maximumResponseEntryIDUTF8ByteCount = 128 * 1_024",
+            "Data(entry.content.utf8)",
+            "guard sortedEntryIDs.count >= 2",
+            "utf8LexicographicallyPrecedes(lhs.entryIDs[0], rhs.entryIDs[0])",
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemoryStore.swift": (
+            "func exactDuplicateSuggestions(ownerDeviceID: String?)",
+            "maximumByteCount: RuntimeMemoryExactDuplicateSuggester.maximumSourceEventLogByteCount",
+            "read(upToCount: maximumByteCount + 1)",
+        ),
+        "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift": (
+            "memoryDuplicateSuggestionsCapability = \"memory.duplicate_suggestions.v1\"",
+            "validateEmptyRequestPayload(envelope)",
+            "currentTrustedDevice?.publicKeyBase64 == authorization.publicKeyBase64",
+            '"scanned_count": .number(Double(suggestions.scannedCount))',
+            '"truncated": .bool(suggestions.truncated)',
+        ),
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt": (
+            'MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.duplicate_suggestions.v1"',
+            'MemoryDuplicateSuggestionsList = "memory.duplicate_suggestions.list"',
+            "data class MemoryDuplicateSuggestionsListResultPayload(",
+            "MAX_MEMORY_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES = 128 * 1024",
+            "CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR",
+            "entryIds.distinct().size == entryIds.size",
+            "entryIds.size <= scannedCount",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "fun scanRuntimeMemoryDuplicateSuggestions()",
+            "pendingMemoryDuplicateSuggestionsRequest",
+            "closedMemoryDuplicateSuggestionsRequests",
+            "MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX",
+            "requestId.startsWith(MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX)",
+            "memoryDuplicateSuggestionsListAcceptedAuthorityGeneration",
+            "memoryDuplicateSuggestionsUnsupportedAuthorityGeneration",
+            "memoryDuplicateSuggestionsListResultUnknownMetadataKey",
+            "clearMemoryDuplicateSuggestions()",
+            "hasMemoryDuplicateSuggestionsResult = true",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt": (
+            "MemoryDuplicateSuggestionsScanAction(",
+            "MemoryDuplicateSuggestionsSection(",
+            "memory_duplicate_suggestions_review_only",
+            "memory_duplicate_suggestions_truncated",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence",
+            "memoryDuplicateSuggestionsRejectsMalformedDuplicateUnknownIdsAndMetadata",
+            "memoryDuplicateSuggestionsIgnoresStaleResponsesAndClearsAcrossAuthorityChanges",
+            "memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors",
+            "memoryDuplicateSuggestionsClosedCorrelationHistoryIsBounded",
+            "memoryDuplicateSuggestionsResetsAcrossDisconnectAndReplacementChannelAuthority",
+            "memoryDuplicateSuggestionsDisablesOldRuntimeUnsupportedOperationsForCurrentAuthority",
+            'refreshRuntimeMemory("same exact memory")',
+            "Evicted stale authentication error",
+            'assertFalse(persistedSnapshot.contains("memoryDuplicateSuggestion"))',
+        ),
+        "apps/macos/CompanionCore/Tests/RuntimeMemoryExactDuplicateSuggestionsTests.swift": (
+            "testGroupsOnlyByteExactContentWithDeterministicUniqueIDs",
+            "testLatestTwoHundredBoundarySetsTruncatedAndExcludesOlderEntry",
+            "testZeroAndOneEntryProduceNoGroups",
+            "testCanonicalOrderingUsesUnsignedUTF8BytesAcrossUnicodePlanes",
+            "testCandidateContentAndResponseIDByteCapsFailClosed",
+            "testJSONLProductionScanRejectsOversizedSourceBeforeDecode",
+        ),
+        "apps/macos/CompanionCore/Tests/MemoryDuplicateSuggestionsRouterTests.swift": (
+            "testRequiresAuthenticationAndNegotiatedCapability",
+            "testOwnerScopedExactResponseRejectsFieldsAndDoesNotMutateOrLeak",
+            "testTrustRemovalAndKeyReplacementDuringBlockedScanFailClosed",
+            "testIdenticalReauthenticationDuringBlockedScanRejectsPreEpochResult",
+            'XCTAssertEqual(Set(response.payload.keys), ["groups", "scanned_count", "truncated"]',
+        ),
+        "script/check_no_device_quality.sh": (
+            "memoryDuplicateSuggestionsPayloadUsesClosedCanonicalContract",
+            "memoryDuplicateSuggestionsPayloadUsesUnsignedUtf8OrderingForBmpAndAstralIds",
+            "memoryDuplicateSuggestionsPayloadRejectsJsonEscapedUnpairedSurrogateId",
+            "memoryDuplicateSuggestionsPayloadUsesSharedAggregateUtf8IdBudget",
+            "memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence",
+            "memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors",
+            "memoryDuplicateSuggestionsDisablesOldRuntimeUnsupportedOperationsForCurrentAuthority",
+            "memoryDuplicateReviewShowsLocalizedReviewOnlyAndTruncatedState",
+            "swift test --filter DuplicateSuggestions",
+            "Covered review-only exact memory duplicate suggestions addendum",
+            "Covered review-only exact memory duplicate suggestions authenticated smoke addendum",
+        ),
+        "script/runtime_authenticated_mock_smoke.swift": (
+            '"memory.duplicate_suggestions.v1"',
+            '"smoke-unauthenticated-memory-duplicates"',
+            '"smoke-memory-duplicates-invalid-payload"',
+            'Set(duplicateSuggestionsPayload.keys) == Set(["groups", "scanned_count", "truncated"])',
+            'Set(group.keys) == Set(["entry_ids"])',
+            '"memory duplicate suggestions leaked forbidden metadata',
+        ),
+        "docs/protocol.md": (
+            "### `memory.duplicate_suggestions.list`",
+            "at most the latest 200 entries",
+            "byte-for-byte identical",
+            "Suggestions are review aids only",
+        ),
+        "docs/roadmap.md": (
+            "Review-Only Exact Memory Duplicate Suggestions",
+        ),
+        "docs/progress.md": (
+            "Review-Only Exact Memory Duplicate Suggestions No-Device Gate",
+        ),
+        "docs/qa-evidence.md": (
+            "Review-Only Exact Memory Duplicate Suggestions No-Device Gate",
+        ),
+    }
+    for relative, snippets in required_snippets.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative}: missing review-only memory duplicate suggestion contract file.")
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing review-only memory duplicate suggestion snippet {snippet!r}."
+                )
+
+    helper_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeMemoryExactDuplicateSuggestions.swift"
+    if helper_path.exists():
+        helper_text = helper_path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in ("memoryStore.upsert", "memoryStore.delete", ".upsert(", ".delete("):
+            if forbidden in helper_text:
+                failures.append(
+                    f"{helper_path.relative_to(ROOT)}: review-only duplicate suggester must not mutate memory via {forbidden!r}."
+                )
+
+    for values_dir in (
+        "values",
+        "values-en",
+        "values-ko",
+        "values-ja",
+        "values-zh-rCN",
+        "values-fr",
+    ):
+        relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
+        path = ROOT / relative
+        contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        for key in (
+            "memory_duplicate_suggestions_scan",
+            "memory_duplicate_suggestions_scanning",
+            "memory_duplicate_suggestions_scan_state_ready",
+            "memory_duplicate_suggestions_title",
+            "memory_duplicate_suggestions_review_only",
+            "memory_duplicate_suggestions_scanned_count",
+            "memory_duplicate_suggestions_truncated",
+            "memory_duplicate_suggestions_empty",
+            "memory_duplicate_suggestions_group",
+        ):
+            if f'<string name="{key}">' not in contents:
+                failures.append(f"{relative}: missing localized duplicate suggestion key {key!r}.")
+    return failures
+
+
+def review_only_memory_semantic_duplicate_suggestions_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_snippets = {
+        "packages/protocol-schema/protocol.schema.json": (
+            '"memory.semantic_duplicate_suggestions.list"',
+            '"memorySemanticDuplicateSuggestionsListPayload"',
+            '"minimum_similarity_basis_points"',
+            '"omitted_count"',
+            '"similarity_basis_points"',
+        ),
+        "apps/macos/Protocol/Sources/ProtocolEnvelope.swift": (
+            'memorySemanticDuplicateSuggestionsList = "memory.semantic_duplicate_suggestions.list"',
+        ),
+        "apps/macos/Protocol/Sources/JSONValue.swift": (
+            "case integer(Int64)",
+        ),
+        "apps/macos/Protocol/Sources/ProtocolCodec.swift": (
+            "CFGetTypeID(number) != CFBooleanGetTypeID()",
+            'envelope.payload["minimum_similarity_basis_points"] = .integer(integer)',
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticDuplicateSuggestions.swift": (
+            "static let candidateLimit = 200",
+            "static let pairLimit = 100",
+            "maximumSourceEventLogByteCount = 8 * 1_024 * 1_024",
+            "maximumCandidateContentUTF8ByteCount = 1 * 1_024 * 1_024",
+            "maximumEmbeddingBatchCount = 64",
+            "maximumEmbeddingBatchUTF8ByteCount = 262_144",
+            "maximumEmbeddingDimension = 65_536",
+            "maximumResponseEntryIDUTF8ByteCount = 128 * 1_024",
+            "Data(first.entry.content.utf8) != Data(second.entry.content.utf8)",
+            "similarityThresholdBasisPoints",
+            "cancellationCheck: () throws -> Void",
+        ),
+        "apps/macos/TrustedDevices/Sources/TrustedDevice.swift": (
+            "withTrustedDeviceSnapshot",
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemoryStore.swift": (
+            "func semanticDuplicateSuggestionSources(",
+            "RuntimeMemorySemanticDuplicateSuggester.maximumSourceEventLogByteCount",
+        ),
+        "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift": (
+            'memorySemanticDuplicateSuggestionsCapability =',
+            '"memory.semantic_duplicate_suggestions.v1"',
+            "handleMemorySemanticDuplicateSuggestionsList(",
+            'requiredExactRequestInt(',
+            "beginSemanticSearch(connectionID: sink.connectionID)",
+            "semanticDuplicateDescriptorIdentityMatches(",
+            "semanticDuplicateSourceIdentities(currentSources)",
+            "memoryDuplicateSuggestionsAuthorizationIsCurrent(",
+            "canonicalQualifiedResultModelID == descriptor.canonicalQualifiedModelID",
+            "semanticEmbeddingModelCatalogStates",
+            "maximumObservedSemanticEmbeddingModelCatalogStates = 256",
+            "catalogKey: catalogKey",
+            "semanticDuplicateCacheCommitCheckpoint",
+            "semanticDuplicateRequiresMultipleEmbeddingBatches(",
+            "maximumEmbeddingBatchUTF8ByteCount -",
+            "withTrustedDeviceSnapshot(",
+            "withSemanticDuplicateCoordinatedMemoryMutation",
+            '"omitted_count": .number(Double(result.omittedEntryCount))',
+        ),
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt": (
+            'MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.semantic_duplicate_suggestions.v1"',
+            'MemorySemanticDuplicateSuggestionsList = "memory.semantic_duplicate_suggestions.list"',
+            "data class MemorySemanticDuplicateSuggestionsListRequestPayload(",
+            "data class MemorySemanticDuplicateSuggestionPairPayload(",
+            "data class MemorySemanticDuplicateSuggestionsListResultPayload(",
+            "minimumSimilarityBasisPoints in 8_000..10_000",
+            "isCanonicalProviderQualifiedModelId(embeddingModelId)",
+            "MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES",
+        ),
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
+            "RawJsonObjectInspector(body).inspect()",
+            "duplicateKeyStrictMessageType",
+            "contains duplicate JSON object key",
+            "MAX_JSON_NESTING_DEPTH = 128",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "fun scanRuntimeMemorySemanticDuplicateSuggestions(",
+            "PendingMemorySemanticDuplicateSuggestionsRequest(",
+            "MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX",
+            "requestId.startsWith(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX)",
+            "memorySemanticDuplicateSuggestionsListAcceptedAuthorityGeneration",
+            "memorySemanticDuplicateSuggestionsUnsupportedAuthorityGeneration",
+            "payload.pairs.any { it.similarityBasisPoints < minimumSimilarityBasisPoints }",
+            "current.selectedEmbeddingModelId == pending.embeddingModelId",
+            "isCanonicalProviderQualifiedModelId(model.id)",
+            "clearMemorySemanticDuplicateSuggestions()",
+            "hasMemorySemanticDuplicateSuggestionsResult = true",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt": (
+            "memorySemanticDuplicateSuggestionPairs",
+            "memorySemanticDuplicateSuggestionsOmittedCount",
+            "memorySemanticDuplicateSuggestionsThresholdBasisPoints",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt": (
+            "MemorySemanticDuplicateSuggestionsSection(",
+            "memorySemanticDuplicateSuggestionsActionEnabled(",
+            "memory_semantic_duplicate_suggestions_review_only",
+            "thresholdBasisPoints = it.roundToInt().coerceIn(8_000, 10_000)",
+            "onScan(thresholdBasisPoints)",
+        ),
+        "apps/macos/CompanionCore/Tests/RuntimeMemorySemanticDuplicateSuggestionsTests.swift": (
+            "testThresholdBoundariesTiesAndDeterministicPairOrder",
+            "testPairsAreNonTransitiveAndIDsMayAppearInMultiplePairs",
+            "testByteExactStoredContentIsExcludedWithoutTrimBasedExclusion",
+            "testSelectionCapsAggregateCandidateContentWithoutPrefixing",
+            "testEmbeddingDimensionAbovePersistentCacheLimitIsRejected",
+            "testCancelledScoringFailsWithCancellationError",
+        ),
+        "apps/macos/CompanionCore/Tests/MemorySemanticDuplicateSuggestionsRouterTests.swift": (
+            "testValidResponseIsDeterministicMinimalAndExcludesExactContentPair",
+            "testWeakRevisionRunsOnlyAsSingleBatchAndNeverCaches",
+            "testStrongFingerprintCachesEmbeddingsAcrossRequests",
+            "testInvalidEmbeddingProviderCountModelDimensionAndVectorFailClosed",
+            "testTrustRemovalKeyReplacementAndIdenticalReauthenticationSuppressStaleResponse",
+            "testFinalTrustLeaseRejectsRemovalAfterEarlyRevalidation",
+            "testFinalModelCatalogTokenRejectsConcurrentRevisionObservation",
+            'modelID: "ollama:nomic-embed-text:latest"',
+            "testFinalPublicationSerializesMemoryMutationBehindResponse",
+        ),
+        "apps/macos/Protocol/Tests/ProtocolCodecTests.swift": (
+            "testSemanticDuplicateThresholdPreservesExactIntegerWireKind",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "memorySemanticDuplicateSuggestionsPublishesTransientReviewStateWithoutPersistence",
+            "memorySemanticDuplicateSuggestionsRejectsLowScoresUnknownIdsAndUnknownMetadata",
+            "memorySemanticDuplicateSuggestionsIgnoresSupersededResponsesAndNamespacedErrors",
+            "memorySemanticDuplicateSuggestionsUnsupportedDisablesOnlySemanticForCurrentAuthority",
+            "memorySemanticDuplicateSuggestionsClosedCorrelationHistoryIsBounded",
+            "memorySemanticDuplicateSuggestionsRejectsResponseAfterSelectedModelLeavesCurrentCatalog",
+        ),
+        "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt": (
+            "memorySemanticDuplicateSuggestionsWireRejectsDuplicateObjectKeysBeforeMaterialization",
+            "decodeRejectsJsonNestingBeyondProtocolLimitWithoutStackOverflow",
+        ),
+        "script/check_no_device_quality.sh": (
+            "memorySemanticDuplicateSuggestionsPayloadUsesCanonicalWireContract",
+            "memorySemanticDuplicateSuggestionsPublishesTransientReviewStateWithoutPersistence",
+            "memorySemanticDuplicateResultIsReviewOnlyAndKeepsManualControls",
+            "RuntimeMemorySemanticDuplicateSuggestionsTests|MemorySemanticDuplicateSuggestionsRouterTests",
+            "Covered review-only semantic memory duplicate suggestions addendum",
+            "Covered review-only semantic memory duplicate suggestions authenticated smoke addendum",
+        ),
+        "script/runtime_authenticated_mock_smoke.swift": (
+            '"memory.semantic_duplicate_suggestions.v1"',
+            '"smoke-unauthenticated-memory-semantic-duplicates"',
+            'Set(responsePayload.keys) == Set([',
+            '"smoke-memory-semantic-duplicates-threshold-integral-float"',
+            '"memory semantic duplicate suggestions leaked forbidden',
+            '"review-only semantic duplicate pair or cluster suggestions mutated authoritative memory',
+        ),
+        "docs/protocol.md": (
+            "### `memory.semantic_duplicate_suggestions.list`",
+            "Similarity is non-transitive",
+            "There is no automatic merge, edit, enable, disable, delete, lexical fallback",
+        ),
+        "docs/roadmap.md": (
+            "Review-Only Semantic Memory Duplicate Suggestions",
+        ),
+        "docs/progress.md": (
+            "Review-Only Semantic Memory Duplicate Suggestions No-Device Gate",
+        ),
+        "docs/qa-evidence.md": (
+            "Review-Only Semantic Memory Duplicate Suggestions No-Device Gate",
+        ),
+    }
+    for relative, snippets in required_snippets.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(
+                f"{relative}: missing review-only semantic memory duplicate suggestion contract file."
+            )
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing semantic duplicate suggestion snippet {snippet!r}."
+                )
+
+    helper_path = ROOT / (
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticDuplicateSuggestions.swift"
+    )
+    if helper_path.exists():
+        helper_text = helper_path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in ("memoryStore.upsert", "memoryStore.delete", ".upsert(", ".delete("):
+            if forbidden in helper_text:
+                failures.append(
+                    f"{helper_path.relative_to(ROOT)}: semantic duplicate suggester must remain read-only; found {forbidden!r}."
+                )
+
+    for values_dir in (
+        "values",
+        "values-en",
+        "values-ko",
+        "values-ja",
+        "values-zh-rCN",
+        "values-fr",
+    ):
+        relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
+        path = ROOT / relative
+        contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        for key in (
+            "memory_semantic_duplicate_suggestions_title",
+            "memory_semantic_duplicate_suggestions_review_only",
+            "memory_semantic_duplicate_suggestions_threshold",
+            "memory_semantic_duplicate_suggestions_scan",
+            "memory_semantic_duplicate_suggestions_select_local_model",
+            "memory_semantic_duplicate_suggestions_result_summary",
+            "memory_semantic_duplicate_suggestions_omitted_count",
+            "memory_semantic_duplicate_suggestions_truncated",
+            "memory_semantic_duplicate_suggestions_pair",
+        ):
+            if f'<string name="{key}">' not in contents:
+                failures.append(
+                    f"{relative}: missing localized semantic duplicate suggestion key {key!r}."
+                )
+    return failures
+
+
+def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_snippets = {
+        "packages/protocol-schema/protocol.schema.json": (
+            '"memory.semantic_duplicate_clusters.list"',
+            '"memorySemanticDuplicateClustersListPayload"',
+            '"memorySemanticDuplicateCluster"',
+            '"minimum_similarity_basis_points"',
+            '"x-aetherlink-wire-kind": "exact-json-integer-token"',
+        ),
+        "apps/macos/Protocol/Sources/ProtocolEnvelope.swift": (
+            'memorySemanticDuplicateClustersList = "memory.semantic_duplicate_clusters.list"',
+        ),
+        "apps/macos/Protocol/Sources/ProtocolCodec.swift": (
+            "MessageType.memorySemanticDuplicateClustersList",
+            'envelope.payload["minimum_similarity_basis_points"] = .integer(integer)',
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticDuplicateSuggestions.swift": (
+            "struct RuntimeMemorySemanticDuplicateCluster",
+            "struct RuntimeMemorySemanticDuplicateClustersResult",
+            "static let clusterLimit = 100",
+            "static func clusters(",
+            "RuntimeMemorySemanticClusterMerge",
+            "responseEntryIDUTF8ByteCount",
+            "Data(candidates[firstIndex].entry.content.utf8)",
+            "cancellationCheck: () throws -> Void",
+        ),
+        "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift": (
+            'memorySemanticDuplicateClustersCapability =',
+            '"memory.semantic_duplicate_clusters.v1"',
+            "case MessageType.memorySemanticDuplicateClustersList:",
+            "operation: .clusters",
+            "RuntimeMemorySemanticDuplicateSuggester.clusters(",
+            '"minimum_similarity_basis_points": .number(',
+            "withTrustedDeviceSnapshot(",
+            "semanticEmbeddingModelCatalogLock.withLock",
+            "withSemanticDuplicateCoordinatedMemoryMutation",
+        ),
+        "apps/macos/CompanionCore/Tests/RuntimeMemorySemanticDuplicateSuggestionsTests.swift": (
+            "testCompleteLinkClustersDoNotBridgeAChainAndUseCanonicalTieBreak",
+            "testCompleteLinkClusterMinimumAndOutputOrderingAreDeterministic",
+            "testCompleteLinkClusterCancellationAndResponseByteCapFailClosed",
+        ),
+        "apps/macos/CompanionCore/Tests/MemorySemanticDuplicateSuggestionsRouterTests.swift": (
+            "testStrongFingerprintSplitsAtByteBudgetAndWeakFingerprintRejectsBeforeDispatch",
+            "testStrongCacheCommitAcquiresLifecycleBeforeMemoryStoreAccess",
+            "testClusterOperationRequiresAuthenticationAndSeparateCapability",
+            "testClusterResponseIsMinimalDeterministicCachedAndDoesNotMutateMemory",
+            "testClusterOperationRejectsLateSourceAndModelDriftWithoutPublishing",
+            "testClusterFinalTrustAndMutationPublicationLeasesArePreserved",
+        ),
+        "apps/macos/Protocol/Tests/ProtocolCodecTests.swift": (
+            "testSemanticDuplicateClusterThresholdPreservesExactIntegerWireKind",
+        ),
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt": (
+            'MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY = "memory.semantic_duplicate_clusters.v1"',
+            'MemorySemanticDuplicateClustersList = "memory.semantic_duplicate_clusters.list"',
+            "data class MemorySemanticDuplicateClustersListRequestPayload(",
+            "data class MemorySemanticDuplicateClusterPayload(",
+            "data class MemorySemanticDuplicateClustersListResultPayload(",
+            "MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_ID_AGGREGATE_UTF8_BYTES",
+        ),
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
+            "MessageType.MemorySemanticDuplicateClustersList",
+            "RawJsonObjectInspector(body).inspect()",
+            "MAX_JSON_NESTING_DEPTH = 128",
+        ),
+        "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt": (
+            "memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract",
+            "memorySemanticDuplicateClustersRequestRejectsBoundsUnknownFieldsAndInvalidTypes",
+            "memorySemanticDuplicateClustersWireRejectsDuplicateObjectKeysAndDeepNesting",
+            "memorySemanticDuplicateClustersEnforcesShapeDisjointnessCountsAndOrder",
+            "memorySemanticDuplicateClustersRejectsResponseTypesMetadataUnicodeAndIdBudget",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "fun scanRuntimeMemorySemanticDuplicateClusters(",
+            "PendingMemorySemanticDuplicateClustersRequest(",
+            "MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUEST_ID_PREFIX",
+            "PendingModelsListRequest(",
+            "MODELS_LIST_REQUEST_ID_PREFIX",
+            "modelCatalogAcceptedAuthorityGeneration",
+            "memorySemanticDuplicateClustersListAcceptedAuthorityGeneration",
+            "memorySemanticDuplicateClustersUnsupportedAuthorityGeneration",
+            "payload.clusters.any { it.minimumSimilarityBasisPoints < minimumSimilarityBasisPoints }",
+            "memorySemanticDuplicateClusters = payload.clusters.map",
+            "clearMemorySemanticDuplicateClusters()",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt": (
+            "memorySemanticDuplicateClusters",
+            "memorySemanticDuplicateClustersOmittedCount",
+            "memorySemanticDuplicateClustersThresholdBasisPoints",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt": (
+            "MemorySemanticDuplicateClustersSection(",
+            "memorySemanticDuplicateClustersActionEnabled(",
+            "memory_semantic_duplicate_clusters_review_only",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "memorySemanticDuplicateClustersAdvertisesCanonicalRequestAndPublishesTransientReviewState",
+            "memorySemanticDuplicateClustersRejectsLowScoresUnknownIdsMetadataAndIdenticalContents",
+            "memorySemanticDuplicateClustersIgnoresStaleResponsesAndUnsupportedDisablesOnlyClusters",
+            "memorySemanticDuplicateClustersRejectsStaleCatalogAndClearsOnModelMutationAndDisconnect",
+            "memorySemanticDuplicateClustersRequiresCurrentAuthorityCorrelatedModelCatalog",
+            "memorySemanticDuplicateClustersIgnoresSupersededModelListSendFailure",
+            "memorySemanticDuplicateClustersMalformedCorrelatedErrorPreservesInvalidPayload",
+            "memorySemanticDuplicateClustersClosedCorrelationHistoryIsBounded",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt": (
+            "memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel",
+        ),
+        "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt": (
+            "memorySemanticDuplicateClustersControlsStayDistinctAndUseExactBasisPoints",
+            "memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls",
+        ),
+        "script/check_no_device_quality.sh": (
+            "memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract",
+            "memorySemanticDuplicateClustersAdvertisesCanonicalRequestAndPublishesTransientReviewState",
+            "memorySemanticDuplicateClustersRequiresCurrentAuthorityCorrelatedModelCatalog",
+            "memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel",
+            "memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls",
+            "RuntimeMemorySemanticDuplicateSuggestionsTests|MemorySemanticDuplicateSuggestionsRouterTests",
+            "Covered review-only semantic memory duplicate clusters addendum",
+            "Covered review-only semantic memory duplicate clusters authenticated smoke addendum",
+        ),
+        "script/runtime_authenticated_mock_smoke.swift": (
+            '"memory.semantic_duplicate_clusters.v1"',
+            '"smoke-unauthenticated-memory-semantic-clusters"',
+            '"smoke-memory-semantic-clusters-threshold-integral-float"',
+            '"memory semantic duplicate clusters leaked forbidden',
+            '"review-only semantic duplicate pair or cluster suggestions mutated authoritative memory',
+        ),
+        "docs/protocol.md": (
+            "### `memory.semantic_duplicate_clusters.list`",
+            "deterministic complete-link agglomeration",
+            "never mutates memory",
+        ),
+        "docs/roadmap.md": (
+            "Review-Only Semantic Memory Duplicate Clusters",
+        ),
+        "docs/progress.md": (
+            "Review-Only Semantic Memory Duplicate Clusters No-Device Gate",
+        ),
+        "docs/qa-evidence.md": (
+            "Review-Only Semantic Memory Duplicate Clusters No-Device Gate",
+        ),
+    }
+    for relative, snippets in required_snippets.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(
+                f"{relative}: missing review-only semantic memory duplicate cluster contract file."
+            )
+            continue
+        contents = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in contents:
+                failures.append(
+                    f"{relative}: missing semantic duplicate cluster snippet {snippet!r}."
+                )
+
+    helper_path = ROOT / (
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticDuplicateSuggestions.swift"
+    )
+    if helper_path.exists():
+        helper_text = helper_path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in ("memoryStore.upsert", "memoryStore.delete", ".upsert(", ".delete("):
+            if forbidden in helper_text:
+                failures.append(
+                    f"{helper_path.relative_to(ROOT)}: semantic duplicate clustering must remain read-only; found {forbidden!r}."
+                )
+
+    for values_dir in (
+        "values",
+        "values-en",
+        "values-ko",
+        "values-ja",
+        "values-zh-rCN",
+        "values-fr",
+    ):
+        relative = f"apps/android/app/src/main/res/{values_dir}/strings.xml"
+        path = ROOT / relative
+        contents = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        for key in (
+            "memory_semantic_duplicate_clusters_title",
+            "memory_semantic_duplicate_clusters_review_only",
+            "memory_semantic_duplicate_clusters_threshold",
+            "memory_semantic_duplicate_clusters_scan",
+            "memory_semantic_duplicate_clusters_result_summary",
+            "memory_semantic_duplicate_clusters_omitted_count",
+            "memory_semantic_duplicate_clusters_truncated",
+            "memory_semantic_duplicate_clusters_cluster",
+        ):
+            if f'<string name="{key}">' not in contents:
+                failures.append(
+                    f"{relative}: missing localized semantic duplicate cluster key {key!r}."
+                )
+    return failures
+
+
 def main() -> int:
+    runtime_chat_retention_failures = runtime_chat_retention_production_ownership_guard_failures()
+    if runtime_chat_retention_failures:
+        print("Runtime chat retention production ownership guard failed:", file=sys.stderr)
+        for failure in runtime_chat_retention_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     macos_connection_manager_failures = macos_runtime_connection_manager_guard_failures()
     if macos_connection_manager_failures:
         print("macOS runtime connection-manager guard failed:", file=sys.stderr)
@@ -45251,6 +46966,31 @@ def main() -> int:
     if no_device_gate_failures:
         print("No-device quality gate guard failed:", file=sys.stderr)
         for failure in no_device_gate_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    memory_duplicate_suggestion_failures = review_only_memory_duplicate_suggestions_guard_failures()
+    if memory_duplicate_suggestion_failures:
+        print("Review-only memory duplicate suggestion guard failed:", file=sys.stderr)
+        for failure in memory_duplicate_suggestion_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    memory_semantic_duplicate_suggestion_failures = (
+        review_only_memory_semantic_duplicate_suggestions_guard_failures()
+    )
+    if memory_semantic_duplicate_suggestion_failures:
+        print("Review-only semantic memory duplicate suggestion guard failed:", file=sys.stderr)
+        for failure in memory_semantic_duplicate_suggestion_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    memory_semantic_duplicate_cluster_failures = (
+        review_only_memory_semantic_duplicate_clusters_guard_failures()
+    )
+    if memory_semantic_duplicate_cluster_failures:
+        print("Review-only semantic memory duplicate cluster guard failed:", file=sys.stderr)
+        for failure in memory_semantic_duplicate_cluster_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

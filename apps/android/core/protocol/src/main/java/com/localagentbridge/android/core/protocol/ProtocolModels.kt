@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -27,6 +28,10 @@ const val RELAY_ALLOCATION_PROOF_SCHEME = "runtime-client-p256-v2"
 const val RELAY_ALLOCATION_PROTOCOL_VERSION = 2
 const val CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY = "chat.source_attributions.v1"
 const val CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY = "chat.source_attribution.resolve.v1"
+const val CHAT_SESSIONS_SYNC_CAPABILITY = "chat.sessions.authoritative_sync.v1"
+const val MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.duplicate_suggestions.v1"
+const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.semantic_duplicate_suggestions.v1"
+const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY = "memory.semantic_duplicate_clusters.v1"
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
 private val CITATION_ID_PATTERN = Regex("^citation_[0-9a-f]{32}$")
@@ -39,9 +44,27 @@ private val LOWERCASE_HEX_64_PATTERN = Regex("^[0-9a-f]{64}$")
 private val RUNTIME_KEY_BOUND_RELAY_ID_PATTERN = Regex("^rt2-[0-9a-f]{64}$")
 private val CANONICAL_BASE64_PATTERN = Regex("^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$")
 private val DOCUMENT_MIME_TYPE_PATTERN = Regex("^[a-z0-9!#\$%&'*+.^_`|~-]+/[a-z0-9!#\$%&'*+.^_`|~-]+$")
+private val JSON_INTEGER_PATTERN = Regex("^-?(?:0|[1-9][0-9]*)$")
+private val RFC3339_DATE_TIME_PATTERN = Regex(
+    "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$",
+)
 private const val MAX_CHAT_SESSION_LIST_LIMIT = 200
+private const val MAX_CHAT_SESSION_CURSOR_BYTES = 512
+private const val MAX_CHAT_SESSION_SNAPSHOT_COUNT = 10_000
 private const val MAX_CHAT_MESSAGES_LIST_LIMIT = 500
 private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50
+private const val MAX_MEMORY_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES = 128 * 1024
+private const val MAX_MEMORY_DUPLICATE_SUGGESTION_GROUPS = 100
+private const val MAX_MEMORY_DUPLICATE_SUGGESTION_GROUP_SIZE = 200
+private const val MAX_MEMORY_DUPLICATE_SUGGESTION_SCANNED_COUNT = 200
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_EMBEDDING_MODEL_ID_LENGTH = 256
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIRS = 100
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_SCANNED_COUNT = 200
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES = 128 * 1024
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTERS = 100
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_SIZE = 200
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_SCANNED_COUNT = 200
+private const val MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_ID_AGGREGATE_UTF8_BYTES = 128 * 1024
 private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
 private const val MAX_TRUSTED_SOURCE_GRANT_IDS = 8
 private const val MAX_CHAT_SOURCE_ATTRIBUTIONS = 8
@@ -66,6 +89,10 @@ private val MODEL_INFO_SOURCES = setOf("local", "cloud")
 private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")
 private val RELAY_ALLOCATION_OPERATIONS = setOf("claim", "renew")
 private val CHAT_SESSION_STATUSES = setOf("active", "archived")
+private val CHAT_SESSIONS_BULK_LIFECYCLE_STATUS_BY_SCOPE = mapOf(
+    "all_active" to "archived",
+    "all_archived" to "deleted",
+)
 private val CHAT_SESSION_LAST_EVENTS = setOf(
     "request",
     "assistant_delta",
@@ -74,6 +101,26 @@ private val CHAT_SESSION_LAST_EVENTS = setOf(
     "cancelled",
     "error",
 )
+
+fun isCanonicalProviderQualifiedModelId(modelId: String): Boolean {
+    val separatorIndex = modelId.indexOf(':')
+    if (separatorIndex <= 0 || separatorIndex == modelId.lastIndex) return false
+    val provider = modelId.substring(0, separatorIndex)
+    val providerModelId = modelId.substring(separatorIndex + 1)
+    return provider in MODEL_INFO_PROVIDERS && providerModelId.isNotBlank()
+}
+
+private val CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR = Comparator<String> { left, right ->
+    val leftBytes = left.toByteArray(Charsets.UTF_8)
+    val rightBytes = right.toByteArray(Charsets.UTF_8)
+    val sharedLength = minOf(leftBytes.size, rightBytes.size)
+    for (index in 0 until sharedLength) {
+        val comparison = (leftBytes[index].toInt() and 0xff) - (rightBytes[index].toInt() and 0xff)
+        if (comparison != 0) return@Comparator comparison
+    }
+    leftBytes.size - rightBytes.size
+}
+
 private val ERROR_CODES = setOf(
     "unknown_message_type",
     "unexpected_message_direction",
@@ -124,6 +171,17 @@ private fun requireProtocolDateTime(value: String?, fieldName: String) {
         Instant.parse(value)
     } catch (error: Exception) {
         throw IllegalArgumentException("$fieldName must be date-time", error)
+    }
+}
+
+private fun requireExactRfc3339DateTime(value: String, fieldName: String) {
+    require(RFC3339_DATE_TIME_PATTERN.matches(value)) {
+        "$fieldName must be RFC3339 date-time"
+    }
+    try {
+        Instant.parse(value)
+    } catch (error: Exception) {
+        throw IllegalArgumentException("$fieldName must be RFC3339 date-time", error)
     }
 }
 
@@ -695,6 +753,20 @@ private fun JsonObject.requireExactNestedJsonObject(
     }
 }
 
+private fun JsonObject.requireJsonInteger(fieldName: String, payloadName: String) {
+    val value = this[fieldName] as? JsonPrimitive
+    require(value != null && !value.isString && JSON_INTEGER_PATTERN.matches(value.content)) {
+        "$payloadName $fieldName must be an integer"
+    }
+}
+
+private fun JsonObject.requireJsonBoolean(fieldName: String, payloadName: String) {
+    val value = this[fieldName] as? JsonPrimitive
+    require(value != null && !value.isString && value.content in setOf("true", "false")) {
+        "$payloadName $fieldName must be a boolean"
+    }
+}
+
 private fun String.isBoundedNonBlankRelayAllocationValue(): Boolean =
     length <= MAX_RELAY_ALLOCATION_OPAQUE_LENGTH && any { !it.isWhitespace() }
 
@@ -809,6 +881,9 @@ object MessageType {
     const val TrustedSourceList = "trusted_source.list"
     const val TrustedSourceRevoke = "trusted_source.revoke"
     const val MemoryList = "memory.list"
+    const val MemoryDuplicateSuggestionsList = "memory.duplicate_suggestions.list"
+    const val MemorySemanticDuplicateSuggestionsList = "memory.semantic_duplicate_suggestions.list"
+    const val MemorySemanticDuplicateClustersList = "memory.semantic_duplicate_clusters.list"
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"
     const val MemorySummaryDraftsList = "memory.summary.drafts.list"
@@ -1304,11 +1379,66 @@ data class ChatCancelPayload(
 }
 
 @Serializable
+private data class ChatSessionsListRequestPayloadSurrogate(
+    val limit: Int? = null,
+    @SerialName("include_archived") val includeArchived: Boolean = false,
+    val query: String? = null,
+    @SerialName("embedding_model_id") val embeddingModelId: String? = null,
+    val cursor: String? = null,
+)
+
+object ChatSessionsListRequestPayloadSerializer : KSerializer<ChatSessionsListRequestPayload> {
+    private val surrogateSerializer = ChatSessionsListRequestPayloadSurrogate.serializer()
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    override fun deserialize(decoder: Decoder): ChatSessionsListRequestPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            setOf("limit", "include_archived", "query", "embedding_model_id", "cursor"),
+            "chat.sessions.list request",
+        )
+        val hasCursor = "cursor" in payload
+        require(!hasCursor || payload.keys == setOf("cursor")) {
+            "chat.sessions.list request cursor must not be combined with other fields"
+        }
+        val value = jsonDecoder.json.decodeFromJsonElement(surrogateSerializer, payload)
+        require(!hasCursor || value.cursor != null) {
+            "chat.sessions.list request cursor must be nonblank"
+        }
+        return ChatSessionsListRequestPayload(
+            limit = value.limit,
+            includeArchived = value.includeArchived,
+            query = value.query,
+            embeddingModelId = value.embeddingModelId,
+            cursor = value.cursor,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatSessionsListRequestPayload) {
+        val surrogate = ChatSessionsListRequestPayloadSurrogate(
+            limit = value.limit,
+            includeArchived = value.includeArchived,
+            query = value.query,
+            embeddingModelId = value.embeddingModelId,
+            cursor = value.cursor,
+        )
+        if (value.cursor == null) {
+            encoder.encodeSerializableValue(surrogateSerializer, surrogate)
+            return
+        }
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw IllegalArgumentException("chat.sessions.list request cursor requires JSON encoding")
+        val payload = jsonEncoder.json.encodeToJsonElement(surrogateSerializer, surrogate).jsonObject
+        jsonEncoder.encodeJsonElement(JsonObject(mapOf("cursor" to payload.getValue("cursor"))))
+    }
+}
+
+@Serializable(with = ChatSessionsListRequestPayloadSerializer::class)
 data class ChatSessionsListRequestPayload(
     val limit: Int? = null,
     @SerialName("include_archived") val includeArchived: Boolean = false,
     val query: String? = null,
     @SerialName("embedding_model_id") val embeddingModelId: String? = null,
+    val cursor: String? = null,
 ) {
     init {
         require(limit == null || limit >= 0) {
@@ -1323,13 +1453,195 @@ data class ChatSessionsListRequestPayload(
         require(embeddingModelId == null || embeddingModelId.isNotEmpty()) {
             "chat.sessions.list request embedding_model_id must be nonempty"
         }
+        require(cursor == null || cursor.isNotBlank()) {
+            "chat.sessions.list request cursor must be nonblank"
+        }
+        require(cursor == null || cursor.toByteArray(Charsets.UTF_8).size <= MAX_CHAT_SESSION_CURSOR_BYTES) {
+            "chat.sessions.list request cursor must be at most 512 UTF-8 bytes"
+        }
+        require(
+            cursor == null || (
+                limit == null &&
+                    !includeArchived &&
+                    query == null &&
+                    embeddingModelId == null
+                )
+        ) {
+            "chat.sessions.list request cursor must not be combined with other fields"
+        }
     }
 }
 
 @Serializable
+private data class ChatSessionsListResultPayloadSurrogate(
+    val sessions: List<ChatSessionSummaryPayload>,
+    @SerialName("snapshot_count") val snapshotCount: Int? = null,
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+object ChatSessionsListResultPayloadSerializer : KSerializer<ChatSessionsListResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ChatSessionsListResultPayload,
+        ChatSessionsListResultPayloadSurrogate
+    >(
+        ChatSessionsListResultPayloadSurrogate.serializer(),
+        setOf("sessions", "snapshot_count", "next_cursor"),
+        "chat.sessions.list response",
+    ) {
+    override fun fromSurrogate(value: ChatSessionsListResultPayloadSurrogate) =
+        ChatSessionsListResultPayload(
+            sessions = value.sessions,
+            snapshotCount = value.snapshotCount,
+            nextCursor = value.nextCursor,
+        )
+
+    override fun toSurrogate(value: ChatSessionsListResultPayload) =
+        ChatSessionsListResultPayloadSurrogate(
+            sessions = value.sessions,
+            snapshotCount = value.snapshotCount,
+            nextCursor = value.nextCursor,
+        )
+}
+
+@Serializable(with = ChatSessionsListResultPayloadSerializer::class)
 data class ChatSessionsListResultPayload(
     val sessions: List<ChatSessionSummaryPayload>,
+    @SerialName("snapshot_count") val snapshotCount: Int? = null,
+    @SerialName("next_cursor") val nextCursor: String? = null,
+) {
+    init {
+        require(sessions.size <= MAX_CHAT_SESSION_LIST_LIMIT) {
+            "chat.sessions.list response sessions must contain at most 200 entries"
+        }
+        require(sessions.map(ChatSessionSummaryPayload::sessionId).toSet().size == sessions.size) {
+            "chat.sessions.list response session_id values must be unique"
+        }
+        require(snapshotCount == null || snapshotCount in 0..MAX_CHAT_SESSION_SNAPSHOT_COUNT) {
+            "chat.sessions.list response snapshot_count must be between 0 and 10000"
+        }
+        require(nextCursor == null || nextCursor.isNotBlank()) {
+            "chat.sessions.list response next_cursor must be nonblank"
+        }
+        require(nextCursor == null || nextCursor.toByteArray(Charsets.UTF_8).size <= MAX_CHAT_SESSION_CURSOR_BYTES) {
+            "chat.sessions.list response next_cursor must be at most 512 UTF-8 bytes"
+        }
+        require(nextCursor == null || snapshotCount != null) {
+            "chat.sessions.list response next_cursor requires snapshot_count"
+        }
+        require(snapshotCount == null || sessions.size <= snapshotCount) {
+            "chat.sessions.list response sessions size must not exceed snapshot_count"
+        }
+    }
+}
+
+@Serializable
+private data class ChatSessionsBulkLifecyclePayloadSurrogate(
+    val scope: String,
+    val limit: Int = MAX_CHAT_SESSION_LIST_LIMIT,
 )
+
+object ChatSessionsBulkLifecyclePayloadSerializer : KSerializer<ChatSessionsBulkLifecyclePayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ChatSessionsBulkLifecyclePayload,
+        ChatSessionsBulkLifecyclePayloadSurrogate
+    >(
+        ChatSessionsBulkLifecyclePayloadSurrogate.serializer(),
+        setOf("scope", "limit"),
+        "chat.sessions bulk lifecycle request",
+    ) {
+    override fun fromSurrogate(value: ChatSessionsBulkLifecyclePayloadSurrogate) =
+        ChatSessionsBulkLifecyclePayload(
+            scope = value.scope,
+            limit = value.limit,
+        )
+
+    override fun toSurrogate(value: ChatSessionsBulkLifecyclePayload) =
+        ChatSessionsBulkLifecyclePayloadSurrogate(
+            scope = value.scope,
+            limit = value.limit,
+        )
+}
+
+@Serializable(with = ChatSessionsBulkLifecyclePayloadSerializer::class)
+data class ChatSessionsBulkLifecyclePayload(
+    val scope: String,
+    val limit: Int = MAX_CHAT_SESSION_LIST_LIMIT,
+) {
+    init {
+        require(scope in CHAT_SESSIONS_BULK_LIFECYCLE_STATUS_BY_SCOPE) {
+            "chat.sessions bulk lifecycle scope must be all_active or all_archived"
+        }
+        require(limit in 1..MAX_CHAT_SESSION_LIST_LIMIT) {
+            "chat.sessions bulk lifecycle limit must be between 1 and 200"
+        }
+    }
+}
+
+@Serializable
+private data class ChatSessionsBulkLifecycleResultPayloadSurrogate(
+    val scope: String,
+    val status: String,
+    @SerialName("affected_count") val affectedCount: Int,
+    @SerialName("remaining_count") val remainingCount: Int,
+    @SerialName("completed_at") val completedAt: String,
+)
+
+object ChatSessionsBulkLifecycleResultPayloadSerializer :
+    KSerializer<ChatSessionsBulkLifecycleResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ChatSessionsBulkLifecycleResultPayload,
+        ChatSessionsBulkLifecycleResultPayloadSurrogate
+    >(
+        ChatSessionsBulkLifecycleResultPayloadSurrogate.serializer(),
+        setOf("scope", "status", "affected_count", "remaining_count", "completed_at"),
+        "chat.sessions bulk lifecycle result",
+    ) {
+    override fun fromSurrogate(value: ChatSessionsBulkLifecycleResultPayloadSurrogate) =
+        ChatSessionsBulkLifecycleResultPayload(
+            scope = value.scope,
+            status = value.status,
+            affectedCount = value.affectedCount,
+            remainingCount = value.remainingCount,
+            completedAt = value.completedAt,
+        )
+
+    override fun toSurrogate(value: ChatSessionsBulkLifecycleResultPayload) =
+        ChatSessionsBulkLifecycleResultPayloadSurrogate(
+            scope = value.scope,
+            status = value.status,
+            affectedCount = value.affectedCount,
+            remainingCount = value.remainingCount,
+            completedAt = value.completedAt,
+        )
+}
+
+@Serializable(with = ChatSessionsBulkLifecycleResultPayloadSerializer::class)
+data class ChatSessionsBulkLifecycleResultPayload(
+    val scope: String,
+    val status: String,
+    @SerialName("affected_count") val affectedCount: Int,
+    @SerialName("remaining_count") val remainingCount: Int,
+    @SerialName("completed_at") val completedAt: String,
+) {
+    init {
+        require(scope in CHAT_SESSIONS_BULK_LIFECYCLE_STATUS_BY_SCOPE) {
+            "chat.sessions bulk lifecycle result scope must be all_active or all_archived"
+        }
+        require(status in CHAT_SESSIONS_BULK_LIFECYCLE_STATUS_BY_SCOPE.values) {
+            "chat.sessions bulk lifecycle result status must be archived or deleted"
+        }
+        require(CHAT_SESSIONS_BULK_LIFECYCLE_STATUS_BY_SCOPE[scope] == status) {
+            "chat.sessions bulk lifecycle result scope and status must match"
+        }
+        require(affectedCount in 0..MAX_CHAT_SESSION_LIST_LIMIT) {
+            "chat.sessions bulk lifecycle result affected_count must be between 0 and 200"
+        }
+        require(remainingCount >= 0) {
+            "chat.sessions bulk lifecycle result remaining_count must be nonnegative"
+        }
+        requireExactRfc3339DateTime(completedAt, "chat.sessions bulk lifecycle result completed_at")
+    }
+}
 
 @Serializable
 data class ChatSessionSummaryPayload(
@@ -2419,6 +2731,520 @@ data class MemoryListRequestPayload(
 data class MemoryListResultPayload(
     val entries: List<MemoryEntryPayload>,
 )
+
+@Serializable
+data object MemoryDuplicateSuggestionsListRequestPayload
+
+@Serializable
+data class MemoryDuplicateSuggestionGroupPayload(
+    @SerialName("entry_ids") val entryIds: List<String>,
+) {
+    init {
+        require(entryIds.size in 2..MAX_MEMORY_DUPLICATE_SUGGESTION_GROUP_SIZE) {
+            "memory.duplicate_suggestions.list response group entry_ids must contain 2 to 200 IDs"
+        }
+        require(entryIds.all { it.isNotBlank() }) {
+            "memory.duplicate_suggestions.list response entry_ids must be nonblank"
+        }
+        require(entryIds.all { Charsets.UTF_8.newEncoder().canEncode(it) }) {
+            "memory.duplicate_suggestions.list response entry_ids must be valid UTF-8 encodable Unicode"
+        }
+        require(entryIds.distinct() == entryIds) {
+            "memory.duplicate_suggestions.list response group entry_ids must be unique"
+        }
+        require(entryIds.sortedWith(CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR) == entryIds) {
+            "memory.duplicate_suggestions.list response group entry_ids must use canonical unsigned UTF-8 byte order"
+        }
+    }
+}
+
+@Serializable
+data class MemoryDuplicateSuggestionsListResultPayload(
+    val groups: List<MemoryDuplicateSuggestionGroupPayload>,
+    @SerialName("scanned_count") val scannedCount: Int,
+    val truncated: Boolean,
+) {
+    init {
+        require(groups.size <= MAX_MEMORY_DUPLICATE_SUGGESTION_GROUPS) {
+            "memory.duplicate_suggestions.list response groups must contain at most 100 groups"
+        }
+        require(scannedCount in 0..MAX_MEMORY_DUPLICATE_SUGGESTION_SCANNED_COUNT) {
+            "memory.duplicate_suggestions.list response scanned_count must be between 0 and 200"
+        }
+        val entryIds = groups.flatMap(MemoryDuplicateSuggestionGroupPayload::entryIds)
+        val aggregateEntryIdUtf8Bytes = entryIds.sumOf { entryId ->
+            entryId.toByteArray(Charsets.UTF_8).size.toLong()
+        }
+        require(aggregateEntryIdUtf8Bytes <= MAX_MEMORY_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES) {
+            "memory.duplicate_suggestions.list response entry_ids must not exceed 128 KiB of aggregate UTF-8 bytes"
+        }
+        require(entryIds.distinct().size == entryIds.size) {
+            "memory.duplicate_suggestions.list response entry_ids must not repeat across groups"
+        }
+        require(entryIds.size <= scannedCount) {
+            "memory.duplicate_suggestions.list response grouped distinct ID count must not exceed scanned_count"
+        }
+        require(
+            groups.map { it.entryIds.first() }.sortedWith(CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR) ==
+                groups.map { it.entryIds.first() },
+        ) {
+            "memory.duplicate_suggestions.list response groups must be sorted by first entry ID using canonical unsigned UTF-8 byte order"
+        }
+    }
+}
+
+@Serializable
+private data class MemorySemanticDuplicateSuggestionsListRequestPayloadSurrogate(
+    @SerialName("embedding_model_id") val embeddingModelId: String,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+)
+
+object MemorySemanticDuplicateSuggestionsListRequestPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateSuggestionsListRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateSuggestionsListRequestPayload,
+        MemorySemanticDuplicateSuggestionsListRequestPayloadSurrogate
+    >(
+        MemorySemanticDuplicateSuggestionsListRequestPayloadSurrogate.serializer(),
+        setOf("embedding_model_id", "minimum_similarity_basis_points"),
+        "memory.semantic_duplicate_suggestions.list request",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "minimum_similarity_basis_points",
+                "memory.semantic_duplicate_suggestions.list request",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateSuggestionsListRequestPayloadSurrogate) =
+        MemorySemanticDuplicateSuggestionsListRequestPayload(
+            embeddingModelId = value.embeddingModelId,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateSuggestionsListRequestPayload) =
+        MemorySemanticDuplicateSuggestionsListRequestPayloadSurrogate(
+            embeddingModelId = value.embeddingModelId,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateSuggestionsListRequestPayloadSerializer::class)
+data class MemorySemanticDuplicateSuggestionsListRequestPayload(
+    @SerialName("embedding_model_id") val embeddingModelId: String,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+) {
+    init {
+        require(embeddingModelId.isNotBlank()) {
+            "memory.semantic_duplicate_suggestions.list request embedding_model_id must be nonblank"
+        }
+        require(isCanonicalProviderQualifiedModelId(embeddingModelId)) {
+            "memory.semantic_duplicate_suggestions.list request embedding_model_id must be provider-qualified"
+        }
+        require(Charsets.UTF_8.newEncoder().canEncode(embeddingModelId)) {
+            "memory.semantic_duplicate_suggestions.list request embedding_model_id must be valid UTF-8 encodable Unicode"
+        }
+        require(
+            embeddingModelId.codePointCount(0, embeddingModelId.length) <=
+                MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_EMBEDDING_MODEL_ID_LENGTH
+        ) {
+            "memory.semantic_duplicate_suggestions.list request embedding_model_id must be at most 256 Unicode code points"
+        }
+        require(minimumSimilarityBasisPoints in 8_000..10_000) {
+            "memory.semantic_duplicate_suggestions.list request minimum_similarity_basis_points must be between 8000 and 10000"
+        }
+    }
+}
+
+@Serializable
+private data class MemorySemanticDuplicateSuggestionPairPayloadSurrogate(
+    @SerialName("entry_ids") val entryIds: List<String>,
+    @SerialName("similarity_basis_points") val similarityBasisPoints: Int,
+)
+
+object MemorySemanticDuplicateSuggestionPairPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateSuggestionPairPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateSuggestionPairPayload,
+        MemorySemanticDuplicateSuggestionPairPayloadSurrogate
+    >(
+        MemorySemanticDuplicateSuggestionPairPayloadSurrogate.serializer(),
+        setOf("entry_ids", "similarity_basis_points"),
+        "memory.semantic_duplicate_suggestions.list response pair",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "similarity_basis_points",
+                "memory.semantic_duplicate_suggestions.list response pair",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateSuggestionPairPayloadSurrogate) =
+        MemorySemanticDuplicateSuggestionPairPayload(
+            entryIds = value.entryIds,
+            similarityBasisPoints = value.similarityBasisPoints,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateSuggestionPairPayload) =
+        MemorySemanticDuplicateSuggestionPairPayloadSurrogate(
+            entryIds = value.entryIds,
+            similarityBasisPoints = value.similarityBasisPoints,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateSuggestionPairPayloadSerializer::class)
+data class MemorySemanticDuplicateSuggestionPairPayload(
+    @SerialName("entry_ids") val entryIds: List<String>,
+    @SerialName("similarity_basis_points") val similarityBasisPoints: Int,
+) {
+    init {
+        require(entryIds.size == 2) {
+            "memory.semantic_duplicate_suggestions.list response pair entry_ids must contain exactly two IDs"
+        }
+        require(entryIds.all { it.isNotBlank() }) {
+            "memory.semantic_duplicate_suggestions.list response pair entry_ids must be nonblank"
+        }
+        require(entryIds.all { Charsets.UTF_8.newEncoder().canEncode(it) }) {
+            "memory.semantic_duplicate_suggestions.list response pair entry_ids must be valid UTF-8 encodable Unicode"
+        }
+        require(entryIds[0] != entryIds[1]) {
+            "memory.semantic_duplicate_suggestions.list response pair entry_ids must be distinct"
+        }
+        require(CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR.compare(entryIds[0], entryIds[1]) < 0) {
+            "memory.semantic_duplicate_suggestions.list response pair entry_ids must use canonical unsigned UTF-8 byte order"
+        }
+        require(similarityBasisPoints in 0..10_000) {
+            "memory.semantic_duplicate_suggestions.list response pair similarity_basis_points must be between 0 and 10000"
+        }
+    }
+}
+
+private val MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_COMPARATOR =
+    Comparator<MemorySemanticDuplicateSuggestionPairPayload> { left, right ->
+        val scoreComparison = right.similarityBasisPoints.compareTo(left.similarityBasisPoints)
+        if (scoreComparison != 0) return@Comparator scoreComparison
+        val firstIdComparison = CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR.compare(
+            left.entryIds[0],
+            right.entryIds[0],
+        )
+        if (firstIdComparison != 0) return@Comparator firstIdComparison
+        CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR.compare(left.entryIds[1], right.entryIds[1])
+    }
+
+@Serializable
+private data class MemorySemanticDuplicateSuggestionsListResultPayloadSurrogate(
+    val pairs: List<MemorySemanticDuplicateSuggestionPairPayload>,
+    @SerialName("scanned_count") val scannedCount: Int,
+    @SerialName("omitted_count") val omittedCount: Int,
+    val truncated: Boolean,
+)
+
+object MemorySemanticDuplicateSuggestionsListResultPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateSuggestionsListResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateSuggestionsListResultPayload,
+        MemorySemanticDuplicateSuggestionsListResultPayloadSurrogate
+    >(
+        MemorySemanticDuplicateSuggestionsListResultPayloadSurrogate.serializer(),
+        setOf("pairs", "scanned_count", "omitted_count", "truncated"),
+        "memory.semantic_duplicate_suggestions.list response",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "scanned_count",
+                "memory.semantic_duplicate_suggestions.list response",
+            )
+            payload.requireJsonInteger(
+                "omitted_count",
+                "memory.semantic_duplicate_suggestions.list response",
+            )
+            payload.requireJsonBoolean(
+                "truncated",
+                "memory.semantic_duplicate_suggestions.list response",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateSuggestionsListResultPayloadSurrogate) =
+        MemorySemanticDuplicateSuggestionsListResultPayload(
+            pairs = value.pairs,
+            scannedCount = value.scannedCount,
+            omittedCount = value.omittedCount,
+            truncated = value.truncated,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateSuggestionsListResultPayload) =
+        MemorySemanticDuplicateSuggestionsListResultPayloadSurrogate(
+            pairs = value.pairs,
+            scannedCount = value.scannedCount,
+            omittedCount = value.omittedCount,
+            truncated = value.truncated,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateSuggestionsListResultPayloadSerializer::class)
+data class MemorySemanticDuplicateSuggestionsListResultPayload(
+    val pairs: List<MemorySemanticDuplicateSuggestionPairPayload>,
+    @SerialName("scanned_count") val scannedCount: Int,
+    @SerialName("omitted_count") val omittedCount: Int,
+    val truncated: Boolean,
+) {
+    init {
+        require(pairs.size <= MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIRS) {
+            "memory.semantic_duplicate_suggestions.list response pairs must contain at most 100 pairs"
+        }
+        require(scannedCount in 0..MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_SCANNED_COUNT) {
+            "memory.semantic_duplicate_suggestions.list response scanned_count must be between 0 and 200"
+        }
+        require(omittedCount in 0..MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_SCANNED_COUNT) {
+            "memory.semantic_duplicate_suggestions.list response omitted_count must be between 0 and 200"
+        }
+        require(pairs.distinctBy(MemorySemanticDuplicateSuggestionPairPayload::entryIds).size == pairs.size) {
+            "memory.semantic_duplicate_suggestions.list response pairs must be unique"
+        }
+        require(pairs.flatMap { it.entryIds }.distinct().size <= scannedCount) {
+            "memory.semantic_duplicate_suggestions.list response distinct pair IDs must not exceed scanned_count"
+        }
+        require(pairs.sortedWith(MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_PAIR_COMPARATOR) == pairs) {
+            "memory.semantic_duplicate_suggestions.list response pairs must be sorted by score descending then canonical entry ID order"
+        }
+        val aggregateEntryIdUtf8Bytes = pairs.sumOf { pair ->
+            pair.entryIds.sumOf { entryId -> entryId.toByteArray(Charsets.UTF_8).size.toLong() }
+        }
+        require(
+            aggregateEntryIdUtf8Bytes <=
+                MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_ID_AGGREGATE_UTF8_BYTES
+        ) {
+            "memory.semantic_duplicate_suggestions.list response entry_ids must not exceed 128 KiB of aggregate UTF-8 bytes"
+        }
+    }
+}
+
+@Serializable
+private data class MemorySemanticDuplicateClustersListRequestPayloadSurrogate(
+    @SerialName("embedding_model_id") val embeddingModelId: String,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+)
+
+object MemorySemanticDuplicateClustersListRequestPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateClustersListRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateClustersListRequestPayload,
+        MemorySemanticDuplicateClustersListRequestPayloadSurrogate
+    >(
+        MemorySemanticDuplicateClustersListRequestPayloadSurrogate.serializer(),
+        setOf("embedding_model_id", "minimum_similarity_basis_points"),
+        "memory.semantic_duplicate_clusters.list request",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "minimum_similarity_basis_points",
+                "memory.semantic_duplicate_clusters.list request",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateClustersListRequestPayloadSurrogate) =
+        MemorySemanticDuplicateClustersListRequestPayload(
+            embeddingModelId = value.embeddingModelId,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateClustersListRequestPayload) =
+        MemorySemanticDuplicateClustersListRequestPayloadSurrogate(
+            embeddingModelId = value.embeddingModelId,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateClustersListRequestPayloadSerializer::class)
+data class MemorySemanticDuplicateClustersListRequestPayload(
+    @SerialName("embedding_model_id") val embeddingModelId: String,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+) {
+    init {
+        require(embeddingModelId.isNotBlank()) {
+            "memory.semantic_duplicate_clusters.list request embedding_model_id must be nonblank"
+        }
+        require(isCanonicalProviderQualifiedModelId(embeddingModelId)) {
+            "memory.semantic_duplicate_clusters.list request embedding_model_id must be provider-qualified"
+        }
+        require(Charsets.UTF_8.newEncoder().canEncode(embeddingModelId)) {
+            "memory.semantic_duplicate_clusters.list request embedding_model_id must be valid UTF-8 encodable Unicode"
+        }
+        require(
+            embeddingModelId.codePointCount(0, embeddingModelId.length) <=
+                MAX_MEMORY_SEMANTIC_DUPLICATE_SUGGESTION_EMBEDDING_MODEL_ID_LENGTH
+        ) {
+            "memory.semantic_duplicate_clusters.list request embedding_model_id must be at most 256 Unicode code points"
+        }
+        require(minimumSimilarityBasisPoints in 8_000..10_000) {
+            "memory.semantic_duplicate_clusters.list request minimum_similarity_basis_points must be between 8000 and 10000"
+        }
+    }
+}
+
+@Serializable
+private data class MemorySemanticDuplicateClusterPayloadSurrogate(
+    @SerialName("entry_ids") val entryIds: List<String>,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+)
+
+object MemorySemanticDuplicateClusterPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateClusterPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateClusterPayload,
+        MemorySemanticDuplicateClusterPayloadSurrogate
+    >(
+        MemorySemanticDuplicateClusterPayloadSurrogate.serializer(),
+        setOf("entry_ids", "minimum_similarity_basis_points"),
+        "memory.semantic_duplicate_clusters.list response cluster",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "minimum_similarity_basis_points",
+                "memory.semantic_duplicate_clusters.list response cluster",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateClusterPayloadSurrogate) =
+        MemorySemanticDuplicateClusterPayload(
+            entryIds = value.entryIds,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateClusterPayload) =
+        MemorySemanticDuplicateClusterPayloadSurrogate(
+            entryIds = value.entryIds,
+            minimumSimilarityBasisPoints = value.minimumSimilarityBasisPoints,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateClusterPayloadSerializer::class)
+data class MemorySemanticDuplicateClusterPayload(
+    @SerialName("entry_ids") val entryIds: List<String>,
+    @SerialName("minimum_similarity_basis_points") val minimumSimilarityBasisPoints: Int,
+) {
+    init {
+        require(entryIds.size in 2..MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_SIZE) {
+            "memory.semantic_duplicate_clusters.list response cluster entry_ids must contain 2 to 200 IDs"
+        }
+        require(entryIds.all { it.isNotBlank() }) {
+            "memory.semantic_duplicate_clusters.list response entry_ids must be nonblank"
+        }
+        require(entryIds.all { Charsets.UTF_8.newEncoder().canEncode(it) }) {
+            "memory.semantic_duplicate_clusters.list response entry_ids must be valid UTF-8 encodable Unicode"
+        }
+        require(entryIds.distinct().size == entryIds.size) {
+            "memory.semantic_duplicate_clusters.list response cluster entry_ids must be unique"
+        }
+        require(entryIds.sortedWith(CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR) == entryIds) {
+            "memory.semantic_duplicate_clusters.list response cluster entry_ids must use canonical unsigned UTF-8 byte order"
+        }
+        require(minimumSimilarityBasisPoints in 0..10_000) {
+            "memory.semantic_duplicate_clusters.list response cluster minimum_similarity_basis_points must be between 0 and 10000"
+        }
+    }
+}
+
+private fun compareCanonicalIdArrays(left: List<String>, right: List<String>): Int {
+    val sharedSize = minOf(left.size, right.size)
+    for (index in 0 until sharedSize) {
+        val comparison = CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR.compare(left[index], right[index])
+        if (comparison != 0) return comparison
+    }
+    return left.size.compareTo(right.size)
+}
+
+private val MEMORY_SEMANTIC_DUPLICATE_CLUSTER_COMPARATOR =
+    Comparator<MemorySemanticDuplicateClusterPayload> { left, right ->
+        val scoreComparison = right.minimumSimilarityBasisPoints.compareTo(
+            left.minimumSimilarityBasisPoints,
+        )
+        if (scoreComparison != 0) return@Comparator scoreComparison
+        compareCanonicalIdArrays(left.entryIds, right.entryIds)
+    }
+
+@Serializable
+private data class MemorySemanticDuplicateClustersListResultPayloadSurrogate(
+    val clusters: List<MemorySemanticDuplicateClusterPayload>,
+    @SerialName("scanned_count") val scannedCount: Int,
+    @SerialName("omitted_count") val omittedCount: Int,
+    val truncated: Boolean,
+)
+
+object MemorySemanticDuplicateClustersListResultPayloadSerializer :
+    KSerializer<MemorySemanticDuplicateClustersListResultPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        MemorySemanticDuplicateClustersListResultPayload,
+        MemorySemanticDuplicateClustersListResultPayloadSurrogate
+    >(
+        MemorySemanticDuplicateClustersListResultPayloadSurrogate.serializer(),
+        setOf("clusters", "scanned_count", "omitted_count", "truncated"),
+        "memory.semantic_duplicate_clusters.list response",
+        validatePayload = { payload ->
+            payload.requireJsonInteger(
+                "scanned_count",
+                "memory.semantic_duplicate_clusters.list response",
+            )
+            payload.requireJsonInteger(
+                "omitted_count",
+                "memory.semantic_duplicate_clusters.list response",
+            )
+            payload.requireJsonBoolean(
+                "truncated",
+                "memory.semantic_duplicate_clusters.list response",
+            )
+        },
+    ) {
+    override fun fromSurrogate(value: MemorySemanticDuplicateClustersListResultPayloadSurrogate) =
+        MemorySemanticDuplicateClustersListResultPayload(
+            clusters = value.clusters,
+            scannedCount = value.scannedCount,
+            omittedCount = value.omittedCount,
+            truncated = value.truncated,
+        )
+
+    override fun toSurrogate(value: MemorySemanticDuplicateClustersListResultPayload) =
+        MemorySemanticDuplicateClustersListResultPayloadSurrogate(
+            clusters = value.clusters,
+            scannedCount = value.scannedCount,
+            omittedCount = value.omittedCount,
+            truncated = value.truncated,
+        )
+}
+
+@Serializable(with = MemorySemanticDuplicateClustersListResultPayloadSerializer::class)
+data class MemorySemanticDuplicateClustersListResultPayload(
+    val clusters: List<MemorySemanticDuplicateClusterPayload>,
+    @SerialName("scanned_count") val scannedCount: Int,
+    @SerialName("omitted_count") val omittedCount: Int,
+    val truncated: Boolean,
+) {
+    init {
+        require(clusters.size <= MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTERS) {
+            "memory.semantic_duplicate_clusters.list response clusters must contain at most 100 clusters"
+        }
+        require(scannedCount in 0..MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_SCANNED_COUNT) {
+            "memory.semantic_duplicate_clusters.list response scanned_count must be between 0 and 200"
+        }
+        require(omittedCount in 0..MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_SCANNED_COUNT) {
+            "memory.semantic_duplicate_clusters.list response omitted_count must be between 0 and 200"
+        }
+        require(clusters.sortedWith(MEMORY_SEMANTIC_DUPLICATE_CLUSTER_COMPARATOR) == clusters) {
+            "memory.semantic_duplicate_clusters.list response clusters must be sorted by minimum score descending then canonical entry ID-array order"
+        }
+        val entryIds = clusters.flatMap(MemorySemanticDuplicateClusterPayload::entryIds)
+        require(entryIds.distinct().size == entryIds.size) {
+            "memory.semantic_duplicate_clusters.list response entry_ids must not repeat across clusters"
+        }
+        require(entryIds.size <= scannedCount) {
+            "memory.semantic_duplicate_clusters.list response distinct cluster IDs must not exceed scanned_count"
+        }
+        val aggregateEntryIdUtf8Bytes = entryIds.sumOf { entryId ->
+            entryId.toByteArray(Charsets.UTF_8).size.toLong()
+        }
+        require(
+            aggregateEntryIdUtf8Bytes <=
+                MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_ID_AGGREGATE_UTF8_BYTES
+        ) {
+            "memory.semantic_duplicate_clusters.list response entry_ids must not exceed 128 KiB of aggregate UTF-8 bytes"
+        }
+    }
+}
 
 @Serializable
 data class MemoryEntryPayload(

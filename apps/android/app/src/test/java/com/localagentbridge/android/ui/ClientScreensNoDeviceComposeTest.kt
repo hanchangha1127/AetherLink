@@ -155,6 +155,9 @@ import com.localagentbridge.android.runtime.RuntimeDocumentSearchResult
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeMemoryEntrySource
+import com.localagentbridge.android.runtime.RuntimeMemoryDuplicateSuggestionGroup
+import com.localagentbridge.android.runtime.RuntimeMemorySemanticDuplicateSuggestionPair
+import com.localagentbridge.android.runtime.RuntimeMemorySemanticDuplicateCluster
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraft
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraftSession
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraftSourcePointer
@@ -20966,6 +20969,7 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         compose.onNodeWithText("Suggested memories")
+            .performScrollTo()
             .assertIsDisplayed()
         compose.onNodeWithText("1 suggestion from older chats")
             .performScrollTo()
@@ -23210,6 +23214,472 @@ class ClientScreensNoDeviceComposeTest {
             compose.onAllNodesWithContentDescription(addedNotice, useUnmergedTree = true)
                 .assertCountEquals(0)
         }
+    }
+
+    @Test
+    fun memoryDuplicateReviewShowsLocalizedReviewOnlyAndTruncatedState() {
+        val readyStateByLanguage = mapOf(
+            "en" to "Ready to review exact duplicates.",
+            "ko" to "정확히 중복된 메모리를 검토할 준비가 되었습니다.",
+            "ja" to "完全に重複するメモリを確認できます。",
+            "zh-CN" to "可以检查完全重复项。",
+            "fr" to "Prêt à examiner les doublons exacts.",
+        )
+        val languageTags = readyStateByLanguage.keys.toList()
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val scanning = mutableStateOf(true)
+        var scanClicks = 0
+        val entries = listOf(
+            RuntimeMemoryEntry(
+                id = "memory-a",
+                content = "Exact duplicate content",
+                enabled = true,
+                createdAtMillis = 1_000L,
+                updatedAtMillis = 1_000L,
+            ),
+            RuntimeMemoryEntry(
+                id = "memory-b",
+                content = "Exact duplicate content",
+                enabled = false,
+                createdAtMillis = 2_000L,
+                updatedAtMillis = 2_000L,
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    Surface(
+                        modifier = Modifier
+                            .width(360.dp)
+                            .height(720.dp),
+                    ) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            MemoryPanel(
+                                entries = entries,
+                                duplicateSuggestionGroups = listOf(
+                                    RuntimeMemoryDuplicateSuggestionGroup(
+                                        entryIds = listOf("memory-a", "memory-b"),
+                                    ),
+                                ),
+                                duplicateSuggestionsScannedCount = 2,
+                                duplicateSuggestionsTruncated = true,
+                                hasDuplicateSuggestionsResult = true,
+                                isScanningDuplicateSuggestions = scanning.value,
+                                duplicateSuggestionsActionEnabled = true,
+                                actionsEnabled = true,
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onRefreshMemory = {},
+                                onScanMemoryDuplicateSuggestions = { scanClicks += 1 },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEachIndexed { index, languageTag ->
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+                scanning.value = true
+            }
+            compose.waitForIdle()
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val action = localizedContext.getString(R.string.memory_duplicate_suggestions_scan)
+            val scanningLabel = localizedContext.getString(R.string.memory_duplicate_suggestions_scanning)
+            val readyState = localizedContext.getString(
+                R.string.memory_duplicate_suggestions_scan_state_ready,
+            )
+            assertEquals(readyStateByLanguage.getValue(languageTag), readyState)
+            val title = localizedContext.getString(R.string.memory_duplicate_suggestions_title)
+            val reviewOnly = localizedContext.getString(R.string.memory_duplicate_suggestions_review_only)
+            val truncated = localizedContext.getString(R.string.memory_duplicate_suggestions_truncated)
+            val group = localizedContext.getString(R.string.memory_duplicate_suggestions_group, 1)
+
+            compose.onNodeWithTag(
+                MEMORY_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assert(hasContentDescription(action) and hasStateDescription(scanningLabel))
+                .assertIsNotEnabled()
+            compose.onNodeWithText(title).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(reviewOnly).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(group).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag(MEMORY_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG)
+                .performScrollTo()
+                .assert(hasText(truncated))
+
+            compose.runOnUiThread { scanning.value = false }
+            compose.waitForIdle()
+            compose.onNodeWithTag(
+                MEMORY_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assert(hasContentDescription(action) and hasStateDescription(readyState))
+                .assertIsEnabled()
+                .performClick()
+            assertEquals(index + 1, scanClicks)
+        }
+    }
+
+    @Test
+    fun memoryExactAndSemanticDuplicateActionsStayDistinctAndUseExactBasisPoints() {
+        var exactScanClicks = 0
+        var semanticThresholdBasisPoints: Int? = null
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(720.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = emptyList(),
+                            duplicateSuggestionsActionEnabled = true,
+                            semanticDuplicateSuggestionsActionEnabled = true,
+                            semanticDuplicateSuggestionsThresholdBasisPoints = 9_000,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onRefreshMemory = {},
+                            onScanMemoryDuplicateSuggestions = { exactScanClicks += 1 },
+                            onScanMemorySemanticDuplicateSuggestions = {
+                                semanticThresholdBasisPoints = it
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(MEMORY_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, exactScanClicks)
+        assertEquals(null, semanticThresholdBasisPoints)
+
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
+                assertTrue(setProgress(8_725f))
+            }
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_LABEL_TEST_TAG)
+            .assertTextContains("87.25%", substring = true)
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+
+        assertEquals(1, exactScanClicks)
+        assertEquals(8_725, semanticThresholdBasisPoints)
+    }
+
+    @Test
+    fun memorySemanticDuplicateResultIsReviewOnlyAndKeepsManualControls() {
+        val entries = listOf(
+            RuntimeMemoryEntry(
+                id = "memory-a",
+                content = "Keep relay recovery steps concise.",
+                enabled = true,
+                createdAtMillis = 1_000L,
+                updatedAtMillis = 1_000L,
+            ),
+            RuntimeMemoryEntry(
+                id = "memory-b",
+                content = "Use concise steps for relay recovery.",
+                enabled = false,
+                createdAtMillis = 2_000L,
+                updatedAtMillis = 2_000L,
+            ),
+        )
+        var toggledEntry: Pair<String, Boolean>? = null
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(720.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = entries,
+                            semanticDuplicateSuggestionPairs = listOf(
+                                RuntimeMemorySemanticDuplicateSuggestionPair(
+                                    entryIds = listOf("memory-a", "memory-b"),
+                                    similarityBasisPoints = 9_250,
+                                ),
+                            ),
+                            semanticDuplicateSuggestionsScannedCount = 2,
+                            semanticDuplicateSuggestionsOmittedCount = 1,
+                            semanticDuplicateSuggestionsTruncated = true,
+                            semanticDuplicateSuggestionsThresholdBasisPoints = 9_000,
+                            hasSemanticDuplicateSuggestionsResult = true,
+                            semanticDuplicateSuggestionsActionEnabled = true,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { id, enabled ->
+                                toggledEntry = id to enabled
+                            },
+                            onRefreshMemory = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val pairTag = memorySemanticDuplicateSuggestionPairTestTag(0)
+        compose.onNodeWithText(context.getString(R.string.memory_semantic_duplicate_suggestions_title))
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText(
+            context.getString(R.string.memory_semantic_duplicate_suggestions_review_only),
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNode(
+            hasText("92.50%", substring = true) and hasAnyAncestor(hasTestTag(pairTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNode(
+            hasText("Keep relay recovery steps concise.") and hasAnyAncestor(hasTestTag(pairTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_OMITTED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_TRUNCATED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        val pauseAction = context.getString(
+            R.string.memory_pause_named,
+            "Keep relay recovery steps concise.",
+        )
+        compose.onNode(
+            hasContentDescription(pauseAction) and hasAnyAncestor(hasTestTag(pairTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        assertEquals("memory-a" to false, toggledEntry)
+
+        val removeAction = context.getString(
+            R.string.memory_remove_named,
+            "Keep relay recovery steps concise.",
+        )
+        compose.onNode(
+            hasContentDescription(removeAction) and hasAnyAncestor(hasTestTag(pairTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun memorySemanticDuplicateControlsExposeDisabledReasonAndScanningState() {
+        val disabledReasonRes = mutableStateOf(
+            R.string.memory_semantic_duplicate_suggestions_select_local_model,
+        )
+        val scanning = mutableStateOf(false)
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(720.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = emptyList(),
+                            isScanningSemanticDuplicateSuggestions = scanning.value,
+                            semanticDuplicateSuggestionsActionEnabled = false,
+                            semanticDuplicateSuggestionsDisabledReasonRes = disabledReasonRes.value,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onRefreshMemory = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val selectModelReason = context.getString(
+            R.string.memory_semantic_duplicate_suggestions_select_local_model,
+        )
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(selectModelReason))
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_THRESHOLD_TEST_TAG)
+            .assertIsNotEnabled()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_DISABLED_REASON_TEST_TAG)
+            .assertTextContains(selectModelReason)
+
+        compose.runOnUiThread { scanning.value = true }
+        compose.waitForIdle()
+        val scanningLabel = context.getString(
+            R.string.memory_semantic_duplicate_suggestions_scanning,
+        )
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SCAN_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assert(hasStateDescription(scanningLabel))
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersControlsStayDistinctAndUseExactBasisPoints() {
+        var pairThresholdBasisPoints: Int? = null
+        var clusterThresholdBasisPoints: Int? = null
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(720.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = emptyList(),
+                            semanticDuplicateSuggestionsActionEnabled = true,
+                            semanticDuplicateClustersActionEnabled = true,
+                            semanticDuplicateClustersThresholdBasisPoints = 9_000,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onRefreshMemory = {},
+                            onScanMemorySemanticDuplicateSuggestions = {
+                                pairThresholdBasisPoints = it
+                            },
+                            onScanMemorySemanticDuplicateClusters = {
+                                clusterThresholdBasisPoints = it
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
+                assertTrue(setProgress(8_726f))
+            }
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_THRESHOLD_LABEL_TEST_TAG)
+            .assertTextContains("87.26%", substring = true)
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SCAN_ACTION_TEST_TAG)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+
+        assertEquals(null, pairThresholdBasisPoints)
+        assertEquals(8_726, clusterThresholdBasisPoints)
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_SECTION_TEST_TAG)
+            .assertExists()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_SECTION_TEST_TAG)
+            .assertExists()
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls() {
+        val entries = listOf(
+            RuntimeMemoryEntry("memory-a", "Keep output concise.", true, 1_000L, 1_000L),
+            RuntimeMemoryEntry("memory-b", "Prefer brief answers.", false, 2_000L, 2_000L),
+            RuntimeMemoryEntry("memory-c", "Use short steps.", true, 3_000L, 3_000L),
+        )
+        var toggledEntry: Pair<String, Boolean>? = null
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(720.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = entries,
+                            semanticDuplicateClusters = listOf(
+                                RuntimeMemorySemanticDuplicateCluster(
+                                    entryIds = listOf("memory-a", "memory-b", "memory-c"),
+                                    minimumSimilarityBasisPoints = 9_101,
+                                ),
+                            ),
+                            semanticDuplicateClustersScannedCount = 3,
+                            semanticDuplicateClustersOmittedCount = 1,
+                            semanticDuplicateClustersTruncated = true,
+                            semanticDuplicateClustersThresholdBasisPoints = 9_000,
+                            hasSemanticDuplicateClustersResult = true,
+                            semanticDuplicateClustersActionEnabled = true,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { id, enabled ->
+                                toggledEntry = id to enabled
+                            },
+                            onRefreshMemory = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val clusterTag = memorySemanticDuplicateClusterTestTag(0)
+        compose.onNodeWithText(context.getString(R.string.memory_semantic_duplicate_clusters_title))
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText(
+            context.getString(R.string.memory_semantic_duplicate_clusters_review_only),
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNode(
+            hasText("91.01%", substring = true) and hasAnyAncestor(hasTestTag(clusterTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_OMITTED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_TRUNCATED_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        val pauseAction = context.getString(R.string.memory_pause_named, "Keep output concise.")
+        compose.onNode(
+            hasContentDescription(pauseAction) and hasAnyAncestor(hasTestTag(clusterTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        assertEquals("memory-a" to false, toggledEntry)
+        val removeAction = context.getString(R.string.memory_remove_named, "Keep output concise.")
+        compose.onNode(
+            hasContentDescription(removeAction) and hasAnyAncestor(hasTestTag(clusterTag)),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsEnabled()
     }
 
     @Test

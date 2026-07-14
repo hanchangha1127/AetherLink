@@ -1,0 +1,76 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-network-spike-approval-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "sourceReviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+  "sourceReviewPath": "review-v1.json",
+  "sourceHandoffId": "production_p2p_nat_v1_handoff_v3",
+  "sourceHandoffPath": "../implementation/handoff-v3.json",
+  "status": "closed",
+  "approvalSource": "explicit_user_instruction",
+  "decisionScope": "bounded_phase_a_evidence_authorization",
+  "measurementStatus": "not_started",
+  "decisionOrder": [
+    "networking_library_selection",
+    "session_cryptography_library_selection",
+    "isolated_harness_design",
+    "socket_destination_and_egress_controls"
+  ],
+  "approvals": [
+    {
+      "decisionId": "networking_library_selection",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "recommendedOptionId": "libjuice-1.7.2-static-c-abi",
+      "resolution": "libjuice-1.7.2-static-c-abi",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "session_cryptography_library_selection",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "recommendedOptionId": "platform-native-p256-hkdf-sha256-aes256gcm",
+      "resolution": "platform-native-p256-hkdf-sha256-aes256gcm",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "isolated_harness_design",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "recommendedOptionId": "linux-netns-twin-agent-local-services",
+      "resolution": "linux-netns-twin-agent-local-services",
+      "approvalSource": "explicit_user_instruction"
+    },
+    {
+      "decisionId": "socket_destination_and_egress_controls",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "recommendedOptionId": "numeric-endpoint-allowlist-plus-os-egress-witness",
+      "resolution": "numeric-endpoint-allowlist-plus-os-egress-witness",
+      "approvalSource": "explicit_user_instruction"
+    }
+  ],
+  "authorization": {
+    "conditionalLibrarySelectionAuthorized": true,
+    "offlineSourceInspectionAuthorized": true,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "compileOnlyIntegrationAuthorized": true,
+    "phaseAHarnessImplementationAuthorized": true,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false,
+    "handoffV4CreationAuthorized": true
+  },
+  "requiredPhaseAEvidence": [
+    "libjuice_supply_chain_and_source_audit",
+    "android_macos_compile_only_integration",
+    "cross_platform_session_crypto_vectors",
+    "static_harness_and_egress_policy",
+    "phase_a_security_review"
+  ],
+  "failurePolicy": "reject_failed_option_and_require_a_new_versioned_decision_without_socket_or_network_execution",
+  "nextStep": "collect_bounded_phase_a_evidence_before_a_separate_socket_execution_decision",
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_decision"
+  }
+}

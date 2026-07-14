@@ -579,3 +579,13 @@
 "The document sharing confirmation is invalid. Review the source again." = "文档共享确认无效。请重新审核来源。";
 "This source changed after the review started. Review the latest source before sharing it." = "审核开始后来源已更改。共享前请审核最新来源。";
 "AetherLink could not update the local document library." = "AetherLink无法更新本地文档库。";
+"Deleted Chat Retention" = "已删除聊天保留";
+"Clean Deleted History" = "清理已删除历史记录";
+"Deleted chats are kept for 90 days, then removed automatically from this runtime host." = "已删除的聊天会保留90天，之后自动从此运行时主机移除。";
+"Cleaning expired deleted chats." = "正在清理过期的已删除聊天。";
+"Cleanup finished. No expired deleted chats were found." = "清理完成。未找到过期的已删除聊天。";
+"Cleanup finished. %@ removed." = "清理完成。已移除%@。";
+"Cleanup failed. Check Activity and try again." = "清理失败。请检查活动记录后重试。";
+"Remove chats deleted at least 90 days ago from this runtime host." = "从此运行时主机移除至少90天前删除的聊天。";
+"1 deleted chat" = "1条已删除聊天";
+"%d deleted chats" = "%d条已删除聊天";

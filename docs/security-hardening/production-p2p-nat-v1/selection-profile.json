@@ -101,5 +101,5 @@
     }
   ],
   "explicitSelectionRequired": false,
-  "selectionInstruction": "Profile production_p2p_nat_v1_recommended was initially approved for the bounded handoff recorded by selection-decision.json and implementation/handoff-v1.json; pre-network/decision-v1.json and implementation/handoff-v3.json are the current policy-selection records and keep network, library, socket, and deployment authorization closed."
+  "selectionInstruction": "Profile production_p2p_nat_v1_recommended was initially approved for the bounded handoff recorded by selection-decision.json and implementation/handoff-v1.json; pre-network/decision-v1.json closed the policy choices, and controlled-network-spike/decision-v1.json plus implementation/handoff-v4.json now conditionally select the four recommendations for bounded phase A evidence from user-provided or pre-existing workspace source while every source-acquisition, runtime, harness, socket, phase B, and production network gate remains closed."
 }

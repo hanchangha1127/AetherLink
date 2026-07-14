@@ -22,16 +22,45 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let semanticEmbeddingRowLimitPerOwnerModel: Int
+    private let legacyJSONLCompactionWillReplace: (() -> Void)?
     private let lock = NSLock()
 
-    public init(
+    public convenience init(
         databaseURL: URL = SQLiteRuntimeChatEventStore.defaultDatabaseURL(),
         legacyJSONLFileURL: URL? = nil,
         semanticEmbeddingRowLimitPerOwnerModel: Int = 10_000
     ) {
+        self.init(
+            databaseURL: databaseURL,
+            legacyJSONLFileURL: legacyJSONLFileURL,
+            semanticEmbeddingRowLimitPerOwnerModel: semanticEmbeddingRowLimitPerOwnerModel,
+            legacyJSONLCompactionWillReplace: nil
+        )
+    }
+
+    convenience init(
+        databaseURL: URL,
+        legacyJSONLFileURL: URL,
+        legacyJSONLCompactionWillReplace: @escaping () -> Void
+    ) {
+        self.init(
+            databaseURL: databaseURL,
+            legacyJSONLFileURL: legacyJSONLFileURL,
+            semanticEmbeddingRowLimitPerOwnerModel: 10_000,
+            legacyJSONLCompactionWillReplace: legacyJSONLCompactionWillReplace
+        )
+    }
+
+    private init(
+        databaseURL: URL,
+        legacyJSONLFileURL: URL?,
+        semanticEmbeddingRowLimitPerOwnerModel: Int,
+        legacyJSONLCompactionWillReplace: (() -> Void)?
+    ) {
         self.databaseURL = databaseURL
         self.legacyJSONLFileURL = legacyJSONLFileURL
         self.semanticEmbeddingRowLimitPerOwnerModel = max(1, semanticEmbeddingRowLimitPerOwnerModel)
+        self.legacyJSONLCompactionWillReplace = legacyJSONLCompactionWillReplace
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -117,7 +146,10 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                         if lhs.match.score != rhs.match.score {
                             return lhs.match.score > rhs.match.score
                         }
-                        return lhs.session.lastActivityAt > rhs.session.lastActivityAt
+                        if lhs.session.lastActivityAt != rhs.session.lastActivityAt {
+                            return lhs.session.lastActivityAt > rhs.session.lastActivityAt
+                        }
+                        return lhs.session.sessionID < rhs.session.sessionID
                     }
                     .limited(to: limit)
                     .enumerated()
@@ -139,25 +171,82 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         deletedBefore cutoff: Date,
         limit: Int = Int.max
     ) throws -> RuntimeChatDeletedSessionPruneResult {
+        try pruneDeletedSessions(
+            scope: .owner(ownerDeviceID.sqliteNormalizedOwnerDeviceID),
+            deletedBefore: cutoff,
+            limit: limit,
+            legacyCompactionTiming: .immediate
+        )
+    }
+
+    public func pruneDeletedSessions(
+        deletedBefore cutoff: Date,
+        limit: Int = Int.max
+    ) throws -> RuntimeChatDeletedSessionPruneResult {
+        try pruneDeletedSessions(
+            scope: .allOwners,
+            deletedBefore: cutoff,
+            limit: limit,
+            legacyCompactionTiming: .immediate
+        )
+    }
+
+    func pruneDeletedSessionsBatch(
+        ownerDeviceID: String?,
+        deletedBefore cutoff: Date,
+        limit: Int
+    ) throws -> RuntimeChatDeletedSessionPruneResult {
+        try pruneDeletedSessions(
+            scope: .owner(ownerDeviceID.sqliteNormalizedOwnerDeviceID),
+            deletedBefore: cutoff,
+            limit: limit,
+            legacyCompactionTiming: .whenBatchDrained
+        )
+    }
+
+    func pruneDeletedSessionsBatch(
+        deletedBefore cutoff: Date,
+        limit: Int
+    ) throws -> RuntimeChatDeletedSessionPruneResult {
+        try pruneDeletedSessions(
+            scope: .allOwners,
+            deletedBefore: cutoff,
+            limit: limit,
+            legacyCompactionTiming: .whenBatchDrained
+        )
+    }
+
+    private func pruneDeletedSessions(
+        scope: RuntimeChatRetentionScope,
+        deletedBefore cutoff: Date,
+        limit: Int,
+        legacyCompactionTiming: RuntimeChatLegacyCompactionTiming
+    ) throws -> RuntimeChatDeletedSessionPruneResult {
         guard limit > 0 else {
             return RuntimeChatDeletedSessionPruneResult(prunedSessionIDs: [], prunedEventCount: 0)
         }
         return try lock.withLock {
-            try withDatabase { database in
+            try withDatabase(
+                deferLegacyJSONLCompaction: legacyCompactionTiming == .whenBatchDrained
+            ) { database in
                 try Self.execute(database, "BEGIN IMMEDIATE")
+                let result: RuntimeChatDeletedSessionPruneResult
                 do {
-                    let result = try pruneDeletedSessionsUnlocked(
+                    result = try pruneDeletedSessionsUnlocked(
                         database,
-                        ownerDeviceID: ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+                        scope: scope,
                         deletedBefore: cutoff,
                         limit: limit
                     )
                     try Self.execute(database, "COMMIT")
-                    return result
                 } catch {
                     try? Self.execute(database, "ROLLBACK")
                     throw error
                 }
+                if legacyCompactionTiming == .immediate || result.prunedSessionCount < limit {
+                    try compactLegacyJSONLIfNeeded(database)
+                }
+                return result
             }
         }
     }
@@ -390,6 +479,67 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
+    public func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date = Date(),
+        beforeCommit: @Sendable ([String]) throws -> Void = { _ in }
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        let boundedLimit = max(1, min(limit, 200))
+        return try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let scopedOwnerDeviceID = ownerDeviceID.sqliteNormalizedOwnerDeviceID
+                    let ownerEvents = try readEventsUnlocked(
+                        database,
+                        matchingOwnerDeviceID: scopedOwnerDeviceID
+                    )
+                    let targets = try JSONLRuntimeChatEventStore.sessions(
+                        from: ownerEvents,
+                        limit: Int.max,
+                        includeArchived: true
+                    ).filter { session in
+                        switch scope {
+                        case .allActive: session.status == "active"
+                        case .allArchived: session.status == "archived"
+                        }
+                    }
+                    let selected = Array(targets.prefix(boundedLimit))
+                    let selectedIDs = selected.map(\.sessionID)
+                    try beforeCommit(selectedIDs)
+                    let eventsBySessionID = Dictionary(grouping: ownerEvents, by: \.sessionID)
+                    let mutationEvents = selected.map { session in
+                        RuntimeChatStoredEvent(
+                            timestamp: timestamp,
+                            kind: scope.mutation.eventKind,
+                            requestID: requestID,
+                            sessionID: session.sessionID,
+                            model: JSONLRuntimeChatEventStore.latestModel(
+                                from: eventsBySessionID[session.sessionID] ?? []
+                            ),
+                            ownerDeviceID: scopedOwnerDeviceID
+                        )
+                    }
+                    try appendBatchUnlocked(mutationEvents, database: database)
+                    let result = RuntimeChatSessionBulkMutationResult(
+                        scope: scope,
+                        affectedSessionIDs: selectedIDs,
+                        remainingCount: targets.count - selected.count,
+                        timestamp: timestamp
+                    )
+                    try Self.execute(database, "COMMIT")
+                    return result
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
     public static func defaultDatabaseURL() -> URL {
         let baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
@@ -418,6 +568,31 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             ownerDeviceID: sanitized.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
             sessionID: sanitized.sessionID
         )
+    }
+
+    private func appendBatchUnlocked(
+        _ events: [RuntimeChatStoredEvent],
+        database: OpaquePointer
+    ) throws {
+        guard !events.isEmpty else { return }
+        let sanitizedEvents = events.map { $0.sanitizedForStorage() }
+        for event in sanitizedEvents {
+            try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: 0)
+            if try eventExistsUnlocked(database, eventID: event.id) {
+                throw SQLiteRuntimeChatEventStoreError(
+                    "Runtime chat SQLite event already exists: \(event.id)"
+                )
+            }
+            try insertEventUnlocked(event, database: database, skipExisting: false)
+        }
+        try rebuildSearchIndexUnlocked(database)
+        for event in sanitizedEvents {
+            try deleteSemanticEmbeddingsUnlocked(
+                database,
+                ownerDeviceID: event.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+                sessionID: event.sessionID
+            )
+        }
     }
 
     @discardableResult
@@ -804,6 +979,21 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try Self.stepDone(statement, database: database)
     }
 
+    private func deleteSearchRowUnlocked(
+        _ database: OpaquePointer,
+        ownerDeviceID: String?,
+        sessionID: String
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            "DELETE FROM runtime_chat_session_fts WHERE owner_key = ? AND session_id = ?"
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
+        try Self.bindText(sessionID, to: statement, at: 2)
+        try Self.stepDone(statement, database: database)
+    }
+
     private func enforceSemanticEmbeddingRowLimitUnlocked(
         _ scope: RuntimeChatSemanticEmbeddingScope,
         database: OpaquePointer
@@ -831,55 +1021,42 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
     private func pruneDeletedSessionsUnlocked(
         _ database: OpaquePointer,
-        ownerDeviceID: String?,
+        scope: RuntimeChatRetentionScope,
         deletedBefore cutoff: Date,
         limit: Int
     ) throws -> RuntimeChatDeletedSessionPruneResult {
-        let events = try readEventsUnlocked(database, matchingOwnerDeviceID: ownerDeviceID)
-        let candidates = Dictionary(grouping: events.enumerated(), by: { $0.element.sessionID })
-            .compactMap { sessionID, sessionEvents -> RuntimeChatRetentionCandidate? in
-                guard let lifecycleEvent = Self.latestLifecycleEvent(from: sessionEvents),
-                      lifecycleEvent.event.kind == .deleted,
-                      lifecycleEvent.event.timestamp < cutoff else {
-                    return nil
-                }
-                return RuntimeChatRetentionCandidate(
-                    sessionID: sessionID,
-                    deletedAt: lifecycleEvent.event.timestamp,
-                    eventCount: sessionEvents.count
-                )
-            }
-            .sorted { lhs, rhs in
-                if lhs.deletedAt == rhs.deletedAt {
-                    return lhs.sessionID < rhs.sessionID
-                }
-                return lhs.deletedAt < rhs.deletedAt
-            }
-            .prefix(limit)
+        let candidates = try retentionCandidatesUnlocked(
+            database,
+            scope: scope,
+            deletedBefore: cutoff,
+            limit: limit
+        )
 
         var prunedSessionIDs: [String] = []
         var prunedEventCount = 0
         for candidate in candidates {
             try recordRetentionTombstoneUnlocked(
                 database,
-                ownerDeviceID: ownerDeviceID,
-                sessionID: candidate.sessionID,
+                ownerDeviceID: candidate.key.ownerDeviceID,
+                sessionID: candidate.key.sessionID,
                 deletedAt: candidate.deletedAt
             )
             prunedEventCount += try deleteEventsUnlocked(
                 database,
-                ownerDeviceID: ownerDeviceID,
-                sessionID: candidate.sessionID
+                ownerDeviceID: candidate.key.ownerDeviceID,
+                sessionID: candidate.key.sessionID
             )
             try deleteSemanticEmbeddingsUnlocked(
                 database,
-                ownerDeviceID: ownerDeviceID,
-                sessionID: candidate.sessionID
+                ownerDeviceID: candidate.key.ownerDeviceID,
+                sessionID: candidate.key.sessionID
             )
-            prunedSessionIDs.append(candidate.sessionID)
-        }
-        if prunedEventCount > 0 {
-            try rebuildSearchIndexUnlocked(database)
+            try deleteSearchRowUnlocked(
+                database,
+                ownerDeviceID: candidate.key.ownerDeviceID,
+                sessionID: candidate.key.sessionID
+            )
+            prunedSessionIDs.append(candidate.key.sessionID)
         }
         return RuntimeChatDeletedSessionPruneResult(
             prunedSessionIDs: prunedSessionIDs,
@@ -887,11 +1064,97 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         )
     }
 
+    private func retentionCandidatesUnlocked(
+        _ database: OpaquePointer,
+        scope: RuntimeChatRetentionScope,
+        deletedBefore cutoff: Date,
+        limit: Int
+    ) throws -> [RuntimeChatRetentionCandidate] {
+        let ownerPredicate: String
+        switch scope {
+        case .owner(nil):
+            ownerPredicate = "AND owner_device_id IS NULL"
+        case .owner:
+            ownerPredicate = "AND owner_device_id = ?"
+        case .allOwners:
+            ownerPredicate = ""
+        }
+        let statement = try Self.prepare(
+            database,
+            """
+            WITH ranked_lifecycle AS (
+                SELECT
+                    owner_device_id,
+                    session_id,
+                    kind,
+                    timestamp,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY owner_device_id, session_id
+                        ORDER BY timestamp DESC, sequence DESC
+                    ) AS lifecycle_rank
+                FROM runtime_chat_events
+                WHERE kind IN (?, ?, ?)
+                \(ownerPredicate)
+            )
+            SELECT owner_device_id, session_id, timestamp
+            FROM ranked_lifecycle
+            WHERE lifecycle_rank = 1
+              AND kind = ?
+              AND timestamp < ?
+            ORDER BY timestamp ASC, COALESCE(owner_device_id, '') ASC, session_id ASC
+            LIMIT ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+
+        var bindIndex: Int32 = 1
+        for kind in [
+            RuntimeChatStoredEventKind.archived,
+            RuntimeChatStoredEventKind.restored,
+            RuntimeChatStoredEventKind.deleted,
+        ] {
+            try Self.bindText(kind.rawValue, to: statement, at: bindIndex)
+            bindIndex += 1
+        }
+        if case .owner(let ownerDeviceID?) = scope {
+            try Self.bindText(ownerDeviceID, to: statement, at: bindIndex)
+            bindIndex += 1
+        }
+        try Self.bindText(RuntimeChatStoredEventKind.deleted.rawValue, to: statement, at: bindIndex)
+        bindIndex += 1
+        try Self.bindText(Self.timestampString(from: cutoff), to: statement, at: bindIndex)
+        bindIndex += 1
+        try Self.bindInt(limit, to: statement, at: bindIndex)
+
+        var candidates: [RuntimeChatRetentionCandidate] = []
+        candidates.reserveCapacity(min(limit, 100))
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW,
+                  let sessionIDText = sqlite3_column_text(statement, 1),
+                  let deletedAtText = sqlite3_column_text(statement, 2) else {
+                throw Self.failure(database, "Could not read runtime chat retention candidates.")
+            }
+            let ownerDeviceID = sqlite3_column_type(statement, 0) == SQLITE_NULL
+                ? nil
+                : sqlite3_column_text(statement, 0).map { String(cString: $0) }
+            candidates.append(RuntimeChatRetentionCandidate(
+                key: RuntimeChatRetentionSessionKey(
+                    ownerDeviceID: ownerDeviceID,
+                    sessionID: String(cString: sessionIDText)
+                ),
+                deletedAt: String(cString: deletedAtText)
+            ))
+        }
+        return candidates
+    }
+
     private func recordRetentionTombstoneUnlocked(
         _ database: OpaquePointer,
         ownerDeviceID: String?,
         sessionID: String,
-        deletedAt: Date
+        deletedAt: String
     ) throws {
         let statement = try Self.prepare(
             database,
@@ -904,7 +1167,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         defer { sqlite3_finalize(statement) }
         try Self.bindText(Self.ownerKey(ownerDeviceID), to: statement, at: 1)
         try Self.bindText(sessionID, to: statement, at: 2)
-        try Self.bindText(Self.timestampString(from: deletedAt), to: statement, at: 3)
+        try Self.bindText(deletedAt, to: statement, at: 3)
         try Self.stepDone(statement, database: database)
     }
 
@@ -956,7 +1219,10 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         throw Self.failure(database, "Could not check runtime chat retention tombstone.")
     }
 
-    private func withDatabase<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+    private func withDatabase<T>(
+        deferLegacyJSONLCompaction: Bool = false,
+        _ body: (OpaquePointer) throws -> T
+    ) throws -> T {
         try RuntimeEventLogFileProtection.prepareDirectory(for: databaseURL)
         if FileManager.default.fileExists(atPath: databaseURL.path) {
             try RuntimeEventLogFileProtection.secureFile(at: databaseURL)
@@ -978,7 +1244,10 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
         try RuntimeEventLogFileProtection.secureFile(at: databaseURL)
         try Self.ensureSchema(openedDatabase)
-        try importLegacyJSONLIfNeeded(openedDatabase)
+        try importLegacyJSONLIfNeeded(
+            openedDatabase,
+            compactRetentionTombstones: !deferLegacyJSONLCompaction
+        )
         try RuntimeEventLogFileProtection.secureFile(at: databaseURL)
         return try body(openedDatabase)
     }
@@ -1054,6 +1323,14 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try execute(
             database,
             """
+            CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_retention_lifecycle
+            ON runtime_chat_events(owner_device_id, session_id, timestamp DESC, sequence DESC)
+            WHERE kind IN ('archived', 'restored', 'deleted')
+            """
+        )
+        try execute(
+            database,
+            """
             CREATE INDEX IF NOT EXISTS idx_runtime_chat_semantic_embeddings_owner_model_lru
             ON runtime_chat_semantic_embeddings(
                 owner_key,
@@ -1082,27 +1359,242 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         )
     }
 
-    private func importLegacyJSONLIfNeeded(_ database: OpaquePointer) throws {
+    private func importLegacyJSONLIfNeeded(
+        _ database: OpaquePointer,
+        compactRetentionTombstones: Bool
+    ) throws {
         guard let legacyJSONLFileURL else { return }
+        try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: legacyJSONLFileURL) {
+            try importLegacyJSONLIfNeededCoordinated(
+                database,
+                legacyJSONLFileURL: legacyJSONLFileURL,
+                compactRetentionTombstones: compactRetentionTombstones
+            )
+        }
+    }
+
+    private func importLegacyJSONLIfNeededCoordinated(
+        _ database: OpaquePointer,
+        legacyJSONLFileURL: URL,
+        compactRetentionTombstones: Bool
+    ) throws {
         let legacyPath = legacyJSONLFileURL.standardizedFileURL.path
         guard FileManager.default.fileExists(atPath: legacyPath) else { return }
         let legacySignature = try Self.legacyImportSignature(for: legacyJSONLFileURL)
-        if try Self.metadataValue(database, key: Self.legacyImportMetadataKey) == legacySignature {
+        let tombstoneCount = try retentionTombstoneCountUnlocked(database)
+        let compactionMarker = Self.legacyCompactionMarker(
+            legacySignature: legacySignature,
+            tombstoneCount: tombstoneCount
+        )
+        let importedSignature = try Self.metadataValue(database, key: Self.legacyImportMetadataKey)
+        let compactedMarker = try Self.metadataValue(database, key: Self.legacyCompactionMetadataKey)
+        if importedSignature == legacySignature,
+           !compactRetentionTombstones || compactedMarker == compactionMarker {
             return
         }
 
-        let legacyEvents = try JSONLRuntimeChatEventStore.events(from: legacyJSONLFileURL)
-        var importedAnyEvent = false
-        for legacyEvent in legacyEvents {
-            let sanitized = legacyEvent.sanitizedForStorage()
-            try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: 0)
-            let inserted = try insertEventUnlocked(sanitized, database: database, skipExisting: true)
-            importedAnyEvent = importedAnyEvent || inserted
+        let snapshot = try legacyJSONLSnapshot(from: legacyJSONLFileURL)
+        if importedSignature != snapshot.signature {
+            var importedAnyEvent = false
+            for record in snapshot.records.sorted(by: { $0.event.timestamp < $1.event.timestamp }) {
+                let sanitized = record.event.sanitizedForStorage()
+                try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: record.line)
+                let inserted = try insertEventUnlocked(sanitized, database: database, skipExisting: true)
+                importedAnyEvent = importedAnyEvent || inserted
+            }
+            if importedAnyEvent {
+                try rebuildSearchIndexUnlocked(database)
+            }
+            try Self.setMetadataValue(database, key: Self.legacyImportMetadataKey, value: snapshot.signature)
         }
-        if importedAnyEvent {
-            try rebuildSearchIndexUnlocked(database)
+
+        if compactRetentionTombstones {
+            try compactLegacyJSONLIfNeeded(
+                database,
+                snapshot: snapshot,
+                tombstoneCount: tombstoneCount
+            )
         }
-        try Self.setMetadataValue(database, key: Self.legacyImportMetadataKey, value: legacySignature)
+    }
+
+    private func compactLegacyJSONLIfNeeded(
+        _ database: OpaquePointer,
+        snapshot providedSnapshot: RuntimeChatLegacyJSONLSnapshot? = nil,
+        tombstoneCount providedTombstoneCount: Int? = nil
+    ) throws {
+        guard let legacyJSONLFileURL else { return }
+        try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: legacyJSONLFileURL) {
+            try compactLegacyJSONLIfNeededCoordinated(
+                database,
+                legacyJSONLFileURL: legacyJSONLFileURL,
+                snapshot: providedSnapshot,
+                tombstoneCount: providedTombstoneCount
+            )
+        }
+    }
+
+    private func compactLegacyJSONLIfNeededCoordinated(
+        _ database: OpaquePointer,
+        legacyJSONLFileURL: URL,
+        snapshot providedSnapshot: RuntimeChatLegacyJSONLSnapshot?,
+        tombstoneCount providedTombstoneCount: Int?
+    ) throws {
+        let legacyPath = legacyJSONLFileURL.standardizedFileURL.path
+        guard FileManager.default.fileExists(atPath: legacyPath) else { return }
+
+        let tombstoneCount = try providedTombstoneCount ?? retentionTombstoneCountUnlocked(database)
+        let currentSignature = try Self.legacyImportSignature(for: legacyJSONLFileURL)
+        let currentMarker = Self.legacyCompactionMarker(
+            legacySignature: currentSignature,
+            tombstoneCount: tombstoneCount
+        )
+        if providedSnapshot == nil,
+           try Self.metadataValue(database, key: Self.legacyCompactionMetadataKey) == currentMarker {
+            return
+        }
+
+        let snapshot: RuntimeChatLegacyJSONLSnapshot
+        if let providedSnapshot, providedSnapshot.signature == currentSignature {
+            snapshot = providedSnapshot
+        } else {
+            snapshot = try legacyJSONLSnapshot(from: legacyJSONLFileURL)
+        }
+        guard try Self.metadataValue(database, key: Self.legacyImportMetadataKey) == snapshot.signature else {
+            return
+        }
+
+        var tombstoneCache: [RuntimeChatRetentionSessionKey: Bool] = [:]
+        var compactedData = Data()
+        compactedData.reserveCapacity(snapshot.data.count)
+        var removedEvent = false
+        for record in snapshot.records {
+            let key = RuntimeChatRetentionSessionKey(
+                ownerDeviceID: record.event.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+                sessionID: record.event.sessionID
+            )
+            let isTombstoned: Bool
+            if let cached = tombstoneCache[key] {
+                isTombstoned = cached
+            } else {
+                isTombstoned = try retentionTombstoneExistsUnlocked(
+                    database,
+                    ownerDeviceID: key.ownerDeviceID,
+                    sessionID: key.sessionID
+                )
+                tombstoneCache[key] = isTombstoned
+            }
+            if isTombstoned {
+                removedEvent = true
+            } else {
+                compactedData.append(record.rawLine)
+                compactedData.append(0x0A)
+            }
+        }
+
+        if removedEvent {
+            // Current writers hold the same sidecar lock through validation and append, so this
+            // check and replace are one coordinated critical section. Pre-protocol writers do
+            // not honor that lock; a change visible before replacement fails closed and retries,
+            // but bytes written only to an already-replaced inode are outside this protocol.
+            guard try Self.legacyImportSignature(for: legacyJSONLFileURL) == snapshot.signature else {
+                return
+            }
+            legacyJSONLCompactionWillReplace?()
+            try compactedData.write(to: legacyJSONLFileURL, options: .atomic)
+            try RuntimeEventLogFileProtection.secureFile(at: legacyJSONLFileURL)
+            let compactedSignature = try Self.legacyImportSignature(for: legacyJSONLFileURL)
+            let writtenData = try Data(contentsOf: legacyJSONLFileURL)
+            guard writtenData == compactedData,
+                  try Self.legacyImportSignature(for: legacyJSONLFileURL) == compactedSignature else {
+                return
+            }
+            try Self.setMetadataValue(
+                database,
+                key: Self.legacyImportMetadataKey,
+                value: compactedSignature
+            )
+            try Self.setMetadataValue(
+                database,
+                key: Self.legacyCompactionMetadataKey,
+                value: Self.legacyCompactionMarker(
+                    legacySignature: compactedSignature,
+                    tombstoneCount: tombstoneCount
+                )
+            )
+            return
+        }
+
+        try Self.setMetadataValue(
+            database,
+            key: Self.legacyCompactionMetadataKey,
+            value: Self.legacyCompactionMarker(
+                legacySignature: snapshot.signature,
+                tombstoneCount: tombstoneCount
+            )
+        )
+    }
+
+    private func legacyJSONLSnapshot(from fileURL: URL) throws -> RuntimeChatLegacyJSONLSnapshot {
+        for _ in 0..<3 {
+            let signatureBeforeRead = try Self.legacyImportSignature(for: fileURL)
+            let data = try Data(contentsOf: fileURL)
+            let signatureAfterRead = try Self.legacyImportSignature(for: fileURL)
+            guard signatureBeforeRead == signatureAfterRead else { continue }
+
+            var records: [RuntimeChatLegacyJSONLRecord] = []
+            let rawLines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
+            for (index, rawLine) in rawLines.enumerated() {
+                let line = String(decoding: rawLine, as: UTF8.self)
+                guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    continue
+                }
+                let event: RuntimeChatStoredEvent
+                do {
+                    event = try decoder.decode(RuntimeChatStoredEvent.self, from: Data(rawLine))
+                    try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: index + 1)
+                } catch {
+                    if let storeError = error as? RuntimeChatEventStoreError {
+                        throw storeError
+                    }
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: index + 1,
+                        reason: "decode failed"
+                    )
+                }
+                records.append(RuntimeChatLegacyJSONLRecord(
+                    line: index + 1,
+                    event: event,
+                    rawLine: Data(rawLine)
+                ))
+            }
+            try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
+                records.map { (line: $0.line, event: $0.event) }
+            )
+            return RuntimeChatLegacyJSONLSnapshot(
+                signature: signatureAfterRead,
+                data: data,
+                records: records
+            )
+        }
+        throw SQLiteRuntimeChatEventStoreError(
+            "Runtime chat legacy JSONL changed while it was being migrated."
+        )
+    }
+
+    private func retentionTombstoneCountUnlocked(_ database: OpaquePointer) throws -> Int {
+        let statement = try Self.prepare(database, "SELECT COUNT(*) FROM runtime_chat_retention_tombstones")
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw Self.failure(database, "Could not count runtime chat retention tombstones.")
+        }
+        return Int(sqlite3_column_int64(statement, 0))
+    }
+
+    private static func legacyCompactionMarker(
+        legacySignature: String,
+        tombstoneCount: Int
+    ) -> String {
+        "\(legacySignature)|tombstones=\(tombstoneCount)"
     }
 
     private static func legacyImportSignature(for fileURL: URL) throws -> String {
@@ -1308,28 +1800,41 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             .joined(separator: " AND ")
     }
 
-    private static func latestLifecycleEvent(
-        from events: [EnumeratedSequence<[RuntimeChatStoredEvent]>.Element]
-    ) -> (offset: Int, event: RuntimeChatStoredEvent)? {
-        events
-            .filter { $0.element.kind.isSQLiteSessionLifecycle }
-            .max { lhs, rhs in
-                if lhs.element.timestamp == rhs.element.timestamp {
-                    return lhs.offset < rhs.offset
-                }
-                return lhs.element.timestamp < rhs.element.timestamp
-            }
-            .map { (offset: $0.offset, event: $0.element) }
-    }
-
     private static let legacyImportMetadataKey = "legacy_jsonl_imported"
+    private static let legacyCompactionMetadataKey = "legacy_jsonl_retention_compacted"
     private static let semanticEmbeddingDimensionLimit = 65_536
 }
 
-private struct RuntimeChatRetentionCandidate {
+private enum RuntimeChatRetentionScope {
+    case owner(String?)
+    case allOwners
+}
+
+private enum RuntimeChatLegacyCompactionTiming: Equatable {
+    case immediate
+    case whenBatchDrained
+}
+
+private struct RuntimeChatRetentionSessionKey: Hashable {
+    var ownerDeviceID: String?
     var sessionID: String
-    var deletedAt: Date
-    var eventCount: Int
+}
+
+private struct RuntimeChatRetentionCandidate {
+    var key: RuntimeChatRetentionSessionKey
+    var deletedAt: String
+}
+
+private struct RuntimeChatLegacyJSONLRecord {
+    var line: Int
+    var event: RuntimeChatStoredEvent
+    var rawLine: Data
+}
+
+private struct RuntimeChatLegacyJSONLSnapshot {
+    var signature: String
+    var data: Data
+    var records: [RuntimeChatLegacyJSONLRecord]
 }
 
 private struct RuntimeChatSemanticEmbeddingScope: Hashable {
@@ -1363,16 +1868,5 @@ private extension Optional where Wrapped == String {
             return nil
         }
         return value
-    }
-}
-
-private extension RuntimeChatStoredEventKind {
-    var isSQLiteSessionLifecycle: Bool {
-        switch self {
-        case .archived, .restored, .deleted:
-            return true
-        default:
-            return false
-        }
     }
 }

@@ -45,9 +45,9 @@ ordered packages:
 2. Build a no-network conformance harness for candidate policy, replay,
    transcript, fallback, and state ownership. It may not open candidate sockets
    or select a networking library.
-3. Prepare a controlled network spike, but keep its network-I/O gate closed until
-   service trust, pair authorization, candidate privacy, ICE/consent, TURN abuse,
-   transition, and release-budget decisions receive a separate review.
+3. Prepare controlled-spike Phase A evidence from offline user-provided or
+   pre-existing workspace source, while keeping every source-acquisition,
+   runtime, harness, and production network-I/O gate closed.
 
 It does not authorize production deployment, public signaling, STUN/TURN,
 candidate exchange, hole punching, direct application traffic, a concrete
@@ -56,9 +56,11 @@ Android, optical QR, live-network, performance, battery, or interoperability
 claim.
 
 The handoff state is closed and bounded: `canonical-contracts` and
-`no-network-conformance` are completed in `handoff-v2`;
-`controlled-network-spike` remains blocked on a separate review with
-`executionAuthorized=false`. Every package keeps `networkIOAllowed=false`.
+`no-network-conformance` are completed, while `handoff-v4` records
+`controlled-network-spike` as `executionAuthorized=true` only for offline
+Phase A inspection, compile-only, cryptographic-vector, and static-policy work.
+Source acquisition, runtime, harness, and production network I/O remain false;
+Phase B and socket execution require a separate versioned decision.
 
 ## Security Floors
 
@@ -111,17 +113,19 @@ authorization and retention, candidate privacy and scope, ICE and consent,
 TURN credentials and abuse policy, application-request transition semantics,
 and measured release budgets.
 
-The policy selection does not delegate implementation to a networking library.
-The closed [controlled-spike review v1](controlled-network-spike/review-v1.md)
-proposes concrete library, cryptography, harness, and egress choices but selects
-zero decisions. Source acquisition, library choice, harness implementation,
-socket execution, network I/O, a next handoff, and deployment remain separately
-gated by a later explicit versioned decision.
+The historical [controlled-spike review v1](controlled-network-spike/review-v1.md)
+proposes concrete library, cryptography, harness, and egress choices and retains
+zero decisions. The separate immutable [phase A approval decision](controlled-network-spike/decision-v1.md)
+conditionally selects all four recommendations for source audit, compile-only,
+cryptographic-vector, and static-harness evidence. `handoff-v4` authorizes that
+bounded work from user-provided or pre-existing workspace source while source
+acquisition, runtime/harness network I/O, sockets, phase B, measurement, and
+deployment remain separately gated by a later explicit versioned decision.
 
 ## Evidence Boundary
 
 This approved bounded handoff refines the existing 13-artifact static design
-portfolio. It does not add production P2P code, activate a new protocol namespace, select a library, open
+portfolio. It does not add production P2P code, activate a new protocol namespace, execute the conditionally selected library, open
 network sockets, exercise STUN/TURN, prove NAT traversal, or provide physical
 Android, optical QR, different-network, latency, memory, battery, or production
 evidence.

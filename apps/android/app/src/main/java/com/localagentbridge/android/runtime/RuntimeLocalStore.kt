@@ -739,7 +739,7 @@ internal fun PersistedRuntimeData.withRevertedRuntimeChatSessionRename(
     previousTitle: String,
     previousTitleManuallyEdited: Boolean,
     previousTitleGenerated: Boolean,
-    nowMillis: Long,
+    previousUpdatedAtMillis: Long,
 ): PersistedRuntimeData {
     return copy(
         sessions = sessions.map { session ->
@@ -748,7 +748,7 @@ internal fun PersistedRuntimeData.withRevertedRuntimeChatSessionRename(
                     title = previousTitle,
                     titleManuallyEdited = previousTitleManuallyEdited,
                     titleGenerated = previousTitleGenerated,
-                    updatedAtMillis = nowMillis,
+                    updatedAtMillis = previousUpdatedAtMillis,
                 )
             } else {
                 session
@@ -952,61 +952,100 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
         .filterNot { it.sessionId in deletedRuntimeSessionIds() }
         .distinctBy { it.sessionId }
     val localOnlySessions = this.sessions.filterNot { it.runtimeOwned }
-    val mergedRuntimeSessions = runtimeSummaries.map { summary ->
-        val existing = this.sessions.firstOrNull { it.id == summary.sessionId }
-        val updatedAt = parseTimestampMillis(summary.lastActivityAt) ?: existing?.updatedAtMillis ?: nowMillis
-        val modelId = summary.model.trim().takeIf(String::isNotBlank) ?: existing?.modelId
-        val cleanMessageCount = summary.messageCount.coerceAtLeast(0)
-        val isArchived = summary.status.equals("archived", ignoreCase = true) || summary.archivedAt != null
-        val archivedAt = if (isArchived) {
-            summary.archivedAt?.let(::parseTimestampMillis)
-                ?: existing?.archivedAtMillis
-                ?: updatedAt
-        } else {
-            null
+    val localOnlySessionIds = localOnlySessions.mapTo(mutableSetOf(), PersistedChatSession::id)
+    val mergedRuntimeSessions = runtimeSummaries
+        .filterNot { it.sessionId in localOnlySessionIds }
+        .map { summary ->
+            runtimeChatSession(
+                summary = summary,
+                nowMillis = nowMillis,
+                includeSearchMetadata = true,
+            )
         }
-        val title = summary.title.trim().takeIf(String::isNotBlank) ?: existing?.title ?: DEFAULT_CHAT_TITLE
-        val searchRank = summary.search?.rank?.takeIf { it > 0 }
-        val searchSnippet = summary.search?.snippet?.trim()?.takeIf(String::isNotBlank)
-        val searchMatchedFields = summary.search?.matchedFields
-            ?.mapNotNull { it.trim().takeIf(String::isNotBlank) }
-            ?.distinct()
-            .orEmpty()
-        existing?.copy(
-            title = if (existing.titleManuallyEdited) existing.title else title,
-            modelId = modelId,
-            updatedAtMillis = updatedAt,
-            archivedAtMillis = archivedAt,
-            titleGenerated = existing.titleGenerated || !existing.titleManuallyEdited,
-            runtimeOwned = true,
-            runtimeMessageCount = cleanMessageCount,
-            lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
-            lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
-            lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
-            runtimeSearchRank = searchRank,
-            runtimeSearchSnippet = searchSnippet,
-            runtimeSearchMatchedFields = searchMatchedFields,
-        ) ?: PersistedChatSession(
-            id = summary.sessionId,
-            title = title,
-            modelId = modelId,
-            createdAtMillis = updatedAt,
-            updatedAtMillis = updatedAt,
-            archivedAtMillis = archivedAt,
-            titleGenerated = true,
-            runtimeOwned = true,
-            runtimeMessageCount = cleanMessageCount,
-            lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
-            lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
-            lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
-            runtimeSearchRank = searchRank,
-            runtimeSearchSnippet = searchSnippet,
-            runtimeSearchMatchedFields = searchMatchedFields,
-        )
-    }
     return copy(
         sessions = mergedRuntimeSessions + localOnlySessions,
     ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withRuntimeChatSessionSummary(
+    summary: ChatSessionSummaryPayload,
+    nowMillis: Long,
+): PersistedRuntimeData {
+    val sessionId = summary.sessionId
+    if (sessionId.isBlank() || sessionId in deletedRuntimeSessionIds()) return this
+    if (sessions.any { it.id == sessionId && !it.runtimeOwned }) return this
+    val merged = runtimeChatSession(
+        summary = summary,
+        nowMillis = nowMillis,
+        includeSearchMetadata = false,
+    )
+    return copy(
+        sessions = listOf(merged) + sessions.filterNot { it.id == sessionId },
+    ).sanitized()
+}
+
+private fun PersistedRuntimeData.runtimeChatSession(
+    summary: ChatSessionSummaryPayload,
+    nowMillis: Long,
+    includeSearchMetadata: Boolean,
+): PersistedChatSession {
+    val existing = sessions.firstOrNull { it.id == summary.sessionId }
+    val updatedAt = parseTimestampMillis(summary.lastActivityAt) ?: existing?.updatedAtMillis ?: nowMillis
+    val modelId = summary.model.trim().takeIf(String::isNotBlank) ?: existing?.modelId
+    val cleanMessageCount = summary.messageCount.coerceAtLeast(0)
+    val isArchived = summary.status.equals("archived", ignoreCase = true) || summary.archivedAt != null
+    val archivedAt = if (isArchived) {
+        summary.archivedAt?.let(::parseTimestampMillis)
+            ?: existing?.archivedAtMillis
+            ?: updatedAt
+    } else {
+        null
+    }
+    val title = summary.title.trim().takeIf(String::isNotBlank) ?: existing?.title ?: DEFAULT_CHAT_TITLE
+    val searchRank = summary.search?.rank?.takeIf { includeSearchMetadata && it > 0 }
+    val searchSnippet = summary.search
+        ?.snippet
+        ?.trim()
+        ?.takeIf { includeSearchMetadata && it.isNotBlank() }
+    val searchMatchedFields = if (includeSearchMetadata) {
+        summary.search?.matchedFields
+            ?.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            ?.distinct()
+            .orEmpty()
+    } else {
+        emptyList()
+    }
+    return existing?.copy(
+        title = if (existing.titleManuallyEdited) existing.title else title,
+        modelId = modelId,
+        updatedAtMillis = updatedAt,
+        archivedAtMillis = archivedAt,
+        titleGenerated = existing.titleGenerated || !existing.titleManuallyEdited,
+        runtimeOwned = true,
+        runtimeMessageCount = cleanMessageCount,
+        lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
+        lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
+        lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
+        runtimeSearchRank = searchRank,
+        runtimeSearchSnippet = searchSnippet,
+        runtimeSearchMatchedFields = searchMatchedFields,
+    ) ?: PersistedChatSession(
+        id = summary.sessionId,
+        title = title,
+        modelId = modelId,
+        createdAtMillis = updatedAt,
+        updatedAtMillis = updatedAt,
+        archivedAtMillis = archivedAt,
+        titleGenerated = true,
+        runtimeOwned = true,
+        runtimeMessageCount = cleanMessageCount,
+        lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
+        lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
+        lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
+        runtimeSearchRank = searchRank,
+        runtimeSearchSnippet = searchSnippet,
+        runtimeSearchMatchedFields = searchMatchedFields,
+    )
 }
 
 internal fun PersistedRuntimeData.withRuntimeChatMessages(

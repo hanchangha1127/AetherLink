@@ -579,3 +579,13 @@
 "The document sharing confirmation is invalid. Review the source again." = "The document sharing confirmation is invalid. Review the source again.";
 "This source changed after the review started. Review the latest source before sharing it." = "This source changed after the review started. Review the latest source before sharing it.";
 "AetherLink could not update the local document library." = "AetherLink could not update the local document library.";
+"Deleted Chat Retention" = "Deleted Chat Retention";
+"Clean Deleted History" = "Clean Deleted History";
+"Deleted chats are kept for 90 days, then removed automatically from this runtime host." = "Deleted chats are kept for 90 days, then removed automatically from this runtime host.";
+"Cleaning expired deleted chats." = "Cleaning expired deleted chats.";
+"Cleanup finished. No expired deleted chats were found." = "Cleanup finished. No expired deleted chats were found.";
+"Cleanup finished. %@ removed." = "Cleanup finished. %@ removed.";
+"Cleanup failed. Check Activity and try again." = "Cleanup failed. Check Activity and try again.";
+"Remove chats deleted at least 90 days ago from this runtime host." = "Remove chats deleted at least 90 days ago from this runtime host.";
+"1 deleted chat" = "1 deleted chat";
+"%d deleted chats" = "%d deleted chats";

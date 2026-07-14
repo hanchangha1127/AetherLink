@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OllamaBackend
 
@@ -32,9 +33,44 @@ public struct RuntimeChatSessionMutationResult: Equatable, Sendable {
     }
 }
 
+public enum RuntimeChatSessionBulkScope: String, Equatable, Sendable {
+    case allActive = "all_active"
+    case allArchived = "all_archived"
+
+    public var mutation: RuntimeChatSessionMutation {
+        switch self {
+        case .allActive: .archive
+        case .allArchived: .delete
+        }
+    }
+}
+
+public struct RuntimeChatSessionBulkMutationResult: Equatable, Sendable {
+    public var scope: RuntimeChatSessionBulkScope
+    public var affectedSessionIDs: [String]
+    public var remainingCount: Int
+    public var timestamp: Date
+
+    public var mutation: RuntimeChatSessionMutation { scope.mutation }
+    public var affectedCount: Int { affectedSessionIDs.count }
+
+    public init(
+        scope: RuntimeChatSessionBulkScope,
+        affectedSessionIDs: [String],
+        remainingCount: Int,
+        timestamp: Date
+    ) {
+        self.scope = scope
+        self.affectedSessionIDs = affectedSessionIDs
+        self.remainingCount = remainingCount
+        self.timestamp = timestamp
+    }
+}
+
 public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
     case sessionNotFound(String)
     case sessionMustBeArchivedBeforeDelete(String)
+    case bulkMutationUnsupported
     case corruptEventLog(line: Int, reason: String)
 
     public var errorDescription: String? {
@@ -43,6 +79,8 @@ public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
             return "Chat session not found: \(sessionID)"
         case .sessionMustBeArchivedBeforeDelete(let sessionID):
             return "Chat session must be archived before deletion: \(sessionID)"
+        case .bulkMutationUnsupported:
+            return "Atomic bulk chat session mutation is not supported by this store."
         case .corruptEventLog(let line, let reason):
             return "Runtime chat event log is corrupt at line \(line): \(reason)"
         }
@@ -620,6 +658,14 @@ public protocol RuntimeChatEventStore: Sendable {
         mutation: RuntimeChatSessionMutation,
         timestamp: Date
     ) throws -> RuntimeChatSessionMutationResult
+    func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date,
+        beforeCommit: @Sendable ([String]) throws -> Void
+    ) throws -> RuntimeChatSessionBulkMutationResult
 }
 
 public struct RuntimeChatRetentionPolicy: Equatable, Sendable {
@@ -665,6 +711,31 @@ public enum RuntimeChatEventStoreDefaults {
 
     public static func runProductionMaintenance(
         on store: any RuntimeChatEventStore,
+        now: Date = Date(),
+        policy: RuntimeChatRetentionPolicy = .productionDefault
+    ) throws -> RuntimeChatRetentionMaintenanceResult {
+        guard policy.deletedSessionRetentionInterval > 0,
+              policy.deletedSessionPruneLimit > 0,
+              let sqliteStore = store as? SQLiteRuntimeChatEventStore else {
+            return RuntimeChatRetentionMaintenanceResult(
+                deletedSessionPruneResult: RuntimeChatDeletedSessionPruneResult(
+                    prunedSessionIDs: [],
+                    prunedEventCount: 0
+                )
+            )
+        }
+
+        let cutoff = now.addingTimeInterval(-policy.deletedSessionRetentionInterval)
+        return RuntimeChatRetentionMaintenanceResult(
+            deletedSessionPruneResult: try sqliteStore.pruneDeletedSessionsBatch(
+                deletedBefore: cutoff,
+                limit: policy.deletedSessionPruneLimit
+            )
+        )
+    }
+
+    public static func runProductionMaintenance(
+        on store: any RuntimeChatEventStore,
         ownerDeviceID: String?,
         now: Date = Date(),
         policy: RuntimeChatRetentionPolicy = .productionDefault
@@ -682,7 +753,7 @@ public enum RuntimeChatEventStoreDefaults {
 
         let cutoff = now.addingTimeInterval(-policy.deletedSessionRetentionInterval)
         return RuntimeChatRetentionMaintenanceResult(
-            deletedSessionPruneResult: try sqliteStore.pruneDeletedSessions(
+            deletedSessionPruneResult: try sqliteStore.pruneDeletedSessionsBatch(
                 ownerDeviceID: ownerDeviceID,
                 deletedBefore: cutoff,
                 limit: policy.deletedSessionPruneLimit
@@ -788,7 +859,10 @@ public extension RuntimeChatEventStore {
                 if lhs.match.score != rhs.match.score {
                     return lhs.match.score > rhs.match.score
                 }
-                return lhs.session.lastActivityAt > rhs.session.lastActivityAt
+                if lhs.session.lastActivityAt != rhs.session.lastActivityAt {
+                    return lhs.session.lastActivityAt > rhs.session.lastActivityAt
+                }
+                return lhs.session.sessionID < rhs.session.sessionID
             }
             .limited(to: limit)
             .enumerated()
@@ -833,6 +907,34 @@ public extension RuntimeChatEventStore {
             timestamp: timestamp
         )
     }
+
+    func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        try mutateSessions(
+            ownerDeviceID: ownerDeviceID,
+            scope: scope,
+            limit: limit,
+            requestID: requestID,
+            timestamp: timestamp,
+            beforeCommit: { _ in }
+        )
+    }
+
+    func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date,
+        beforeCommit: @Sendable ([String]) throws -> Void
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        throw RuntimeChatEventStoreError.bulkMutationUnsupported
+    }
 }
 
 public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
@@ -865,6 +967,23 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
     ) throws -> RuntimeChatSessionMutationResult {
         RuntimeChatSessionMutationResult(sessionID: sessionID, mutation: mutation, timestamp: timestamp)
     }
+
+    public func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date,
+        beforeCommit: @Sendable ([String]) throws -> Void
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        try beforeCommit([])
+        return RuntimeChatSessionBulkMutationResult(
+            scope: scope,
+            affectedSessionIDs: [],
+            remainingCount: 0,
+            timestamp: timestamp
+        )
+    }
 }
 
 private struct RuntimeChatCompactionResolutionBindingKey: Hashable {
@@ -893,7 +1012,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
 
     public func append(_ event: RuntimeChatStoredEvent) throws {
         try lock.withLock {
-            try appendUnlocked(event)
+            try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                try appendUnlocked(event)
+            }
         }
     }
 
@@ -997,32 +1118,82 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         timestamp: Date = Date()
     ) throws -> RuntimeChatSessionMutationResult {
         try lock.withLock {
-            let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
-            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
-            let events = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
-            let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
-            let lifecycleState = Self.lifecycleState(from: sessionEvents)
-            guard !cleanSessionID.isEmpty,
-                  !sessionEvents.isEmpty,
-                  lifecycleState != .deleted else {
-                throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+            try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+                let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+                let events = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
+                let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
+                let lifecycleState = Self.lifecycleState(from: sessionEvents)
+                guard !cleanSessionID.isEmpty,
+                      !sessionEvents.isEmpty,
+                      lifecycleState != .deleted else {
+                    throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+                }
+                if mutation == .delete, lifecycleState != .archived {
+                    throw RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete(cleanSessionID)
+                }
+                try appendUnlocked(RuntimeChatStoredEvent(
+                    timestamp: timestamp,
+                    kind: mutation.eventKind,
+                    requestID: requestID,
+                    sessionID: cleanSessionID,
+                    model: Self.latestModel(from: sessionEvents),
+                    ownerDeviceID: scopedOwnerDeviceID
+                ))
+                return RuntimeChatSessionMutationResult(
+                    sessionID: cleanSessionID,
+                    mutation: mutation,
+                    timestamp: timestamp
+                )
             }
-            if mutation == .delete, lifecycleState != .archived {
-                throw RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete(cleanSessionID)
+        }
+    }
+
+    public func mutateSessions(
+        ownerDeviceID: String?,
+        scope: RuntimeChatSessionBulkScope,
+        limit: Int,
+        requestID: String,
+        timestamp: Date = Date(),
+        beforeCommit: @Sendable ([String]) throws -> Void = { _ in }
+    ) throws -> RuntimeChatSessionBulkMutationResult {
+        let boundedLimit = max(1, min(limit, 200))
+        return try lock.withLock {
+            try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+                let ownerEvents = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
+                let targets = try Self.sessions(
+                    from: ownerEvents,
+                    limit: Int.max,
+                    includeArchived: true
+                ).filter { session in
+                    switch scope {
+                    case .allActive: session.status == RuntimeChatSessionLifecycleState.active.rawValue
+                    case .allArchived: session.status == RuntimeChatSessionLifecycleState.archived.rawValue
+                    }
+                }
+                let selected = Array(targets.prefix(boundedLimit))
+                let eventsBySessionID = Dictionary(grouping: ownerEvents, by: \.sessionID)
+                let selectedIDs = selected.map(\.sessionID)
+                try beforeCommit(selectedIDs)
+                let mutationEvents = selected.map { session in
+                    RuntimeChatStoredEvent(
+                        timestamp: timestamp,
+                        kind: scope.mutation.eventKind,
+                        requestID: requestID,
+                        sessionID: session.sessionID,
+                        model: Self.latestModel(from: eventsBySessionID[session.sessionID] ?? []),
+                        ownerDeviceID: scopedOwnerDeviceID
+                    )
+                }
+                try appendBatchAtomicallyUnlocked(mutationEvents)
+                return RuntimeChatSessionBulkMutationResult(
+                    scope: scope,
+                    affectedSessionIDs: selectedIDs,
+                    remainingCount: targets.count - selected.count,
+                    timestamp: timestamp
+                )
             }
-            try appendUnlocked(RuntimeChatStoredEvent(
-                timestamp: timestamp,
-                kind: mutation.eventKind,
-                requestID: requestID,
-                sessionID: cleanSessionID,
-                model: Self.latestModel(from: sessionEvents),
-                ownerDeviceID: scopedOwnerDeviceID
-            ))
-            return RuntimeChatSessionMutationResult(
-                sessionID: cleanSessionID,
-                mutation: mutation,
-                timestamp: timestamp
-            )
         }
     }
 
@@ -1044,9 +1215,11 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     static func events(from fileURL: URL) throws -> [RuntimeChatStoredEvent] {
-        let indexedEvents = try decodedEventsInAppendOrder(from: fileURL)
-        try validateCompactionResolutionBindings(indexedEvents)
-        return indexedEvents.map(\.event).sorted { $0.timestamp < $1.timestamp }
+        try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+            let indexedEvents = try decodedEventsInAppendOrder(from: fileURL)
+            try validateCompactionResolutionBindings(indexedEvents)
+            return indexedEvents.map(\.event).sorted { $0.timestamp < $1.timestamp }
+        }
     }
 
     private static func decodedEventsInAppendOrder(
@@ -1620,6 +1793,40 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
     }
 
+    private func appendBatchAtomicallyUnlocked(_ events: [RuntimeChatStoredEvent]) throws {
+        guard !events.isEmpty else { return }
+        var appendedData = Data()
+        for event in events {
+            let sanitized = event.sanitizedForStorage()
+            try Self.validateStoredEvent(sanitized, line: 0)
+            appendedData.append(try encoder.encode(sanitized))
+            appendedData.append(0x0A)
+        }
+        var completeData = FileManager.default.fileExists(atPath: fileURL.path)
+            ? try Data(contentsOf: fileURL)
+            : Data()
+        completeData.append(appendedData)
+
+        try RuntimeEventLogFileProtection.prepareDirectory(for: fileURL)
+        let temporaryURL = fileURL.deletingLastPathComponent().appendingPathComponent(
+            ".\(fileURL.lastPathComponent).bulk-\(UUID().uuidString).tmp"
+        )
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        try completeData.write(to: temporaryURL, options: .atomic)
+        try RuntimeEventLogFileProtection.secureFile(at: temporaryURL)
+        guard Darwin.rename(temporaryURL.path, fileURL.path) == 0 else {
+            let code = errno
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(code),
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Could not atomically replace runtime chat event log: \(String(cString: strerror(code)))"
+                ]
+            )
+        }
+        try RuntimeEventLogFileProtection.secureFile(at: fileURL)
+    }
+
     static func sessions(
         from events: [RuntimeChatStoredEvent],
         limit: Int,
@@ -1647,7 +1854,12 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 lastErrorCode: last.error?.code.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
             )
         }
-        .sorted { $0.lastActivityAt > $1.lastActivityAt }
+        .sorted { lhs, rhs in
+            if lhs.lastActivityAt != rhs.lastActivityAt {
+                return lhs.lastActivityAt > rhs.lastActivityAt
+            }
+            return lhs.sessionID < rhs.sessionID
+        }
         .limited(to: limit)
     }
 

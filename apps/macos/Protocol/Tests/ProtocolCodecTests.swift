@@ -12,6 +12,39 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertEqual(decoded.requestID, envelope.requestID)
     }
 
+    func testSemanticDuplicateThresholdPreservesExactIntegerWireKind() throws {
+        let codec = ProtocolCodec()
+        let prefix = """
+        {"version":1,"type":"memory.semantic_duplicate_suggestions.list","request_id":"request","timestamp":"2026-07-14T00:00:00Z","payload":{"embedding_model_id":"ollama:nomic-embed-text","minimum_similarity_basis_points":
+        """
+        let suffix = "}}"
+
+        let exact = try codec.decodeEnvelope(Data((prefix + "9400" + suffix).utf8))
+        let integralFloat = try codec.decodeEnvelope(Data((prefix + "9400.0" + suffix).utf8))
+        let exponent = try codec.decodeEnvelope(Data((prefix + "9.4e3" + suffix).utf8))
+
+        XCTAssertEqual(exact.payload["minimum_similarity_basis_points"], .integer(9_400))
+        XCTAssertEqual(integralFloat.payload["minimum_similarity_basis_points"], .number(9_400))
+        XCTAssertEqual(exponent.payload["minimum_similarity_basis_points"], .number(9_400))
+    }
+
+    func testSemanticDuplicateClusterThresholdPreservesExactIntegerWireKind() throws {
+        let codec = ProtocolCodec()
+        let prefix = """
+        {"version":1,"type":"memory.semantic_duplicate_clusters.list","request_id":"request","timestamp":"2026-07-14T00:00:00Z","payload":{"embedding_model_id":"ollama:nomic-embed-text","minimum_similarity_basis_points":
+        """
+        let suffix = "}}"
+
+        let exact = try codec.decodeEnvelope(Data((prefix + "9400" + suffix).utf8))
+        let integralFloat = try codec.decodeEnvelope(Data((prefix + "9400.0" + suffix).utf8))
+        let exponent = try codec.decodeEnvelope(Data((prefix + "9.4e3" + suffix).utf8))
+
+        XCTAssertEqual(MessageType.memorySemanticDuplicateClustersList, "memory.semantic_duplicate_clusters.list")
+        XCTAssertEqual(exact.payload["minimum_similarity_basis_points"], .integer(9_400))
+        XCTAssertEqual(integralFloat.payload["minimum_similarity_basis_points"], .number(9_400))
+        XCTAssertEqual(exponent.payload["minimum_similarity_basis_points"], .number(9_400))
+    }
+
     func testRelayAllocationChallengePayloadRoundTripsExactWireShape() throws {
         let payload = try relayAllocationChallengePayload()
         let encoded = try JSONEncoder().encode(payload)

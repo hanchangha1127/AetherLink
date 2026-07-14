@@ -1162,6 +1162,227 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun chatSessionsAuthoritativeSyncPayloadsUseExactWireShapes() {
+        val encodeDefaultsJson = Json { encodeDefaults = true }
+        val continuation = ChatSessionsListRequestPayload(cursor = "snapshot-cursor-2")
+        val continuationJson = Json.parseToJsonElement(
+            encodeDefaultsJson.encodeToString(continuation),
+        ).jsonObject
+        val result = ChatSessionsListResultPayload(
+            sessions = emptyList(),
+            snapshotCount = 4,
+            nextCursor = "snapshot-cursor-3",
+        )
+        val resultJson = Json.parseToJsonElement(Json.encodeToString(result)).jsonObject
+        val bulkRequest = ChatSessionsBulkLifecyclePayload(
+            scope = "all_active",
+            limit = 125,
+        )
+        val bulkRequestJson = Json.parseToJsonElement(Json.encodeToString(bulkRequest)).jsonObject
+        val defaultBulkRequest = Json.decodeFromString<ChatSessionsBulkLifecyclePayload>(
+            """{"scope":"all_archived"}""",
+        )
+        val bulkResult = ChatSessionsBulkLifecycleResultPayload(
+            scope = "all_archived",
+            status = "deleted",
+            affectedCount = 125,
+            remainingCount = 7,
+            completedAt = "2026-07-14T01:02:03.456Z",
+        )
+        val bulkResultEncoded = Json.encodeToString(bulkResult)
+        val bulkResultJson = Json.parseToJsonElement(bulkResultEncoded).jsonObject
+
+        assertEquals(setOf("cursor"), continuationJson.keys)
+        assertEquals("snapshot-cursor-2", continuationJson["cursor"]?.jsonPrimitive?.content)
+        assertEquals(
+            continuation,
+            Json.decodeFromString<ChatSessionsListRequestPayload>(
+                encodeDefaultsJson.encodeToString(continuation),
+            ),
+        )
+        assertEquals(setOf("sessions", "snapshot_count", "next_cursor"), resultJson.keys)
+        assertEquals("4", resultJson["snapshot_count"]?.jsonPrimitive?.content)
+        assertEquals("snapshot-cursor-3", resultJson["next_cursor"]?.jsonPrimitive?.content)
+        assertEquals(
+            result,
+            Json.decodeFromString<ChatSessionsListResultPayload>(Json.encodeToString(result)),
+        )
+        assertEquals(setOf("scope", "limit"), bulkRequestJson.keys)
+        assertEquals("all_active", bulkRequestJson["scope"]?.jsonPrimitive?.content)
+        assertEquals("125", bulkRequestJson["limit"]?.jsonPrimitive?.content)
+        assertEquals(200, defaultBulkRequest.limit)
+        assertEquals(
+            setOf("scope", "status", "affected_count", "remaining_count", "completed_at"),
+            bulkResultJson.keys,
+        )
+        assertEquals(
+            bulkResult,
+            Json.decodeFromString<ChatSessionsBulkLifecycleResultPayload>(bulkResultEncoded),
+        )
+        assertEquals("chat.sessions.authoritative_sync.v1", CHAT_SESSIONS_SYNC_CAPABILITY)
+    }
+
+    @Test
+    fun chatSessionsListCursorRejectsInvalidAndMixedPayloads() {
+        val oversizedUtf8Cursor = "\u20ac".repeat(171)
+        val invalidRequests = listOf(
+            """{"cursor":""}""",
+            """{"cursor":"   "}""",
+            """{"cursor":"$oversizedUtf8Cursor"}""",
+            """{"cursor":"snapshot-cursor-2","limit":null}""",
+            """{"cursor":"snapshot-cursor-2","include_archived":false}""",
+            """{"cursor":"snapshot-cursor-2","query":null}""",
+            """{"cursor":"snapshot-cursor-2","embedding_model_id":null}""",
+        )
+
+        invalidRequests.forEach { json ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsListRequestPayload>(json)
+            }
+
+            assertTrue(
+                "expected cursor in ${error.message}",
+                error.message.orEmpty().contains("cursor"),
+            )
+        }
+
+        val invalidConstructions: List<() -> Unit> = listOf(
+            { ChatSessionsListRequestPayload(cursor = " ") },
+            { ChatSessionsListRequestPayload(cursor = oversizedUtf8Cursor) },
+            { ChatSessionsListRequestPayload(limit = 1, cursor = "snapshot-cursor-2") },
+            { ChatSessionsListRequestPayload(includeArchived = true, cursor = "snapshot-cursor-2") },
+            { ChatSessionsListRequestPayload(query = "relay", cursor = "snapshot-cursor-2") },
+            {
+                ChatSessionsListRequestPayload(
+                    embeddingModelId = "ollama:nomic-embed-text",
+                    cursor = "snapshot-cursor-2",
+                )
+            },
+        )
+        invalidConstructions.forEach { construct ->
+            assertThrows(IllegalArgumentException::class.java) { construct() }
+        }
+    }
+
+    @Test
+    fun chatSessionsListPaginationResponseRejectsInvalidMetadata() {
+        val oversizedUtf8Cursor = "\u20ac".repeat(171)
+        val validSession =
+            """{"session_id":"session-1","title":"Runtime history","model":"ollama:llama3.1:8b","last_activity_at":"2026-07-14T01:02:03Z","message_count":1}"""
+        val invalidResponses = listOf(
+            """{"sessions":[],"snapshot_count":-1}""" to "snapshot_count",
+            """{"sessions":[],"snapshot_count":10001}""" to "snapshot_count",
+            """{"sessions":[],"next_cursor":"snapshot-cursor-2"}""" to "snapshot_count",
+            """{"sessions":[],"snapshot_count":0,"next_cursor":""}""" to "next_cursor",
+            """{"sessions":[],"snapshot_count":0,"next_cursor":"$oversizedUtf8Cursor"}""" to "next_cursor",
+            """{"sessions":[$validSession],"snapshot_count":0}""" to "snapshot_count",
+        )
+
+        invalidResponses.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsListResultPayload>(json)
+            }
+
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+
+        val legacy = Json.decodeFromString<ChatSessionsListResultPayload>("""{"sessions":[]}""")
+        assertNull(legacy.snapshotCount)
+        assertNull(legacy.nextCursor)
+
+        val summary = ChatSessionSummaryPayload(
+            sessionId = "session-1",
+            title = "Runtime history",
+            model = "ollama:llama3.1:8b",
+            lastActivityAt = "2026-07-14T01:02:03Z",
+            messageCount = 1,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatSessionsListResultPayload(
+                sessions = listOf(summary, summary),
+                snapshotCount = 2,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ChatSessionsListResultPayload(
+                sessions = List(201) { index -> summary.copy(sessionId = "session-$index") },
+                snapshotCount = 201,
+            )
+        }
+    }
+
+    @Test
+    fun chatSessionsBulkLifecyclePayloadsRejectInvalidDomainsAndBounds() {
+        val invalidRequests = listOf(
+            """{"scope":"all","limit":200}""" to "scope",
+            """{"scope":"all_active","limit":0}""" to "limit",
+            """{"scope":"all_archived","limit":201}""" to "limit",
+        )
+        val invalidResults = listOf(
+            """{"scope":"all","status":"archived","affected_count":0,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "scope",
+            """{"scope":"all_active","status":"active","affected_count":0,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "status",
+            """{"scope":"all_active","status":"deleted","affected_count":0,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "scope and status",
+            """{"scope":"all_archived","status":"archived","affected_count":0,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "scope and status",
+            """{"scope":"all_active","status":"archived","affected_count":-1,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "affected_count",
+            """{"scope":"all_active","status":"archived","affected_count":201,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z"}""" to "affected_count",
+            """{"scope":"all_archived","status":"deleted","affected_count":0,"remaining_count":-1,"completed_at":"2026-07-14T01:02:03Z"}""" to "remaining_count",
+            """{"scope":"all_active","status":"archived","affected_count":0,"remaining_count":0,"completed_at":"2026-07-14T01:02:03"}""" to "completed_at",
+        )
+
+        invalidRequests.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsBulkLifecyclePayload>(json)
+            }
+            assertTrue(error.message.orEmpty().contains(expectedField))
+        }
+        invalidResults.forEach { (json, expectedField) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ChatSessionsBulkLifecycleResultPayload>(json)
+            }
+            assertTrue(
+                "expected $expectedField in ${error.message}",
+                error.message.orEmpty().contains(expectedField),
+            )
+        }
+    }
+
+    @Test
+    fun chatSessionsSyncPayloadsRejectUnknownFieldsWithPermissiveJson() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val invalidDecodes: List<Pair<String, () -> Unit>> = listOf(
+            "list result" to {
+                permissiveJson.decodeFromString<ChatSessionsListResultPayload>(
+                    """{"sessions":[],"unexpected":true}""",
+                )
+                Unit
+            },
+            "bulk request" to {
+                permissiveJson.decodeFromString<ChatSessionsBulkLifecyclePayload>(
+                    """{"scope":"all_active","limit":200,"unexpected":true}""",
+                )
+                Unit
+            },
+            "bulk result" to {
+                permissiveJson.decodeFromString<ChatSessionsBulkLifecycleResultPayload>(
+                    """{"scope":"all_archived","status":"deleted","affected_count":1,"remaining_count":0,"completed_at":"2026-07-14T01:02:03Z","unexpected":true}""",
+                )
+                Unit
+            },
+        )
+
+        invalidDecodes.forEach { (name, decode) ->
+            val error = assertThrows(Exception::class.java) { decode() }
+            assertTrue(
+                "expected unknown field rejection for $name in ${error.message}",
+                error.message.orEmpty().contains("unknown field"),
+            )
+        }
+    }
+
+    @Test
     fun chatSessionsListRequestRejectsInvalidBounds() {
         val invalidRequests = listOf(
             """{"limit":-1}""" to "limit",
@@ -3011,6 +3232,657 @@ class ProtocolCodecTest {
             )
         }
         assertTrue(embeddingError.message.orEmpty().contains("embedding_model_id"))
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadUsesClosedCanonicalContract() {
+        val codec = ProtocolCodec()
+        val request = codec.envelope(
+            type = MessageType.MemoryDuplicateSuggestionsList,
+            payloadSerializer = MemoryDuplicateSuggestionsListRequestPayload.serializer(),
+            payload = MemoryDuplicateSuggestionsListRequestPayload,
+        )
+        val result = MemoryDuplicateSuggestionsListResultPayload(
+            groups = listOf(
+                MemoryDuplicateSuggestionGroupPayload(entryIds = listOf("memory-a", "memory-b")),
+                MemoryDuplicateSuggestionGroupPayload(entryIds = listOf("memory-c", "memory-d")),
+            ),
+            scannedCount = 5,
+            truncated = true,
+        )
+        val encoded = Json.parseToJsonElement(Json.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<MemoryDuplicateSuggestionsListResultPayload>(
+            Json.encodeToString(result),
+        )
+
+        assertEquals("memory.duplicate_suggestions.list", MessageType.MemoryDuplicateSuggestionsList)
+        assertEquals("memory.duplicate_suggestions.v1", MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY)
+        assertTrue(request.payload.isEmpty())
+        assertEquals(setOf("groups", "scanned_count", "truncated"), encoded.keys)
+        assertEquals(listOf("memory-a", "memory-b"), decoded.groups.first().entryIds)
+        assertEquals(5, decoded.scannedCount)
+        assertTrue(decoded.truncated)
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadRejectsMalformedOrNoncanonicalGroups() {
+        val invalidPayloads = listOf(
+            """{"groups":[{"entry_ids":["memory-a"]}],"scanned_count":1,"truncated":false}""",
+            """{"groups":[{"entry_ids":["memory-a","memory-a"]}],"scanned_count":2,"truncated":false}""",
+            """{"groups":[{"entry_ids":["memory-b","memory-a"]}],"scanned_count":2,"truncated":false}""",
+            """{"groups":[{"entry_ids":["memory-a","memory-b"]},{"entry_ids":["memory-b","memory-c"]}],"scanned_count":3,"truncated":false}""",
+            """{"groups":[{"entry_ids":["memory-c","memory-d"]},{"entry_ids":["memory-a","memory-b"]}],"scanned_count":4,"truncated":false}""",
+            """{"groups":[{"entry_ids":["memory-a","memory-b"]}],"scanned_count":1,"truncated":false}""",
+            """{"groups":[],"scanned_count":201,"truncated":true}""",
+            """{"groups":[{"entry_ids":["   ","memory-z"]}],"scanned_count":2,"truncated":false}""",
+        )
+
+        invalidPayloads.forEach { payload ->
+            assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemoryDuplicateSuggestionsListResultPayload>(payload)
+            }
+        }
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadUsesUnsignedUtf8OrderingForBmpAndAstralIds() {
+        val bmpPrivateUse = "\uE000"
+        val astral = "\uD800\uDC00"
+        val canonical = MemoryDuplicateSuggestionsListResultPayload(
+            groups = listOf(
+                MemoryDuplicateSuggestionGroupPayload(
+                    entryIds = listOf(bmpPrivateUse, "$bmpPrivateUse-a"),
+                ),
+                MemoryDuplicateSuggestionGroupPayload(
+                    entryIds = listOf(astral, "$astral-a"),
+                ),
+            ),
+            scannedCount = 4,
+            truncated = false,
+        )
+
+        assertEquals(bmpPrivateUse, canonical.groups.first().entryIds.first())
+        assertThrows(IllegalArgumentException::class.java) {
+            MemoryDuplicateSuggestionGroupPayload(entryIds = listOf(astral, bmpPrivateUse))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MemoryDuplicateSuggestionsListResultPayload(
+                groups = canonical.groups.reversed(),
+                scannedCount = 4,
+                truncated = false,
+            )
+        }
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadRejectsJsonEscapedUnpairedSurrogateId() {
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<MemoryDuplicateSuggestionsListResultPayload>(
+                """{"groups":[{"entry_ids":["memory-a","\uD800"]}],"scanned_count":2,"truncated":false}""",
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("UTF-8 encodable Unicode"))
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadUsesSharedAggregateUtf8IdBudget() {
+        val overLegacyPerIdLimit = "b".repeat(129)
+        val accepted = MemoryDuplicateSuggestionsListResultPayload(
+            groups = listOf(
+                MemoryDuplicateSuggestionGroupPayload(
+                    entryIds = listOf("a", overLegacyPerIdLimit),
+                ),
+            ),
+            scannedCount = 2,
+            truncated = false,
+        )
+        assertEquals(overLegacyPerIdLimit, accepted.groups.single().entryIds.last())
+
+        MemoryDuplicateSuggestionsListResultPayload(
+            groups = listOf(
+                MemoryDuplicateSuggestionGroupPayload(
+                    entryIds = listOf("a", "b".repeat(128 * 1024 - 1)),
+                ),
+            ),
+            scannedCount = 2,
+            truncated = false,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MemoryDuplicateSuggestionsListResultPayload(
+                groups = listOf(
+                    MemoryDuplicateSuggestionGroupPayload(
+                        entryIds = listOf("a", "b".repeat(128 * 1024)),
+                    ),
+                ),
+                scannedCount = 2,
+                truncated = false,
+            )
+        }
+    }
+
+    @Test
+    fun memoryDuplicateSuggestionsPayloadRejectsUnknownFields() {
+        val invalidPayloads = listOf(
+            """{"groups":[],"scanned_count":0,"truncated":false,"unexpected":true}""",
+            """{"groups":[{"entry_ids":["memory-a","memory-b"],"score":1}],"scanned_count":2,"truncated":false}""",
+        )
+
+        invalidPayloads.forEach { payload ->
+            assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemoryDuplicateSuggestionsListResultPayload>(payload)
+            }
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsPayloadUsesCanonicalWireContract() {
+        val codec = ProtocolCodec()
+        val request = MemorySemanticDuplicateSuggestionsListRequestPayload(
+            embeddingModelId = "ollama:nomic-embed-text",
+            minimumSimilarityBasisPoints = 9_250,
+        )
+        val requestEnvelope = codec.envelope(
+            type = MessageType.MemorySemanticDuplicateSuggestionsList,
+            payloadSerializer = MemorySemanticDuplicateSuggestionsListRequestPayload.serializer(),
+            payload = request,
+        )
+        val result = MemorySemanticDuplicateSuggestionsListResultPayload(
+            pairs = listOf(
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = listOf("memory-a", "memory-b"),
+                    similarityBasisPoints = 9_750,
+                ),
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = listOf("memory-a", "memory-c"),
+                    similarityBasisPoints = 9_500,
+                ),
+            ),
+            scannedCount = 8,
+            omittedCount = 2,
+            truncated = true,
+        )
+        val encoded = Json.encodeToString(result)
+        val encodedJson = Json.parseToJsonElement(encoded).jsonObject
+
+        assertEquals(
+            "memory.semantic_duplicate_suggestions.v1",
+            MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY,
+        )
+        assertEquals(
+            "memory.semantic_duplicate_suggestions.list",
+            MessageType.MemorySemanticDuplicateSuggestionsList,
+        )
+        assertEquals("ollama:nomic-embed-text", requestEnvelope.payload["embedding_model_id"]?.jsonPrimitive?.content)
+        assertEquals("9250", requestEnvelope.payload["minimum_similarity_basis_points"]?.jsonPrimitive?.content)
+        assertEquals(setOf("pairs", "scanned_count", "omitted_count", "truncated"), encodedJson.keys)
+        assertEquals(
+            setOf("entry_ids", "similarity_basis_points"),
+            encodedJson.getValue("pairs").jsonArray.first().jsonObject.keys,
+        )
+        assertEquals(result, Json.decodeFromString<MemorySemanticDuplicateSuggestionsListResultPayload>(encoded))
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsRequestRejectsBoundsAndInvalidTypes() {
+        val invalidPayloads = listOf(
+            """{"embedding_model_id":"","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"   ","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"ollama:${"m".repeat(250)}","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"model","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"cloud:model","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":7999}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":10001}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":8000.0}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":"8000"}""",
+            """{"embedding_model_id":1,"minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":8000,"unexpected":true}""",
+        )
+
+        MemorySemanticDuplicateSuggestionsListRequestPayload(
+            embeddingModelId = "ollama:${"m".repeat(249)}",
+            minimumSimilarityBasisPoints = 8_000,
+        )
+        MemorySemanticDuplicateSuggestionsListRequestPayload(
+            embeddingModelId = "ollama:${"\uD83D\uDE00".repeat(249)}",
+            minimumSimilarityBasisPoints = 8_000,
+        )
+        MemorySemanticDuplicateSuggestionsListRequestPayload(
+            embeddingModelId = "ollama:model",
+            minimumSimilarityBasisPoints = 10_000,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateSuggestionsListRequestPayload(
+                embeddingModelId = "ollama:${"\uD83D\uDE00".repeat(250)}",
+                minimumSimilarityBasisPoints = 8_000,
+            )
+        }
+        invalidPayloads.forEach { payload ->
+            assertThrows(Exception::class.java) {
+                Json.decodeFromString<MemorySemanticDuplicateSuggestionsListRequestPayload>(payload)
+            }
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsWireRejectsDuplicateObjectKeysBeforeMaterialization() {
+        val codec = ProtocolCodec()
+        val payloads = listOf(
+            """{"embedding_model_id":"ollama:first","embedding_model_id":"ollama:second","minimum_similarity_basis_points":9000}""",
+            """{"pairs":[],"pa\u0069rs":[],"scanned_count":0,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9000,"similarity_basis_points":9500}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+        )
+
+        payloads.forEachIndexed { index, payload ->
+            val rawEnvelope = """
+                {
+                  "version": 1,
+                  "type": "memory.semantic_duplicate_suggestions.list",
+                  "request_id": "semantic-duplicate-key-$index",
+                  "timestamp": "2026-07-14T00:00:00Z",
+                  "payload": $payload
+                }
+            """.trimIndent()
+
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(rawEnvelope.encodeToByteArray())
+            }
+            assertTrue(error.message.orEmpty().contains("duplicate JSON object key"))
+        }
+    }
+
+    @Test
+    fun decodeRejectsJsonNestingBeyondProtocolLimitWithoutStackOverflow() {
+        val codec = ProtocolCodec()
+        val nestedPayload = buildString {
+            repeat(130) { append("{\"nested\":") }
+            append("0")
+            repeat(130) { append("}") }
+        }
+        val rawEnvelope = """
+            {
+              "version": 1,
+              "type": "memory.semantic_duplicate_suggestions.list",
+              "request_id": "semantic-deep-json",
+              "timestamp": "2026-07-14T00:00:00Z",
+              "payload": $nestedPayload
+            }
+        """.trimIndent()
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(rawEnvelope.encodeToByteArray())
+        }
+        assertTrue(error.message.orEmpty().contains("JSON nesting exceeds"))
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsResponseRejectsBoundsAndInvalidTypes() {
+        val validPair = """{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9000}"""
+        val invalidPayloads = listOf(
+            """{"pairs":[$validPair],"scanned_count":-1,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[$validPair],"scanned_count":201,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[$validPair],"scanned_count":1,"omitted_count":-1,"truncated":false}""",
+            """{"pairs":[$validPair],"scanned_count":1,"omitted_count":201,"truncated":false}""",
+            """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":-1}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":10001}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9000.0}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            """{"pairs":[$validPair],"scanned_count":"2","omitted_count":0,"truncated":false}""",
+            """{"pairs":[$validPair],"scanned_count":2,"omitted_count":0,"truncated":"false"}""",
+            """{"pairs":[{"entry_ids":["memory-a","memory-b"],"similarity_basis_points":9000,"unexpected":true}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+        )
+
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid semantic duplicate response rejection: $payload", Exception::class.java) {
+                Json.decodeFromString<MemorySemanticDuplicateSuggestionsListResultPayload>(payload)
+            }
+        }
+
+        val tooManyPairs = List(101) { index ->
+            MemorySemanticDuplicateSuggestionPairPayload(
+                entryIds = listOf("memory-${index.toString().padStart(3, '0')}-a", "memory-${index.toString().padStart(3, '0')}-b"),
+                similarityBasisPoints = 10_000 - index,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateSuggestionsListResultPayload(
+                pairs = tooManyPairs,
+                scannedCount = 200,
+                omittedCount = 0,
+                truncated = false,
+            )
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsEnforcesPairShapeOrderAndDuplicates() {
+        val invalidPairs = listOf(
+            emptyList(),
+            listOf("memory-a"),
+            listOf("memory-a", "memory-b", "memory-c"),
+            listOf("memory-a", "memory-a"),
+            listOf("memory-b", "memory-a"),
+            listOf("   ", "memory-a"),
+        )
+        invalidPairs.forEach { entryIds ->
+            assertThrows(IllegalArgumentException::class.java) {
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = entryIds,
+                    similarityBasisPoints = 9_000,
+                )
+            }
+        }
+
+        val pairA = MemorySemanticDuplicateSuggestionPairPayload(
+            entryIds = listOf("memory-a", "memory-b"),
+            similarityBasisPoints = 9_000,
+        )
+        val pairB = MemorySemanticDuplicateSuggestionPairPayload(
+            entryIds = listOf("memory-a", "memory-c"),
+            similarityBasisPoints = 9_000,
+        )
+        val higherScore = MemorySemanticDuplicateSuggestionPairPayload(
+            entryIds = listOf("memory-c", "memory-d"),
+            similarityBasisPoints = 9_001,
+        )
+        listOf(
+            listOf(pairB, pairA),
+            listOf(pairA, higherScore),
+            listOf(pairA, pairA),
+        ).forEach { pairs ->
+            assertThrows(IllegalArgumentException::class.java) {
+                MemorySemanticDuplicateSuggestionsListResultPayload(
+                    pairs = pairs,
+                    scannedCount = 4,
+                    omittedCount = 0,
+                    truncated = false,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsUsesUnsignedUtf8AndAllowsIdsAcrossPairs() {
+        val bmpPrivateUse = "\uE000"
+        val astral = "\uD800\uDC00"
+        val result = MemorySemanticDuplicateSuggestionsListResultPayload(
+            pairs = listOf(
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = listOf(bmpPrivateUse, "$bmpPrivateUse-a"),
+                    similarityBasisPoints = 9_100,
+                ),
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = listOf(bmpPrivateUse, astral),
+                    similarityBasisPoints = 9_000,
+                ),
+            ),
+            scannedCount = 3,
+            omittedCount = 0,
+            truncated = false,
+        )
+
+        assertEquals(bmpPrivateUse, result.pairs[0].entryIds[0])
+        assertEquals(bmpPrivateUse, result.pairs[1].entryIds[0])
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateSuggestionPairPayload(
+                entryIds = listOf(astral, bmpPrivateUse),
+                similarityBasisPoints = 9_000,
+            )
+        }
+        val unicodeError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<MemorySemanticDuplicateSuggestionsListResultPayload>(
+                """{"pairs":[{"entry_ids":["memory-a","\uD800"],"similarity_basis_points":9000}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            )
+        }
+        assertTrue(unicodeError.message.orEmpty().contains("UTF-8 encodable Unicode"))
+    }
+
+    @Test
+    fun memorySemanticDuplicateSuggestionsEnforcesAggregateUtf8IdBudget() {
+        val accepted = MemorySemanticDuplicateSuggestionsListResultPayload(
+            pairs = listOf(
+                MemorySemanticDuplicateSuggestionPairPayload(
+                    entryIds = listOf("a", "b".repeat(128 * 1024 - 1)),
+                    similarityBasisPoints = 9_000,
+                ),
+            ),
+            scannedCount = 2,
+            omittedCount = 0,
+            truncated = false,
+        )
+        assertEquals(128 * 1024 - 1, accepted.pairs.single().entryIds[1].length)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateSuggestionsListResultPayload(
+                pairs = listOf(
+                    MemorySemanticDuplicateSuggestionPairPayload(
+                        entryIds = listOf("a", "b".repeat(128 * 1024)),
+                        similarityBasisPoints = 9_000,
+                    ),
+                ),
+                scannedCount = 2,
+                omittedCount = 0,
+                truncated = false,
+            )
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract() {
+        val codec = ProtocolCodec()
+        val request = MemorySemanticDuplicateClustersListRequestPayload(
+            embeddingModelId = "ollama:nomic-embed-text",
+            minimumSimilarityBasisPoints = 9_251,
+        )
+        val requestEnvelope = codec.envelope(
+            type = MessageType.MemorySemanticDuplicateClustersList,
+            payloadSerializer = MemorySemanticDuplicateClustersListRequestPayload.serializer(),
+            payload = request,
+        )
+        val result = MemorySemanticDuplicateClustersListResultPayload(
+            clusters = listOf(
+                MemorySemanticDuplicateClusterPayload(
+                    entryIds = listOf("memory-a", "memory-b", "memory-c"),
+                    minimumSimilarityBasisPoints = 9_750,
+                ),
+                MemorySemanticDuplicateClusterPayload(
+                    entryIds = listOf("memory-d", "memory-e"),
+                    minimumSimilarityBasisPoints = 9_500,
+                ),
+            ),
+            scannedCount = 8,
+            omittedCount = 2,
+            truncated = true,
+        )
+        val encoded = Json.encodeToString(result)
+        val encodedJson = Json.parseToJsonElement(encoded).jsonObject
+
+        assertEquals("memory.semantic_duplicate_clusters.v1", MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY)
+        assertEquals("memory.semantic_duplicate_clusters.list", MessageType.MemorySemanticDuplicateClustersList)
+        assertEquals("ollama:nomic-embed-text", requestEnvelope.payload["embedding_model_id"]?.jsonPrimitive?.content)
+        assertEquals("9251", requestEnvelope.payload["minimum_similarity_basis_points"]?.jsonPrimitive?.content)
+        assertEquals(setOf("clusters", "scanned_count", "omitted_count", "truncated"), encodedJson.keys)
+        assertEquals(
+            setOf("entry_ids", "minimum_similarity_basis_points"),
+            encodedJson.getValue("clusters").jsonArray.first().jsonObject.keys,
+        )
+        assertEquals(result, Json.decodeFromString<MemorySemanticDuplicateClustersListResultPayload>(encoded))
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersRequestRejectsBoundsUnknownFieldsAndInvalidTypes() {
+        val invalidPayloads = listOf(
+            """{"embedding_model_id":"","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"model","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"cloud:model","minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":7999}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":10001}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":8000.0}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":"8000"}""",
+            """{"embedding_model_id":1,"minimum_similarity_basis_points":8000}""",
+            """{"embedding_model_id":"ollama:model","minimum_similarity_basis_points":8000,"extra":true}""",
+        )
+
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid cluster request rejection: $payload", Exception::class.java) {
+                Json.decodeFromString<MemorySemanticDuplicateClustersListRequestPayload>(payload)
+            }
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersWireRejectsDuplicateObjectKeysAndDeepNesting() {
+        val codec = ProtocolCodec()
+        val duplicatePayloads = listOf(
+            """{"embedding_model_id":"ollama:first","embedding_model_id":"ollama:second","minimum_similarity_basis_points":9000}""",
+            """{"clusters":[],"clu\u0073ters":[],"scanned_count":0,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[{"entry_ids":["memory-a","memory-b"],"minimum_similarity_basis_points":9000,"minimum_similarity_basis_points":9500}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+        )
+
+        duplicatePayloads.forEachIndexed { index, payload ->
+            val rawEnvelope = """
+                {
+                  "version": 1,
+                  "type": "memory.semantic_duplicate_clusters.list",
+                  "request_id": "semantic-cluster-duplicate-key-$index",
+                  "timestamp": "2026-07-14T00:00:00Z",
+                  "payload": $payload
+                }
+            """.trimIndent()
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(rawEnvelope.encodeToByteArray())
+            }
+            assertTrue(error.message.orEmpty().contains("duplicate JSON object key"))
+        }
+
+        val nestedPayload = buildString {
+            repeat(130) { append("{\"nested\":") }
+            append("0")
+            repeat(130) { append("}") }
+        }
+        val nestedEnvelope = """
+            {
+              "version": 1,
+              "type": "memory.semantic_duplicate_clusters.list",
+              "request_id": "semantic-cluster-deep-json",
+              "timestamp": "2026-07-14T00:00:00Z",
+              "payload": $nestedPayload
+            }
+        """.trimIndent()
+        val nestingError = assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(nestedEnvelope.encodeToByteArray())
+        }
+        assertTrue(nestingError.message.orEmpty().contains("JSON nesting exceeds"))
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersEnforcesShapeDisjointnessCountsAndOrder() {
+        val clusterA = MemorySemanticDuplicateClusterPayload(
+            entryIds = listOf("memory-a", "memory-b", "memory-c"),
+            minimumSimilarityBasisPoints = 9_000,
+        )
+        val clusterB = MemorySemanticDuplicateClusterPayload(
+            entryIds = listOf("memory-d", "memory-e"),
+            minimumSimilarityBasisPoints = 9_000,
+        )
+        val higherScore = MemorySemanticDuplicateClusterPayload(
+            entryIds = listOf("memory-f", "memory-g"),
+            minimumSimilarityBasisPoints = 9_001,
+        )
+
+        listOf(
+            emptyList(),
+            listOf("memory-a"),
+            listOf("memory-a", "memory-a"),
+            listOf("memory-b", "memory-a"),
+            listOf("   ", "memory-a"),
+            List(201) { "memory-${it.toString().padStart(3, '0')}" },
+        ).forEach { entryIds ->
+            assertThrows(IllegalArgumentException::class.java) {
+                MemorySemanticDuplicateClusterPayload(entryIds, 9_000)
+            }
+        }
+        listOf(
+            listOf(clusterB, clusterA),
+            listOf(clusterA, higherScore),
+            listOf(clusterA, clusterA.copy(entryIds = listOf("memory-c", "memory-d"))),
+        ).forEach { clusters ->
+            assertThrows(IllegalArgumentException::class.java) {
+                MemorySemanticDuplicateClustersListResultPayload(
+                    clusters = clusters,
+                    scannedCount = 7,
+                    omittedCount = 0,
+                    truncated = false,
+                )
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateClustersListResultPayload(
+                clusters = listOf(clusterA, clusterB),
+                scannedCount = 4,
+                omittedCount = 0,
+                truncated = false,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateClustersListResultPayload(
+                clusters = List(101) { index ->
+                    MemorySemanticDuplicateClusterPayload(
+                        entryIds = listOf("${index.toString().padStart(3, '0')}-a", "${index.toString().padStart(3, '0')}-b"),
+                        minimumSimilarityBasisPoints = 10_000 - index,
+                    )
+                },
+                scannedCount = 202,
+                omittedCount = 0,
+                truncated = false,
+            )
+        }
+    }
+
+    @Test
+    fun memorySemanticDuplicateClustersRejectsResponseTypesMetadataUnicodeAndIdBudget() {
+        val validCluster = """{"entry_ids":["memory-a","memory-b"],"minimum_similarity_basis_points":9000}"""
+        val invalidPayloads = listOf(
+            """{"clusters":[$validCluster],"scanned_count":-1,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":201,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":2,"omitted_count":-1,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":2,"omitted_count":201,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":2.0,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":2,"omitted_count":0,"truncated":"false"}""",
+            """{"clusters":[{"entry_ids":["memory-a","memory-b"],"minimum_similarity_basis_points":10001}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[{"entry_ids":["memory-a","memory-b"],"minimum_similarity_basis_points":9000,"extra":true}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+            """{"clusters":[$validCluster],"scanned_count":2,"omitted_count":0,"truncated":false,"extra":true}""",
+            """{"clusters":[{"entry_ids":["memory-a","\uD800"],"minimum_similarity_basis_points":9000}],"scanned_count":2,"omitted_count":0,"truncated":false}""",
+        )
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid cluster response rejection: $payload", Exception::class.java) {
+                Json.decodeFromString<MemorySemanticDuplicateClustersListResultPayload>(payload)
+            }
+        }
+
+        MemorySemanticDuplicateClustersListResultPayload(
+            clusters = listOf(
+                MemorySemanticDuplicateClusterPayload(
+                    entryIds = listOf("a", "b".repeat(128 * 1024 - 1)),
+                    minimumSimilarityBasisPoints = 9_000,
+                ),
+            ),
+            scannedCount = 2,
+            omittedCount = 0,
+            truncated = false,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            MemorySemanticDuplicateClustersListResultPayload(
+                clusters = listOf(
+                    MemorySemanticDuplicateClusterPayload(
+                        entryIds = listOf("a", "b".repeat(128 * 1024)),
+                        minimumSimilarityBasisPoints = 9_000,
+                    ),
+                ),
+                scannedCount = 2,
+                omittedCount = 0,
+                truncated = false,
+            )
+        }
     }
 
     @Test

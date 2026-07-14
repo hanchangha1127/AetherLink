@@ -160,6 +160,10 @@ func localizedRuntimeChatMessageCount(_ count: Int) -> String {
     localizedCount(max(0, count), singularKey: "1 message", pluralKey: "%d messages")
 }
 
+func localizedRuntimeDeletedChatCount(_ count: Int) -> String {
+    localizedCount(max(0, count), singularKey: "1 deleted chat", pluralKey: "%d deleted chats")
+}
+
 func localizedRuntimeSavedMemoryCount(_ count: Int) -> String {
     localizedCount(max(0, count), singularKey: "1 saved memory note", pluralKey: "%d saved memory notes")
 }
