@@ -52,6 +52,7 @@ struct RuntimeDevServer {
         )
         let runtimeMemoryStore = Self.runtimeMemoryStore(environment: environment)
         let runtimeDocumentIndexStore = Self.runtimeDocumentIndexStore(environment: environment)
+        let runtimeResearchNotebookStore = Self.runtimeResearchNotebookStore(environment: environment)
         let runtimeMemorySummaryPolicy = Self.runtimeMemorySummaryPolicy(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
         let relayServiceRouteAllocator = TCPRelayServiceRouteAllocator()
@@ -120,6 +121,7 @@ struct RuntimeDevServer {
             chatCompactionSummaryCache: runtimeChatCompactionSummaryCache,
             memoryStore: runtimeMemoryStore,
             documentIndexStore: runtimeDocumentIndexStore,
+            researchNotebookStore: runtimeResearchNotebookStore,
             memorySummaryPolicy: runtimeMemorySummaryPolicy,
             routeRefresher: routeRefresher,
             runtimeChallengeSigner: identity.signer,
@@ -256,6 +258,16 @@ struct RuntimeDevServer {
             }
         }
         return store
+    }
+
+    private static func runtimeResearchNotebookStore(
+        environment: [String: String]
+    ) -> any RuntimeResearchNotebookStoring {
+        guard let path = environment["AETHERLINK_DEV_RUNTIME_RESEARCH_NOTEBOOK_SQLITE_FILE"]?
+            .takeIfNotEmpty else {
+            return SQLiteRuntimeResearchNotebookStore()
+        }
+        return SQLiteRuntimeResearchNotebookStore(databaseURL: URL(fileURLWithPath: path))
     }
 
     private static func seedDevelopmentDocumentIndex(_ store: SQLiteRuntimeDocumentIndexStore) throws {

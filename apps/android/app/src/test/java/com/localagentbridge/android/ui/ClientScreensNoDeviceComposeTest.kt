@@ -23,9 +23,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -112,6 +114,9 @@ import com.localagentbridge.android.DRAWER_RUNTIME_SUMMARY_RUNTIME_LABEL_TEST_TA
 import com.localagentbridge.android.DRAWER_RUNTIME_SUMMARY_RUNTIME_NAME_TEST_TAG
 import com.localagentbridge.android.DRAWER_RUNTIME_SUMMARY_STATUS_TEST_TAG
 import com.localagentbridge.android.DRAWER_RUNTIME_SUMMARY_TEST_TAG
+import com.localagentbridge.android.DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG
+import com.localagentbridge.android.DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG
+import com.localagentbridge.android.DRAWER_RESEARCH_NOTEBOOKS_TEST_TAG
 import com.localagentbridge.android.DRAWER_SETTINGS_FOOTER_TEST_TAG
 import com.localagentbridge.android.R
 import com.localagentbridge.android.RENAME_CHAT_CANCEL_LABEL_TEST_TAG
@@ -122,12 +127,23 @@ import com.localagentbridge.android.RENAME_CHAT_DIALOG_TEST_TAG
 import com.localagentbridge.android.RENAME_CHAT_INPUT_TEST_TAG
 import com.localagentbridge.android.RENAME_CHAT_TITLE_TEST_TAG
 import com.localagentbridge.android.RenameChatSessionDialog
+import com.localagentbridge.android.RESEARCH_BRIEF_DIALOG_TEST_TAG
+import com.localagentbridge.android.RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG
+import com.localagentbridge.android.RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG
+import com.localagentbridge.android.RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG
+import com.localagentbridge.android.RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG
+import com.localagentbridge.android.ResearchNotebookDrawerItem
+import com.localagentbridge.android.RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG
+import com.localagentbridge.android.ResearchBriefCreateDialog
+import com.localagentbridge.android.ResearchBriefModelMenuItem
+import com.localagentbridge.android.ResearchSourceSelectorRow
 import com.localagentbridge.android.SHARED_CHAT_DRAFT_ANNOUNCEMENT_TEST_TAG
 import com.localagentbridge.android.SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING
 import com.localagentbridge.android.SHARED_CHAT_DRAFT_SNACKBAR_HOST_TEST_TAG
 import com.localagentbridge.android.SharedChatDraft
 import com.localagentbridge.android.SharedChatDraftImportAnnouncement
 import com.localagentbridge.android.chatModelMenuItemTestTag
+import com.localagentbridge.android.chatModelMenuItemCapabilityTestTag
 import com.localagentbridge.android.chatModelVisionWarningIconTestTag
 import com.localagentbridge.android.drawerChatRowModelTestTag
 import com.localagentbridge.android.drawerChatRowMenuItemLabelTestTag
@@ -137,7 +153,13 @@ import com.localagentbridge.android.drawerChatRowSubtitleTestTag
 import com.localagentbridge.android.drawerChatRowTestTag
 import com.localagentbridge.android.drawerChatRowTextTestTag
 import com.localagentbridge.android.drawerChatRowTitleTestTag
+import com.localagentbridge.android.researchNotebookDrawerRowTestTag
+import com.localagentbridge.android.researchNotebookDrawerMenuItemTestTag
+import com.localagentbridge.android.researchNotebookDrawerOptionsTestTag
+import com.localagentbridge.android.researchBriefModelMenuItemCapabilityTestTag
+import com.localagentbridge.android.researchBriefModelMenuItemTestTag
 import com.localagentbridge.android.sharedChatDraftConfirmationMessageRes
+import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_SYSTEM
 import com.localagentbridge.android.runtime.MAX_PENDING_ATTACHMENTS
@@ -2491,6 +2513,991 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation() {
+        val activeNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_00112233445566778899aabbccddeeff",
+            sessionId = "research_session_00112233445566778899aabbccddeeff",
+            title = "Active runtime research",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 2,
+            createdAt = "2026-07-14T00:00:00Z",
+            updatedAt = "2026-07-14T00:01:00Z",
+        )
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_112233445566778899aabbccddeeff00",
+            sessionId = "research_session_112233445566778899aabbccddeeff00",
+            title = "Archived runtime research",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 1,
+            createdAt = "2026-07-14T00:00:00Z",
+            updatedAt = "2026-07-14T00:02:00Z",
+            archivedAt = "2026-07-14T00:03:00Z",
+        )
+        var selectedSessionId: String? = null
+        var createClicks = 0
+        val renamedSessionIds = mutableListOf<String>()
+        var archivedSessionId: String? = null
+        var restoredSessionId: String? = null
+        var deletedSessionId: String? = null
+        val lifecycleActionsBlocked = mutableStateOf(false)
+
+        compose.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        isStreaming = lifecycleActionsBlocked.value,
+                    ),
+                    researchNotebooks = listOf(activeNotebook, archivedNotebook),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onCreateResearchBrief = { createClicks += 1 },
+                    onSelectResearchNotebook = { selectedSessionId = it.sessionId },
+                    onRenameResearchNotebook = { renamedSessionIds += it.sessionId },
+                    onArchiveResearchNotebook = { archivedSessionId = it.sessionId },
+                    onRestoreResearchNotebook = { restoredSessionId = it.sessionId },
+                    onPermanentlyDeleteResearchNotebook = { deletedSessionId = it.sessionId },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        compose.onNodeWithTag(DRAWER_RESEARCH_NOTEBOOKS_TEST_TAG).assertExists()
+        compose.onNode(hasText("Research notebooks") and hasHeading()).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create research brief").performClick()
+        assertEquals(1, createClicks)
+        history.performScrollToIndex(1)
+        compose.onNodeWithTag(DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG).assertIsDisplayed()
+        compose.onNode(hasText("Active") and hasHeading()).assertIsDisplayed()
+        history.performScrollToIndex(3)
+        compose.onNodeWithTag(DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG).assertIsDisplayed()
+        compose.onNode(hasText("Archived") and hasHeading()).assertIsDisplayed()
+
+        history.performScrollToIndex(2)
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(activeNotebook.sessionId))
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(activeNotebook.sessionId, selectedSessionId)
+
+        history.performScrollToIndex(2)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId))
+            .assert(hasContentDescription("More options for research notebook Active runtime research"))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(activeNotebook.sessionId, "rename"),
+        )
+            .assert(hasContentDescription("Rename research notebook Active runtime research"))
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(listOf(activeNotebook.sessionId), renamedSessionIds)
+        history.performScrollToIndex(2)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(activeNotebook.sessionId))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(activeNotebook.sessionId, "archive"),
+        )
+            .assert(hasContentDescription("Archive research notebook Active runtime research"))
+            .assertIsEnabled()
+        compose.runOnIdle { lifecycleActionsBlocked.value = true }
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(activeNotebook.sessionId, "archive"),
+        )
+            .assertIsNotEnabled()
+            .performClick()
+        assertEquals(null, archivedSessionId)
+        compose.runOnIdle { lifecycleActionsBlocked.value = false }
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(activeNotebook.sessionId, "archive"),
+        )
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(activeNotebook.sessionId, archivedSessionId)
+
+        history.performScrollToIndex(4)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "rename"),
+        )
+            .assert(hasContentDescription("Rename research notebook Archived runtime research"))
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(
+            listOf(activeNotebook.sessionId, archivedNotebook.sessionId),
+            renamedSessionIds,
+        )
+        history.performScrollToIndex(4)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "restore"),
+        )
+            .assert(hasContentDescription("Restore research notebook Archived runtime research"))
+            .performClick()
+        assertEquals(archivedNotebook.sessionId, restoredSessionId)
+
+        history.performScrollToIndex(4)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(archivedNotebook.sessionId, "delete"),
+        )
+            .assert(
+                hasContentDescription(
+                    "Permanently delete research notebook Archived runtime research",
+                ),
+            )
+            .performClick()
+
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG).assertIsDisplayed()
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG)
+            .assertTextContains(
+                "This is available because the notebook is archived.",
+                substring = true,
+            )
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG)
+            .assert(
+                hasContentDescription(
+                    "Continue: Permanently delete research notebook Archived runtime research",
+                ) and hasClickAction(),
+            )
+            .performClick()
+        assertEquals(null, deletedSessionId)
+
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG)
+            .assertTextContains("This cannot be undone.", substring = true)
+        compose.onNodeWithTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG)
+            .assert(
+                hasContentDescription(
+                    "Confirm: Permanently delete research notebook Archived runtime research",
+                ) and hasClickAction(),
+            )
+            .performClick()
+        assertEquals(archivedNotebook.sessionId, deletedSessionId)
+    }
+
+    @Test
+    fun navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove() {
+        val archivedAt = mutableStateOf<String?>(null)
+        val notebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_445566778899aabbccddeeff00112233",
+            sessionId = "research_session_445566778899aabbccddeeff00112233",
+            title = "Moving runtime research",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 2,
+            createdAt = "2026-07-14T00:00:00Z",
+            updatedAt = "2026-07-14T00:01:00Z",
+        )
+        var restoredSessionId: String? = null
+
+        compose.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                    ),
+                    researchNotebooks = listOf(notebook.copy(archivedAt = archivedAt.value)),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = "",
+                    hasAnyChatSessions = false,
+                    hasChatSearchQuery = false,
+                    hasChatSearchResults = false,
+                    filteredChatSessions = emptyList(),
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onRestoreResearchNotebook = { restoredSessionId = it.sessionId },
+                    onSelectChatSession = {},
+                    onRenameChatSession = {},
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        history.performScrollToIndex(2)
+        compose.onNodeWithTag(researchNotebookDrawerOptionsTestTag(notebook.sessionId))
+            .performClick()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(notebook.sessionId, "archive"),
+        ).assertIsDisplayed()
+
+        compose.runOnUiThread {
+            archivedAt.value = "2026-07-14T00:02:00Z"
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(notebook.sessionId, "archive"),
+        ).assertDoesNotExist()
+        compose.onNodeWithTag(
+            researchNotebookDrawerMenuItemTestTag(notebook.sessionId, "restore"),
+        )
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(notebook.sessionId, restoredSessionId)
+    }
+
+    @Test
+    fun navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority() {
+        val session = RuntimeChatSession(
+            id = "controlled-chat-menu",
+            title = "Controlled chat menu",
+            updatedAtMillis = 2_000L,
+            messageCount = 2,
+        )
+        val isStreaming = mutableStateOf(false)
+        val filteredSessions = mutableStateOf(listOf(session))
+        var renameClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                AetherLinkNavigationDrawerContent(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        isStreaming = isStreaming.value,
+                        chatSessions = listOf(session),
+                    ),
+                    effectiveDestination = AppDestination.Chat,
+                    chatSearchQuery = if (filteredSessions.value.isEmpty()) "missing" else "",
+                    hasAnyChatSessions = true,
+                    hasChatSearchQuery = filteredSessions.value.isEmpty(),
+                    hasChatSearchResults = filteredSessions.value.isNotEmpty(),
+                    filteredChatSessions = filteredSessions.value,
+                    onChatSearchQueryChange = {},
+                    onClearChatSearch = {},
+                    onNewChat = {},
+                    onSelectChatSession = {},
+                    onRenameChatSession = { renameClicks += 1 },
+                    onArchiveChatSession = {},
+                    onSelectSettings = {},
+                )
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val optionsTag = drawerChatRowOptionsTestTag(session.id)
+        val renameTag = drawerChatRowMenuItemTestTag(session.id, "rename")
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(optionsTag, useUnmergedTree = true).performClick()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true).assertIsEnabled()
+
+        compose.runOnUiThread { isStreaming.value = true }
+        compose.waitForIdle()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true)
+            .assertIsNotEnabled()
+            .assert(hasStateDescription("Wait for the current response before changing chat history."))
+            .performClick()
+        assertEquals(0, renameClicks)
+
+        compose.runOnUiThread { isStreaming.value = false }
+        compose.waitForIdle()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, renameClicks)
+
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(optionsTag, useUnmergedTree = true).performClick()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnUiThread { filteredSessions.value = emptyList() }
+        compose.waitForIdle()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true).assertDoesNotExist()
+
+        compose.runOnUiThread { filteredSessions.value = listOf(session) }
+        compose.waitForIdle()
+        history.performScrollToNode(hasTestTag(optionsTag))
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag(optionsTag, useUnmergedTree = true).performClick()
+        compose.onNodeWithTag(renameTag, useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot() {
+        val notebooks = List(10_000) { index ->
+            val idSuffix = index.toString(16).padStart(32, '0')
+            ResearchNotebookPayload(
+                notebookId = "research_notebook_$idSuffix",
+                sessionId = "research_session_$idSuffix",
+                title = "Runtime research notebook $index",
+                model = "ollama:llama3.1:8b",
+                sourceCount = (index % 8) + 1,
+                createdAt = "2026-07-14T00:00:00Z",
+                updatedAt = "2026-07-14T00:01:00Z",
+                archivedAt = if (index >= 5_000) "2026-07-14T00:02:00Z" else null,
+            )
+        }
+        val lastActive = notebooks[4_999]
+        val lastArchived = notebooks[9_999]
+        var selectedSessionId: String? = null
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(320.dp).height(480.dp)) {
+                    AetherLinkNavigationDrawerContent(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            activeChatSessionId = notebooks.first().sessionId,
+                        ),
+                        researchNotebooks = notebooks,
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = "",
+                        hasAnyChatSessions = false,
+                        hasChatSearchQuery = false,
+                        hasChatSearchResults = false,
+                        filteredChatSessions = emptyList(),
+                        onChatSearchQueryChange = {},
+                        onClearChatSearch = {},
+                        onNewChat = {},
+                        onSelectResearchNotebook = { selectedSessionId = it.sessionId },
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = {},
+                    )
+                }
+            }
+        }
+
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        val composedResearchSemantics = compose.onAllNodesWithContentDescription(
+            "Runtime research notebook",
+            substring = true,
+        ).fetchSemanticsNodes().size
+        assertTrue(composedResearchSemantics in 0 until 100)
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastActive.sessionId))
+            .assertDoesNotExist()
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
+            .assertDoesNotExist()
+
+        history.performScrollToIndex(5_001)
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastActive.sessionId))
+            .assertIsDisplayed()
+            .performClick()
+        assertEquals(lastActive.sessionId, selectedSessionId)
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
+            .assertDoesNotExist()
+
+        history.performScrollToIndex(10_002)
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(lastArchived.sessionId))
+            .assertIsDisplayed()
+        compose.onNodeWithTag(researchNotebookDrawerRowTestTag(notebooks.first().sessionId))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun researchNotebookDrawerFitsCompactHeightAtLargeFontScale() {
+        val archivedNotebook = ResearchNotebookPayload(
+            notebookId = "research_notebook_33445566778899aabbccddeeff001122",
+            sessionId = "research_session_33445566778899aabbccddeeff001122",
+            title = "A long archived runtime research notebook title",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 8,
+            createdAt = "2026-07-14T00:00:00Z",
+            updatedAt = "2026-07-14T00:02:00Z",
+            archivedAt = "2026-07-14T00:03:00Z",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "en", fontScale = 1.5f) {
+                    Surface(modifier = Modifier.width(320.dp).height(360.dp)) {
+                        ResearchNotebookDrawerItem(
+                            notebook = archivedNotebook,
+                            selected = false,
+                            enabled = true,
+                            menuExpanded = false,
+                            onOpenMenu = {},
+                            onDismissMenu = {},
+                            onSelect = null,
+                            onRename = {},
+                            onArchive = null,
+                            onRestore = {},
+                            onPermanentlyDelete = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val archivedOptions = compose.onNodeWithTag(
+            researchNotebookDrawerOptionsTestTag(archivedNotebook.sessionId),
+        )
+            .assertIsDisplayed()
+        val archivedRow = compose.onNodeWithTag(
+            researchNotebookDrawerRowTestTag(archivedNotebook.sessionId),
+        ).assertExists()
+        val rowBounds = archivedRow.getUnclippedBoundsInRoot()
+        assertBoundsInside(
+            "compact research notebook options",
+            archivedOptions.getUnclippedBoundsInRoot(),
+            rowBounds,
+        )
+        assertBoundsInside(
+            "compact research notebook title",
+            compose.onNodeWithText(archivedNotebook.title, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot(),
+            rowBounds,
+        )
+    }
+
+    @Test
+    fun researchSourceSelectorIsOneMergedCheckboxTargetAndFitsNarrowWidth() {
+        val label = "A very long approved research source filename.pdf"
+        compose.setContent {
+            var checked by remember { mutableStateOf(false) }
+            MaterialTheme {
+                Surface(modifier = Modifier.width(180.dp)) {
+                    ResearchSourceSelectorRow(
+                        label = label,
+                        checked = checked,
+                        onCheckedChange = { checked = it },
+                    )
+                }
+            }
+        }
+
+        val row = compose.onNodeWithTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG)
+            .assertIsDisplayed()
+            .assertIsOff()
+            .assert(hasClickAction())
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
+        compose.onAllNodesWithText(label).assertCountEquals(1)
+        compose.onAllNodes(hasClickAction(), useUnmergedTree = true).assertCountEquals(1)
+        val rowBounds = row.getUnclippedBoundsInRoot()
+        val labelBounds = compose.onNodeWithText(label, useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertBoundsInside("narrow research source label", labelBounds, rowBounds)
+
+        row.performClick().assertIsOn()
+    }
+
+    @Config(sdk = [35], qualifiers = "w320dp-h360dp")
+    @Test
+    fun researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont() {
+        val model = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 Research Vision Model With Long Name",
+            provider = "lm_studio",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "vision"),
+            installed = true,
+            source = "local",
+            contextWindowTokens = 131_072,
+        )
+        val sources = researchDialogSources(9)
+        val showDialog = mutableStateOf(true)
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "en", fontScale = 1.5f) {
+                    if (showDialog.value) {
+                        ResearchBriefCreateDialog(
+                            state = RuntimeUiState(
+                                selectedModelId = model.id,
+                                models = listOf(model),
+                                trustedSources = sources,
+                            ),
+                            onDismiss = {},
+                            onCreate = { _, _, _ -> },
+                        )
+                    }
+                }
+            }
+        }
+
+        val dialog = compose.onNodeWithTag(RESEARCH_BRIEF_DIALOG_TEST_TAG)
+            .assertIsDisplayed()
+        val picker = compose.onNodeWithTag(RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        val modelRowTag = researchBriefModelMenuItemTestTag(model.id)
+        val modelRow = compose.onNodeWithTag(modelRowTag, useUnmergedTree = true)
+            .assertIsDisplayed()
+        val modelNameBounds = compose.onNode(
+            hasText(model.name) and hasAnyAncestor(hasTestTag(modelRowTag)),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val modelDetail = compose.onNodeWithTag(
+            researchBriefModelMenuItemCapabilityTestTag(model.id),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assertTextContains(
+                "LM Studio - Installed · Chat · Vision · Context: 131,072 tokens",
+                substring = false,
+            )
+        val modelRowBounds = modelRow.getUnclippedBoundsInRoot()
+        val modelDetailBounds = modelDetail.getUnclippedBoundsInRoot()
+        assertBoundsInside("compact research model name", modelNameBounds, modelRowBounds)
+        assertBoundsInside("compact research model detail", modelDetailBounds, modelRowBounds)
+        assertFalse(
+            "compact research model name and detail must not overlap.",
+            boundsOverlap(modelNameBounds, modelDetailBounds),
+        )
+        modelRow.performClick()
+        val lastSource = compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText("Reference 9.pdf"),
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        val cancel = compose.onNodeWithText("Cancel")
+            .assertIsDisplayed()
+
+        val dialogBounds = dialog.getUnclippedBoundsInRoot()
+        assertBoundsInside(
+            "compact research dialog last source",
+            lastSource.getUnclippedBoundsInRoot(),
+            dialogBounds,
+        )
+        assertBoundsInside(
+            "compact research dialog cancel action",
+            cancel.getUnclippedBoundsInRoot(),
+            dialogBounds,
+        )
+
+        picker.performScrollTo().performClick()
+        compose.onNodeWithTag(modelRowTag, useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnUiThread { showDialog.value = false }
+        compose.waitForIdle()
+        compose.onNodeWithTag(RESEARCH_BRIEF_DIALOG_TEST_TAG).assertDoesNotExist()
+        compose.onNodeWithTag(modelRowTag, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun researchBriefDialogDisablesOnlyUncheckedSourcesAtSelectionLimit() {
+        val model = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        compose.setContent {
+            MaterialTheme {
+                ResearchBriefCreateDialog(
+                    state = RuntimeUiState(
+                        selectedModelId = model.id,
+                        models = listOf(model),
+                        trustedSources = researchDialogSources(9),
+                    ),
+                    onDismiss = {},
+                    onCreate = { _, _, _ -> },
+                )
+            }
+        }
+
+        fun sourceRow(index: Int) = compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText("Reference $index.pdf"),
+        )
+
+        (1..8).forEach { index ->
+            sourceRow(index).performScrollTo().performClick()
+        }
+        sourceRow(1).performScrollTo().assertIsEnabled().assertIsOn()
+        sourceRow(9).performScrollTo().assertIsNotEnabled().assertIsOff()
+
+        sourceRow(1).performScrollTo().performClick().assertIsOff()
+        sourceRow(9).performScrollTo().assertIsEnabled().performClick().assertIsOn()
+    }
+
+    @Test
+    fun researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming() {
+        val selectedModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "raw_future_capability"),
+            installed = true,
+            source = "local",
+            contextWindowTokens = 131_072,
+        )
+        val runningVisionModel = RuntimeModel(
+            id = "lmstudio:vision-research",
+            name = "Vision Research Model",
+            provider = "lm_studio",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "vision"),
+            installed = true,
+            running = true,
+            source = "local",
+            contextWindowTokens = 32_768,
+        )
+        val uninstalledModel = selectedModel.copy(
+            id = "ollama:not-installed",
+            name = "Not Installed Research Model",
+            installed = false,
+        )
+        val providerManagedModel = selectedModel.copy(
+            id = "cloud:managed-chat",
+            name = "Provider Managed Research Model",
+            source = "cloud",
+        )
+        val embeddingModel = selectedModel.copy(
+            id = "ollama:embedding-research",
+            name = "Embedding Research Model",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+        )
+        val addedCatalogModel = selectedModel.copy(
+            id = "ollama:added-research-chat",
+            name = "Added Research Chat Model",
+        )
+        val zeroContextModel = selectedModel.copy(
+            id = "ollama:zero-context-research-chat",
+            name = "Zero Context Research Chat Model",
+            contextWindowTokens = 0,
+        )
+        val isStreaming = mutableStateOf(false)
+        var submittedModelId: String? = null
+        val models = mutableStateOf(
+            listOf(
+                selectedModel,
+                runningVisionModel,
+                zeroContextModel,
+                uninstalledModel,
+                providerManagedModel,
+                embeddingModel,
+            )
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ResearchBriefCreateDialog(
+                    state = RuntimeUiState(
+                        selectedModelId = selectedModel.id,
+                        models = models.value,
+                        trustedSources = researchDialogSources(1),
+                        isStreaming = isStreaming.value,
+                    ),
+                    onDismiss = {},
+                    onCreate = { _, modelId, _ -> submittedModelId = modelId },
+                )
+            }
+        }
+
+        val picker = compose.onNodeWithTag(RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG)
+            .assertIsEnabled()
+        picker.performClick()
+
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assert(
+                hasContentDescription(
+                    "Selected chat model Qwen3 8B. Ollama - Installed. " +
+                        "Capabilities: Chat, Context: 131,072 tokens."
+                ) and
+                    hasStateDescription("Selected") and
+                    hasClickActionLabel("Choose model") and
+                    hasClickAction()
+            )
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assert(
+                hasContentDescription(
+                    "Chat model Vision Research Model. LM Studio - Running. " +
+                        "Capabilities: Chat, Vision, Context: 32,768 tokens."
+                ) and
+                    hasClickActionLabel("Choose model") and
+                    hasClickAction()
+            )
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(zeroContextModel.id),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assert(
+                hasContentDescription(
+                    "Chat model Zero Context Research Chat Model. Ollama - Installed. " +
+                        "Capabilities: Chat."
+                )
+            )
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemCapabilityTestTag(zeroContextModel.id),
+            useUnmergedTree = true,
+        ).assertTextContains("Ollama - Installed · Chat", substring = false)
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemCapabilityTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        ).assertTextContains(
+            "Ollama - Installed · Chat · Context: 131,072 tokens",
+            substring = false,
+        )
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(uninstalledModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(providerManagedModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(embeddingModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        assertNoVisibleText("raw_future_capability")
+
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).performClick()
+        picker.assertTextContains(runningVisionModel.name)
+
+        compose.runOnUiThread {
+            models.value = listOf(
+                addedCatalogModel,
+                runningVisionModel,
+                selectedModel,
+                zeroContextModel,
+                uninstalledModel,
+                providerManagedModel,
+                embeddingModel,
+            )
+        }
+        compose.waitForIdle()
+        picker.assertTextContains(runningVisionModel.name)
+            .assert(
+                hasContentDescription("Model: Vision Research Model") and
+                    hasStateDescription("Selected") and
+                    hasClickActionLabel("Choose model")
+            )
+
+        compose.onNode(hasSetTextAction()).performTextInput("Compare selected sources")
+        compose.onNode(
+            hasTestTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG) and hasText("Reference 1.pdf"),
+        ).performScrollTo().performClick()
+        compose.onNodeWithText("Create").performClick()
+        assertEquals(runningVisionModel.id, submittedModelId)
+
+        picker.performClick()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().assert(hasStateDescription("Selected"))
+        compose.runOnUiThread { isStreaming.value = true }
+        compose.waitForIdle()
+        picker.assertIsNotEnabled().assert(
+            hasContentDescription("Model: Vision Research Model") and
+                hasStateDescription(
+                    "Wait for the current response or cancel it before changing models."
+                )
+        )
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+
+        compose.runOnUiThread { isStreaming.value = false }
+        compose.waitForIdle()
+        picker.assertIsEnabled()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        picker.performClick()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().assert(hasStateDescription("Selected")).performClick()
+
+        compose.runOnUiThread {
+            models.value = listOf(
+                addedCatalogModel,
+                selectedModel,
+                zeroContextModel,
+                uninstalledModel,
+                providerManagedModel,
+                embeddingModel,
+            )
+        }
+        compose.waitForIdle()
+        picker.assertTextContains(selectedModel.name)
+        picker.performClick()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(runningVisionModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().assert(hasStateDescription("Selected"))
+
+        compose.runOnUiThread {
+            models.value = listOf(uninstalledModel, providerManagedModel, embeddingModel)
+        }
+        compose.waitForIdle()
+        picker.assertIsNotEnabled().assert(hasStateDescription("Model unavailable"))
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+
+        compose.runOnUiThread {
+            models.value = listOf(selectedModel, uninstalledModel, providerManagedModel, embeddingModel)
+        }
+        compose.waitForIdle()
+        picker.assertIsEnabled().assertTextContains(selectedModel.name)
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        picker.performClick()
+        compose.onNodeWithTag(
+            researchBriefModelMenuItemTestTag(selectedModel.id),
+            useUnmergedTree = true,
+        ).assertIsDisplayed().assert(hasStateDescription("Selected"))
+    }
+
+    @Test
+    fun researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val model = RuntimeModel(
+            id = "lmstudio:long-research-vision-model",
+            name = "Long Runtime Research Vision Model Name",
+            provider = "lm_studio",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "vision", "raw_future_capability"),
+            installed = true,
+            source = "local",
+            contextWindowTokens = 131_072,
+        )
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguageTag.value, fontScale = 1.45f) {
+                    key(currentLanguageTag.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(320.dp)
+                                .height(180.dp)
+                                .testTag(researchBriefModelRowsNarrowRootTestTag),
+                        ) {
+                            ResearchBriefModelMenuItem(
+                                model = model,
+                                selected = true,
+                                enabled = true,
+                                onSelect = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread { currentLanguageTag.value = languageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag, fontScale = 1.45f)
+            val statusLine = localizedContext.getString(
+                R.string.model_status_value,
+                localizedContext.getString(R.string.provider_lm_studio),
+                localizedContext.getString(R.string.model_installed),
+            )
+            val chatCapability = localizedContext.getString(R.string.model_capability_chat)
+            val visionCapability = localizedContext.getString(R.string.model_capability_vision)
+            val contextCapability = localizedContext.getString(
+                R.string.model_capability_context_window,
+                131_072,
+            )
+            val chatVisionCapabilities = localizedContext.getString(
+                R.string.model_capability_visual_pair,
+                chatCapability,
+                visionCapability,
+            )
+            val capabilityLine = localizedContext.getString(
+                R.string.model_capability_visual_pair,
+                chatVisionCapabilities,
+                contextCapability,
+            )
+            val detailText = localizedContext.getString(
+                R.string.model_status_capabilities_value,
+                statusLine,
+                capabilityLine,
+            )
+            val rowTag = researchBriefModelMenuItemTestTag(model.id)
+            val rowBounds = compose.onNodeWithTag(rowTag, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val rootBounds = compose.onNodeWithTag(researchBriefModelRowsNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val nameBounds = compose.onNode(
+                hasText(model.name) and hasAnyAncestor(hasTestTag(rowTag)),
+                useUnmergedTree = true,
+            ).assertIsDisplayed().getUnclippedBoundsInRoot()
+            val detailBounds = compose.onNodeWithTag(
+                researchBriefModelMenuItemCapabilityTestTag(model.id),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertTextContains(detailText, substring = false)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag research model row", rowBounds, rootBounds)
+            assertBoundsInside("$languageTag research model name", nameBounds, rowBounds)
+            assertBoundsInside("$languageTag research model detail", detailBounds, rowBounds)
+            assertFalse(
+                "$languageTag research model name and detail must not overlap.",
+                boundsOverlap(nameBounds, detailBounds),
+            )
+            assertNoVisibleText("raw_future_capability")
+        }
+    }
+
+    @Test
+    fun researchNotebookSourceCountUsesLocalizedPlurals() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val expected = mapOf(
+            "en" to ("1 source" to "2 sources"),
+            "fr" to ("1 source" to "2 sources"),
+            "ko" to ("소스 1개" to "소스 2개"),
+            "ja" to ("1 件のソース" to "2 件のソース"),
+            "zh-CN" to ("1 个来源" to "2 个来源"),
+        )
+
+        expected.forEach { (languageTag, counts) ->
+            val resources = context.localizedContext(languageTag).resources
+            assertEquals(
+                "$languageTag singular source count",
+                counts.first,
+                resources.getQuantityString(R.plurals.research_notebook_source_count, 1, 1),
+            )
+            assertEquals(
+                "$languageTag plural source count",
+                counts.second,
+                resources.getQuantityString(R.plurals.research_notebook_source_count, 2, 2),
+            )
+        }
+    }
+
+    @Test
     fun navigationDrawerSettingsFooterLocalizesActionSemanticsAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
@@ -2680,11 +3687,9 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
-            compose.onNode(
-                hasText(localizedContext.getString(R.string.previous_chats)) and hasHeading(),
-                useUnmergedTree = true,
-            )
-                .assertIsDisplayed()
+            val headingMatcher = hasText(localizedContext.getString(R.string.previous_chats)) and hasHeading()
+            compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG).performScrollToNode(headingMatcher)
+            compose.onNode(headingMatcher, useUnmergedTree = true).assertIsDisplayed()
         }
     }
 
@@ -2771,9 +3776,10 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
 
             groupLabels.forEach { label ->
-                compose.onNode(hasText(label) and hasHeading(), useUnmergedTree = true)
-                    .performScrollTo()
-                    .assertIsDisplayed()
+                val headingMatcher = hasText(label) and hasHeading()
+                compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+                    .performScrollToNode(headingMatcher)
+                compose.onNode(headingMatcher, useUnmergedTree = true).assertIsDisplayed()
             }
         }
     }
@@ -2818,15 +3824,10 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
-            compose.onNodeWithText(emptyText)
-                .performScrollTo()
-                .assertIsDisplayed()
-            compose.onNode(
-                hasContentDescription(emptyText) and hasPoliteLiveRegion(),
-                useUnmergedTree = true,
-            )
-                .performScrollTo()
-                .assertIsDisplayed()
+            val emptyMatcher = hasContentDescription(emptyText) and hasPoliteLiveRegion()
+            compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG).performScrollToNode(emptyMatcher)
+            compose.onNodeWithText(emptyText).assertIsDisplayed()
+            compose.onNode(emptyMatcher, useUnmergedTree = true).assertIsDisplayed()
         }
     }
 
@@ -2880,9 +3881,10 @@ class ClientScreensNoDeviceComposeTest {
             val rootBounds = compose
                 .onNodeWithTag(drawerEmptyHistoryNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
+            compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+                .performScrollToNode(hasTestTag(DRAWER_EMPTY_HISTORY_TEST_TAG))
             val emptyBounds = compose
                 .onNodeWithTag(DRAWER_EMPTY_HISTORY_TEST_TAG, useUnmergedTree = true)
-                .performScrollTo()
                 .assertIsDisplayed()
                 .assert(hasText(emptyText))
                 .assert(hasContentDescription(emptyText))
@@ -3046,16 +4048,15 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-            .performScrollTo()
             .assertIsDisplayed()
             .performTextInput("  missing  ")
         compose.waitForIdle()
-        compose.onNodeWithText("No matching chats.")
-            .performScrollTo()
-            .assertIsDisplayed()
-        compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-            .performScrollTo()
+        history.performScrollToNode(hasText("No matching chats."))
+        compose.onNodeWithText("No matching chats.").assertIsDisplayed()
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         compose.onNodeWithContentDescription("Clear chat search for missing", useUnmergedTree = true)
             .assertIsDisplayed()
             .assert(hasClickActionLabel("Clear chat search for missing"))
@@ -3073,12 +4074,10 @@ class ClientScreensNoDeviceComposeTest {
             assertEquals("", query.value)
         }
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
-        compose.onNodeWithText("Trip plan")
-            .performScrollTo()
-            .assertIsDisplayed()
-        compose.onNodeWithText("Code review")
-            .performScrollTo()
-            .assertIsDisplayed()
+        history.performScrollToNode(hasText("Trip plan"))
+        compose.onNodeWithText("Trip plan").assertIsDisplayed()
+        history.performScrollToNode(hasText("Code review"))
+        compose.onNodeWithText("Code review").assertIsDisplayed()
         compose.onAllNodesWithText("No matching chats.").assertCountEquals(0)
     }
 
@@ -3153,8 +4152,9 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
+        val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-            .performScrollTo()
             .performTextInput("qwen")
         compose.waitForIdle()
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -3166,41 +4166,34 @@ class ClientScreensNoDeviceComposeTest {
             qwenStatus,
             qwenModelText,
         )
-        compose.onNodeWithText("Research notes")
-            .performScrollTo()
-            .assertIsDisplayed()
-        compose.onNodeWithText(qwenModelText)
-            .performScrollTo()
-            .assertIsDisplayed()
-        compose.onNode(hasContentDescription(qwenSelectedSummary), useUnmergedTree = true)
-            .performScrollTo()
-            .assertIsDisplayed()
+        history.performScrollToNode(hasText("Research notes"))
+        compose.onNodeWithText("Research notes").assertIsDisplayed()
+        compose.onNodeWithText(qwenModelText).assertIsDisplayed()
+        compose.onNode(hasContentDescription(qwenSelectedSummary), useUnmergedTree = true).assertIsDisplayed()
         assertNoVisibleText("Trip plan")
 
         compose.runOnUiThread {
             query.value = ""
         }
         compose.waitForIdle()
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-            .performScrollTo()
             .performTextInput("backend unavailable")
         compose.waitForIdle()
-        compose.onNodeWithText("Trip plan")
-            .performScrollTo()
-            .assertIsDisplayed()
+        history.performScrollToNode(hasText("Trip plan"))
+        compose.onNodeWithText("Trip plan").assertIsDisplayed()
         assertNoVisibleText("Research notes")
 
         compose.runOnUiThread {
             query.value = ""
         }
         compose.waitForIdle()
+        history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
         compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-            .performScrollTo()
             .performTextInput("untitled")
         compose.waitForIdle()
-        compose.onNodeWithText("Untitled chat")
-            .performScrollTo()
-            .assertIsDisplayed()
+        history.performScrollToNode(hasText("Untitled chat"))
+        compose.onNodeWithText("Untitled chat").assertIsDisplayed()
         assertNoVisibleText("Trip plan")
     }
 
@@ -3297,15 +4290,15 @@ class ClientScreensNoDeviceComposeTest {
                 currentCopy.value = expected
             }
             compose.waitForIdle()
+            val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+            history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
             compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-                .performScrollTo()
                 .assertIsDisplayed()
             compose.onNodeWithText(expected.searchLabel).assertIsDisplayed()
-            compose.onNode(hasText(expected.noResults) and hasPoliteLiveRegion())
-                .performScrollTo()
-                .assertIsDisplayed()
-            compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
-                .performScrollTo()
+            val noResultsMatcher = hasText(expected.noResults) and hasPoliteLiveRegion()
+            history.performScrollToNode(noResultsMatcher)
+            compose.onNode(noResultsMatcher).assertIsDisplayed()
+            history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
             compose.onNodeWithContentDescription(expected.clearLabel, useUnmergedTree = true)
                 .assertIsDisplayed()
         }
@@ -3414,9 +4407,10 @@ class ClientScreensNoDeviceComposeTest {
             val rootBounds = compose
                 .onNodeWithTag(drawerChatSearchNoResultsNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
+            val history = compose.onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+            history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_TEST_TAG))
             val searchBounds = compose
                 .onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG, useUnmergedTree = true)
-                .performScrollTo()
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
             val clearBounds = compose
@@ -3425,12 +4419,10 @@ class ClientScreensNoDeviceComposeTest {
                 .assert(hasContentDescription(expected.clearLabel))
                 .assert(hasClickActionLabel(expected.clearLabel))
                 .getUnclippedBoundsInRoot()
-            compose.onNodeWithText(expected.searchLabel)
-                .performScrollTo()
-                .assertIsDisplayed()
+            compose.onNodeWithText(expected.searchLabel).assertIsDisplayed()
+            history.performScrollToNode(hasTestTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG))
             val noResultsBounds = compose
                 .onNodeWithTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG, useUnmergedTree = true)
-                .performScrollTo()
                 .assertIsDisplayed()
                 .assert(hasText(expected.noResults))
                 .assert(hasContentDescription(expected.noResults))
@@ -9373,6 +10365,51 @@ class ClientScreensNoDeviceComposeTest {
         assertEquals(1, confirmClicks)
         assertEquals(0, dismissClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+    }
+
+    @Test
+    fun renameResearchNotebookDialogLocalizesNotebookActionSemantics() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguageTag.value) {
+                    key(currentLanguageTag.value) {
+                        RenameChatSessionDialog(
+                            title = "Research title",
+                            isResearchNotebook = true,
+                            onTitleChange = {},
+                            onDismiss = {},
+                            onConfirm = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            currentLanguageTag.value = languageTag
+            compose.waitForIdle()
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val renameSubject = localizedContext.getString(R.string.rename_research_notebook)
+            val titleLabel = localizedContext.getString(R.string.research_notebook_title_label)
+            val confirmLabel = localizedContext.getString(
+                R.string.confirmation_final_action_named,
+                renameSubject,
+            )
+
+            compose.onNodeWithText(renameSubject).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(titleLabel) and hasSetTextAction(),
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(confirmLabel) and hasClickActionLabel(confirmLabel),
+                useUnmergedTree = true,
+            ).assertIsEnabled()
+        }
     }
 
     @Test
@@ -17015,17 +18052,28 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:nomic-embed-text",
             name = "Nomic Embed Text",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embedding", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val uninstalledEmbeddingModel = RuntimeModel(
             id = "ollama:mxbai-embed-large",
             name = "Mxbai Embed Large",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embed", "raw_future_capability"),
             installed = false,
             source = "local",
+        )
+        val providerManagedEmbeddingModel = RuntimeModel(
+            id = "openai:text-embedding-3-small",
+            name = "Provider Managed Embedding",
+            provider = "openai",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding", "raw_future_capability"),
+            installed = true,
+            source = "cloud",
+            contextWindowTokens = 8_192,
         )
 
         compose.setContent {
@@ -17571,6 +18619,64 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels() {
+        val installedLocal = RuntimeModel(
+            id = "ollama:nomic-embed-text",
+            name = "Nomic Embed Text",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+        val uninstalledLocal = RuntimeModel(
+            id = "ollama:mxbai-embed-large",
+            name = "Mxbai Embed Large",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("embed"),
+            installed = false,
+            source = " local ",
+        )
+        val providerManaged = RuntimeModel(
+            id = "openai:text-embedding-3-small",
+            name = "Provider Managed Embedding",
+            provider = "openai",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "cloud",
+        )
+        val noncanonicalLocal = RuntimeModel(
+            id = "nomic-embed-text",
+            name = "Noncanonical Local Embedding",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        assertEquals(
+            listOf(installedLocal.id, uninstalledLocal.id),
+            embeddingModelMenuModels(
+                listOf(
+                    uninstalledLocal,
+                    providerManaged,
+                    noncanonicalLocal,
+                    chatModel,
+                    installedLocal,
+                ),
+            ).map(RuntimeModel::id),
+        )
+    }
+
+    @Test
     fun settingsEmbeddingModelRowsExposeSelectedStateToAccessibility() {
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
@@ -17584,17 +18690,38 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:nomic-embed-text",
             name = "Nomic Embed Text",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embedding", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val uninstalledEmbeddingModel = RuntimeModel(
             id = "ollama:mxbai-embed-large",
             name = "Mxbai Embed Large",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embed", "raw_future_capability"),
             installed = false,
             source = "local",
+            contextWindowTokens = -1,
+        )
+        val zeroContextEmbeddingModel = RuntimeModel(
+            id = "ollama:zero-context-embed",
+            name = "Zero Context Embedding",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+            contextWindowTokens = 0,
+        )
+        val providerManagedEmbeddingModel = RuntimeModel(
+            id = "openai:text-embedding-3-small",
+            name = "Provider Managed Embedding",
+            provider = "openai",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding", "raw_future_capability"),
+            installed = true,
+            source = "cloud",
+            contextWindowTokens = 8_192,
         )
 
         compose.setContent {
@@ -17611,7 +18738,13 @@ class ClientScreensNoDeviceComposeTest {
                         selectedLanguageTag = "en",
                         selectedTheme = RuntimeAppTheme.System,
                         selectedEmbeddingModelId = embeddingModel.id,
-                        models = listOf(chatModel, embeddingModel, uninstalledEmbeddingModel),
+                        models = listOf(
+                            chatModel,
+                            embeddingModel,
+                            zeroContextEmbeddingModel,
+                            uninstalledEmbeddingModel,
+                            providerManagedEmbeddingModel,
+                        ),
                     ),
                     onHostChange = {},
                     onPortChange = {},
@@ -17658,7 +18791,10 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         compose.onNode(
-            hasContentDescription("Selected memory indexing model Nomic Embed Text. Ollama - Installed.") and
+            hasContentDescription(
+                "Selected memory indexing model Nomic Embed Text. Ollama - Installed. " +
+                    "Capabilities: Embedding, Context: 8,192 tokens.",
+            ) and
                 hasStateDescription("Selected"),
             useUnmergedTree = true,
         )
@@ -17671,12 +18807,35 @@ class ClientScreensNoDeviceComposeTest {
             .performScrollTo()
             .assertIsDisplayed()
         compose.onNode(
-            hasContentDescription("Memory indexing model Mxbai Embed Large. Ollama - Not installed.") and
+            hasContentDescription(
+                "Memory indexing model Mxbai Embed Large. Ollama - Not installed. " +
+                    "Capabilities: Embedding.",
+            ) and
                 hasStateDescription("Install this model in AetherLink Runtime before selecting it."),
             useUnmergedTree = true,
         )
             .performScrollTo()
             .assertIsNotEnabled()
+        compose.onNodeWithContentDescription(
+            "Memory indexing model Zero Context Embedding. Ollama - Installed. Capabilities: Embedding.",
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag(
+            embeddingModelRowStatusTestTag(zeroContextEmbeddingModel.id),
+            useUnmergedTree = true,
+        ).assertTextContains("Ollama - Installed · Embedding", substring = false)
+        compose.onNodeWithTag(
+            embeddingModelRowStatusTestTag(uninstalledEmbeddingModel.id),
+            useUnmergedTree = true,
+        ).assertTextContains("Ollama - Not installed · Embedding", substring = false)
+        compose.onNodeWithTag(
+            embeddingModelRowTestTag(providerManagedEmbeddingModel.id),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
+        assertNoVisibleText(providerManagedEmbeddingModel.name)
+        assertNoVisibleText("raw_future_capability")
     }
 
     @Test
@@ -17770,14 +18929,19 @@ class ClientScreensNoDeviceComposeTest {
 
         val waitForStream = "Wait for the current response or cancel it before changing models."
         compose.onNode(
-            hasContentDescription("Selected memory indexing model Nomic Embed Text. Ollama - Installed.") and
+            hasContentDescription(
+                "Selected memory indexing model Nomic Embed Text. Ollama - Installed. " +
+                    "Capabilities: Embedding.",
+            ) and
                 hasStateDescription(waitForStream),
             useUnmergedTree = true,
         )
             .performScrollTo()
             .assertIsNotEnabled()
         compose.onNode(
-            hasContentDescription("Memory indexing model Mxbai Embed Large. Ollama - Installed.") and
+            hasContentDescription(
+                "Memory indexing model Mxbai Embed Large. Ollama - Installed. Capabilities: Embedding.",
+            ) and
                 hasStateDescription(waitForStream),
             useUnmergedTree = true,
         )
@@ -18213,9 +19377,10 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:nomic-embed-text",
             name = "Nomic Embed Text",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embedding", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val uninstalledEmbeddingModel = RuntimeModel(
             id = "ollama:mxbai-embed-large",
@@ -18228,33 +19393,41 @@ class ClientScreensNoDeviceComposeTest {
         val expectedSummaries = listOf(
             ExpectedEmbeddingModelSummary(
                 languageTag = "en",
-                selectedModel = "Selected memory indexing model Nomic Embed Text. Ollama - Installed.",
+                selectedModel = "Selected memory indexing model Nomic Embed Text. Ollama - Installed. " +
+                    "Capabilities: Embedding, Context: 8,192 tokens.",
                 noneOption = "Memory indexing option. No model selected. No memory indexing model selected.",
-                uninstalledModel = "Memory indexing model Mxbai Embed Large. Ollama - Not installed.",
+                uninstalledModel = "Memory indexing model Mxbai Embed Large. Ollama - Not installed. " +
+                    "Capabilities: Embedding.",
             ),
             ExpectedEmbeddingModelSummary(
                 languageTag = "ko",
-                selectedModel = "선택된 메모리 색인 모델 Nomic Embed Text. Ollama - 설치됨.",
+                selectedModel = "선택된 메모리 색인 모델 Nomic Embed Text. Ollama - 설치됨. " +
+                    "기능: 임베딩, 컨텍스트: 8,192 토큰.",
                 noneOption = "메모리 색인 옵션. 없음. 메모리 색인 모델을 선택하지 않았습니다.",
-                uninstalledModel = "메모리 색인 모델 Mxbai Embed Large. Ollama - 설치되지 않음.",
+                uninstalledModel = "메모리 색인 모델 Mxbai Embed Large. Ollama - 설치되지 않음. 기능: 임베딩.",
             ),
             ExpectedEmbeddingModelSummary(
                 languageTag = "ja",
-                selectedModel = "選択中のメモリ インデックスモデル「Nomic Embed Text」。Ollama - インストール済み。",
+                selectedModel = "選択中のメモリ インデックスモデル「Nomic Embed Text」。Ollama - インストール済み。" +
+                    "機能：メモリ インデックス、コンテキスト：8,192 トークン。",
                 noneOption = "メモリ インデックスの選択肢。なし。メモリ インデックスモデルは選択されていません。",
-                uninstalledModel = "メモリ インデックスモデル「Mxbai Embed Large」。Ollama - 未インストール。",
+                uninstalledModel = "メモリ インデックスモデル「Mxbai Embed Large」。Ollama - 未インストール。" +
+                    "機能：メモリ インデックス。",
             ),
             ExpectedEmbeddingModelSummary(
                 languageTag = "zh-CN",
-                selectedModel = "已选择记忆索引模型“Nomic Embed Text”。Ollama - 已安装。",
+                selectedModel = "已选择记忆索引模型“Nomic Embed Text”。Ollama - 已安装。" +
+                    "功能：记忆索引、上下文：8,192 个词元。",
                 noneOption = "记忆索引选项。无。未选择记忆索引模型。",
-                uninstalledModel = "记忆索引模型“Mxbai Embed Large”。Ollama - 未安装。",
+                uninstalledModel = "记忆索引模型“Mxbai Embed Large”。Ollama - 未安装。功能：记忆索引。",
             ),
             ExpectedEmbeddingModelSummary(
                 languageTag = "fr",
-                selectedModel = "Modèle d’indexation de la mémoire sélectionné « Nomic Embed Text ». Ollama - Installé.",
+                selectedModel = "Modèle d’indexation de la mémoire sélectionné « Nomic Embed Text ». " +
+                    "Ollama - Installé. Capacités : Indexation de la mémoire, Contexte : 8\u202F192 jetons.",
                 noneOption = "Option d’indexation de la mémoire. Aucun modèle sélectionné. Aucun modèle d’indexation de la mémoire sélectionné.",
-                uninstalledModel = "Modèle d’indexation de la mémoire « Mxbai Embed Large ». Ollama - Non installé.",
+                uninstalledModel = "Modèle d’indexation de la mémoire « Mxbai Embed Large ». " +
+                    "Ollama - Non installé. Capacités : Indexation de la mémoire.",
             ),
         )
         val currentSummary = mutableStateOf(expectedSummaries.first())
@@ -18354,6 +19527,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithContentDescription(expected.uninstalledModel, useUnmergedTree = true)
                 .performScrollTo()
                 .assertIsNotEnabled()
+            assertNoVisibleText("raw_future_capability")
         }
     }
 
@@ -18502,17 +19676,19 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:nomic-embed-text-super-long-indexing-model",
             name = "Nomic Embed Text Super Long Memory Retrieval Indexing Model",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embedding", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 131_072,
         )
         val uninstalledEmbeddingModel = RuntimeModel(
             id = "ollama:mxbai-embed-large-multilingual-retrieval-candidate",
             name = "Mxbai Embed Large Multilingual Retrieval Indexing Candidate",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embed", "raw_future_capability"),
             installed = false,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val savedMissingEmbeddingModelId =
             "lmstudio:private-memory-indexing-model-with-extra-long-route-safe-metadata"
@@ -18585,12 +19761,45 @@ class ClientScreensNoDeviceComposeTest {
             val nameBounds = compose
                 .onNodeWithTag(embeddingModelRowNameTestTag(model.id), useUnmergedTree = true)
                 .getUnclippedBoundsInRoot()
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag, fontScale = 1.5f)
+            val modelStatusText = localizedContext.getString(
+                R.string.model_status_value,
+                localizedContext.getString(R.string.provider_ollama),
+                localizedContext.getString(
+                    if (model.installed) R.string.model_installed else R.string.model_not_installed,
+                ),
+            )
+            val capabilityText = model.contextWindowTokens
+                ?.takeIf { it > 0 }
+                ?.let { contextWindowTokens ->
+                    localizedContext.getString(
+                        R.string.model_capability_visual_pair,
+                        localizedContext.getString(R.string.model_capability_embedding),
+                        localizedContext.getString(
+                            R.string.model_capability_context_window,
+                            contextWindowTokens,
+                        ),
+                    )
+                }
+                ?: localizedContext.getString(R.string.model_capability_embedding)
+            val detailText = localizedContext.getString(
+                R.string.model_status_capabilities_value,
+                modelStatusText,
+                capabilityText,
+            )
             val statusBounds = compose
                 .onNodeWithTag(embeddingModelRowStatusTestTag(model.id), useUnmergedTree = true)
+                .assertTextContains(detailText, substring = false)
                 .getUnclippedBoundsInRoot()
 
             assertBoundsInside("$languageTag embedding row name ${model.id}", nameBounds, rowBounds)
             assertBoundsInside("$languageTag embedding row status ${model.id}", statusBounds, rowBounds)
+            assertFalse(
+                "$languageTag embedding row name and status should not overlap for ${model.id}.",
+                boundsOverlap(nameBounds, statusBounds),
+            )
         }
 
         fun assertBaseEmbeddingRows(languageTag: String) {
@@ -18625,6 +19834,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
             assertBaseEmbeddingRows(languageTag)
+            assertNoVisibleText("raw_future_capability")
 
             compose.runOnUiThread {
                 currentCase.value = EmbeddingLayoutCase(
@@ -18672,17 +19882,19 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:nomic-embed-text-super-long-indexing-model",
             name = "Nomic Embed Text Super Long Memory Retrieval Indexing Model",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embedding", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 131_072,
         )
         val uninstalledEmbeddingModel = RuntimeModel(
             id = "ollama:mxbai-embed-large-multilingual-retrieval-candidate",
             name = "Mxbai Embed Large Multilingual Retrieval Indexing Candidate",
             modelKind = MODEL_KIND_EMBEDDING,
-            capabilities = listOf("embedding"),
+            capabilities = listOf("embed", "raw_future_capability"),
             installed = false,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val savedMissingEmbeddingModelId =
             "lmstudio:private-memory-indexing-model-with-extra-long-route-safe-metadata"
@@ -18799,6 +20011,10 @@ class ClientScreensNoDeviceComposeTest {
 
             assertBoundsInside("$languageTag Settings embedding row name ${model.id}", nameBounds, rowBounds)
             assertBoundsInside("$languageTag Settings embedding row status ${model.id}", statusBounds, rowBounds)
+            assertFalse(
+                "$languageTag Settings embedding row name and status should not overlap for ${model.id}.",
+                boundsOverlap(nameBounds, statusBounds),
+            )
         }
 
         fun assertBaseEmbeddingRows(languageTag: String) {
@@ -18836,6 +20052,7 @@ class ClientScreensNoDeviceComposeTest {
             assertRootHasStableLayout()
             expandEmbeddingSection()
             assertBaseEmbeddingRows(languageTag)
+            assertNoVisibleText("raw_future_capability")
 
             compose.runOnUiThread {
                 currentCase.value = EmbeddingLayoutCase(
@@ -25624,18 +26841,20 @@ class ClientScreensNoDeviceComposeTest {
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
             modelKind = MODEL_KIND_CHAT,
-            capabilities = listOf("chat"),
+            capabilities = listOf("chat", "raw_future_capability"),
             installed = true,
             source = "local",
+            contextWindowTokens = 131_072,
         )
         val runningChatModel = RuntimeModel(
             id = "ollama:llama3.1:8b",
             name = "Llama 3.1 8B",
             modelKind = MODEL_KIND_CHAT,
-            capabilities = listOf("chat"),
+            capabilities = listOf("chat", "vision"),
             installed = true,
             running = true,
             source = "local",
+            contextWindowTokens = 32_768,
         )
         val uninstalledChatModel = RuntimeModel(
             id = "ollama:gemma4:26b",
@@ -25669,26 +26888,38 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText("Qwen3 8B").assertIsDisplayed().performClick()
         compose.waitForIdle()
 
-        compose.onNode(
-            hasContentDescription("Selected chat model Qwen3 8B. Ollama - Installed.") and
+        compose.onNodeWithTag(chatModelMenuItemTestTag(selectedChatModel.id), useUnmergedTree = true)
+            .assert(
+                hasContentDescription(
+                    "Selected chat model Qwen3 8B. Ollama - Installed. " +
+                        "Capabilities: Chat, Context: 131,072 tokens."
+                ) and
                 hasStateDescription("Selected") and
                 hasClickActionLabel("Choose model") and
-                hasClickAction(),
-            useUnmergedTree = true,
-        ).assertIsDisplayed()
-        compose.onNode(
-            hasContentDescription("Chat model Llama 3.1 8B. Ollama - Running.") and
+                    hasClickAction()
+            )
+            .assertIsDisplayed()
+        compose.onNodeWithTag(chatModelMenuItemTestTag(runningChatModel.id), useUnmergedTree = true)
+            .assert(
+                hasContentDescription(
+                    "Chat model Llama 3.1 8B. Ollama - Running. " +
+                        "Capabilities: Chat, Vision, Context: 32,768 tokens."
+                ) and
                 hasClickActionLabel("Choose model") and
-                hasClickAction(),
-            useUnmergedTree = true,
-        ).assertIsDisplayed()
-        compose.onNode(
-            hasContentDescription("Chat model Gemma 4 26B. Ollama - Not installed.") and
+                    hasClickAction()
+            )
+            .assertIsDisplayed()
+        compose.onNodeWithTag(chatModelMenuItemTestTag(uninstalledChatModel.id), useUnmergedTree = true)
+            .assert(
+                hasContentDescription(
+                    "Chat model Gemma 4 26B. Ollama - Not installed. Capabilities: Chat."
+                ) and
                 hasStateDescription("Install model") and
                 hasClickActionLabel("Install model") and
-                hasClickAction(),
-            useUnmergedTree = true,
-        ).assertIsDisplayed()
+                    hasClickAction()
+            )
+            .assertIsDisplayed()
+        assertNoVisibleText("raw_future_capability")
     }
 
     @Test
@@ -25701,16 +26932,18 @@ class ClientScreensNoDeviceComposeTest {
             capabilities = listOf("chat"),
             installed = true,
             source = "local",
+            contextWindowTokens = 131_072,
         )
         val runningChatModel = RuntimeModel(
             id = "lmstudio:llama-running-local-runtime-chat-model",
             name = "Llama Running Local Runtime Chat Model",
             modelKind = MODEL_KIND_CHAT,
-            capabilities = listOf("chat"),
+            capabilities = listOf("chat", "vision"),
             installed = true,
             running = true,
             provider = "lm_studio",
             source = "local",
+            contextWindowTokens = 65_536,
         )
         val uninstalledChatModel = RuntimeModel(
             id = "ollama:gemma-uninstalled-vision-candidate",
@@ -25719,6 +26952,7 @@ class ClientScreensNoDeviceComposeTest {
             capabilities = listOf("chat"),
             installed = false,
             source = "local",
+            contextWindowTokens = 8_192,
         )
         val currentLanguageTag = mutableStateOf(languageTags.first())
 
@@ -25766,8 +27000,24 @@ class ClientScreensNoDeviceComposeTest {
             return context.getString(R.string.model_status_value, providerName, availability)
         }
 
+        fun capabilityLine(context: Context, model: RuntimeModel): String {
+            val labels = buildList {
+                add(context.getString(R.string.model_capability_chat))
+                if (model.capabilities.any { it in setOf("vision", "image", "multimodal") }) {
+                    add(context.getString(R.string.model_capability_vision))
+                }
+                model.contextWindowTokens?.let { tokens ->
+                    add(context.getString(R.string.model_capability_context_window, tokens))
+                }
+            }
+            return labels.drop(1).fold(labels.first()) { line, label ->
+                context.getString(R.string.model_capability_visual_pair, line, label)
+            }
+        }
+
         fun assertModelRowBounds(languageTag: String, model: RuntimeModel) {
             val rowTag = chatModelMenuItemTestTag(model.id)
+            compose.onNodeWithTag(rowTag, useUnmergedTree = true).performScrollTo()
             val rootBounds = compose.onNodeWithTag(chatModelRowsNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
             val rowBounds = compose.onNodeWithTag(rowTag, useUnmergedTree = true)
@@ -25777,25 +27027,34 @@ class ClientScreensNoDeviceComposeTest {
                 .getApplicationContext<Context>()
                 .localizedContext(languageTag, fontScale = 1.45f)
             val statusText = statusLine(localizedContext, model)
+            val capabilityText = capabilityLine(localizedContext, model)
+            val detailText = localizedContext.getString(
+                R.string.model_status_capabilities_value,
+                statusText,
+                capabilityText,
+            )
             val nameBounds = compose.onNode(
                 hasText(model.name) and hasAnyAncestor(hasTestTag(rowTag)),
                 useUnmergedTree = true,
             )
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
-            val statusBounds = compose.onNode(
-                hasText(statusText) and hasAnyAncestor(hasTestTag(rowTag)),
-                useUnmergedTree = true,
-            )
+            val detailBounds = compose
+                .onNodeWithTag(chatModelMenuItemCapabilityTestTag(model.id), useUnmergedTree = true)
                 .assertIsDisplayed()
+                .assertTextContains(detailText, substring = false)
                 .getUnclippedBoundsInRoot()
 
             assertBoundsInside("$languageTag model picker row ${model.id}", rowBounds, rootBounds)
             assertBoundsInside("$languageTag model picker row name ${model.id}", nameBounds, rowBounds)
-            assertBoundsInside("$languageTag model picker row status ${model.id}", statusBounds, rowBounds)
+            assertBoundsInside(
+                "$languageTag model picker row model details ${model.id}",
+                detailBounds,
+                rowBounds,
+            )
             assertFalse(
-                "$languageTag model picker name and status should stack without overlapping for ${model.id}.",
-                boundsOverlap(nameBounds, statusBounds),
+                "$languageTag model picker name and details should stack without overlapping for ${model.id}.",
+                boundsOverlap(nameBounds, detailBounds),
             )
 
             if (!model.installed) {
@@ -25812,8 +27071,8 @@ class ClientScreensNoDeviceComposeTest {
                     rowBounds,
                 )
                 assertFalse(
-                    "$languageTag model picker install action should not overlap status for ${model.id}.",
-                    boundsOverlap(installBounds, statusBounds),
+                    "$languageTag model picker install action should not overlap details for ${model.id}.",
+                    boundsOverlap(installBounds, detailBounds),
                 )
             }
         }
@@ -25934,6 +27193,14 @@ class ClientScreensNoDeviceComposeTest {
                     "Ollama",
                     localizedContext.getString(R.string.model_installed),
                 ),
+                localizedContext.getString(
+                    R.string.model_capabilities_accessibility,
+                    localizedContext.getString(
+                        R.string.model_capability_accessibility_pair,
+                        localizedContext.getString(R.string.model_capability_chat),
+                        localizedContext.getString(R.string.model_capability_vision),
+                    ),
+                ),
             )
         }
         fun textModelBlockedStatusLine(languageTag: String): String {
@@ -26016,7 +27283,11 @@ class ClientScreensNoDeviceComposeTest {
             )
                 .assertExists()
                 .assertIsNotEnabled()
-            compose.onNodeWithText(textModelBlockedStatusLine(expected.languageTag), useUnmergedTree = true)
+            compose.onNodeWithTag(
+                chatModelMenuItemCapabilityTestTag(textChatModel.id),
+                useUnmergedTree = true,
+            )
+                .assertTextContains(textModelBlockedStatusLine(expected.languageTag), substring = true)
                 .assertIsDisplayed()
             compose.onNode(
                 hasContentDescription(visionModelSummary(expected.languageTag)) and
@@ -26149,6 +27420,10 @@ class ClientScreensNoDeviceComposeTest {
                 R.string.chat_model_row_summary_selected,
                 textChatModel.name,
                 blockedStatusLine,
+                localizedContext.getString(
+                    R.string.model_capabilities_accessibility,
+                    localizedContext.getString(R.string.model_capability_chat),
+                ),
             )
             val visionStatusLine = localizedContext.getString(
                 R.string.model_status_value,
@@ -26159,6 +27434,14 @@ class ClientScreensNoDeviceComposeTest {
                 R.string.chat_model_row_summary,
                 visionChatModel.name,
                 visionStatusLine,
+                localizedContext.getString(
+                    R.string.model_capabilities_accessibility,
+                    localizedContext.getString(
+                        R.string.model_capability_accessibility_pair,
+                        localizedContext.getString(R.string.model_capability_chat),
+                        localizedContext.getString(R.string.model_capability_vision),
+                    ),
+                ),
             )
 
             compose.onNode(
@@ -26195,9 +27478,17 @@ class ClientScreensNoDeviceComposeTest {
             assertBoundsInside("${expected.languageTag} text model row", textRowBounds, rootBounds)
             assertBoundsInside("${expected.languageTag} vision model row", visionRowBounds, rootBounds)
             assertBoundsInside("${expected.languageTag} compact vision warning icon", warningIconBounds, textRowBounds)
-            compose.onNodeWithText(blockedStatusLine, useUnmergedTree = true)
+            compose.onNodeWithTag(
+                chatModelMenuItemCapabilityTestTag(textChatModel.id),
+                useUnmergedTree = true,
+            )
+                .assertTextContains(blockedStatusLine, substring = true)
                 .assertIsDisplayed()
-            compose.onNodeWithText(visionStatusLine, useUnmergedTree = true)
+            compose.onNodeWithTag(
+                chatModelMenuItemCapabilityTestTag(visionChatModel.id),
+                useUnmergedTree = true,
+            )
+                .assertTextContains(visionStatusLine, substring = true)
                 .assertIsDisplayed()
         }
     }
@@ -26212,23 +27503,23 @@ class ClientScreensNoDeviceComposeTest {
         val expectedSummaries = listOf(
             ExpectedSummary(
                 languageTag = "en",
-                selectedSummary = "Selected chat model Qwen3 8B. Ollama - Installed.",
+                selectedSummary = "Selected chat model Qwen3 8B. Ollama - Installed. Capabilities: Chat.",
             ),
             ExpectedSummary(
                 languageTag = "ko",
-                selectedSummary = "선택된 채팅 모델 Qwen3 8B. Ollama - 설치됨.",
+                selectedSummary = "선택된 채팅 모델 Qwen3 8B. Ollama - 설치됨. 기능: 채팅.",
             ),
             ExpectedSummary(
                 languageTag = "ja",
-                selectedSummary = "選択中のチャットモデル「Qwen3 8B」。Ollama - インストール済み。",
+                selectedSummary = "選択中のチャットモデル「Qwen3 8B」。Ollama - インストール済み。機能：チャット。",
             ),
             ExpectedSummary(
                 languageTag = "zh-CN",
-                selectedSummary = "已选择聊天模型“Qwen3 8B”。Ollama - 已安装。",
+                selectedSummary = "已选择聊天模型“Qwen3 8B”。Ollama - 已安装。功能：聊天。",
             ),
             ExpectedSummary(
                 languageTag = "fr",
-                selectedSummary = "Modèle de chat sélectionné « Qwen3 8B ». Ollama - Installé.",
+                selectedSummary = "Modèle de chat sélectionné « Qwen3 8B ». Ollama - Installé. Capacités : Chat.",
             ),
         )
 
@@ -26241,6 +27532,10 @@ class ClientScreensNoDeviceComposeTest {
                 "Ollama",
                 context.getString(R.string.model_installed),
             )
+            val capabilitySummary = context.getString(
+                R.string.model_capabilities_accessibility,
+                context.getString(R.string.model_capability_chat),
+            )
 
             assertEquals(
                 expected.selectedSummary,
@@ -26248,6 +27543,7 @@ class ClientScreensNoDeviceComposeTest {
                     R.string.chat_model_row_summary_selected,
                     "Qwen3 8B",
                     statusLine,
+                    capabilitySummary,
                 ),
             )
         }
@@ -28062,6 +29358,23 @@ class ClientScreensNoDeviceComposeTest {
         }
     }
 
+    private fun researchDialogSources(count: Int): List<RuntimeTrustedSource> {
+        return (1..count).map { index ->
+            RuntimeTrustedSource(
+                sourceAnchorId = "research-source-anchor-$index",
+                document = RuntimeDocumentIndexDocument(
+                    id = "research-source-document-$index",
+                    displayName = "Reference $index.pdf",
+                    mimeType = "application/pdf",
+                    contentFingerprint = index.toString().padStart(16, '0'),
+                    extractedCharacterCount = 100,
+                    chunkCount = 1,
+                    quality = "single_chunk",
+                ),
+            )
+        }
+    }
+
     private fun hasLongClickActionLabel(label: String): SemanticsMatcher {
         return SemanticsMatcher("has long-click action label $label") { node ->
             node.config.getOrNull(SemanticsActions.OnLongClick)?.label == label
@@ -28219,6 +29532,8 @@ class ClientScreensNoDeviceComposeTest {
         "chat_model_picker_streaming_disabled_narrow_root"
     private val chatModelRowsNarrowRootTestTag =
         "chat_model_rows_narrow_root"
+    private val researchBriefModelRowsNarrowRootTestTag =
+        "research_brief_model_rows_narrow_root"
     private val chatTopBarActiveTitleNarrowRootTestTag =
         "chat_top_bar_active_title_narrow_root"
     private val chatTopBarNewChatActionNarrowRootTestTag =

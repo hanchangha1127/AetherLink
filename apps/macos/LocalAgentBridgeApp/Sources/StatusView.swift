@@ -2160,10 +2160,12 @@ private func visibleModels(for models: [ModelInfo], kind: ModelKind) -> [ModelIn
     }
 }
 
-private struct ModelRow: View {
+struct ModelRow: View {
     let model: ModelInfo
 
     var body: some View {
+        let capabilityDisplay = modelCapabilityDisplay(for: model)
+
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.name)
@@ -2183,6 +2185,9 @@ private struct ModelRow: View {
                         .textSelection(.enabled)
                         .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
                     ModelBadge(text: kindName(model.kind), systemImage: kindSystemImage(model.kind))
+                    ForEach(capabilityDisplay.additionalBadges) { badge in
+                        ModelBadge(text: badge.text, systemImage: badge.systemImage)
+                    }
                     ModelBadge(text: providerName(model.provider), systemImage: "server.rack")
                     ModelBadge(text: sourceName(model.source), systemImage: sourceSystemImage(model.source))
                     if model.running {
@@ -2212,7 +2217,8 @@ private struct ModelRow: View {
                     provider: providerName(model.provider),
                     source: sourceName(model.source),
                     running: model.running,
-                    size: model.sizeBytes.map { localizedCompanionByteCountString(fromByteCount: $0) }
+                    size: model.sizeBytes.map { localizedCompanionByteCountString(fromByteCount: $0) },
+                    capabilities: capabilityDisplay.accessibilityLine
                 )
             )
         )
@@ -2266,6 +2272,65 @@ private struct ModelRow: View {
     }
 }
 
+struct ModelCapabilityBadgePresentation: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let systemImage: String
+}
+
+struct ModelCapabilityDisplay: Equatable {
+    let additionalBadges: [ModelCapabilityBadgePresentation]
+    let accessibilityLine: String?
+}
+
+func modelCapabilityDisplay(for model: ModelInfo) -> ModelCapabilityDisplay {
+    var labels: [String] = []
+    var additionalBadges: [ModelCapabilityBadgePresentation] = []
+    let capabilities = Set(model.capabilities)
+    if model.kind == .chat,
+       !capabilities.isDisjoint(with: ["vision", "image", "multimodal"]) {
+        let visionLabel = NSLocalizedString("Vision", comment: "")
+        labels.append(visionLabel)
+        additionalBadges.append(
+            ModelCapabilityBadgePresentation(
+                id: "vision",
+                text: visionLabel,
+                systemImage: "camera"
+            )
+        )
+    }
+    if let contextWindowTokens = model.contextWindowTokens,
+       contextWindowTokens > 0 {
+        let contextLabel = String(
+            format: NSLocalizedString("Context: %@ tokens", comment: ""),
+            localizedCompanionIntegerString(contextWindowTokens)
+        )
+        labels.append(contextLabel)
+        additionalBadges.append(
+            ModelCapabilityBadgePresentation(
+                id: "context-window",
+                text: contextLabel,
+                systemImage: "number"
+            )
+        )
+    }
+
+    var accessibilityLine = labels.first
+    for label in labels.dropFirst() {
+        if let currentLine = accessibilityLine {
+            accessibilityLine = String(
+                format: NSLocalizedString("%@, %@", comment: ""),
+                currentLine,
+                label
+            )
+        }
+    }
+    return ModelCapabilityDisplay(
+        additionalBadges: additionalBadges,
+        accessibilityLine: accessibilityLine
+    )
+}
+
 func modelGroupHeaderAccessibilityLabel(title: String, count: String) -> String {
     let normalizedTitle = trimmedNonEmpty(title)
         ?? NSLocalizedString("Model section", comment: "")
@@ -2285,7 +2350,8 @@ func modelRowAccessibilityLabel(
     provider: String,
     source: String,
     running: Bool,
-    size: String?
+    size: String?,
+    capabilities: String? = nil
 ) -> String {
     let normalizedName = trimmedNonEmpty(name)
         ?? NSLocalizedString("Unnamed model", comment: "")
@@ -2303,7 +2369,7 @@ func modelRowAccessibilityLabel(
     let normalizedSize = trimmedNonEmpty(size ?? "")
         ?? NSLocalizedString("Size unknown", comment: "")
 
-    return String(
+    let baseLabel = String(
         format: NSLocalizedString("Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@", comment: ""),
         normalizedName,
         normalizedIdentifier,
@@ -2312,6 +2378,14 @@ func modelRowAccessibilityLabel(
         normalizedSource,
         normalizedState,
         normalizedSize
+    )
+    guard let normalizedCapabilities = trimmedNonEmpty(capabilities ?? "") else {
+        return baseLabel
+    }
+    return String(
+        format: NSLocalizedString("%@. Capabilities: %@.", comment: ""),
+        baseLabel,
+        normalizedCapabilities
     )
 }
 

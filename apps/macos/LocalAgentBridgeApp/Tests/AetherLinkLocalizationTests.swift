@@ -705,8 +705,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 id: "local-chat",
                 name: "Local Chat",
                 kind: .chat,
+                capabilities: ["chat", "vision", "raw_future_capability"],
                 installed: true,
-                source: .local
+                source: .local,
+                contextWindowTokens: 32_768
             ),
             ModelInfo(
                 id: "provider-managed-chat",
@@ -877,6 +879,181 @@ final class AetherLinkLocalizationTests: XCTestCase {
                         size: " "
                     ),
                     expectation.fallbackLabel
+                )
+            }
+        }
+    }
+
+    func testModelCapabilityDisplayProjectsOnlyKnownCapabilitiesAcrossSupportedLanguages() {
+        let expectations: [(
+            languageTag: String,
+            chatLine: String,
+            embeddingLine: String,
+            visionBadge: String,
+            chatContextBadge: String,
+            embeddingContextBadge: String
+        )] = [
+            (
+                "en",
+                "Vision, Context: 32,768 tokens",
+                "Context: 8,192 tokens",
+                "Vision",
+                "Context: 32,768 tokens",
+                "Context: 8,192 tokens"
+            ),
+            (
+                "ko",
+                "비전, 컨텍스트: 32,768 토큰",
+                "컨텍스트: 8,192 토큰",
+                "비전",
+                "컨텍스트: 32,768 토큰",
+                "컨텍스트: 8,192 토큰"
+            ),
+            (
+                "ja",
+                "ビジョン、コンテキスト：32,768 トークン",
+                "コンテキスト：8,192 トークン",
+                "ビジョン",
+                "コンテキスト：32,768 トークン",
+                "コンテキスト：8,192 トークン"
+            ),
+            (
+                "zh-Hans",
+                "视觉、上下文：32,768 个词元",
+                "上下文：8,192 个词元",
+                "视觉",
+                "上下文：32,768 个词元",
+                "上下文：8,192 个词元"
+            ),
+            (
+                "fr",
+                "Vision, Contexte : 32\u{202F}768 jetons",
+                "Contexte : 8\u{202F}192 jetons",
+                "Vision",
+                "Contexte : 32\u{202F}768 jetons",
+                "Contexte : 8\u{202F}192 jetons"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let chatDisplay = modelCapabilityDisplay(
+                    for: ModelInfo(
+                        id: "vision-chat",
+                        name: "Vision Chat",
+                        kind: .chat,
+                        capabilities: ["chat", "vision", "raw_future_capability"],
+                        contextWindowTokens: 32_768
+                    )
+                )
+                XCTAssertEqual(chatDisplay.accessibilityLine, expectation.chatLine)
+                XCTAssertEqual(chatDisplay.additionalBadges.map(\.id), ["vision", "context-window"])
+                XCTAssertEqual(
+                    chatDisplay.additionalBadges.map(\.text),
+                    [expectation.visionBadge, expectation.chatContextBadge]
+                )
+                XCTAssertFalse(chatDisplay.accessibilityLine?.contains("raw_future_capability") == true)
+
+                let embeddingDisplay = modelCapabilityDisplay(
+                    for: ModelInfo(
+                        id: "local-embedding",
+                        name: "Local Embedding",
+                        kind: .embedding,
+                        capabilities: ["embedding", "raw_future_capability"],
+                        contextWindowTokens: 8_192
+                    )
+                )
+                XCTAssertEqual(embeddingDisplay.accessibilityLine, expectation.embeddingLine)
+                XCTAssertEqual(embeddingDisplay.additionalBadges.map(\.id), ["context-window"])
+                XCTAssertEqual(
+                    embeddingDisplay.additionalBadges.map(\.text),
+                    [expectation.embeddingContextBadge]
+                )
+                XCTAssertFalse(embeddingDisplay.accessibilityLine?.contains("raw_future_capability") == true)
+            }
+        }
+    }
+
+    func testModelCapabilityDisplayOmitsInvalidContextAndRawUnknownCapabilities() {
+        for alias in ["vision", "image", "multimodal"] {
+            let display = modelCapabilityDisplay(
+                for: ModelInfo(
+                    id: "chat-\(alias)",
+                    name: "Chat \(alias)",
+                    kind: .chat,
+                    capabilities: ["chat", alias]
+                )
+            )
+            XCTAssertEqual(display.additionalBadges.map(\.id), ["vision"])
+            XCTAssertEqual(display.accessibilityLine, NSLocalizedString("Vision", comment: ""))
+        }
+
+        for contextWindowTokens in [nil, 0, -1] as [Int?] {
+            let display = modelCapabilityDisplay(
+                for: ModelInfo(
+                    id: "unknown-chat",
+                    name: "Unknown Chat",
+                    kind: .chat,
+                    capabilities: ["chat", "raw_future_capability", " vision "],
+                    contextWindowTokens: contextWindowTokens
+                )
+            )
+            XCTAssertEqual(display.additionalBadges, [])
+            XCTAssertNil(display.accessibilityLine)
+        }
+    }
+
+    func testModelRowAccessibilityLabelIncludesKnownCapabilitiesAcrossSupportedLanguages() {
+        let expectations: [(languageTag: String, label: String)] = [
+            (
+                "en",
+                "Model Vision Chat. ID vision-chat. Type Chat. Provider Ollama. Source Local. State Not running. Size Size unknown. Capabilities: Vision, Context: 32,768 tokens."
+            ),
+            (
+                "ko",
+                "모델 Vision Chat. ID vision-chat. 유형 채팅. 제공자 Ollama. 출처 로컬. 상태 실행 안 됨. 크기 크기 알 수 없음. 기능: 비전, 컨텍스트: 32,768 토큰."
+            ),
+            (
+                "ja",
+                "モデル Vision Chat。ID vision-chat。タイプ チャット。プロバイダー Ollama。ソース ローカル。状態 未実行。サイズ サイズ不明。機能：ビジョン、コンテキスト：32,768 トークン。"
+            ),
+            (
+                "zh-Hans",
+                "模型 Vision Chat。ID vision-chat。类型 聊天。提供方 Ollama。来源 本地。状态 未运行。大小 大小未知。功能：视觉、上下文：32,768 个词元。"
+            ),
+            (
+                "fr",
+                "Modèle Vision Chat. ID vision-chat. Type Discussion. Fournisseur Ollama. Source Localement installé. État À l’arrêt. Taille Taille inconnue. Capacités : Vision, Contexte : 32\u{202F}768 jetons."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let display = modelCapabilityDisplay(
+                    for: ModelInfo(
+                        id: "vision-chat",
+                        name: "Vision Chat",
+                        kind: .chat,
+                        capabilities: ["chat", "vision", "raw_future_capability"],
+                        contextWindowTokens: 32_768
+                    )
+                )
+                XCTAssertEqual(
+                    modelRowAccessibilityLabel(
+                        name: "Vision Chat",
+                        identifier: "vision-chat",
+                        kind: NSLocalizedString("Chat", comment: ""),
+                        provider: NSLocalizedString("Ollama", comment: ""),
+                        source: NSLocalizedString("Local", comment: ""),
+                        running: false,
+                        size: nil,
+                        capabilities: display.accessibilityLine
+                    ),
+                    expectation.label
                 )
             }
         }

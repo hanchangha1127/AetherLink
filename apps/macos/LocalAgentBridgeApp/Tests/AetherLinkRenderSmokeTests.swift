@@ -216,37 +216,45 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
-    func testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances() async throws {
+    func testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances() throws {
         let models = [
             ModelInfo(
                 id: "ollama:qwen3.6-coder-super-long-local-runtime-model-name-with-vision-tools:35b-q8_0",
                 name: "Qwen3.6 Coder Super Long Local Runtime Model Name With Vision Tools 35B",
                 provider: .ollama,
                 kind: .chat,
+                capabilities: ["chat", "vision", "raw_future_capability"],
                 sizeBytes: 23_400_000_000,
                 installed: true,
                 running: true,
-                source: .local
+                source: .local,
+                contextWindowTokens: 131_072
             ),
             ModelInfo(
                 id: "lm_studio:text-embedding-nomic-long-context-index-model-q8_0",
                 name: "Text Embedding Nomic Long Context Index Model",
                 provider: .lmStudio,
                 kind: .embedding,
+                capabilities: ["embedding", "raw_future_capability"],
                 sizeBytes: 720_000_000,
                 installed: true,
-                source: .local
+                source: .local,
+                contextWindowTokens: 8_192
             ),
         ]
 
         for language in AetherLinkAppLanguage.allCases {
             for appearance in AetherLinkAppAppearance.pickerOptions {
-                try await withStoredPreferences(language: language, appearance: appearance) {
-                    let model = renderSmokeModel(backend: RenderSmokeBackend(models: models))
-                    await model.loadModels()
-
+                try withStoredPreferences(language: language, appearance: appearance) {
                     let bitmap = try render(
-                        StatusView(model: model)
+                        VStack(spacing: 0) {
+                            ForEach(models, id: \.id) { model in
+                                ModelRow(model: model)
+                                Divider()
+                            }
+                        }
+                            .padding(20)
+                            .background(Color(nsColor: .windowBackgroundColor))
                             .environment(\.locale, Locale(identifier: language.localeIdentifier))
                             .preferredColorScheme(appearance.preferredColorScheme),
                         size: compactDetailSize
@@ -254,7 +262,7 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
                     assertMeaningfulRender(
                         bitmap,
-                        label: "Compact StatusView long model rows \(language.rawValue) \(appearance.rawValue)"
+                        label: "Compact model rows \(language.rawValue) \(appearance.rawValue)"
                     )
                 }
             }

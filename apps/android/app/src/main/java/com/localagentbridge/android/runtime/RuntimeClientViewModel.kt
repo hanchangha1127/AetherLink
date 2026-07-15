@@ -81,6 +81,12 @@ import com.localagentbridge.android.core.protocol.RetrievalQueryRequestPayload
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
 import com.localagentbridge.android.core.protocol.RelayAllocationAuthorizationPayload
 import com.localagentbridge.android.core.protocol.RelayAllocationChallengePayload
+import com.localagentbridge.android.core.protocol.RESEARCH_NOTEBOOKS_CAPABILITY
+import com.localagentbridge.android.core.protocol.RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY
+import com.localagentbridge.android.core.protocol.ResearchBriefCreateRequestPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebooksListRequestPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebooksListResultPayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
@@ -224,11 +230,23 @@ private data class PendingChatSessionsListRun(
     val channel: RuntimeProtocolChannel,
     val connectionGeneration: Long,
     val authorityGeneration: Long,
+    val observedResearchSessionIds: MutableSet<String>,
     val summaries: MutableList<ChatSessionSummaryPayload> = mutableListOf(),
     val sessionIds: MutableSet<String> = mutableSetOf(),
     val cursors: MutableSet<String> = mutableSetOf(),
     var snapshotCount: Int? = null,
     var pageCount: Int = 0,
+    var requiresRefreshAfterCompletion: Boolean = false,
+)
+
+private data class HeldRuntimeChatSessionsSnapshot(
+    val summaries: List<ChatSessionSummaryPayload>,
+    val requestedQuery: String?,
+    val capable: Boolean,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    val observedResearchSessionIds: Set<String>,
 )
 
 private data class PendingChatSessionsBulkLifecycle(
@@ -273,6 +291,8 @@ private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(
     MessageType.RetrievalQuery,
     MessageType.CitationResolve,
     MessageType.ChatSourceAttributionResolve,
+    MessageType.ResearchBriefCreate,
+    MessageType.ResearchNotebooksList,
     MessageType.TrustedSourceApprove,
     MessageType.TrustedSourceDismiss,
     MessageType.TrustedSourceList,
@@ -285,18 +305,42 @@ private data class PendingChatSessionLifecycleMutation(
     override val sessionId: String,
     override val sequence: Long,
     val type: String,
-    val previousSession: PersistedChatSession,
+    val previousSession: PersistedChatSession?,
     val restoreAsActive: Boolean,
+    val isResearchNotebook: Boolean,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
 ) : PendingChatSessionMutation
+
+private data class ClosedChatSessionLifecycleRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+)
+
+private data class ClosedChatSessionRenameRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+)
 
 private data class PendingChatSessionRenameMutation(
     override val sessionId: String,
     override val sequence: Long,
-    val previousTitle: String,
-    val previousTitleManuallyEdited: Boolean,
-    val previousTitleGenerated: Boolean,
-    val previousUpdatedAtMillis: Long,
+    val previousSession: PersistedChatSession?,
+    val previousResearchNotebook: ResearchNotebookPayload?,
+    val optimisticResearchNotebook: ResearchNotebookPayload?,
+    val optimisticResearchNotebookRevision: Long?,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
 ) : PendingChatSessionMutation
+
+private data class OptimisticResearchNotebookRevision(
+    val notebook: ResearchNotebookPayload,
+    val revision: Long,
+)
 
 private data class PendingMemorySummaryDraftGeneration(
     val draft: RuntimeMemorySummaryDraft,
@@ -354,6 +398,33 @@ private data class PendingHistoricalSourceAttributionResolve(
     val sourceAttribution: RuntimeChatSourceAttribution,
     val channel: RuntimeProtocolChannel,
     val connectionGeneration: Long,
+)
+
+private data class PendingResearchNotebooksListRun(
+    var requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+    val notebooks: MutableList<ResearchNotebookPayload> = mutableListOf(),
+    val notebookIds: MutableSet<String> = mutableSetOf(),
+    val sessionIds: MutableSet<String> = mutableSetOf(),
+    val cursors: MutableSet<String> = mutableSetOf(),
+    var snapshotCount: Int? = null,
+    var pageCount: Int = 0,
+    var requiresRefreshAfterCompletion: Boolean = false,
+)
+
+private data class PendingResearchBriefCreate(
+    val requestId: String,
+    val sessionId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
+data class RuntimeResearchNotebooksUiState(
+    val notebooks: List<ResearchNotebookPayload> = emptyList(),
+    val isLoading: Boolean = false,
 )
 
 
@@ -1397,6 +1468,8 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY,
     MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY,
     MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY,
+    RESEARCH_NOTEBOOKS_CAPABILITY,
+    RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY,
 )
 
 internal fun runtimeClientCapabilities(authenticatedRouteRefreshEnabled: Boolean): List<String> {
@@ -1416,6 +1489,14 @@ private const val MAX_RUNTIME_CHAT_SESSION_LIST_PAGES = 100
 private const val MAX_RUNTIME_CHAT_SESSION_BULK_BATCHES = 50
 private const val MAX_RUNTIME_CHAT_SESSION_BULK_AFFECTED = 10_000
 private const val MAX_CLOSED_RUNTIME_CHAT_HISTORY_REQUESTS = 128
+private const val MAX_CLOSED_CHAT_SESSION_LIFECYCLE_REQUESTS = 128
+private const val MAX_CLOSED_CHAT_SESSION_RENAME_REQUESTS = 128
+private const val RESEARCH_NOTEBOOKS_LIST_REQUEST_ID_PREFIX = "research-notebooks-list-"
+private const val MAX_RESEARCH_NOTEBOOKS_LIST_PAGE_SIZE = 100
+private const val MAX_RESEARCH_NOTEBOOKS_LIST_PAGES = 100
+private const val RESEARCH_BRIEF_CREATE_REQUEST_ID_PREFIX = "research-brief-create-"
+private const val RESEARCH_NOTEBOOK_ID_PREFIX = "research_notebook_"
+private const val RESEARCH_SESSION_ID_PREFIX = "research_session_"
 private const val MAX_CLOSED_MEMORY_DUPLICATE_SUGGESTIONS_REQUESTS = 32
 private const val MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_REQUESTS = 32
 private const val MAX_CLOSED_MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_REQUESTS = 32
@@ -1435,8 +1516,14 @@ internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
 internal const val ROUTE_REFRESH_RETRY_DELAY_MS = 10_000L
 internal const val ROUTE_REFRESH_REQUEST_TIMEOUT_MS = 15_000L
 internal const val CITATION_RESOLVE_REQUEST_TIMEOUT_MS = 15_000L
+internal const val RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS = 15_000L
+internal const val CHAT_SESSION_RENAME_REQUEST_TIMEOUT_MS = 15_000L
+// Valid matching stream progress restarts this bounded create idle interval.
+internal const val RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS = 30_000L
 private val CHAT_ASSISTANT_MESSAGE_ID_PATTERN = Regex("^assistant_message_[0-9a-f]{32}$")
 internal const val RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS = 1_500
+
+private fun randomLowercaseHex32(): String = UUID.randomUUID().toString().replace("-", "")
 
 internal fun runtimeRouteRefreshLeaseDelayMillis(
     nowEpochMillis: Long,
@@ -1532,6 +1619,7 @@ class RuntimeClientViewModel internal constructor(
     private var pendingChatSessionsRequestId: String? = null
     private var pendingChatSessionsQuery: String? = null
     private var pendingChatSessionsListRun: PendingChatSessionsListRun? = null
+    private var heldRuntimeChatSessionsSnapshot: HeldRuntimeChatSessionsSnapshot? = null
     private var pendingChatSessionsBulkLifecycle: PendingChatSessionsBulkLifecycle? = null
     private var runtimeChatSessionsAuthoritativeSyncSupported = false
     private var runtimeChatSessionsBulkAuthorityEnabled = false
@@ -1583,6 +1671,17 @@ class RuntimeClientViewModel internal constructor(
     private var pendingTrustedSourceDismissRequestId: String? = null
     private var pendingTrustedSourceListRequestId: String? = null
     private var pendingTrustedSourceListMutationGeneration: Long? = null
+    private var pendingResearchNotebooksListRun: PendingResearchNotebooksListRun? = null
+    private var researchNotebooksListRequestTimeoutJob: Job? = null
+    private var pendingResearchBriefCreate: PendingResearchBriefCreate? = null
+    private var researchBriefCreateIdleTimeoutJob: Job? = null
+    private val transientResearchMessagesBySessionId = mutableMapOf<String, List<RuntimeChatMessage>>()
+    private var researchNotebookSessionIds: Set<String> = emptySet()
+    private var researchNotebookRevisionSequence = 0L
+    private val researchNotebookRevisionsBySessionId = mutableMapOf<String, Long>()
+    private var activeResearchBriefSessionId: String? = null
+    private var hasResolvedAuthoritativeResearchNotebookList = false
+    private var researchNotebooksAuthoritativeSyncSupported = false
     private var trustedSourceMutationGeneration: Long = 0
     private val pendingTrustedSourceRevocationsByRequestId = mutableMapOf<String, String>()
     private val trustedSourceGrantsBySourceAnchorId = mutableMapOf<String, String>()
@@ -1596,7 +1695,10 @@ class RuntimeClientViewModel internal constructor(
     private val pendingChatSessionLifecycleRequestIds = mutableSetOf<String>()
     private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
     private val pendingChatSessionLifecycleMutationsByRequestId = mutableMapOf<String, PendingChatSessionLifecycleMutation>()
+    private val closedChatSessionLifecycleRequests = mutableListOf<ClosedChatSessionLifecycleRequest>()
     private val pendingChatSessionRenameMutationsByRequestId = mutableMapOf<String, PendingChatSessionRenameMutation>()
+    private val closedChatSessionRenameRequests = mutableListOf<ClosedChatSessionRenameRequest>()
+    private val chatSessionRenameRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()
     private var pendingChatSessionMutationSequence = 0L
     private val pendingAttachmentsBySession = mutableMapOf<String?, List<RuntimePendingAttachment>>()
     private var modelIdToSelectAfterRefresh: String? = null
@@ -1611,6 +1713,7 @@ class RuntimeClientViewModel internal constructor(
         override fun onActivityStarted(activity: Activity) = Unit
         override fun onActivityResumed(activity: Activity) {
             restoreTrustedRuntimeConnection()
+            requestResearchNotebooks()
         }
         override fun onActivityPaused(activity: Activity) = Unit
         override fun onActivityStopped(activity: Activity) = Unit
@@ -1620,6 +1723,9 @@ class RuntimeClientViewModel internal constructor(
 
     private val mutableState = MutableStateFlow(RuntimeUiState())
     val state: StateFlow<RuntimeUiState> = mutableState.asStateFlow()
+    private val mutableResearchNotebooks = MutableStateFlow(RuntimeResearchNotebooksUiState())
+    val researchNotebooks: StateFlow<RuntimeResearchNotebooksUiState> =
+        mutableResearchNotebooks.asStateFlow()
 
     init {
         dependencies.lifecycleCallbacksRegistrar.register(application, lifecycleCallbacks)
@@ -1895,6 +2001,7 @@ class RuntimeClientViewModel internal constructor(
         }
         clearPendingHistoricalSourceAttributionResolve()
         rememberPendingAttachmentsForCurrentSession()
+        leaveActiveTransientResearchSession()
         clearPendingAttachmentsForSession(null)
         publishPersistedRuntimeData(
             persistedRuntimeData
@@ -1916,6 +2023,27 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return false
         }
+        if (sessionId in researchNotebookSessionIds) {
+            if (researchNotebookForAction(sessionId)?.archivedAt != null) {
+                showError("chat_history_loading")
+                return false
+            }
+            clearPendingHistoricalSourceAttributionResolve()
+            rememberPendingAttachmentsForCurrentSession()
+            mutableState.update {
+                it.copy(
+                    activeChatSessionId = sessionId,
+                    loadingChatSessionId = null,
+                    messages = transientResearchMessagesBySessionId[sessionId].orEmpty(),
+                    chatInput = "",
+                    pendingAttachments = emptyList(),
+                    selectedTrustedSourceAnchorIds = emptyList(),
+                    error = null,
+                )
+            }
+            requestRuntimeChatMessages(sessionId)
+            return true
+        }
         val session = runtimeChatSessionForAction(sessionId)
         if (session == null || session.archivedAtMillis != null) {
             showError("chat_session_not_found")
@@ -1923,6 +2051,7 @@ class RuntimeClientViewModel internal constructor(
         }
         clearPendingHistoricalSourceAttributionResolve()
         rememberPendingAttachmentsForCurrentSession()
+        leaveActiveTransientResearchSession()
         publishPersistedRuntimeData(
             persistedRuntimeData.withActiveSession(sessionId),
             save = true,
@@ -1958,14 +2087,52 @@ class RuntimeClientViewModel internal constructor(
             save = true,
         )
         sendRuntimeChatSessionRenameIfNeeded(
-            session = session,
+            sessionId = sessionId,
             title = cleanTitle,
+            previousSession = session,
+            previousResearchNotebook = null,
+        )
+    }
+
+    fun renameResearchNotebook(sessionId: String, title: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        val notebook = researchNotebookForAction(sessionId)
+        if (notebook == null) {
+            showError("chat_session_not_found")
+            return
+        }
+        if (isResearchNotebookRenameMutationBlocked(sessionId)) return
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return
+        val optimisticRename = beginOptimisticResearchNotebookRename(sessionId, cleanTitle) ?: return
+        sendRuntimeChatSessionRenameIfNeeded(
+            sessionId = sessionId,
+            title = cleanTitle,
+            previousSession = null,
+            previousResearchNotebook = notebook,
+            optimisticResearchNotebook = optimisticRename.notebook,
+            optimisticResearchNotebookRevision = optimisticRename.revision,
         )
     }
 
     fun deleteChatSession(sessionId: String) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
+            return
+        }
+        researchNotebookForAction(sessionId)?.let { notebook ->
+            if (notebook.archivedAt == null) {
+                showError("chat_session_must_be_archived_before_delete")
+                return
+            }
+            if (isResearchNotebookLifecycleMutationBlocked(sessionId)) return
+            sendResearchNotebookLifecycle(
+                sessionId = sessionId,
+                type = MessageType.ChatSessionDelete,
+            )
             return
         }
         val session = runtimeChatSessionForAction(sessionId)
@@ -2002,6 +2169,14 @@ class RuntimeClientViewModel internal constructor(
     fun archiveChatSession(sessionId: String) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
+            return
+        }
+        researchNotebookForAction(sessionId)?.let {
+            if (isResearchNotebookLifecycleMutationBlocked(sessionId)) return
+            sendResearchNotebookLifecycle(
+                sessionId = sessionId,
+                type = MessageType.ChatSessionArchive,
+            )
             return
         }
         val session = runtimeChatSessionForAction(sessionId)
@@ -2081,6 +2256,14 @@ class RuntimeClientViewModel internal constructor(
     fun unarchiveChatSession(sessionId: String) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
+            return
+        }
+        researchNotebookForAction(sessionId)?.let {
+            if (isResearchNotebookLifecycleMutationBlocked(sessionId)) return
+            sendResearchNotebookLifecycle(
+                sessionId = sessionId,
+                type = MessageType.ChatSessionRestore,
+            )
             return
         }
         val session = runtimeChatSessionForAction(sessionId)
@@ -2614,6 +2797,133 @@ class RuntimeClientViewModel internal constructor(
                 payload = TrustedSourceListRequestPayload(limit = MAX_RUNTIME_TRUSTED_SOURCES),
             )
         )
+    }
+
+    fun refreshResearchNotebooks() {
+        requestResearchNotebooks(requireFreshAfterCurrent = true)
+    }
+
+    fun createResearchBriefFromApprovedSources(
+        topic: String,
+        model: String,
+        selectedTrustedSourceAnchorIds: List<String>,
+        locale: String? = null,
+    ): Boolean {
+        val grantIds = selectedTrustedSourceAnchorIds
+            .mapNotNull(trustedSourceGrantsBySourceAnchorId::get)
+        if (grantIds.size != selectedTrustedSourceAnchorIds.size) {
+            showError("trusted_source_not_found")
+            return false
+        }
+        return createResearchBrief(topic, model, grantIds, locale)
+    }
+
+    fun createResearchBrief(
+        topic: String,
+        model: String,
+        selectedApprovedTrustedSourceGrantIds: List<String>,
+        locale: String? = null,
+    ): Boolean {
+        val current = state.value
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return false
+        }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return false
+        if (!current.isConnected) {
+            showError("connect_first")
+            return false
+        }
+        if (!isSessionAuthenticated) {
+            showError("authentication_required")
+            return false
+        }
+        val selectedModel = current.models.singleOrNull { it.id == model }
+        if (
+            selectedModel?.isChatModel() != true ||
+            !selectedModel.isRuntimeHostLocalModel() ||
+            !selectedModel.installed
+        ) {
+            showError("select_chat_model")
+            return false
+        }
+        val cleanTopic = topic.trim()
+        val grantIds = selectedApprovedTrustedSourceGrantIds.distinct()
+        if (cleanTopic.isBlank()) {
+            showError("invalid_payload", "Research topic must not be blank")
+            return false
+        }
+        if (
+            grantIds.size != selectedApprovedTrustedSourceGrantIds.size ||
+            grantIds.size !in 1..MAX_SELECTED_TRUSTED_SOURCES
+        ) {
+            showError(
+                "invalid_payload",
+                "Research briefs require 1 through $MAX_SELECTED_TRUSTED_SOURCES unique trusted sources",
+            )
+            return false
+        }
+        if (grantIds.any { it !in trustedSourceGrantsBySourceAnchorId.values }) {
+            showError("trusted_source_not_found")
+            return false
+        }
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return false
+        val notebookId = RESEARCH_NOTEBOOK_ID_PREFIX + randomLowercaseHex32()
+        val sessionId = RESEARCH_SESSION_ID_PREFIX + randomLowercaseHex32()
+        val requestId = RESEARCH_BRIEF_CREATE_REQUEST_ID_PREFIX + UUID.randomUUID()
+        val payload = runCatching {
+            ResearchBriefCreateRequestPayload(
+                notebookId = notebookId,
+                sessionId = sessionId,
+                topic = cleanTopic,
+                model = model,
+                locale = locale?.trim()?.ifBlank { null },
+                trustedSourceGrantIds = grantIds,
+            )
+        }.getOrElse {
+            showError("invalid_payload", it.message)
+            return false
+        }
+        clearPendingHistoricalSourceAttributionResolve()
+        rememberPendingAttachmentsForCurrentSession()
+        researchNotebookSessionIds += sessionId
+        rememberResearchSessionIdsForChatSnapshots(setOf(sessionId))
+        activeResearchBriefSessionId = sessionId
+        pendingResearchBriefCreate = PendingResearchBriefCreate(
+            requestId = requestId,
+            sessionId = sessionId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        scheduleResearchBriefCreateIdleTimeout(requireNotNull(pendingResearchBriefCreate))
+        val messages = listOf(
+            RuntimeChatMessage(role = "user", content = cleanTopic),
+            RuntimeChatMessage(role = "assistant", content = ""),
+        )
+        transientResearchMessagesBySessionId[sessionId] = messages
+        mutableState.update {
+            it.copy(
+                activeChatSessionId = sessionId,
+                loadingChatSessionId = null,
+                messages = messages,
+                chatInput = "",
+                pendingAttachments = emptyList(),
+                selectedTrustedSourceAnchorIds = emptyList(),
+                activeRequestId = requestId,
+                isStreaming = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.ResearchBriefCreate,
+                requestId = requestId,
+                serializer = ResearchBriefCreateRequestPayload.serializer(),
+                payload = payload,
+            ),
+        )
+        return channel === activeChannel
     }
 
     fun revokeTrustedSource(sourceAnchorId: String) {
@@ -3413,6 +3723,7 @@ class RuntimeClientViewModel internal constructor(
         clearPendingMemoryListRequest()
         pendingMemorySummaryDraftsRequestId = null
         clearPendingRuntimeDocumentRequests()
+        clearResearchNotebookSessionState()
         pendingMemorySummaryDraftGenerationsByRequestId.clear()
         pendingMemorySummaryDraftApprovalDraftIdsByRequestId.clear()
         pendingMemorySummaryDraftDismissalDraftIdsByRequestId.clear()
@@ -3497,6 +3808,58 @@ class RuntimeClientViewModel internal constructor(
         sendEnvelope(ProtocolEnvelope(type = MessageType.ModelsList, requestId = requestId))
     }
 
+    private fun requestResearchNotebooks(requireFreshAfterCurrent: Boolean = false) {
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        pendingResearchNotebooksListRun?.let { run ->
+            if (requireFreshAfterCurrent) {
+                run.requiresRefreshAfterCompletion = true
+            }
+            return
+        }
+        val requestId = RESEARCH_NOTEBOOKS_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
+        val run = PendingResearchNotebooksListRun(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        pendingResearchNotebooksListRun = run
+        mutableResearchNotebooks.update { it.copy(isLoading = true) }
+        scheduleResearchNotebooksListTimeout(run)
+        sendEnvelope(
+            envelope(
+                type = MessageType.ResearchNotebooksList,
+                requestId = requestId,
+                serializer = ResearchNotebooksListRequestPayload.serializer(),
+                payload = ResearchNotebooksListRequestPayload(
+                    includeArchived = true,
+                ),
+            ),
+        )
+    }
+
+    private fun requestResearchNotebooksContinuation(
+        run: PendingResearchNotebooksListRun,
+        cursor: String,
+    ) {
+        if (!run.hasCurrentResearchNotebookAuthority()) {
+            clearPendingResearchNotebooksListRun(run)
+            return
+        }
+        val requestId = RESEARCH_NOTEBOOKS_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
+        run.requestId = requestId
+        scheduleResearchNotebooksListTimeout(run)
+        sendEnvelope(
+            envelope(
+                type = MessageType.ResearchNotebooksList,
+                requestId = requestId,
+                serializer = ResearchNotebooksListRequestPayload.serializer(),
+                payload = ResearchNotebooksListRequestPayload(cursor = cursor),
+            ),
+        )
+    }
+
     private fun requestRuntimeChatSessions(query: String? = null) {
         if (!isSessionAuthenticated) return
         val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
@@ -3515,6 +3878,7 @@ class RuntimeClientViewModel internal constructor(
             channel = channel,
             connectionGeneration = activeConnectionGeneration,
             authorityGeneration = runtimeSessionAuthorityGeneration,
+            observedResearchSessionIds = researchNotebookSessionIds.toMutableSet(),
         )
         mutableState.update {
             it.copy(
@@ -3565,7 +3929,8 @@ class RuntimeClientViewModel internal constructor(
         val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
         if (sessionId.isBlank()) return
         val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
-        if (session?.runtimeOwned != true || session.archivedAtMillis != null) return
+        val isResearchNotebookSession = sessionId in researchNotebookSessionIds
+        if (!isResearchNotebookSession && (session?.runtimeOwned != true || session.archivedAtMillis != null)) return
         clearPendingChatMessagesRequest()
         val requestId = CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
         pendingChatMessagesRequestId = requestId
@@ -3733,53 +4098,191 @@ class RuntimeClientViewModel internal constructor(
         restoreAsActive: Boolean = false,
     ) {
         if (!session.runtimeOwned) return
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
-        val requestId = UUID.randomUUID().toString()
-        pendingChatSessionLifecycleRequestIds += requestId
-        pendingChatSessionLifecycleMutationsByRequestId[requestId] = PendingChatSessionLifecycleMutation(
+        sendRuntimeChatSessionLifecycle(
             sessionId = session.id,
-            sequence = ++pendingChatSessionMutationSequence,
             type = type,
             previousSession = session,
             restoreAsActive = restoreAsActive,
+            isResearchNotebook = false,
+        )
+    }
+
+    private fun sendResearchNotebookLifecycle(
+        sessionId: String,
+        type: String,
+    ) {
+        sendRuntimeChatSessionLifecycle(
+            sessionId = sessionId,
+            type = type,
+            previousSession = null,
+            restoreAsActive = false,
+            isResearchNotebook = true,
+        )
+    }
+
+    private fun sendRuntimeChatSessionLifecycle(
+        sessionId: String,
+        type: String,
+        previousSession: PersistedChatSession?,
+        restoreAsActive: Boolean,
+        isResearchNotebook: Boolean,
+    ) {
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        val requestId = UUID.randomUUID().toString()
+        pendingChatSessionLifecycleRequestIds += requestId
+        pendingChatSessionLifecycleMutationsByRequestId[requestId] = PendingChatSessionLifecycleMutation(
+            sessionId = sessionId,
+            sequence = ++pendingChatSessionMutationSequence,
+            type = type,
+            previousSession = previousSession,
+            restoreAsActive = restoreAsActive,
+            isResearchNotebook = isResearchNotebook,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
         )
         sendEnvelope(
             envelope(
                 type = type,
                 requestId = requestId,
                 serializer = ChatSessionLifecyclePayload.serializer(),
-                payload = ChatSessionLifecyclePayload(sessionId = session.id),
+                payload = ChatSessionLifecyclePayload(sessionId = sessionId),
             )
         )
     }
 
+    private fun isResearchNotebookLifecycleMutationBlocked(sessionId: String): Boolean {
+        if (
+            state.value.isChatHistoryActionPending ||
+            pendingChatSessionLifecycleMutationsByRequestId.values.any { it.sessionId == sessionId } ||
+            pendingChatSessionRenameMutationsByRequestId.values.any { it.sessionId == sessionId }
+        ) {
+            showError("chat_history_loading")
+            return true
+        }
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) {
+            showError("chat_history_runtime_required")
+            return true
+        }
+        return false
+    }
+
     private fun sendRuntimeChatSessionRenameIfNeeded(
-        session: PersistedChatSession,
+        sessionId: String,
         title: String,
+        previousSession: PersistedChatSession?,
+        previousResearchNotebook: ResearchNotebookPayload?,
+        optimisticResearchNotebook: ResearchNotebookPayload? = null,
+        optimisticResearchNotebookRevision: Long? = null,
     ) {
-        if (!session.runtimeOwned) return
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (previousResearchNotebook == null && previousSession?.runtimeOwned != true) return
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
         val requestId = UUID.randomUUID().toString()
         pendingChatSessionRenameRequestIds += requestId
         pendingChatSessionRenameMutationsByRequestId[requestId] = PendingChatSessionRenameMutation(
-            sessionId = session.id,
+            sessionId = sessionId,
             sequence = ++pendingChatSessionMutationSequence,
-            previousTitle = session.title,
-            previousTitleManuallyEdited = session.titleManuallyEdited,
-            previousTitleGenerated = session.titleGenerated,
-            previousUpdatedAtMillis = session.updatedAtMillis,
+            previousSession = previousSession,
+            previousResearchNotebook = previousResearchNotebook,
+            optimisticResearchNotebook = optimisticResearchNotebook,
+            optimisticResearchNotebookRevision = optimisticResearchNotebookRevision,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
         )
+        scheduleChatSessionRenameRequestTimeout(requestId)
         sendEnvelope(
             envelope(
                 type = MessageType.ChatSessionRename,
                 requestId = requestId,
                 serializer = ChatSessionRenamePayload.serializer(),
                 payload = ChatSessionRenamePayload(
-                    sessionId = session.id,
+                    sessionId = sessionId,
                     title = title,
                 ),
             )
         )
+    }
+
+    private fun scheduleChatSessionRenameRequestTimeout(requestId: String) {
+        chatSessionRenameRequestTimeoutJobsByRequestId.remove(requestId)?.cancel()
+        chatSessionRenameRequestTimeoutJobsByRequestId[requestId] = viewModelScope.launch {
+            delay(CHAT_SESSION_RENAME_REQUEST_TIMEOUT_MS)
+            val mutation = pendingChatSessionRenameMutationsByRequestId[requestId] ?: return@launch
+            if (!closePendingChatSessionRenameRequest(requestId, mutation)) return@launch
+            handleRuntimeChatSessionMutationFailure(
+                detail = "Chat session rename timed out",
+                renameMutation = mutation,
+            )
+        }
+    }
+
+    private fun isResearchNotebookRenameMutationBlocked(sessionId: String): Boolean {
+        if (
+            state.value.isChatHistoryActionPending ||
+            state.value.loadingChatSessionId == sessionId ||
+            pendingChatSessionLifecycleMutationsByRequestId.values.any { it.sessionId == sessionId } ||
+            pendingChatSessionRenameMutationsByRequestId.values.any { it.sessionId == sessionId }
+        ) {
+            showError("chat_history_loading")
+            return true
+        }
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) {
+            showError("chat_history_runtime_required")
+            return true
+        }
+        return false
+    }
+
+    private fun beginOptimisticResearchNotebookRename(
+        sessionId: String,
+        title: String,
+    ): OptimisticResearchNotebookRevision? {
+        val current = mutableResearchNotebooks.value
+        val previousNotebook = current.notebooks.firstOrNull { it.sessionId == sessionId } ?: return null
+        val optimisticNotebook = previousNotebook.copy(title = title.trim())
+        val revision = recordResearchNotebookRevision(sessionId)
+        mutableResearchNotebooks.value = current.copy(
+            notebooks = current.notebooks.map { notebook ->
+                if (notebook.sessionId == sessionId) optimisticNotebook else notebook
+            },
+        )
+        return OptimisticResearchNotebookRevision(
+            notebook = optimisticNotebook,
+            revision = revision,
+        )
+    }
+
+    private fun replaceResearchNotebookIfOptimisticCurrent(
+        mutation: PendingChatSessionRenameMutation,
+        replacement: (ResearchNotebookPayload) -> ResearchNotebookPayload,
+    ): Boolean {
+        val expectedNotebook = mutation.optimisticResearchNotebook ?: return false
+        val expectedRevision = mutation.optimisticResearchNotebookRevision ?: return false
+        val current = mutableResearchNotebooks.value
+        val currentNotebook = current.notebooks.firstOrNull {
+            it.sessionId == mutation.sessionId
+        } ?: return false
+        if (
+            currentNotebook != expectedNotebook ||
+            researchNotebookRevisionsBySessionId[mutation.sessionId] != expectedRevision
+        ) return false
+        val replacementNotebook = replacement(currentNotebook)
+        recordResearchNotebookRevision(mutation.sessionId)
+        mutableResearchNotebooks.value = current.copy(
+            notebooks = current.notebooks.map { notebook ->
+                if (notebook.sessionId == mutation.sessionId) replacementNotebook else notebook
+            },
+        )
+        return true
+    }
+
+    private fun recordResearchNotebookRevision(sessionId: String): Long {
+        val revision = ++researchNotebookRevisionSequence
+        researchNotebookRevisionsBySessionId[sessionId] = revision
+        return revision
     }
 
     private fun isRuntimeOwnedChatMutationBlocked(sessions: List<PersistedChatSession>): Boolean {
@@ -3922,6 +4425,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        if (rejectArchivedActiveResearchNotebook(current.activeChatSessionId)) return
         val text = current.chatInput.trim()
         if (text.isEmpty() && current.pendingAttachments.isEmpty()) return
         when (current.selectedModelSendState()) {
@@ -4024,6 +4528,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        if (rejectArchivedActiveResearchNotebook(current.activeChatSessionId)) return
         when (current.selectedModelSendState()) {
             SelectedModelSendState.Ready -> Unit
             SelectedModelSendState.Missing -> {
@@ -4456,14 +4961,34 @@ class RuntimeClientViewModel internal constructor(
             MessageType.RouteRefresh -> handleRouteRefresh(envelope)
             MessageType.ChatSessionsList -> handleChatSessionsList(envelope)
             MessageType.ChatMessagesList -> handleChatMessagesList(envelope)
-            MessageType.ChatDelta -> handleChatDelta(envelope)
-            MessageType.ChatDone -> handleChatDone(envelope)
-            MessageType.ChatCancel -> handleCancelAck(envelope)
+            MessageType.ChatDelta -> handleChatDelta(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.ChatDone -> handleChatDone(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.ChatCancel -> handleCancelAck(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.ChatTitleResult -> handleChatTitleResult(envelope)
-            MessageType.ChatSessionRename -> handleChatSessionRename(envelope)
+            MessageType.ChatSessionRename -> handleChatSessionRename(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.ChatSessionArchive,
             MessageType.ChatSessionRestore,
-            MessageType.ChatSessionDelete -> handleChatSessionLifecycle(envelope)
+            MessageType.ChatSessionDelete -> handleChatSessionLifecycle(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.IndexDocumentsList -> handleIndexDocumentsList(envelope)
             MessageType.RetrievalQuery -> handleRetrievalQuery(envelope)
             MessageType.CitationResolve -> handleCitationResolve(envelope)
@@ -4473,6 +4998,11 @@ class RuntimeClientViewModel internal constructor(
                     sourceChannel,
                     sourceConnectionGeneration,
                 )
+            MessageType.ResearchNotebooksList -> handleResearchNotebooksList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.TrustedSourceApprove -> handleTrustedSourceApprove(envelope)
             MessageType.TrustedSourceDismiss -> handleTrustedSourceDismiss(envelope)
             MessageType.TrustedSourceList -> handleTrustedSourceList(envelope)
@@ -4680,6 +5210,7 @@ class RuntimeClientViewModel internal constructor(
             requestRuntimeChatSessions()
             requestRuntimeMemory()
             requestRuntimeMemorySummaryDrafts()
+            requestResearchNotebooks()
         } else {
             failRuntimeAuthentication(
                 pending = pending,
@@ -5249,6 +5780,7 @@ class RuntimeClientViewModel internal constructor(
             requestRuntimeChatSessions()
             requestRuntimeMemory()
             requestRuntimeMemorySummaryDrafts()
+            requestResearchNotebooks()
         }
     }
 
@@ -5525,24 +6057,81 @@ class RuntimeClientViewModel internal constructor(
         capable: Boolean,
     ) {
         if (!run.hasCurrentRuntimeAuthority()) return
+        val completedSnapshot = HeldRuntimeChatSessionsSnapshot(
+            summaries = run.summaries.toList(),
+            requestedQuery = run.query,
+            capable = capable,
+            channel = run.channel,
+            connectionGeneration = run.connectionGeneration,
+            authorityGeneration = run.authorityGeneration,
+            observedResearchSessionIds = run.observedResearchSessionIds.toSet(),
+        )
+        val requiresRefreshAfterCompletion = run.requiresRefreshAfterCompletion
         clearPendingChatSessionsListRun(run)
         if (capable && run.query == null) {
             runtimeChatSessionsAuthoritativeSyncSupported = true
+        }
+        if (
+            !hasResolvedAuthoritativeResearchNotebookList ||
+            pendingResearchNotebooksListRun != null
+        ) {
+            heldRuntimeChatSessionsSnapshot = completedSnapshot
+            return
+        }
+        publishHeldRuntimeChatSessionsSnapshot(completedSnapshot)
+        if (requiresRefreshAfterCompletion) {
+            requestRuntimeChatSessions()
+        }
+    }
+
+    private fun HeldRuntimeChatSessionsSnapshot.hasCurrentRuntimeAuthority(): Boolean {
+        return activeChannel === channel &&
+            channel.isConnected &&
+            activeConnectionGeneration == connectionGeneration &&
+            isSessionAuthenticated &&
+            runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun rememberResearchSessionIdsForChatSnapshots(sessionIds: Set<String>) {
+        if (sessionIds.isEmpty()) return
+        pendingChatSessionsListRun?.observedResearchSessionIds?.addAll(sessionIds)
+        heldRuntimeChatSessionsSnapshot = heldRuntimeChatSessionsSnapshot?.let { snapshot ->
+            snapshot.copy(
+                observedResearchSessionIds = snapshot.observedResearchSessionIds + sessionIds,
+            )
+        }
+    }
+
+    private fun publishHeldRuntimeChatSessionsSnapshot(
+        snapshot: HeldRuntimeChatSessionsSnapshot? = heldRuntimeChatSessionsSnapshot,
+    ) {
+        val currentSnapshot = snapshot ?: return
+        if (heldRuntimeChatSessionsSnapshot === currentSnapshot) {
+            heldRuntimeChatSessionsSnapshot = null
+        }
+        if (!currentSnapshot.hasCurrentRuntimeAuthority()) return
+        if (currentSnapshot.capable && currentSnapshot.requestedQuery == null) {
             runtimeChatSessionsBulkAuthorityEnabled = true
         }
         publishRuntimeChatSessionsSnapshot(
-            summaries = run.summaries,
-            requestedQuery = run.query,
+            summaries = currentSnapshot.summaries,
+            requestedQuery = currentSnapshot.requestedQuery,
+            excludedResearchSessionIds =
+                currentSnapshot.observedResearchSessionIds + researchNotebookSessionIds,
         )
     }
 
     private fun publishRuntimeChatSessionsSnapshot(
         summaries: List<ChatSessionSummaryPayload>,
         requestedQuery: String?,
+        excludedResearchSessionIds: Set<String> = researchNotebookSessionIds,
     ) {
+        val nonResearchSummaries = summaries.filterNot { summary ->
+            summary.sessionId in excludedResearchSessionIds
+        }
         if (requestedQuery != null) {
             val searchData = persistedRuntimeData.withRuntimeChatSessionSummaries(
-                sessions = summaries,
+                sessions = nonResearchSummaries,
                 nowMillis = nowMillis(),
             )
             val resultsById = (
@@ -5551,12 +6140,12 @@ class RuntimeClientViewModel internal constructor(
             val remoteResultIds = searchData.sessions
                 .filter(PersistedChatSession::runtimeOwned)
                 .mapTo(mutableSetOf(), PersistedChatSession::id)
-            val orderedResults = summaries
+            val orderedResults = nonResearchSummaries
                 .filter { it.sessionId in remoteResultIds }
                 .mapNotNull { resultsById[it.sessionId] }
                 .distinctBy(RuntimeChatSession::id)
             val resultIDs = orderedResults.mapTo(mutableSetOf(), RuntimeChatSession::id)
-            runtimeChatSearchSummariesById = summaries
+            runtimeChatSearchSummariesById = nonResearchSummaries
                 .filter { it.sessionId in resultIDs }
                 .distinctBy(ChatSessionSummaryPayload::sessionId)
                 .associateBy(ChatSessionSummaryPayload::sessionId)
@@ -5569,7 +6158,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val syncedData = persistedRuntimeData.withRuntimeChatSessionSummaries(
-            sessions = summaries,
+            sessions = nonResearchSummaries,
             nowMillis = nowMillis(),
         )
         publishPersistedRuntimeData(
@@ -5591,7 +6180,27 @@ class RuntimeClientViewModel internal constructor(
         }
         val payload = decodePayload(ChatMessagesListResultPayload.serializer(), envelope.payload) ?: return
         if (expectedSessionId != null && expectedSessionId != payload.sessionId) return
-        val replacementData = persistedRuntimeData.withRuntimeChatMessages(
+        val isResearchNotebookSession = payload.sessionId in researchNotebookSessionIds
+        val sourceData = if (isResearchNotebookSession) {
+            val summary = researchNotebooks.value.notebooks
+                .firstOrNull { it.sessionId == payload.sessionId }
+            persistedRuntimeData.copy(
+                activeSessionId = payload.sessionId,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = payload.sessionId,
+                        title = summary?.title ?: "Research notebook",
+                        modelId = summary?.model,
+                        createdAtMillis = nowMillis(),
+                        updatedAtMillis = nowMillis(),
+                        runtimeOwned = true,
+                    ),
+                ) + persistedRuntimeData.sessions.filterNot { it.id == payload.sessionId },
+            )
+        } else {
+            persistedRuntimeData
+        }
+        val replacementData = sourceData.withRuntimeChatMessages(
             sessionId = payload.sessionId,
             messages = payload.messages,
             nowMillis = nowMillis(),
@@ -5617,10 +6226,22 @@ class RuntimeClientViewModel internal constructor(
         if (pending != null && replacementMessage == null) {
             clearPendingHistoricalSourceAttributionResolve()
         }
-        publishPersistedRuntimeData(
-            replacementData,
-            save = true,
-        )
+        if (isResearchNotebookSession) {
+            val messages = activeSessionMessages(replacementData)
+            transientResearchMessagesBySessionId[payload.sessionId] = messages
+            mutableState.update { current ->
+                if (current.activeChatSessionId == payload.sessionId) {
+                    current.copy(messages = messages, error = null)
+                } else {
+                    current
+                }
+            }
+        } else {
+            publishPersistedRuntimeData(
+                replacementData,
+                save = true,
+            )
+        }
         if (pending != null && replacementMessage != null) {
             pendingHistoricalSourceAttributionResolve = pending.copy(localMessageId = replacementMessage.id)
             mutableState.update {
@@ -5632,25 +6253,40 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleChatDelta(envelope: ProtocolEnvelope) {
-        if (!isActiveChatEnvelope(envelope)) return
+    private fun handleChatDelta(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        if (!isActiveChatEnvelope(envelope, sourceChannel, sourceConnectionGeneration)) return
         envelope.payload.chatDeltaUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "chat.delta response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(ChatDeltaPayload.serializer(), envelope.payload) ?: return
-        val updatedState = state.value.withChatDelta(envelope, payload)
+        val currentState = state.value
+        val updatedState = currentState.withChatDelta(envelope, payload)
+        if (updatedState == currentState) return
+        pendingResearchBriefCreate
+            ?.takeIf { it.requestId == envelope.requestId }
+            ?.let(::scheduleResearchBriefCreateIdleTimeout)
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages)
     }
 
-    private fun handleChatDone(envelope: ProtocolEnvelope) {
-        if (!isActiveChatEnvelope(envelope)) return
+    private fun handleChatDone(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        if (!isActiveChatEnvelope(envelope, sourceChannel, sourceConnectionGeneration)) return
         envelope.payload.chatDoneUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "chat.done response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload) ?: return
+        val researchSessionId = state.value.activeChatSessionId
+            ?.takeIf { it in researchNotebookSessionIds }
         val completedState = state.value.withChatDone(
             envelope,
             payload,
@@ -5663,11 +6299,344 @@ class RuntimeClientViewModel internal constructor(
         }
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
+        if (payload.finishReason == "cancelled" && researchSessionId != null) {
+            if (activeResearchBriefSessionId == researchSessionId) {
+                activeResearchBriefSessionId = null
+            }
+            cancelResearchBriefCreateIdleTimeout()
+            pendingResearchBriefCreate = null
+            requestResearchNotebooks(requireFreshAfterCurrent = true)
+            requestRuntimeChatSessions()
+            return
+        }
         if (payload.finishReason != "cancelled") {
+            if (researchSessionId != null) {
+                if (activeResearchBriefSessionId == researchSessionId) {
+                    activeResearchBriefSessionId = null
+                }
+                cancelResearchBriefCreateIdleTimeout()
+                pendingResearchBriefCreate = null
+                requestResearchNotebooks(requireFreshAfterCurrent = true)
+                requestRuntimeChatSessions()
+                return
+            }
             val titleRequested = requestChatTitleIfNeeded(updatedState)
             if (!titleRequested) {
                 requestRuntimeChatSessions()
             }
+        }
+    }
+
+    private fun handleResearchNotebooksList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val run = pendingResearchNotebooksListRun ?: return
+        if (
+            run.requestId != envelope.requestId ||
+            run.channel !== sourceChannel ||
+            run.connectionGeneration != sourceConnectionGeneration ||
+            !run.hasCurrentResearchNotebookAuthority()
+        ) return
+        researchNotebooksListRequestTimeoutJob?.cancel()
+        researchNotebooksListRequestTimeoutJob = null
+        run.pageCount += 1
+        if (run.pageCount > MAX_RESEARCH_NOTEBOOKS_LIST_PAGES) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response exceeded the 100-page budget",
+            )
+            return
+        }
+        val payload = decodePayload(
+            ResearchNotebooksListResultPayload.serializer(),
+            envelope.payload,
+        ) ?: run {
+            clearPendingResearchNotebooksListRun(run)
+            requestQueuedResearchNotebooksAfter(run)
+            return
+        }
+        if (payload.notebooks.size > MAX_RESEARCH_NOTEBOOKS_LIST_PAGE_SIZE) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response page exceeds 100 notebooks",
+            )
+            return
+        }
+        val pageNotebookIds = payload.notebooks.map(ResearchNotebookPayload::notebookId)
+        if (
+            pageNotebookIds.toSet().size != pageNotebookIds.size ||
+            pageNotebookIds.any(run.notebookIds::contains)
+        ) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response contains duplicate notebook IDs",
+            )
+            return
+        }
+        val pageSessionIds = payload.notebooks.map(ResearchNotebookPayload::sessionId)
+        if (
+            pageSessionIds.toSet().size != pageSessionIds.size ||
+            pageSessionIds.any(run.sessionIds::contains)
+        ) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response contains duplicate session IDs",
+            )
+            return
+        }
+        if (!researchNotebooksAreCanonicallyOrdered(run.notebooks, payload.notebooks)) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response is not canonically ordered across pages",
+            )
+            return
+        }
+        val snapshotCount = payload.snapshotCount
+        if (snapshotCount == null) {
+            if (researchNotebooksAuthoritativeSyncSupported) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list response omitted snapshot_count after authoritative sync was established",
+                )
+                return
+            }
+            if (
+                payload.nextCursor != null ||
+                run.snapshotCount != null ||
+                run.notebooks.isNotEmpty() ||
+                run.pageCount != 1
+            ) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list legacy response cannot continue an authoritative snapshot",
+                )
+                return
+            }
+            run.notebooks += payload.notebooks
+            run.notebookIds += pageNotebookIds
+            run.sessionIds += pageSessionIds
+            completePendingResearchNotebooksListRun(run, capable = false)
+            return
+        }
+        val expectedSnapshotCount = run.snapshotCount
+        if (expectedSnapshotCount != null && expectedSnapshotCount != snapshotCount) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response snapshot_count changed between pages",
+            )
+            return
+        }
+        run.snapshotCount = snapshotCount
+        val accumulatedCount = run.notebooks.size.toLong() + payload.notebooks.size.toLong()
+        if (accumulatedCount > snapshotCount.toLong()) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response exceeded snapshot_count",
+            )
+            return
+        }
+        val nextCursor = payload.nextCursor
+        if (nextCursor != null) {
+            if (payload.notebooks.isEmpty()) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list response has an empty nonterminal page",
+                )
+                return
+            }
+            if (accumulatedCount >= snapshotCount.toLong()) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list response cursor exceeds snapshot_count",
+                )
+                return
+            }
+            if (run.pageCount >= MAX_RESEARCH_NOTEBOOKS_LIST_PAGES) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list response exceeded the 100-page budget",
+                )
+                return
+            }
+            if (!run.cursors.add(nextCursor)) {
+                failPendingResearchNotebooksListRun(
+                    run,
+                    "research.notebooks.list response repeated a cursor",
+                )
+                return
+            }
+            run.notebooks += payload.notebooks
+            run.notebookIds += pageNotebookIds
+            run.sessionIds += pageSessionIds
+            requestResearchNotebooksContinuation(run, nextCursor)
+            return
+        }
+        if (accumulatedCount != snapshotCount.toLong()) {
+            failPendingResearchNotebooksListRun(
+                run,
+                "research.notebooks.list response final count does not match snapshot_count",
+            )
+            return
+        }
+        run.notebooks += payload.notebooks
+        run.notebookIds += pageNotebookIds
+        run.sessionIds += pageSessionIds
+        completePendingResearchNotebooksListRun(run, capable = true)
+    }
+
+    private fun PendingResearchNotebooksListRun.hasCurrentResearchNotebookAuthority(): Boolean {
+        return pendingResearchNotebooksListRun === this &&
+            activeChannel === channel &&
+            channel.isConnected &&
+            activeConnectionGeneration == connectionGeneration &&
+            isSessionAuthenticated &&
+            runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun researchNotebooksAreCanonicallyOrdered(
+        accumulated: List<ResearchNotebookPayload>,
+        page: List<ResearchNotebookPayload>,
+    ): Boolean {
+        val notebooks = accumulated.lastOrNull()?.let { listOf(it) + page } ?: page
+        return notebooks.zipWithNext().all { (previous, current) ->
+            val previousUpdatedAt = Instant.parse(previous.updatedAt)
+            val currentUpdatedAt = Instant.parse(current.updatedAt)
+            previousUpdatedAt > currentUpdatedAt ||
+                (previousUpdatedAt == currentUpdatedAt && previous.notebookId < current.notebookId)
+        }
+    }
+
+    private fun failPendingResearchNotebooksListRun(
+        run: PendingResearchNotebooksListRun,
+        detail: String,
+    ) {
+        clearPendingResearchNotebooksListRun(run)
+        showError("invalid_payload", detail)
+        requestQueuedResearchNotebooksAfter(run)
+    }
+
+    private fun completePendingResearchNotebooksListRun(
+        run: PendingResearchNotebooksListRun,
+        capable: Boolean,
+    ) {
+        if (!run.hasCurrentResearchNotebookAuthority()) return
+        clearPendingResearchNotebooksListRun(run, clearLoading = false)
+        if (capable) {
+            researchNotebooksAuthoritativeSyncSupported = true
+        }
+        if (run.requiresRefreshAfterCompletion) {
+            requestQueuedResearchNotebooksAfter(run)
+            return
+        }
+        publishResearchNotebooksSnapshot(run.notebooks, authoritative = capable)
+        requestQueuedResearchNotebooksAfter(run)
+    }
+
+    private fun requestQueuedResearchNotebooksAfter(run: PendingResearchNotebooksListRun) {
+        if (
+            !run.requiresRefreshAfterCompletion ||
+            activeChannel !== run.channel ||
+            !run.channel.isConnected ||
+            activeConnectionGeneration != run.connectionGeneration ||
+            !isSessionAuthenticated ||
+            runtimeSessionAuthorityGeneration != run.authorityGeneration
+        ) return
+        requestResearchNotebooks()
+    }
+
+    private fun publishResearchNotebooksSnapshot(
+        notebooks: List<ResearchNotebookPayload>,
+        authoritative: Boolean,
+    ) {
+        if (authoritative) {
+            hasResolvedAuthoritativeResearchNotebookList = true
+        }
+        val previouslyKnownResearchSessionIds = researchNotebookSessionIds.toSet()
+        val snapshotSessionIds = notebooks.mapTo(linkedSetOf(), ResearchNotebookPayload::sessionId)
+        val provisionalResearchSessionIds = pendingResearchBriefCreate
+            ?.takeIf { it.hasCurrentAuthority() }
+            ?.let { setOf(it.sessionId) }
+            .orEmpty()
+        rememberResearchSessionIdsForChatSnapshots(
+            previouslyKnownResearchSessionIds + snapshotSessionIds + provisionalResearchSessionIds,
+        )
+        researchNotebookSessionIds = if (authoritative) {
+            snapshotSessionIds + provisionalResearchSessionIds
+        } else {
+            previouslyKnownResearchSessionIds + snapshotSessionIds + provisionalResearchSessionIds
+        }
+        val researchAuthorityChanged = authoritative &&
+            previouslyKnownResearchSessionIds != researchNotebookSessionIds
+        val newlyClassifiedActiveSessionId = state.value.activeChatSessionId?.takeIf { sessionId ->
+            sessionId !in previouslyKnownResearchSessionIds &&
+                sessionId in researchNotebookSessionIds
+        }
+        val authoritativeArchivedActiveSessionId = state.value.activeChatSessionId?.takeIf { sessionId ->
+            notebooks.any { notebook ->
+                notebook.sessionId == sessionId && notebook.archivedAt != null
+            }
+        }
+        val authoritativeRemovedActiveSessionId = state.value.activeChatSessionId?.takeIf { sessionId ->
+            authoritative &&
+                sessionId in previouslyKnownResearchSessionIds &&
+                sessionId !in researchNotebookSessionIds
+        }
+        transientResearchMessagesBySessionId.keys.retainAll(researchNotebookSessionIds)
+        val scrubbedLocalData = persistedRuntimeData.copy(
+            activeSessionId = persistedRuntimeData.activeSessionId
+                ?.takeUnless(researchNotebookSessionIds::contains),
+            sessions = persistedRuntimeData.sessions.filterNot { session ->
+                session.id in researchNotebookSessionIds
+            },
+        ).sanitized()
+        if (scrubbedLocalData != persistedRuntimeData) {
+            publishPersistedRuntimeData(
+                data = scrubbedLocalData,
+                save = true,
+                clearError = false,
+            )
+        }
+        (mutableResearchNotebooks.value.notebooks + notebooks)
+            .mapTo(linkedSetOf(), ResearchNotebookPayload::sessionId)
+            .forEach(::recordResearchNotebookRevision)
+        mutableResearchNotebooks.value = RuntimeResearchNotebooksUiState(
+            notebooks = notebooks,
+            isLoading = false,
+        )
+        val activeSessionToExit = authoritativeArchivedActiveSessionId ?: authoritativeRemovedActiveSessionId
+        activeSessionToExit?.let(::clearTransientResearchSessionAfterLifecycleExit)
+        newlyClassifiedActiveSessionId
+            ?.takeUnless { it == activeSessionToExit }
+            ?.let { sessionId ->
+                clearPendingAttachmentsForSession(sessionId)
+                transientResearchMessagesBySessionId.remove(sessionId)
+                mutableState.update { current ->
+                    if (current.activeChatSessionId == sessionId) {
+                        current.copy(
+                            loadingChatSessionId = null,
+                            messages = emptyList(),
+                            chatInput = "",
+                            pendingAttachments = emptyList(),
+                            selectedTrustedSourceAnchorIds = emptyList(),
+                        )
+                    } else {
+                        current
+                    }
+                }
+                requestRuntimeChatMessages(sessionId)
+            }
+        if (authoritative) {
+            publishHeldRuntimeChatSessionsSnapshot()
+        }
+        val paginatingChatSessionsRun = pendingChatSessionsListRun?.takeIf { it.pageCount > 0 }
+        if (paginatingChatSessionsRun != null) {
+            if (researchAuthorityChanged) {
+                paginatingChatSessionsRun.requiresRefreshAfterCompletion = true
+            }
+        } else {
+            requestRuntimeChatSessions()
         }
     }
 
@@ -5717,15 +6686,19 @@ class RuntimeClientViewModel internal constructor(
         requestFreshRuntimeChatSessionsAfterMutationCompletion()
     }
 
-    private fun handleChatSessionRename(envelope: ProtocolEnvelope) {
+    private fun handleChatSessionRename(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
         if (envelope.requestId !in pendingChatSessionRenameRequestIds) return
         val mutation = pendingChatSessionRenameMutationsByRequestId[envelope.requestId] ?: run {
             pendingChatSessionRenameRequestIds -= envelope.requestId
             return
         }
+        if (!mutation.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration)) return
         envelope.payload.chatSessionRenameResultUnknownMetadataKey()?.let { unknownKey ->
-            pendingChatSessionRenameRequestIds -= envelope.requestId
-            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            closePendingChatSessionRenameRequest(envelope.requestId, mutation)
             handleRuntimeChatSessionMutationFailure(
                 detail = "chat.session.rename response contains unsupported metadata: $unknownKey",
                 renameMutation = mutation,
@@ -5735,8 +6708,7 @@ class RuntimeClientViewModel internal constructor(
         }
         val payload = decodePayload(ChatSessionRenamePayload.serializer(), envelope.payload) ?: run {
             val detail = state.value.error?.technicalDetail
-            pendingChatSessionRenameRequestIds -= envelope.requestId
-            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            closePendingChatSessionRenameRequest(envelope.requestId, mutation)
             handleRuntimeChatSessionMutationFailure(
                 detail = detail,
                 renameMutation = mutation,
@@ -5745,8 +6717,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (payload.sessionId != mutation.sessionId) {
-            pendingChatSessionRenameRequestIds -= envelope.requestId
-            pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
+            closePendingChatSessionRenameRequest(envelope.requestId, mutation)
             handleRuntimeChatSessionMutationFailure(
                 detail = "chat.session.rename response did not match the pending session",
                 renameMutation = mutation,
@@ -5754,20 +6725,29 @@ class RuntimeClientViewModel internal constructor(
             )
             return
         }
-        pendingChatSessionRenameRequestIds -= envelope.requestId
-        pendingChatSessionRenameMutationsByRequestId -= envelope.requestId
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withRenamedChatSession(
-                sessionId = payload.sessionId,
-                title = payload.title,
-                nowMillis = nowMillis(),
-            ),
-            save = true,
-        )
+        closePendingChatSessionRenameRequest(envelope.requestId, mutation)
+        if (mutation.previousResearchNotebook != null) {
+            replaceResearchNotebookIfOptimisticCurrent(mutation) { notebook ->
+                notebook.copy(title = payload.title)
+            }
+        } else {
+            publishPersistedRuntimeData(
+                persistedRuntimeData.withRenamedChatSession(
+                    sessionId = payload.sessionId,
+                    title = payload.title,
+                    nowMillis = nowMillis(),
+                ),
+                save = true,
+            )
+        }
         requestFreshRuntimeChatSessionsAfterMutationCompletion()
     }
 
-    private fun handleChatSessionLifecycle(envelope: ProtocolEnvelope) {
+    private fun handleChatSessionLifecycle(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
         if (pendingChatSessionsBulkLifecycle?.requestId == envelope.requestId) {
             handleChatSessionsBulkLifecycle(envelope)
             return
@@ -5777,7 +6757,9 @@ class RuntimeClientViewModel internal constructor(
             pendingChatSessionLifecycleRequestIds -= envelope.requestId
             return
         }
+        if (!mutation.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration)) return
         envelope.payload.chatSessionLifecycleResultUnknownMetadataKey()?.let { unknownKey ->
+            closeChatSessionLifecycleRequest(envelope.requestId, mutation)
             pendingChatSessionLifecycleRequestIds -= envelope.requestId
             pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
             handleRuntimeChatSessionMutationFailure(
@@ -5789,6 +6771,7 @@ class RuntimeClientViewModel internal constructor(
         }
         val payload = decodePayload(ChatSessionLifecyclePayload.serializer(), envelope.payload) ?: run {
             val detail = state.value.error?.technicalDetail
+            closeChatSessionLifecycleRequest(envelope.requestId, mutation)
             pendingChatSessionLifecycleRequestIds -= envelope.requestId
             pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
             handleRuntimeChatSessionMutationFailure(
@@ -5798,7 +6781,19 @@ class RuntimeClientViewModel internal constructor(
             )
             return
         }
+        payload.invalidLifecycleTimestampField()?.let { invalidField ->
+            closeChatSessionLifecycleRequest(envelope.requestId, mutation)
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
+            handleRuntimeChatSessionMutationFailure(
+                detail = "${envelope.type} response contains malformed $invalidField timestamp",
+                lifecycleMutation = mutation,
+                errorCode = "invalid_payload",
+            )
+            return
+        }
         if (!payload.matchesPendingRuntimeChatSessionLifecycle(envelope.type, mutation)) {
+            closeChatSessionLifecycleRequest(envelope.requestId, mutation)
             pendingChatSessionLifecycleRequestIds -= envelope.requestId
             pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
             handleRuntimeChatSessionMutationFailure(
@@ -5808,16 +6803,159 @@ class RuntimeClientViewModel internal constructor(
             )
             return
         }
+        closeChatSessionLifecycleRequest(envelope.requestId, mutation)
         pendingChatSessionLifecycleRequestIds -= envelope.requestId
         pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withRuntimeChatSessionLifecycleResult(
-                result = payload,
-                nowMillis = nowMillis(),
-            ),
-            save = true,
-        )
+        if (!mutation.isResearchNotebook) {
+            publishPersistedRuntimeData(
+                persistedRuntimeData.withRuntimeChatSessionLifecycleResult(
+                    result = payload,
+                    nowMillis = nowMillis(),
+                ),
+                save = true,
+            )
+        } else {
+            applyResearchNotebookLifecycleResult(payload, mutation)
+        }
         requestFreshRuntimeChatSessionsAfterMutationCompletion()
+    }
+
+    private fun applyResearchNotebookLifecycleResult(
+        payload: ChatSessionLifecyclePayload,
+        mutation: PendingChatSessionLifecycleMutation,
+    ) {
+        mutableResearchNotebooks.update { current ->
+            val notebooks = when (mutation.type) {
+                MessageType.ChatSessionArchive -> current.notebooks.map { notebook ->
+                    if (notebook.sessionId != mutation.sessionId) {
+                        notebook
+                    } else {
+                        val archivedAt = payload.archivedAt ?: notebook.updatedAt
+                        notebook.copy(
+                            archivedAt = archivedAt,
+                            updatedAt = laterResearchNotebookTimestamp(
+                                notebook.updatedAt,
+                                archivedAt,
+                            ),
+                        )
+                    }
+                }
+
+                MessageType.ChatSessionRestore -> current.notebooks.map { notebook ->
+                    if (notebook.sessionId != mutation.sessionId) {
+                        notebook
+                    } else {
+                        notebook.copy(
+                            archivedAt = null,
+                            updatedAt = laterResearchNotebookTimestamp(
+                                notebook.updatedAt,
+                                payload.restoredAt,
+                            ),
+                        )
+                    }
+                }
+
+                MessageType.ChatSessionDelete -> current.notebooks.filterNot { notebook ->
+                    notebook.sessionId == mutation.sessionId
+                }
+
+                else -> current.notebooks
+            }
+            current.copy(notebooks = notebooks)
+        }
+        if (mutation.type !in setOf(MessageType.ChatSessionArchive, MessageType.ChatSessionDelete)) return
+
+        clearTransientResearchSessionAfterLifecycleExit(mutation.sessionId)
+    }
+
+    private fun laterResearchNotebookTimestamp(current: String, candidate: String?): String {
+        if (candidate == null) return current
+        return if (Instant.parse(candidate) > Instant.parse(current)) candidate else current
+    }
+
+    private fun clearTransientResearchSessionAfterLifecycleExit(sessionId: String) {
+        if (pendingChatMessagesSessionId == sessionId) {
+            clearPendingChatMessagesRequest()
+        }
+        clearPendingAttachmentsForSession(sessionId)
+        transientResearchMessagesBySessionId.remove(sessionId)
+        if (state.value.activeChatSessionId == sessionId) {
+            restorePersistedActiveChatSession()
+        }
+    }
+
+    private fun closeChatSessionLifecycleRequest(
+        requestId: String,
+        mutation: PendingChatSessionLifecycleMutation,
+    ) {
+        closedChatSessionLifecycleRequests.removeAll { closed ->
+            closed.requestId == requestId &&
+                closed.channel === mutation.channel &&
+                closed.connectionGeneration == mutation.connectionGeneration
+        }
+        closedChatSessionLifecycleRequests += ClosedChatSessionLifecycleRequest(
+            requestId = requestId,
+            channel = mutation.channel,
+            connectionGeneration = mutation.connectionGeneration,
+        )
+        while (closedChatSessionLifecycleRequests.size > MAX_CLOSED_CHAT_SESSION_LIFECYCLE_REQUESTS) {
+            closedChatSessionLifecycleRequests.removeAt(0)
+        }
+    }
+
+    private fun isClosedChatSessionLifecycleRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return closedChatSessionLifecycleRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
+    }
+
+    private fun closePendingChatSessionRenameRequest(
+        requestId: String,
+        mutation: PendingChatSessionRenameMutation,
+    ): Boolean {
+        if (pendingChatSessionRenameMutationsByRequestId[requestId] !== mutation) return false
+        pendingChatSessionRenameRequestIds -= requestId
+        pendingChatSessionRenameMutationsByRequestId -= requestId
+        chatSessionRenameRequestTimeoutJobsByRequestId.remove(requestId)?.cancel()
+        closeChatSessionRenameRequest(requestId, mutation)
+        return true
+    }
+
+    private fun closeChatSessionRenameRequest(
+        requestId: String,
+        mutation: PendingChatSessionRenameMutation,
+    ) {
+        closedChatSessionRenameRequests.removeAll { closed ->
+            closed.requestId == requestId &&
+                closed.channel === mutation.channel &&
+                closed.connectionGeneration == mutation.connectionGeneration
+        }
+        closedChatSessionRenameRequests += ClosedChatSessionRenameRequest(
+            requestId = requestId,
+            channel = mutation.channel,
+            connectionGeneration = mutation.connectionGeneration,
+        )
+        while (closedChatSessionRenameRequests.size > MAX_CLOSED_CHAT_SESSION_RENAME_REQUESTS) {
+            closedChatSessionRenameRequests.removeAt(0)
+        }
+    }
+
+    private fun isClosedChatSessionRenameRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return closedChatSessionRenameRequests.any { closed ->
+            closed.requestId == requestId &&
+                closed.channel === sourceChannel &&
+                closed.connectionGeneration == sourceConnectionGeneration
+        }
     }
 
     private fun beginRuntimeChatSessionsBulkLifecycle(
@@ -6034,6 +7172,41 @@ class RuntimeClientViewModel internal constructor(
             MessageType.ChatSessionDelete -> deleteSignal
             else -> false
         }
+    }
+
+    private fun ChatSessionLifecyclePayload.invalidLifecycleTimestampField(): String? {
+        return when {
+            archivedAt?.let { parseProtocolTimestampMillisOrNull(it) == null } == true -> "archived_at"
+            restoredAt?.let { parseProtocolTimestampMillisOrNull(it) == null } == true -> "restored_at"
+            deletedAt?.let { parseProtocolTimestampMillisOrNull(it) == null } == true -> "deleted_at"
+            else -> null
+        }
+    }
+
+    private fun PendingChatSessionLifecycleMutation.matchesCurrentAuthority(
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return channel === sourceChannel &&
+            activeChannel === sourceChannel &&
+            channel.isConnected &&
+            connectionGeneration == sourceConnectionGeneration &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            authorityGeneration == runtimeSessionAuthorityGeneration
+    }
+
+    private fun PendingChatSessionRenameMutation.matchesCurrentAuthority(
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return channel === sourceChannel &&
+            activeChannel === sourceChannel &&
+            channel.isConnected &&
+            connectionGeneration == sourceConnectionGeneration &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            authorityGeneration == runtimeSessionAuthorityGeneration
     }
 
     private fun handleIndexDocumentsList(envelope: ProtocolEnvelope) {
@@ -6738,7 +7911,11 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
-    private fun handleCancelAck(envelope: ProtocolEnvelope) {
+    private fun handleCancelAck(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
         val activeRequestId = state.value.activeRequestId ?: return
         if (envelope.payload.isEmpty()) return
         envelope.payload.chatCancelAckUnknownMetadataKey()?.let { unknownKey ->
@@ -6746,9 +7923,25 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         val payload = decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
+        val pendingResearch = pendingResearchBriefCreate
+        if (
+            pendingResearch?.requestId == activeRequestId &&
+            !pendingResearch.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration)
+        ) return
+        val researchSessionId = state.value.activeChatSessionId
+            ?.takeIf { it in researchNotebookSessionIds }
         val updatedState = state.value.withChatCancelAck(envelope, payload)
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
+        if (updatedState.activeRequestId == null && researchSessionId != null) {
+            if (activeResearchBriefSessionId == researchSessionId) {
+                activeResearchBriefSessionId = null
+            }
+            cancelResearchBriefCreateIdleTimeout()
+            pendingResearchBriefCreate = null
+            requestResearchNotebooks(requireFreshAfterCurrent = true)
+            requestRuntimeChatSessions()
+        }
     }
 
     private fun handleError(
@@ -6757,6 +7950,25 @@ class RuntimeClientViewModel internal constructor(
         sourceConnectionGeneration: Long,
     ) {
         if (envelope.requestId in closedRuntimeAuthenticationRequestIds) return
+        if (envelope.requestId in pendingChatSessionLifecycleRequestIds) {
+            val mutation = pendingChatSessionLifecycleMutationsByRequestId[envelope.requestId]
+            if (mutation?.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration) != true) return
+        } else if (envelope.requestId in pendingChatSessionRenameRequestIds) {
+            val mutation = pendingChatSessionRenameMutationsByRequestId[envelope.requestId]
+            if (mutation?.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration) != true) return
+        } else if (
+            isClosedChatSessionLifecycleRequest(
+                envelope.requestId,
+                sourceChannel,
+                sourceConnectionGeneration,
+            ) || isClosedChatSessionRenameRequest(
+                envelope.requestId,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+        ) {
+            return
+        }
         pendingRuntimeAuthentication
             ?.takeIf { pending ->
                 pending.matchesActiveConnection(sourceChannel, sourceConnectionGeneration) &&
@@ -6815,6 +8027,91 @@ class RuntimeClientViewModel internal constructor(
                 return
             }
         if (envelope.requestId.startsWith(MODELS_LIST_REQUEST_ID_PREFIX)) return
+        pendingResearchNotebooksListRun
+            ?.takeIf { run ->
+                run.requestId == envelope.requestId &&
+                    run.channel === sourceChannel &&
+                    run.connectionGeneration == sourceConnectionGeneration &&
+                    run.hasCurrentResearchNotebookAuthority()
+            }
+            ?.let { run ->
+                clearPendingResearchNotebooksListRun(run)
+                envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                    showError(
+                        "invalid_payload",
+                        "error response contains unsupported metadata: $unknownKey",
+                    )
+                    requestQueuedResearchNotebooksAfter(run)
+                    return
+                }
+                val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                    requestQueuedResearchNotebooksAfter(run)
+                    return
+                }
+                if (payload.code.isPairingRequiredRuntimeCode()) {
+                    revokeAuthenticatedRuntimeSessionState()
+                    mutableState.value = state.value.withRuntimeError(
+                        envelope,
+                        payload,
+                        pendingModelPullRequestId,
+                    )
+                } else {
+                    showError("runtime_error", payload.message)
+                }
+                requestQueuedResearchNotebooksAfter(run)
+                return
+            }
+        if (envelope.requestId.startsWith(RESEARCH_NOTEBOOKS_LIST_REQUEST_ID_PREFIX)) return
+        val pendingResearchCreate = pendingResearchBriefCreate
+            ?.takeIf { it.requestId == envelope.requestId }
+        if (envelope.requestId.startsWith(RESEARCH_BRIEF_CREATE_REQUEST_ID_PREFIX)) {
+            if (
+                pendingResearchCreate == null ||
+                !pendingResearchCreate.matchesCurrentAuthority(
+                    sourceChannel,
+                    sourceConnectionGeneration,
+                )
+            ) return
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                discardFailedResearchBriefCreate(
+                    pending = pendingResearchCreate,
+                    errorState = state.value.copy(
+                        error = runtimeUiError(
+                            "invalid_payload",
+                            "error response contains unsupported metadata: $unknownKey",
+                        ),
+                    ),
+                )
+                return
+            }
+            val payload = decodeClosedPayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                discardFailedResearchBriefCreate(
+                    pending = pendingResearchCreate,
+                    errorState = state.value.copy(
+                        error = runtimeUiError("invalid_payload", "Malformed research brief error"),
+                    ),
+                )
+                return
+            }
+            if (payload.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+            } else {
+                discardFailedResearchBriefCreate(
+                    pending = pendingResearchCreate,
+                    errorState = state.value.withRuntimeError(
+                        envelope,
+                        payload,
+                        pendingModelPullRequestId,
+                    ),
+                )
+            }
+            return
+        }
         if (shouldIgnoreClosedMemoryDuplicateSuggestionsError(
                 requestId = envelope.requestId,
                 sourceChannel = sourceChannel,
@@ -7007,6 +8304,26 @@ class RuntimeClientViewModel internal constructor(
         if (envelope.requestId.startsWith(DOCUMENT_SEARCH_REQUEST_ID_PREFIX)) return
         envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
             val detail = "error response contains unsupported metadata: $unknownKey"
+            pendingChatSessionLifecycleMutationsByRequestId[envelope.requestId]?.let { mutation ->
+                closeChatSessionLifecycleRequest(envelope.requestId, mutation)
+                pendingChatSessionLifecycleRequestIds -= envelope.requestId
+                pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
+                handleRuntimeChatSessionMutationFailure(
+                    detail = detail,
+                    lifecycleMutation = mutation,
+                    errorCode = "invalid_payload",
+                )
+                return
+            }
+            pendingChatSessionRenameMutationsByRequestId[envelope.requestId]?.let { mutation ->
+                closePendingChatSessionRenameRequest(envelope.requestId, mutation)
+                handleRuntimeChatSessionMutationFailure(
+                    detail = detail,
+                    renameMutation = mutation,
+                    errorCode = "invalid_payload",
+                )
+                return
+            }
             if (isCurrentMemoryDuplicateSuggestionsRequest(
                     requestId = envelope.requestId,
                     sourceChannel = sourceChannel,
@@ -7069,16 +8386,19 @@ class RuntimeClientViewModel internal constructor(
                 }
                 return
             }
-        if (pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)) {
-            val mutation = pendingChatSessionLifecycleMutationsByRequestId.remove(envelope.requestId)
+        val lifecycleMutation = pendingChatSessionLifecycleMutationsByRequestId[envelope.requestId]
+        if (lifecycleMutation != null && envelope.requestId in pendingChatSessionLifecycleRequestIds) {
+            closeChatSessionLifecycleRequest(envelope.requestId, lifecycleMutation)
+            pendingChatSessionLifecycleRequestIds -= envelope.requestId
+            pendingChatSessionLifecycleMutationsByRequestId -= envelope.requestId
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             val authenticationLost = payload?.code.isPairingRequiredRuntimeCode()
             if (authenticationLost) {
-                revokeAuthenticatedRuntimeSessionState(listOfNotNull(mutation))
+                revokeAuthenticatedRuntimeSessionState(listOf(lifecycleMutation))
             }
             handleRuntimeChatSessionMutationFailure(
                 detail = payload?.message,
-                lifecycleMutation = mutation.takeUnless { authenticationLost },
+                lifecycleMutation = lifecycleMutation.takeUnless { authenticationLost },
             )
             if (authenticationLost) {
                 mutableState.value = state.value.withRuntimeError(
@@ -7089,16 +8409,20 @@ class RuntimeClientViewModel internal constructor(
             }
             return
         }
-        if (pendingChatSessionRenameRequestIds.remove(envelope.requestId)) {
-            val mutation = pendingChatSessionRenameMutationsByRequestId.remove(envelope.requestId)
+        val renameMutation = pendingChatSessionRenameMutationsByRequestId[envelope.requestId]
+        if (
+            renameMutation != null &&
+            envelope.requestId in pendingChatSessionRenameRequestIds &&
+            closePendingChatSessionRenameRequest(envelope.requestId, renameMutation)
+        ) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             val authenticationLost = payload?.code.isPairingRequiredRuntimeCode()
             if (authenticationLost) {
-                revokeAuthenticatedRuntimeSessionState(listOfNotNull(mutation))
+                revokeAuthenticatedRuntimeSessionState(listOf(renameMutation))
             }
             handleRuntimeChatSessionMutationFailure(
                 detail = payload?.message,
-                renameMutation = mutation.takeUnless { authenticationLost },
+                renameMutation = renameMutation.takeUnless { authenticationLost },
             )
             if (authenticationLost) {
                 mutableState.value = state.value.withRuntimeError(
@@ -7431,8 +8755,12 @@ class RuntimeClientViewModel internal constructor(
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
         val isModelPullError = pendingModelPullRequestId == envelope.requestId
         val isActiveChatError = state.value.activeRequestId == envelope.requestId
+        val isActivelyCorrelatedGenericError = isModelPullError || isActiveChatError
         if (isModelPullError) {
             modelIdToSelectAfterRefresh = null
+        }
+        if (payload?.code.isPairingRequiredRuntimeCode() && !isActivelyCorrelatedGenericError) {
+            return
         }
         if (payload?.code.isPairingRequiredRuntimeCode()) {
             revokeAuthenticatedRuntimeSessionState()
@@ -7489,14 +8817,21 @@ class RuntimeClientViewModel internal constructor(
                 clearError = false,
             )
         }
+        renameMutation?.previousResearchNotebook?.let { previousNotebook ->
+            replaceResearchNotebookIfOptimisticCurrent(renameMutation) {
+                previousNotebook
+            }
+        }
         showError(errorCode, detail)
         requestFreshRuntimeChatSessionsAfterMutationCompletion()
     }
 
     private fun requestFreshRuntimeChatSessionsAfterMutationCompletion() {
         clearPendingChatSessionsListRun()
+        clearPendingResearchNotebooksListRun()
         clearRuntimeChatSearchAuthority()
         requestRuntimeChatSessions()
+        requestResearchNotebooks()
     }
 
     private suspend fun sendEnvelopeInternal(
@@ -7546,9 +8881,13 @@ class RuntimeClientViewModel internal constructor(
                 val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
                     pendingTitleRequestId == envelope.requestId
                 val lifecycleMutation = pendingChatSessionLifecycleMutationsByRequestId.remove(envelope.requestId)
-                val renameMutation = pendingChatSessionRenameMutationsByRequestId.remove(envelope.requestId)
+                val renameMutation = pendingChatSessionRenameMutationsByRequestId[envelope.requestId]
                 val isSessionLifecycleRequest = pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)
-                val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
+                if (isSessionLifecycleRequest && lifecycleMutation != null) {
+                    closeChatSessionLifecycleRequest(envelope.requestId, lifecycleMutation)
+                }
+                val isSessionRenameRequest = renameMutation != null &&
+                    closePendingChatSessionRenameRequest(envelope.requestId, renameMutation)
                 val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
                     pendingMemoryListRequestId == envelope.requestId
                 val isModelsListRequest = envelope.type == MessageType.ModelsList &&
@@ -7576,6 +8915,14 @@ class RuntimeClientViewModel internal constructor(
                     pendingTrustedSourceDismissRequestId == envelope.requestId
                 val isTrustedSourceListRequest = envelope.type == MessageType.TrustedSourceList &&
                     pendingTrustedSourceListRequestId == envelope.requestId
+                val failedResearchNotebooksListRun = pendingResearchNotebooksListRun?.takeIf { run ->
+                    envelope.type == MessageType.ResearchNotebooksList &&
+                        run.requestId == envelope.requestId
+                }
+                val researchBriefCreate = pendingResearchBriefCreate?.takeIf { pending ->
+                    envelope.type == MessageType.ResearchBriefCreate &&
+                        pending.requestId == envelope.requestId
+                }
                 val revokedSourceAnchorId = if (envelope.type == MessageType.TrustedSourceRevoke) {
                     pendingTrustedSourceRevocationsByRequestId.remove(envelope.requestId)
                 } else {
@@ -7717,6 +9064,24 @@ class RuntimeClientViewModel internal constructor(
                     showError("trusted_source_list_failed")
                     return@onFailure
                 }
+                if (failedResearchNotebooksListRun != null) {
+                    clearPendingResearchNotebooksListRun(failedResearchNotebooksListRun)
+                    showError("runtime_error", error.message)
+                    requestQueuedResearchNotebooksAfter(failedResearchNotebooksListRun)
+                    return@onFailure
+                }
+                if (researchBriefCreate != null) {
+                    discardFailedResearchBriefCreate(
+                        pending = researchBriefCreate,
+                        errorState = current.copy(
+                            isStreaming = false,
+                            activeRequestId = null,
+                            error = runtimeUiError("send_failed", error.message),
+                        ),
+                        reconcileAuthorities = false,
+                    )
+                    return@onFailure
+                }
                 if (revokedSourceAnchorId != null) {
                     mutableState.update {
                         it.copy(
@@ -7844,6 +9209,16 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
+    private fun <T> decodeClosedPayload(serializer: KSerializer<T>, payload: JsonObject): T? {
+        return try {
+            json.decodeFromJsonElement(serializer, payload)
+        } catch (_: SerializationException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
     private fun rememberTrustedSource(source: TrustedSourcePayload) {
         trustedSourceGrantsBySourceAnchorId[source.sourceAnchorId] = source.grantId
     }
@@ -7899,6 +9274,62 @@ class RuntimeClientViewModel internal constructor(
                 resolvingSourceAttributionIndex = null,
             )
         }
+    }
+
+    private fun scheduleResearchNotebooksListTimeout(
+        run: PendingResearchNotebooksListRun,
+    ) {
+        researchNotebooksListRequestTimeoutJob?.cancel()
+        val requestId = run.requestId
+        researchNotebooksListRequestTimeoutJob = viewModelScope.launch {
+            delay(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS)
+            val current = pendingResearchNotebooksListRun ?: return@launch
+            if (
+                current !== run ||
+                current.requestId != requestId ||
+                !current.hasCurrentResearchNotebookAuthority()
+            ) return@launch
+            pendingResearchNotebooksListRun = null
+            researchNotebooksListRequestTimeoutJob = null
+            mutableResearchNotebooks.update { it.copy(isLoading = false) }
+            requestQueuedResearchNotebooksAfter(run)
+        }
+    }
+
+    private fun clearPendingResearchNotebooksListRun(
+        run: PendingResearchNotebooksListRun? = pendingResearchNotebooksListRun,
+        clearLoading: Boolean = true,
+    ) {
+        if (run != null && pendingResearchNotebooksListRun !== run) return
+        pendingResearchNotebooksListRun = null
+        researchNotebooksListRequestTimeoutJob?.cancel()
+        researchNotebooksListRequestTimeoutJob = null
+        if (clearLoading) {
+            mutableResearchNotebooks.update { it.copy(isLoading = false) }
+        }
+    }
+
+    private fun scheduleResearchBriefCreateIdleTimeout(pending: PendingResearchBriefCreate) {
+        researchBriefCreateIdleTimeoutJob?.cancel()
+        researchBriefCreateIdleTimeoutJob = viewModelScope.launch {
+            delay(RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS)
+            if (
+                pendingResearchBriefCreate !== pending ||
+                !pending.hasCurrentAuthority()
+            ) return@launch
+            researchBriefCreateIdleTimeoutJob = null
+            discardFailedResearchBriefCreate(
+                pending = pending,
+                errorState = state.value.copy(
+                    error = runtimeUiError("runtime_error", "Research brief create timed out"),
+                ),
+            )
+        }
+    }
+
+    private fun cancelResearchBriefCreateIdleTimeout() {
+        researchBriefCreateIdleTimeoutJob?.cancel()
+        researchBriefCreateIdleTimeoutJob = null
     }
 
     private fun recordTrustedSourceMutation() {
@@ -8069,29 +9500,33 @@ class RuntimeClientViewModel internal constructor(
             .sortedByDescending(PendingChatSessionMutation::sequence)
             .fold(this) { repairedData, mutation ->
                 when (mutation) {
-                    is PendingChatSessionLifecycleMutation -> repairedData.copy(
-                        activeSessionId = if (
-                            mutation.restoreAsActive && repairedData.activeSessionId == null
-                        ) {
-                            mutation.sessionId
-                        } else {
-                            repairedData.activeSessionId
-                        },
-                        sessions = listOf(mutation.previousSession) + repairedData.sessions.filterNot { session ->
-                            session.id == mutation.sessionId
-                        },
-                        suppressedRuntimeSessions = repairedData.suppressedRuntimeSessions.filterNot { suppression ->
-                            suppression.sessionId == mutation.sessionId
-                        },
-                    ).sanitized()
+                    is PendingChatSessionLifecycleMutation -> mutation.previousSession?.let { previousSession ->
+                        repairedData.copy(
+                            activeSessionId = if (
+                                mutation.restoreAsActive && repairedData.activeSessionId == null
+                            ) {
+                                mutation.sessionId
+                            } else {
+                                repairedData.activeSessionId
+                            },
+                            sessions = listOf(previousSession) + repairedData.sessions.filterNot { session ->
+                                session.id == mutation.sessionId
+                            },
+                            suppressedRuntimeSessions = repairedData.suppressedRuntimeSessions.filterNot { suppression ->
+                                suppression.sessionId == mutation.sessionId
+                            },
+                        ).sanitized()
+                    } ?: repairedData
 
-                    is PendingChatSessionRenameMutation -> repairedData.withRevertedRuntimeChatSessionRename(
-                        sessionId = mutation.sessionId,
-                        previousTitle = mutation.previousTitle,
-                        previousTitleManuallyEdited = mutation.previousTitleManuallyEdited,
-                        previousTitleGenerated = mutation.previousTitleGenerated,
-                        previousUpdatedAtMillis = mutation.previousUpdatedAtMillis,
-                    )
+                    is PendingChatSessionRenameMutation -> mutation.previousSession?.let { previousSession ->
+                        repairedData.withRevertedRuntimeChatSessionRename(
+                            sessionId = mutation.sessionId,
+                            previousTitle = previousSession.title,
+                            previousTitleManuallyEdited = previousSession.titleManuallyEdited,
+                            previousTitleGenerated = previousSession.titleGenerated,
+                            previousUpdatedAtMillis = previousSession.updatedAtMillis,
+                        )
+                    } ?: repairedData
                 }
             }
     }
@@ -8103,10 +9538,18 @@ class RuntimeClientViewModel internal constructor(
             pendingChatSessionLifecycleMutationsByRequestId.values +
                 pendingChatSessionRenameMutationsByRequestId.values +
                 additionalMutations
+        pendingChatSessionLifecycleMutationsByRequestId.forEach { (requestId, mutation) ->
+            closeChatSessionLifecycleRequest(requestId, mutation)
+        }
+        pendingChatSessionRenameMutationsByRequestId.toList().forEach { (requestId, mutation) ->
+            closePendingChatSessionRenameRequest(requestId, mutation)
+        }
         pendingChatSessionLifecycleRequestIds.clear()
         pendingChatSessionRenameRequestIds.clear()
         pendingChatSessionLifecycleMutationsByRequestId.clear()
         pendingChatSessionRenameMutationsByRequestId.clear()
+        chatSessionRenameRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)
+        chatSessionRenameRequestTimeoutJobsByRequestId.clear()
         clearPendingTitleRequest()
         val repairedData = persistedRuntimeData.revertingRuntimeChatSessionMutations(pendingMutations)
         if (repairedData != persistedRuntimeData) {
@@ -8116,6 +9559,16 @@ class RuntimeClientViewModel internal constructor(
                 clearError = false,
             )
         }
+        pendingMutations
+            .filterIsInstance<PendingChatSessionRenameMutation>()
+            .sortedByDescending(PendingChatSessionRenameMutation::sequence)
+            .forEach { mutation ->
+                mutation.previousResearchNotebook?.let { previousNotebook ->
+                    replaceResearchNotebookIfOptimisticCurrent(mutation) {
+                        previousNotebook
+                    }
+                }
+            }
     }
 
     private fun revokeAuthenticatedRuntimeSessionState(
@@ -8131,12 +9584,100 @@ class RuntimeClientViewModel internal constructor(
         runtimeChatSessionsAuthoritativeSyncSupported = false
         runtimeChatSessionsBulkAuthorityEnabled = false
         clearTrustedSourceSessionState()
+        clearResearchNotebookSessionState()
         clearPendingRuntimeHistoryRequests()
         clearPendingChatSessionsBulkLifecycle()
         clearRuntimeChatSearchAuthority()
         rollbackAndClearPendingRuntimeChatSessionMutations(additionalMutations)
         cancelRuntimeRouteRefreshLease()
         clearPendingRouteRefreshRequest()
+    }
+
+    private fun clearResearchNotebookSessionState() {
+        val activeWasResearchNotebook = state.value.activeChatSessionId in researchNotebookSessionIds
+        clearPendingResearchNotebooksListRun()
+        heldRuntimeChatSessionsSnapshot = null
+        cancelResearchBriefCreateIdleTimeout()
+        pendingResearchBriefCreate = null
+        activeResearchBriefSessionId = null
+        hasResolvedAuthoritativeResearchNotebookList = false
+        researchNotebookSessionIds = emptySet()
+        researchNotebookRevisionsBySessionId.clear()
+        researchNotebooksAuthoritativeSyncSupported = false
+        transientResearchMessagesBySessionId.clear()
+        mutableResearchNotebooks.value = RuntimeResearchNotebooksUiState()
+        mutableState.update { current ->
+            if (!activeWasResearchNotebook) {
+                current
+            } else {
+                current.copy(
+                    activeChatSessionId = persistedRuntimeData.activeSessionId,
+                    loadingChatSessionId = null,
+                    messages = activeSessionMessages(persistedRuntimeData),
+                    chatInput = persistedRuntimeData.composerDraftForSession(
+                        persistedRuntimeData.activeSessionId,
+                    ),
+                    pendingAttachments = pendingAttachmentsBySession[
+                        persistedRuntimeData.activeSessionId
+                    ].orEmpty(),
+                    isStreaming = false,
+                    activeRequestId = null,
+                )
+            }
+        }
+    }
+
+    private fun leaveActiveTransientResearchSession() {
+        if (state.value.activeChatSessionId !in researchNotebookSessionIds) return
+        restorePersistedActiveChatSession()
+    }
+
+    private fun restorePersistedActiveChatSession() {
+        mutableState.update { current ->
+            current.copy(
+                activeChatSessionId = persistedRuntimeData.activeSessionId,
+                loadingChatSessionId = null,
+                messages = activeSessionMessages(persistedRuntimeData),
+                chatInput = persistedRuntimeData.composerDraftForSession(
+                    persistedRuntimeData.activeSessionId,
+                ),
+                pendingAttachments = pendingAttachmentsBySession[
+                    persistedRuntimeData.activeSessionId
+                ].orEmpty(),
+            )
+        }
+    }
+
+    private fun discardFailedResearchBriefCreate(
+        pending: PendingResearchBriefCreate,
+        errorState: RuntimeUiState,
+        reconcileAuthorities: Boolean = true,
+    ) {
+        if (pendingResearchBriefCreate !== pending) return
+        cancelResearchBriefCreateIdleTimeout()
+        pendingResearchBriefCreate = null
+        if (activeResearchBriefSessionId == pending.sessionId) {
+            activeResearchBriefSessionId = null
+        }
+        researchNotebookSessionIds -= pending.sessionId
+        transientResearchMessagesBySessionId.remove(pending.sessionId)
+        mutableState.value = errorState.copy(
+            activeChatSessionId = persistedRuntimeData.activeSessionId,
+            loadingChatSessionId = null,
+            messages = activeSessionMessages(persistedRuntimeData),
+            chatInput = persistedRuntimeData.composerDraftForSession(
+                persistedRuntimeData.activeSessionId,
+            ),
+            pendingAttachments = pendingAttachmentsBySession[
+                persistedRuntimeData.activeSessionId
+            ].orEmpty(),
+            activeRequestId = null,
+            isStreaming = false,
+        )
+        if (reconcileAuthorities) {
+            requestResearchNotebooks(requireFreshAfterCurrent = true)
+            requestRuntimeChatSessions()
+        }
     }
 
     private fun clearPendingRuntimeDocumentRequests() {
@@ -8568,6 +10109,20 @@ class RuntimeClientViewModel internal constructor(
         clearError: Boolean = true,
         runtimeBacked: Boolean = false,
     ) {
+        if (sessionId in researchNotebookSessionIds) {
+            transientResearchMessagesBySessionId[sessionId] = messages
+            mutableState.update { current ->
+                if (current.activeChatSessionId == sessionId) {
+                    current.copy(
+                        messages = messages,
+                        error = if (clearError) null else current.error,
+                    )
+                } else {
+                    current
+                }
+            }
+            return
+        }
         publishPersistedRuntimeData(
             persistedRuntimeData.withPersistedMessages(
                 sessionId = sessionId,
@@ -8592,26 +10147,32 @@ class RuntimeClientViewModel internal constructor(
             localStore.save(cleanData)
         }
         mutableState.update {
+            val activeResearchSessionId = it.activeChatSessionId
+                ?.takeIf(researchNotebookSessionIds::contains)
             it.copy(
                 chatSessions = runtimeChatSessions(cleanData),
                 archivedChatSessions = archivedRuntimeChatSessions(cleanData),
-                activeChatSessionId = cleanData.activeSessionId,
+                activeChatSessionId = activeResearchSessionId ?: cleanData.activeSessionId,
                 loadingChatSessionId = it.loadingChatSessionId?.takeIf { loadingId ->
-                    loadingId == cleanData.activeSessionId
+                    loadingId == (activeResearchSessionId ?: cleanData.activeSessionId)
                 },
                 selectedModelId = cleanData.selectedModelId,
                 selectedEmbeddingModelId = cleanData.selectedEmbeddingModelId,
-                chatInput = if (syncComposerDraft) {
+                chatInput = if (syncComposerDraft && activeResearchSessionId == null) {
                     cleanData.composerDraftForSession(cleanData.activeSessionId)
                 } else {
                     it.chatInput
                 },
-                pendingAttachments = if (syncComposerDraft) {
+                pendingAttachments = if (syncComposerDraft && activeResearchSessionId == null) {
                     pendingAttachmentsBySession[cleanData.activeSessionId].orEmpty()
                 } else {
                     it.pendingAttachments
                 },
-                messages = activeSessionMessages(cleanData),
+                messages = if (activeResearchSessionId == null) {
+                    activeSessionMessages(cleanData)
+                } else {
+                    it.messages
+                },
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
                 selectedLanguageSource = cleanData.appLanguageSource ?: APP_LANGUAGE_SOURCE_DEFAULT,
@@ -8651,10 +10212,27 @@ class RuntimeClientViewModel internal constructor(
         return persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
     }
 
+    private fun researchNotebookForAction(sessionId: String): ResearchNotebookPayload? {
+        return mutableResearchNotebooks.value.notebooks.firstOrNull { it.sessionId == sessionId }
+    }
+
+    private fun rejectArchivedActiveResearchNotebook(sessionId: String?): Boolean {
+        val archived = sessionId
+            ?.let(::researchNotebookForAction)
+            ?.archivedAt != null
+        if (archived) {
+            showError("chat_history_loading")
+        }
+        return archived
+    }
+
     private fun persistComposerDraft(
         value: String,
         sessionId: String? = state.value.activeChatSessionId,
     ): String {
+        if (sessionId in researchNotebookSessionIds) {
+            return value.take(20_000)
+        }
         val cleanData = persistedRuntimeData.withComposerDraft(value, sessionId = sessionId)
         persistedRuntimeData = cleanData
         localStore.save(cleanData)
@@ -8742,8 +10320,36 @@ class RuntimeClientViewModel internal constructor(
 
     private fun nowMillis(): Long = dependencies.currentTimeMillis()
 
-    private fun isActiveChatEnvelope(envelope: ProtocolEnvelope): Boolean {
-        return state.value.activeRequestId == envelope.requestId
+    private fun isActiveChatEnvelope(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        if (state.value.activeRequestId != envelope.requestId) return false
+        val pendingResearch = pendingResearchBriefCreate
+            ?.takeIf { it.requestId == envelope.requestId }
+            ?: return true
+        return pendingResearch.matchesCurrentAuthority(sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun PendingResearchBriefCreate.matchesCurrentAuthority(
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
+    }
+
+    private fun PendingResearchBriefCreate.hasCurrentAuthority(): Boolean {
+        return channel.isConnected &&
+            activeChannel === channel &&
+            activeConnectionGeneration == connectionGeneration &&
+            runtimeSessionAuthorityGeneration == authorityGeneration &&
+            isSessionAuthenticated
     }
 
     override fun onCleared() {

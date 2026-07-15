@@ -223,6 +223,10 @@
 "%d models" = "%d models";
 "Chat" = "Chat";
 "Embedding" = "Embedding";
+"Vision" = "Vision";
+"Context: %@ tokens" = "Context: %@ tokens";
+"%@, %@" = "%@, %@";
+"%@. Capabilities: %@." = "%@. Capabilities: %@.";
 "Running" = "Running";
 "Not running" = "Not running";
 "Unnamed model" = "Unnamed model";

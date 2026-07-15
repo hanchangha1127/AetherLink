@@ -18,6 +18,7 @@ import Darwin
 import DocumentIngestion
 import OllamaBackend
 import Pairing
+import SQLite3
 import Transport
 import TrustedDevices
 import XCTest
@@ -994,6 +995,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("runtime-chat-events.jsonl")
         let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        let previousTitleUpdatedAt = Date(timeIntervalSince1970: 4_102_444_800)
+        try store.append(RuntimeChatStoredEvent(
+            id: "chat-title-auto-placeholder",
+            timestamp: previousTitleUpdatedAt,
+            kind: .title,
+            requestID: "chat-title-auto-placeholder",
+            sessionID: "session-title-auto",
+            model: "llama3.1:8b",
+            title: "New chat"
+        ))
         let capturedRequests = LockedBox<[ChatRequest]>([])
         let router = makeRouter(
             backend: MockBackend(
@@ -1045,6 +1056,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             expectedTitle: "Runtime Pairing Summary"
         )
         XCTAssertEqual(title, "Runtime Pairing Summary")
+        let titleEvents = try JSONLRuntimeChatEventStore.events(from: fileURL)
+            .filter { $0.kind == .title }
+        let generatedTitleEvent = try XCTUnwrap(titleEvents.last)
+        XCTAssertGreaterThan(generatedTitleEvent.timestamp, previousTitleUpdatedAt)
+        let titledSession = try XCTUnwrap(store.listSessions(limit: 10, includeArchived: true).first)
+        XCTAssertEqual(titledSession.titleUpdatedAt, generatedTitleEvent.timestamp)
+        XCTAssertEqual(titledSession.titleRevision, 2)
         let storedMessages = try store.listMessages(sessionID: "session-title-auto", limit: 10)
         XCTAssertEqual(storedMessages.map(\.role), ["user", "assistant"])
         let backendRequests = capturedRequests.value
@@ -1157,6 +1175,365 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             expectedTitle: "Use QR pairing to trust the"
         )
         XCTAssertEqual(title, "Use QR pairing to trust the")
+    }
+
+    func testAutomaticChatTitleDoesNotCrossOwnerAfterReauthentication() async throws {
+        let ownerA = "automatic-title-owner-a"
+        let ownerB = "automatic-title-owner-b"
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerA,
+            name: "Automatic Title Owner A",
+            publicKeyBase64: ownerAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerB,
+            name: "Automatic Title Owner B",
+            publicKeyBase64: ownerBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let storeURL = temporaryRuntimeChatJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: storeURL)
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEventBatches: [[
+                .delta("The authenticated runtime keeps each conversation owner-scoped."),
+                .done(inputTokens: 3, outputTokens: 4),
+            ], []],
+            chatStreamFinishBatches: [true, false],
+            onChatRequest: { request in
+                backendRequests.value = backendRequests.value + [request]
+            }
+        )
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerA,
+            privateKey: ownerAKey
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "automatic-title-owner-race",
+            payload: [
+                "session_id": .string("automatic-title-owner-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Explain owner-scoped title generation."),
+                ])]),
+            ]
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 4)
+        let didStartOwnerTitleGeneration = await waitForCondition {
+            backendRequests.value.count == 2
+        }
+        XCTAssertTrue(didStartOwnerTitleGeneration)
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerB,
+            privateKey: ownerBKey,
+            clientCapabilities: [],
+            existingMessageCount: 4,
+            requestSuffix: "automatic-title-owner-b"
+        )
+        backend.finishChat(with: [
+            .delta(#"{"title":"Must Not Cross Owners"}"#),
+            .done(inputTokens: 2, outputTokens: 3),
+        ])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(
+            try store.listSessions(ownerDeviceID: ownerA, limit: 10, includeArchived: true).first?.title,
+            "New chat"
+        )
+        XCTAssertTrue(
+            try store.listSessions(ownerDeviceID: ownerB, limit: 10, includeArchived: true).isEmpty
+        )
+        XCTAssertFalse(try JSONLRuntimeChatEventStore.events(from: storeURL).contains {
+            $0.kind == .title && $0.title == "Must Not Cross Owners"
+        })
+    }
+
+    func testAutomaticChatTitlePreservesConcurrentManualRename() async throws {
+        let storeURL = temporaryRuntimeChatJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: storeURL)
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEventBatches: [[
+                .delta("A manual rename is authoritative while title generation is pending."),
+                .done(inputTokens: 2, outputTokens: 3),
+            ], []],
+            chatStreamFinishBatches: [true, false],
+            onChatRequest: { request in
+                backendRequests.value = backendRequests.value + [request]
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "automatic-title-manual-race",
+            payload: [
+                "session_id": .string("automatic-title-manual-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Keep my manual title."),
+                ])]),
+            ]
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 2)
+        let didStartManualRaceTitleGeneration = await waitForCondition {
+            backendRequests.value.count == 2
+        }
+        XCTAssertTrue(didStartManualRaceTitleGeneration)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "automatic-title-manual-rename",
+            payload: [
+                "session_id": .string("automatic-title-manual-session"),
+                "title": .string("Manual authoritative title"),
+            ]
+        ), sink: sink)
+        let rename = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(rename?.type, MessageType.chatSessionRename)
+
+        backend.finishChat(with: [
+            .delta(#"{"title":"Stale Generated Title"}"#),
+            .done(inputTokens: 2, outputTokens: 3),
+        ])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(
+            try store.listSessions(limit: 10, includeArchived: true).first?.title,
+            "Manual authoritative title"
+        )
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore.events(from: storeURL)
+                .filter { $0.kind == .title }
+                .map(\.title),
+            ["Manual authoritative title"]
+        )
+    }
+
+    func testAutomaticChatTitlePreservesConcurrentPlaceholderRevision() async throws {
+        let storeURL = temporaryRuntimeChatJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: storeURL)
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEventBatches: [[
+                .delta("A placeholder revision still changes title authority."),
+                .done(inputTokens: 2, outputTokens: 3),
+            ], []],
+            chatStreamFinishBatches: [true, false],
+            onChatRequest: { request in
+                backendRequests.value = backendRequests.value + [request]
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "automatic-title-placeholder-race",
+            payload: [
+                "session_id": .string("automatic-title-placeholder-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Preserve a newer placeholder revision."),
+                ])]),
+            ]
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 2)
+        let didStartPlaceholderRaceTitleGeneration = await waitForCondition {
+            backendRequests.value.count == 2
+        }
+        XCTAssertTrue(didStartPlaceholderRaceTitleGeneration)
+
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down) + 1),
+            kind: .title,
+            requestID: "automatic-title-placeholder-revision",
+            sessionID: "automatic-title-placeholder-session",
+            model: "llama3.1:8b",
+            title: "New chat"
+        ))
+        backend.finishChat(with: [
+            .delta(#"{"title":"Stale Placeholder Overwrite"}"#),
+            .done(inputTokens: 2, outputTokens: 3),
+        ])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(
+            try store.listSessions(limit: 10, includeArchived: true).first?.title,
+            "New chat"
+        )
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore.events(from: storeURL)
+                .filter { $0.kind == .title }
+                .map(\.requestID),
+            ["automatic-title-placeholder-revision"]
+        )
+    }
+
+    func testAutomaticChatTitleNormalizesBoundsAndInvalidatesChatAndResearchCursors() async throws {
+        let owner = "automatic-title-cursor-owner"
+        let ownerKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: owner,
+            name: "Automatic Title Cursor Owner",
+            publicKeyBase64: ownerKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let store = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: store,
+            ownerDeviceID: owner,
+            sessionID: "automatic-title-cursor-other-session",
+            requestID: "automatic-title-cursor-other-turn",
+            timestamp: 100
+        )
+        let notebookStore = RuntimeResearchNotebookStore()
+        let targetNotebookID = "research_notebook_" + String(repeating: "6", count: 32)
+        let otherNotebookID = "research_notebook_" + String(repeating: "7", count: 32)
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEventBatches: [[
+                .delta("The generated title is normalized before storage."),
+                .done(inputTokens: 2, outputTokens: 3),
+            ], []],
+            chatStreamFinishBatches: [true, false],
+            onChatRequest: { request in
+                backendRequests.value = backendRequests.value + [request]
+            }
+        )
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: store,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: owner,
+            privateKey: ownerKey,
+            clientCapabilities: [
+                "chat.sessions.authoritative_sync.v1",
+                "research.notebooks.v1",
+                "research.notebooks.authoritative_sync.v1",
+            ]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "automatic-title-cursor-send",
+            payload: [
+                "session_id": .string("automatic-title-cursor-target-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Generate a bounded canonical title."),
+                ])]),
+            ]
+        ), sink: sink)
+        _ = try await sink.waitForMessages(count: 4)
+        let didStartTitleGeneration = await waitForCondition {
+            backendRequests.value.count == 2
+        }
+        XCTAssertTrue(didStartTitleGeneration)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "automatic-title-chat-cursor-before",
+            payload: ["limit": .number(1)]
+        ), sink: sink)
+        let chatList = try await sink.waitForMessages(count: 5).last
+        guard case .string(let staleChatCursor)? = chatList?.payload["next_cursor"] else {
+            return XCTFail("Expected a chat cursor before automatic title commit: \(String(describing: chatList))")
+        }
+        _ = try notebookStore.create(
+            ownerDeviceID: owner,
+            notebookID: targetNotebookID,
+            backingSessionID: "automatic-title-cursor-target-session",
+            title: "Original target notebook title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "6", count: 32)]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: owner,
+            notebookID: otherNotebookID,
+            backingSessionID: "automatic-title-cursor-other-session",
+            title: "Other notebook title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "7", count: 32)]
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "automatic-title-research-cursor-before",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let researchList = try await sink.waitForMessages(count: 6).last
+        guard case .string(let staleResearchCursor)? = researchList?.payload["next_cursor"] else {
+            return XCTFail("Expected a research cursor before automatic title commit")
+        }
+
+        let rawGeneratedTitle = String(repeating: "e\u{0301}", count: 100)
+        let expectedTitle = String(repeating: "\u{00E9}", count: 80)
+        backend.finishChat(with: [
+            .delta("{\"title\":\"\(rawGeneratedTitle)\"}"),
+            .done(inputTokens: 2, outputTokens: 3),
+        ])
+        let storedTitle = try await waitForSessionTitle(
+            in: store,
+            sessionID: "automatic-title-cursor-target-session",
+            expectedTitle: expectedTitle,
+            ownerDeviceID: owner
+        )
+        XCTAssertEqual(storedTitle, expectedTitle)
+        XCTAssertEqual(storedTitle, storedTitle?.precomposedStringWithCanonicalMapping)
+        XCTAssertLessThanOrEqual(
+            storedTitle?.unicodeScalars.count ?? Int.max,
+            RuntimeResearchNotebook.maximumTitleCharacters
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "automatic-title-stale-chat-cursor",
+            payload: ["cursor": .string(staleChatCursor)]
+        ), sink: sink)
+        let staleChat = try await sink.waitForMessages(count: 7).last
+        XCTAssertEqual(staleChat?.type, MessageType.error)
+        XCTAssertEqual(staleChat?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "automatic-title-stale-research-cursor",
+            payload: ["cursor": .string(staleResearchCursor)]
+        ), sink: sink)
+        let staleResearch = try await sink.waitForMessages(count: 8).last
+        XCTAssertEqual(staleResearch?.type, MessageType.error)
+        XCTAssertEqual(staleResearch?.payload["code"], .string("invalid_payload"))
     }
 
     func testRuntimeChatStoreListsSessionsAndMessages() throws {
@@ -1417,6 +1794,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let messages = try store.listMessages(sessionID: "session-multi", limit: 10)
 
         XCTAssertEqual(sessions.first?.title, "QR Pairing Flow")
+        XCTAssertEqual(sessions.first?.titleUpdatedAt, titleDate)
         XCTAssertEqual(sessions.first?.lastActivityAt, secondDoneDate)
         XCTAssertEqual(sessions.first?.messageCount, 4)
         XCTAssertEqual(messages.map(\.role), ["user", "assistant", "user", "assistant"])
@@ -4369,7 +4747,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(overflowResponse?.type, MessageType.error)
         XCTAssertEqual(overflowResponse?.payload["code"], .string("chat_store_unavailable"))
         XCTAssertNil(overflowResponse?.payload["snapshot_count"])
-        XCTAssertEqual(store.sessionListRequests.last?.limit, 10_001)
+        XCTAssertEqual(store.sessionListRequests.last?.limit, 20_001)
     }
 
     func testAuthoritativeBulkDeletePurgeFailurePreventsLifecycleMutation() async throws {
@@ -4982,6 +5360,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             model: "llama3.1:8b",
             messages: [ChatMessage(role: "user", content: "Rename this chat.")]
         ))
+        let previousTitleUpdatedAt = Date(timeIntervalSince1970: 4_102_444_800)
+        try store.append(RuntimeChatStoredEvent(
+            id: "session-rename-placeholder-title",
+            timestamp: previousTitleUpdatedAt,
+            kind: .title,
+            requestID: "session-rename-placeholder-title",
+            sessionID: "session-rename",
+            model: "llama3.1:8b",
+            title: "New chat"
+        ))
         let router = makeRouter(
             backend: MockBackend(),
             chatEventStore: store
@@ -5000,8 +5388,20 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(renameResponse?.type, MessageType.chatSessionRename)
         XCTAssertEqual(renameResponse?.payload["session_id"], .string("session-rename"))
         XCTAssertEqual(renameResponse?.payload["title"], .string("Runtime route notes"))
-        XCTAssertNotNil(renameResponse?.payload["renamed_at"])
-        XCTAssertEqual(try store.listSessions(limit: 10).first?.title, "Runtime route notes")
+        let renameEvent = try XCTUnwrap(
+            JSONLRuntimeChatEventStore.events(from: fileURL).last { $0.kind == .title }
+        )
+        XCTAssertGreaterThan(renameEvent.timestamp, previousTitleUpdatedAt)
+        let renamedSession = try XCTUnwrap(store.listSessions(limit: 10).first)
+        XCTAssertEqual(renamedSession.title, "Runtime route notes")
+        XCTAssertEqual(renamedSession.titleUpdatedAt, renameEvent.timestamp)
+        XCTAssertEqual(renamedSession.titleRevision, 2)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        XCTAssertEqual(
+            renameResponse?.payload["renamed_at"],
+            .string(formatter.string(from: renameEvent.timestamp))
+        )
     }
 
     func testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation() async throws {
@@ -9910,7 +10310,18 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testChatTitleRequestReturnsStructuredTitle() async throws {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
-        let store = RecordingRuntimeChatEventStore()
+        let previousTitleUpdatedAt = Date(timeIntervalSince1970: 4_102_444_800)
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: "session-1",
+                title: "New chat",
+                titleUpdatedAt: previousTitleUpdatedAt,
+                titleRevision: 1,
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 2
+            )
+        ])
         let router = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
@@ -9956,6 +10367,321 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(store.events.first?.sessionID, "session-1")
         XCTAssertEqual(store.events.first?.requestID, "title-1")
         XCTAssertEqual(store.events.first?.title, "Runtime-Mediated Model Access")
+        XCTAssertGreaterThan(try XCTUnwrap(store.events.first?.timestamp), previousTitleUpdatedAt)
+    }
+
+    func testChatTitleRequestRejectsNonexistentSessionBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [
+                    .delta(#"{"title":"Must Not Be Generated"}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ],
+                onChatRequest: { capturedRequest.value = $0 }
+            ),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-nonexistent-session",
+            payload: [
+                "session_id": .string("missing-title-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Name this missing chat."),
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("There is no stored chat."),
+                    ]),
+                ]),
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "title-nonexistent-session")
+        XCTAssertEqual(response?.payload["code"], .string("chat_session_not_found"))
+        XCTAssertNil(capturedRequest.value)
+        XCTAssertTrue(store.events.isEmpty)
+    }
+
+    func testChatTitleRequestDoesNotOverwriteTitleChangedAfterRequestCapture() async throws {
+        let storeURL = temporaryRuntimeChatJSONLURL()
+        let store = JSONLRuntimeChatEventStore(fileURL: storeURL)
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "title-cas-turn",
+            sessionID: "title-cas-session",
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Preserve a later manual title.")]
+        ))
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEventBatches: [[]],
+            chatStreamFinishBatches: [false],
+            onChatRequest: { request in
+                backendRequests.value = backendRequests.value + [request]
+            }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let titleSink = RecordingSink()
+        let renameSink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-cas-generated",
+            payload: [
+                "session_id": .string("title-cas-session"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object(["role": .string("user"), "content": .string("Name this chat.")]),
+                    .object(["role": .string("assistant"), "content": .string("A stored answer.")]),
+                ]),
+            ]
+        ), sink: titleSink)
+        let didCaptureTitleRequest = await waitForCondition {
+            backendRequests.value.count == 1
+        }
+        XCTAssertTrue(didCaptureTitleRequest)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "title-cas-manual-rename",
+            payload: [
+                "session_id": .string("title-cas-session"),
+                "title": .string("Manual title wins"),
+            ]
+        ), sink: renameSink)
+        let rename = try await renameSink.waitForMessages(count: 1).first
+        XCTAssertEqual(rename?.type, MessageType.chatSessionRename)
+
+        backend.finishChat(with: [
+            .delta(#"{"title":"Stale Generated Title"}"#),
+            .done(inputTokens: 2, outputTokens: 3),
+        ])
+        _ = try await titleSink.waitForMessages(count: 1, timeout: 0.1)
+
+        XCTAssertEqual(
+            try store.listSessions(limit: 10, includeArchived: true).first?.title,
+            "Manual title wins"
+        )
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore.events(from: storeURL)
+                .filter { $0.kind == .title }
+                .map(\.title),
+            ["Manual title wins"]
+        )
+    }
+
+    func testChatTitleRequestFencesReauthenticatedOwnerAndInvalidatesResearchCursorOnCommit() async throws {
+        let ownerA = "title-reauth-owner-a"
+        let ownerB = "title-reauth-owner-b"
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerA,
+            name: "Title Reauth Owner A",
+            publicKeyBase64: ownerAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerB,
+            name: "Title Reauth Owner B",
+            publicKeyBase64: ownerBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+
+        let notebookStore = RuntimeResearchNotebookStore()
+        let targetNotebookID = "research_notebook_" + String(repeating: "a", count: 32)
+        let otherNotebookID = "research_notebook_" + String(repeating: "b", count: 32)
+        let targetSessionID = "title-reauth-target-session"
+        let otherSessionID = "title-reauth-other-session"
+        for (notebookID, sessionID, title) in [
+            (targetNotebookID, targetSessionID, "Old generated notebook title"),
+            (otherNotebookID, otherSessionID, "Other notebook title"),
+        ] {
+            _ = try notebookStore.create(
+                ownerDeviceID: ownerB,
+                notebookID: notebookID,
+                backingSessionID: sessionID,
+                title: title,
+                model: "llama3.1:8b",
+                trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "c", count: 32)]
+            )
+        }
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerB,
+            sessionID: targetSessionID,
+            requestID: "title-reauth-target-turn",
+            timestamp: 100
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerB,
+            sessionID: otherSessionID,
+            requestID: "title-reauth-other-turn",
+            timestamp: 200
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerA,
+            sessionID: "title-reauth-owner-a-session",
+            requestID: "title-reauth-owner-a-turn",
+            timestamp: 300
+        )
+
+        let backendRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            onChatRequest: { request in
+                var requests = backendRequests.value
+                requests.append(request)
+                backendRequests.value = requests
+            }
+        )
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        let capabilities = [
+            "research.notebooks.v1",
+            "research.notebooks.authoritative_sync.v1",
+        ]
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerA,
+            privateKey: ownerAKey,
+            clientCapabilities: capabilities
+        )
+
+        func titleEnvelope(requestID: String, sessionID: String) -> ProtocolEnvelope {
+            ProtocolEnvelope(
+                type: MessageType.chatTitleRequest,
+                requestID: requestID,
+                payload: [
+                    "session_id": .string(sessionID),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Summarize this notebook."),
+                        ]),
+                        .object([
+                            "role": .string("assistant"),
+                            "content": .string("This notebook tracks runtime behavior."),
+                        ]),
+                    ]),
+                ]
+            )
+        }
+
+        func waitForBackendRequestCount(_ count: Int) async -> Bool {
+            for _ in 0..<500 {
+                if backendRequests.value.count >= count { return true }
+                try? await Task.sleep(nanoseconds: 1_000_000)
+            }
+            return false
+        }
+
+        router.handle(titleEnvelope(
+            requestID: "title-reauth-stale-owner-a",
+            sessionID: "title-reauth-owner-a-session"
+        ), sink: sink)
+        let didStartStaleTitleRequest = await waitForBackendRequestCount(1)
+        XCTAssertTrue(didStartStaleTitleRequest)
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerB,
+            privateKey: ownerBKey,
+            clientCapabilities: capabilities,
+            existingMessageCount: 2,
+            requestSuffix: "title-reauth-owner-b"
+        )
+        backend.finishChat(with: [
+            .delta(#"{"title":"Must Not Cross Owners"}"#),
+            .done(inputTokens: 4, outputTokens: 4),
+        ])
+        let afterStaleGeneration = try await sink.waitForMessages(count: 5, timeout: 0.1)
+        XCTAssertEqual(afterStaleGeneration.count, 4)
+        XCTAssertFalse(afterStaleGeneration.contains {
+            $0.requestID == "title-reauth-stale-owner-a"
+        })
+        XCTAssertEqual(
+            try chatStore.listSessions(
+                ownerDeviceID: ownerA,
+                limit: 10,
+                includeArchived: true
+            ).first?.title,
+            "New chat"
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "title-reauth-before-generated-title",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let beforeTitle = try await sink.waitForMessages(count: 5).last
+        guard case .string(let staleCursor)? = beforeTitle?.payload["next_cursor"] else {
+            return XCTFail("Expected an authoritative notebook cursor before title generation")
+        }
+
+        router.handle(titleEnvelope(
+            requestID: "title-reauth-fresh-owner-b",
+            sessionID: targetSessionID
+        ), sink: sink)
+        let didStartFreshTitleRequest = await waitForBackendRequestCount(2)
+        XCTAssertTrue(didStartFreshTitleRequest)
+        let generatedTitle = "Fresh generated notebook title"
+        backend.finishChat(with: [
+            .delta(#"{"title":"Fresh generated notebook title"}"#),
+            .done(inputTokens: 4, outputTokens: 4),
+        ])
+        let titleResult = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(titleResult?.type, MessageType.chatTitleResult)
+        XCTAssertEqual(titleResult?.requestID, "title-reauth-fresh-owner-b")
+        XCTAssertEqual(titleResult?.payload["title"], .string(generatedTitle))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "title-reauth-stale-research-cursor",
+            payload: ["cursor": .string(staleCursor)]
+        ), sink: sink)
+        let staleContinuation = try await sink.waitForMessages(count: 7).last
+        XCTAssertEqual(staleContinuation?.type, MessageType.error)
+        XCTAssertEqual(staleContinuation?.payload["code"], .string("invalid_payload"))
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "title-reauth-after-generated-title",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let freshList = try await sink.waitForMessages(count: 8).last
+        guard case .array(let notebooks)? = freshList?.payload["notebooks"],
+              case .object(let targetNotebook)? = notebooks.first(where: {
+                  researchNotebookID($0) == targetNotebookID
+              }) else {
+            return XCTFail("Expected the freshly titled research notebook")
+        }
+        XCTAssertEqual(targetNotebook["title"], .string(generatedTitle))
     }
 
     func testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch() async throws {
@@ -10175,7 +10901,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
     func testChatTitleRequestAcceptsFencedStructuredTitle() async throws {
         let sink = RecordingSink()
-        let store = RecordingRuntimeChatEventStore()
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            placeholderChatSession(sessionID: "session-1")
+        ])
         let router = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
@@ -10218,13 +10946,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
     func testChatTitleRequestFallsBackToPlainTitle() async throws {
         let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore(sessions: [
+            placeholderChatSession(sessionID: "session-1")
+        ])
         let router = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
                 .delta("Title: Runtime pairing and model routing"),
                 .done(inputTokens: 4, outputTokens: 8)
             ]
-        ))
+        ), chatEventStore: store)
         let envelope = ProtocolEnvelope(
             type: MessageType.chatTitleRequest,
             requestID: "title-plain",
@@ -10254,13 +10985,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
     func testChatTitleRequestReturnsEmptyTitleForInvalidJSONOrEmptyOutput() async throws {
         let invalidJSONSink = RecordingSink()
+        let invalidJSONStore = RecordingRuntimeChatEventStore(sessions: [
+            placeholderChatSession(sessionID: "session-1")
+        ])
         let invalidJSONRouter = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
                 .delta(#"{"name":"Wrong key"}"#),
                 .done(inputTokens: 4, outputTokens: 8)
             ]
-        ))
+        ), chatEventStore: invalidJSONStore)
         let invalidJSONEnvelope = ProtocolEnvelope(
             type: MessageType.chatTitleRequest,
             requestID: "title-invalid-json",
@@ -10288,13 +11022,16 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(invalidJSONMessage?.payload["title"], .string(""))
 
         let emptySink = RecordingSink()
+        let emptyStore = RecordingRuntimeChatEventStore(sessions: [
+            placeholderChatSession(sessionID: "session-1")
+        ])
         let emptyRouter = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
                 .delta("   \n"),
                 .done(inputTokens: 4, outputTokens: 0)
             ]
-        ))
+        ), chatEventStore: emptyStore)
         let emptyEnvelope = ProtocolEnvelope(
             type: MessageType.chatTitleRequest,
             requestID: "title-empty",
@@ -10322,6 +11059,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(emptyMessage?.payload["title"], .string(""))
 
         let invalidFencedSink = RecordingSink()
+        let invalidFencedStore = RecordingRuntimeChatEventStore(sessions: [
+            placeholderChatSession(sessionID: "session-1")
+        ])
         let invalidFencedRouter = makeRouter(backend: MockBackend(
             models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
             chatEvents: [
@@ -10332,7 +11072,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 """),
                 .done(inputTokens: 4, outputTokens: 8)
             ]
-        ))
+        ), chatEventStore: invalidFencedStore)
         let invalidFencedEnvelope = ProtocolEnvelope(
             type: MessageType.chatTitleRequest,
             requestID: "title-invalid-fenced-json",
@@ -12954,6 +13694,3304 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
     }
 
+    func testResearchBriefCreateRejectsUnnegotiatedCapabilityAndStrictInvalidPayloads() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-device",
+            name: "Research Device",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let capabilityNotebookStore = RuntimeResearchNotebookStore()
+        let capabilityBackendRequest = LockedBox<ChatRequest?>(nil)
+        let capabilityRouter = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                onChatRequest: { capabilityBackendRequest.value = $0 }
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            researchNotebookStore: capabilityNotebookStore
+        )
+        let capabilitySink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: capabilityRouter,
+            sink: capabilitySink,
+            deviceID: "research-device",
+            privateKey: deviceKey
+        )
+        capabilityRouter.handle(researchBriefCreateEnvelope(
+            requestID: "research-capability-required",
+            notebookID: "research_notebook_" + String(repeating: "1", count: 32),
+            sessionID: "research-session-capability",
+            topic: "Capability gated research",
+            grantIDs: ["trusted_source_" + String(repeating: "a", count: 32)]
+        ), sink: capabilitySink)
+
+        let capabilityResponse = try await capabilitySink.waitForMessages(count: 3).last
+        XCTAssertEqual(capabilityResponse?.type, MessageType.error)
+        XCTAssertEqual(capabilityResponse?.requestID, "research-capability-required")
+        XCTAssertEqual(capabilityResponse?.payload["code"], .string("unsupported_operation"))
+        XCTAssertNil(capabilityBackendRequest.value)
+        XCTAssertTrue(try capabilityNotebookStore.list(ownerDeviceID: "research-device").isEmpty)
+
+        let canonicalGrant = "trusted_source_" + String(repeating: "b", count: 32)
+        let canonicalNotebookID = "research_notebook_" + String(repeating: "2", count: 32)
+        let canonicalPayload: [String: JSONValue] = [
+            "notebook_id": .string(canonicalNotebookID),
+            "session_id": .string("research-session-strict"),
+            "topic": .string("Strict research payload"),
+            "model": .string("llama3.1:8b"),
+            "trusted_source_grant_ids": .array([.string(canonicalGrant)]),
+        ]
+        var unknownFieldPayload = canonicalPayload
+        unknownFieldPayload["prompt"] = .string("client supplied prompt")
+        var uppercaseNotebookPayload = canonicalPayload
+        uppercaseNotebookPayload["notebook_id"] = .string(
+            "research_notebook_" + String(repeating: "A", count: 32)
+        )
+        var emptyGrantsPayload = canonicalPayload
+        emptyGrantsPayload["trusted_source_grant_ids"] = .array([])
+        var duplicateGrantsPayload = canonicalPayload
+        duplicateGrantsPayload["trusted_source_grant_ids"] = .array([
+            .string(canonicalGrant),
+            .string(canonicalGrant),
+        ])
+        var excessiveGrantsPayload = canonicalPayload
+        excessiveGrantsPayload["trusted_source_grant_ids"] = .array((0..<9).map { index in
+            .string(String(format: "trusted_source_%032x", index))
+        })
+        var malformedGrantPayload = canonicalPayload
+        malformedGrantPayload["trusted_source_grant_ids"] = .array([
+            .string("trusted_source_" + String(repeating: "G", count: 32))
+        ])
+        var missingTopicPayload = canonicalPayload
+        missingTopicPayload.removeValue(forKey: "topic")
+        let invalidPayloads = [
+            unknownFieldPayload,
+            uppercaseNotebookPayload,
+            emptyGrantsPayload,
+            duplicateGrantsPayload,
+            excessiveGrantsPayload,
+            malformedGrantPayload,
+            missingTopicPayload,
+        ]
+
+        for (index, payload) in invalidPayloads.enumerated() {
+            let notebookStore = RuntimeResearchNotebookStore()
+            let backendRequest = LockedBox<ChatRequest?>(nil)
+            let router = makeRouter(
+                backend: MockBackend(
+                    models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                    onChatRequest: { backendRequest.value = $0 }
+                ),
+                researchNotebookStore: notebookStore
+            )
+            let sink = RecordingSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.researchBriefCreate,
+                requestID: "research-invalid-\(index)",
+                payload: payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error, "invalid payload \(index)")
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), "invalid payload \(index)")
+            XCTAssertNil(backendRequest.value, "invalid payload \(index)")
+            XCTAssertTrue(
+                try notebookStore.list(ownerDeviceID: "runtime_local_owner").isEmpty,
+                "invalid payload \(index)"
+            )
+        }
+
+        let postParseFailures: [(name: String, model: String, grantID: String, expectedCode: String)] = [
+            (
+                "missing-model",
+                "missing-model:latest",
+                canonicalGrant,
+                "model_not_installed"
+            ),
+            (
+                "missing-grant",
+                "llama3.1:8b",
+                canonicalGrant,
+                "trusted_source_not_found"
+            ),
+        ]
+        for testCase in postParseFailures {
+            let notebookStore = RuntimeResearchNotebookStore()
+            let chatStore = RecordingRuntimeChatEventStore()
+            let backendRequest = LockedBox<ChatRequest?>(nil)
+            let router = makeRouter(
+                backend: MockBackend(
+                    models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                    onChatRequest: { backendRequest.value = $0 }
+                ),
+                chatEventStore: chatStore,
+                researchNotebookStore: notebookStore
+            )
+            let sink = RecordingSink()
+            var payload = canonicalPayload
+            payload["notebook_id"] = .string(
+                "research_notebook_" + String(repeating: testCase.name == "missing-model" ? "7" : "8", count: 32)
+            )
+            payload["session_id"] = .string("research-post-parse-\(testCase.name)")
+            payload["model"] = .string(testCase.model)
+            payload["trusted_source_grant_ids"] = .array([.string(testCase.grantID)])
+            router.handle(ProtocolEnvelope(
+                type: MessageType.researchBriefCreate,
+                requestID: "research-post-parse-\(testCase.name)",
+                payload: payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.payload["code"], .string(testCase.expectedCode), testCase.name)
+            XCTAssertNil(backendRequest.value, testCase.name)
+            XCTAssertTrue(chatStore.events.isEmpty, testCase.name)
+            XCTAssertTrue(
+                try notebookStore.list(ownerDeviceID: "runtime_local_owner").isEmpty,
+                "Failed post-parse validation must not consume notebook quota: \(testCase.name)"
+            )
+        }
+    }
+
+    func testResearchBriefCreateAcceptsEightUniqueGrantsAndStreamsUnderOriginalRequest() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-owner",
+            name: "Research Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let privateSourceCanary = "RESEARCH_SOURCE_PRIVATE_CANARY"
+        var grants: [RuntimeTrustedSourceGrant] = []
+        for index in 0..<8 {
+            grants.append(try approvedTrustedSourceGrant(
+                in: documentStore,
+                actorDeviceID: "research-owner",
+                documentID: "research-boundary-\(index)",
+                fileName: "research-boundary-\(index).md",
+                text: "Boundary source \(index) uniqueResearchMarker\(index). \(privateSourceCanary)-\(index)",
+                query: "uniqueResearchMarker\(index)"
+            ))
+        }
+        let chatStoreURL = temporaryRuntimeChatJSONLURL()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: chatStoreURL)
+        let notebookStore = RuntimeResearchNotebookStore()
+        let memoryCanary = "UNAPPROVED_RUNTIME_MEMORY_CANARY"
+        let memoryStore = RecordingRuntimeMemoryStore(entries: [
+            RuntimeMemoryEntry(
+                id: "research-unapproved-memory",
+                content: memoryCanary,
+                createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+        ])
+        let capturedRequests = LockedBox<[ChatRequest]>([])
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [
+                    .delta("Research synthesis."),
+                    .done(inputTokens: 8, outputTokens: 2),
+                ],
+                onChatRequest: { request in
+                    var requests = capturedRequests.value
+                    requests.append(request)
+                    capturedRequests.value = requests
+                }
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-owner",
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.source_attributions.v1",
+                "chat.source_attribution.resolve.v1",
+            ]
+        )
+        let requestID = "research-create-eight-grants"
+        let notebookID = "research_notebook_" + String(repeating: "3", count: 32)
+        let topic = "Compare the approved runtime sources."
+        router.handle(researchBriefCreateEnvelope(
+            requestID: requestID,
+            notebookID: notebookID,
+            sessionID: "research-session-eight",
+            topic: topic,
+            grantIDs: grants.map(\.grantID),
+            locale: "en-US"
+        ), sink: sink)
+
+        let messages = try await sink.waitForMessages(count: 4)
+        let researchMessages = messages.filter { $0.requestID == requestID }
+        XCTAssertEqual(researchMessages.map(\.type), [MessageType.chatDelta, MessageType.chatDone])
+        XCTAssertEqual(researchMessages.map(\.requestID), [requestID, requestID])
+        guard case .array(let attributions)? = researchMessages.last?.payload["source_attributions"] else {
+            return XCTFail("Expected source attributions for every approved notebook source")
+        }
+        XCTAssertEqual(attributions.count, 8)
+        let backendRequest = try XCTUnwrap(
+            capturedRequests.value.first { $0.generationID == requestID }
+        )
+        XCTAssertEqual(backendRequest.generationID, requestID)
+        XCTAssertTrue(backendRequest.messages.last?.content.contains(topic) == true)
+        XCTAssertTrue(backendRequest.messages.last?.content.contains(privateSourceCanary) == true)
+        XCTAssertFalse(String(describing: backendRequest.messages).contains(memoryCanary))
+        XCTAssertTrue(memoryStore.listRequests.isEmpty)
+
+        let storedEvents = try JSONLRuntimeChatEventStore.events(from: chatStoreURL)
+        let storedRequest = try XCTUnwrap(storedEvents.first { $0.kind == .request })
+        XCTAssertEqual(storedRequest.requestID, requestID)
+        XCTAssertEqual(storedRequest.messages?.map(\.content), [topic])
+        XCTAssertFalse(String(describing: storedRequest).contains(privateSourceCanary))
+        let storedDone = try XCTUnwrap(storedEvents.first { $0.kind == .done })
+        XCTAssertEqual(storedDone.sourceAttributions?.count, 8)
+        XCTAssertEqual(storedDone.sourceAttributionBindings?.count, 8)
+        XCTAssertEqual(
+            documentStore.sourceAuditEvents(limit: 100)
+                .filter { $0.action == .trustedSourceContextConsumed }.count,
+            8
+        )
+
+        let notebook = try XCTUnwrap(try notebookStore.get(
+            ownerDeviceID: "research-owner",
+            notebookID: notebookID
+        ))
+        XCTAssertEqual(notebook.backingSessionID, "research-session-eight")
+        XCTAssertEqual(notebook.title, topic)
+        XCTAssertEqual(notebook.model, "llama3.1:8b")
+        XCTAssertEqual(notebook.trustedSourceGrantIDs, grants.map(\.grantID))
+        XCTAssertFalse(String(describing: notebook).contains(privateSourceCanary))
+
+        guard case .string(let assistantMessageID)? = researchMessages.last?.payload["assistant_message_id"] else {
+            return XCTFail("Expected a resolvable assistant message id")
+        }
+        router.handle(ProtocolEnvelope(
+            type: "chat.source_attribution.resolve",
+            requestID: "research-source-resolve",
+            payload: [
+                "session_id": .string("research-session-eight"),
+                "assistant_message_id": .string(assistantMessageID),
+                "source_index": .number(1),
+            ]
+        ), sink: sink)
+        let resolution = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(resolution?.type, "chat.source_attribution.resolve")
+        XCTAssertEqual(resolution?.requestID, "research-source-resolve")
+        XCTAssertEqual(Set(resolution?.payload.keys.map { $0 } ?? []), ["citation", "review", "trusted_source"])
+    }
+
+    func testResearchBriefCreateRollsBackNotebookWhenChatRequestPersistenceFails() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-chat-store-owner",
+            name: "Research Chat Store Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: "research-chat-store-owner",
+            documentID: "research-create-chat-store-failure",
+            fileName: "research-create-chat-store-failure.md",
+            text: "Approved evidence for a persistence rollback test.",
+            query: "persistence rollback"
+        )
+        let notebookStore = RuntimeResearchNotebookStore()
+        let backendRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                onChatRequest: { backendRequest.value = $0 }
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: RecordingRuntimeChatEventStore(onAppend: { _ in
+                throw NSError(domain: "research-chat-store-failure", code: 1)
+            }),
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-chat-store-owner",
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        router.handle(researchBriefCreateEnvelope(
+            requestID: "research-create-chat-store-failure",
+            notebookID: "research_notebook_" + String(repeating: "9", count: 32),
+            sessionID: "research-create-chat-store-failure",
+            topic: "Create a brief that cannot be persisted.",
+            grantIDs: [grant.grantID]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertNil(backendRequest.value)
+        XCTAssertTrue(try notebookStore.list(ownerDeviceID: "research-chat-store-owner").isEmpty)
+    }
+
+    func testResearchNotebookFollowUpsPinGrantsAndRejectMismatchOrRevocationBeforeBackend() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-follow-up-owner",
+            name: "Research Follow-up Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let sourceCanary = "PINNED_NOTEBOOK_SOURCE_CANARY"
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: "research-follow-up-owner",
+            documentID: "research-pinned-source",
+            fileName: "research-pinned-source.md",
+            text: "Pinned follow-up source. \(sourceCanary)",
+            query: "Pinned follow-up source"
+        )
+        let notebookStore = RuntimeResearchNotebookStore()
+        let memoryCanary = "FOLLOW_UP_UNAPPROVED_MEMORY_CANARY"
+        let memoryStore = RecordingRuntimeMemoryStore(entries: [
+            RuntimeMemoryEntry(
+                id: "research-follow-up-unapproved-memory",
+                content: memoryCanary,
+                createdAt: Date(timeIntervalSince1970: 1),
+                updatedAt: Date(timeIntervalSince1970: 1)
+            )
+        ])
+        let capturedRequests = LockedBox<[ChatRequest]>([])
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                var requests = capturedRequests.value
+                requests.append(request)
+                capturedRequests.value = requests
+            }
+        )
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            memoryStore: memoryStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-follow-up-owner",
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        let notebookID = "research_notebook_" + String(repeating: "4", count: 32)
+        let sessionID = "research-session-follow-up"
+        router.handle(researchBriefCreateEnvelope(
+            requestID: "research-follow-up-create",
+            notebookID: notebookID,
+            sessionID: sessionID,
+            topic: "Start a pinned-source notebook.",
+            grantIDs: [grant.grantID]
+        ), sink: sink)
+        let createResponse = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(createResponse?.type, MessageType.chatDone)
+
+        router.handle(chatSendEnvelope(
+            requestID: "research-follow-up-omitted-grants",
+            sessionID: sessionID,
+            content: "Continue with the pinned evidence."
+        ), sink: sink)
+        let followUp = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(followUp?.type, MessageType.chatDone)
+        XCTAssertEqual(followUp?.requestID, "research-follow-up-omitted-grants")
+        let capturedFollowUp = try XCTUnwrap(
+            capturedRequests.value.first { $0.generationID == "research-follow-up-omitted-grants" }
+        )
+        XCTAssertTrue(capturedFollowUp.messages.last?.content.contains(sourceCanary) == true)
+        XCTAssertFalse(String(describing: capturedRequests.value).contains(memoryCanary))
+        XCTAssertTrue(memoryStore.listRequests.isEmpty)
+        XCTAssertEqual(
+            documentStore.sourceAuditEvents(limit: 100)
+                .filter { $0.action == .trustedSourceContextConsumed }.count,
+            2
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "research-follow-up-mismatched-grants",
+            payload: [
+                "session_id": .string(sessionID),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([.object([
+                    "role": .string("user"),
+                    "content": .string("Try a different source."),
+                ])]),
+                "trusted_source_grant_ids": .array([
+                    .string("trusted_source_" + String(repeating: "f", count: 32))
+                ]),
+            ]
+        ), sink: sink)
+        let mismatch = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(mismatch?.type, MessageType.error)
+        XCTAssertEqual(mismatch?.payload["code"], .string("invalid_payload"))
+        XCTAssertFalse(capturedRequests.value.contains {
+            $0.generationID == "research-follow-up-mismatched-grants"
+        })
+
+        let unnegotiatedSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: unnegotiatedSink,
+            deviceID: "research-follow-up-owner",
+            privateKey: deviceKey
+        )
+        router.handle(chatSendEnvelope(
+            requestID: "research-follow-up-unnegotiated",
+            sessionID: sessionID,
+            content: "Attempt a follow-up without the notebook capability."
+        ), sink: unnegotiatedSink)
+        let unnegotiated = try await unnegotiatedSink.waitForMessages(count: 3).last
+        XCTAssertEqual(unnegotiated?.type, MessageType.error)
+        XCTAssertEqual(unnegotiated?.payload["code"], .string("unsupported_operation"))
+        XCTAssertFalse(capturedRequests.value.contains {
+            $0.generationID == "research-follow-up-unnegotiated"
+        })
+
+        try documentStore.revokeTrustedSource(
+            grantID: grant.grantID,
+            actorDeviceID: "research-follow-up-owner",
+            timestamp: Date()
+        )
+        router.handle(chatSendEnvelope(
+            requestID: "research-follow-up-revoked-grant",
+            sessionID: sessionID,
+            content: "Continue after revocation."
+        ), sink: sink)
+        let revoked = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(revoked?.type, MessageType.error)
+        XCTAssertEqual(revoked?.payload["code"], .string("trusted_source_not_found"))
+        XCTAssertFalse(capturedRequests.value.contains {
+            $0.generationID == "research-follow-up-revoked-grant"
+        })
+    }
+
+    func testResearchNotebookFollowUpRejectsDifferentOwnerReauthenticationAtCommitBoundary() async throws {
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        for (id, name, key) in [
+            ("research-follow-up-race-a", "Research Follow-up Race A", ownerAKey),
+            ("research-follow-up-race-b", "Research Follow-up Race B", ownerBKey),
+        ] {
+            try await trustedStore.trust(TrustedDevice(
+                id: id,
+                name: name,
+                publicKeyBase64: key.publicKey.derRepresentation.base64EncodedString()
+            ))
+        }
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: "research-follow-up-race-a",
+            documentID: "research-follow-up-race-source",
+            fileName: "research-follow-up-race-source.md",
+            text: "Approved evidence consumed before the commit-boundary race.",
+            query: "commit-boundary race"
+        )
+        let sessionID = "research-follow-up-race-session"
+        let notebookStore = RuntimeResearchNotebookStore()
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-follow-up-race-a",
+            notebookID: "research_notebook_" + String(repeating: "d", count: 32),
+            backingSessionID: sessionID,
+            title: "Commit-boundary race",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grant.grantID]
+        )
+        let chatStore = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Commit-boundary race",
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 10),
+                messageCount: 2
+            )
+        ])
+        let backendRequest = LockedBox<ChatRequest?>(nil)
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                onChatRequest: { backendRequest.value = $0 }
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookFollowUpCommitCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-follow-up-race-a",
+            privateKey: ownerAKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        router.handle(chatSendEnvelope(
+            requestID: "research-follow-up-race-stale",
+            sessionID: sessionID,
+            content: "Do not persist this stale-owner follow-up."
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-follow-up-race-b",
+            privateKey: ownerBKey,
+            clientCapabilities: ["research.notebooks.v1"],
+            existingMessageCount: 2,
+            requestSuffix: "research-follow-up-race-b"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "research-follow-up-race-stale")
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertTrue(chatStore.events.isEmpty)
+        XCTAssertNil(backendRequest.value)
+    }
+
+    func testResearchNotebookRejectedRequestRevalidatesOwnerAfterAsyncFailure() async throws {
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        for (id, name, key) in [
+            ("research-rejected-race-a", "Research Rejected Race A", ownerAKey),
+            ("research-rejected-race-b", "Research Rejected Race B", ownerBKey),
+        ] {
+            try await trustedStore.trust(TrustedDevice(
+                id: id,
+                name: name,
+                publicKeyBase64: key.publicKey.derRepresentation.base64EncodedString()
+            ))
+        }
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: "research-rejected-race-a",
+            documentID: "research-rejected-race-source",
+            fileName: "research-rejected-race-source.md",
+            text: "Approved source for rejected-request authorization fencing.",
+            query: "authorization fencing"
+        )
+        let sessionID = "research-rejected-race-session"
+        let notebookStore = RuntimeResearchNotebookStore()
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-rejected-race-a",
+            notebookID: "research_notebook_" + String(repeating: "1", count: 32),
+            backingSessionID: sessionID,
+            title: "Rejected request race",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grant.grantID]
+        )
+        let chatStore = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Rejected request race",
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 10),
+                messageCount: 2
+            )
+        ])
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(models: []),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookRejectedRequestCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-rejected-race-a",
+            privateKey: ownerAKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        router.handle(chatSendEnvelope(
+            requestID: "research-rejected-race-stale",
+            sessionID: sessionID,
+            content: "This rejected request must not persist under owner A."
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-rejected-race-b",
+            privateKey: ownerBKey,
+            clientCapabilities: ["research.notebooks.v1"],
+            existingMessageCount: 2,
+            requestSuffix: "research-rejected-race-b"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "research-rejected-race-stale")
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertTrue(chatStore.events.isEmpty)
+    }
+
+    func testResearchNotebookRejectedRequestRejectsConcurrentArchiveAndDelete() async throws {
+        for mutation in [RuntimeChatSessionMutation.archive, .delete] {
+            let ownerDeviceID = "research-rejected-lifecycle-\(mutation.rawValue)"
+            let deviceKey = P256.Signing.PrivateKey()
+            let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+            try await trustedStore.trust(TrustedDevice(
+                id: ownerDeviceID,
+                name: "Research Rejected Lifecycle Owner",
+                publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+            ))
+            let documentStore = RuntimeDocumentIndexStore()
+            let grant = try approvedTrustedSourceGrant(
+                in: documentStore,
+                actorDeviceID: ownerDeviceID,
+                documentID: "research-rejected-lifecycle-source-\(mutation.rawValue)",
+                fileName: "research-rejected-lifecycle-source.md",
+                text: "Approved source for rejected-request lifecycle fencing.",
+                query: "lifecycle fencing"
+            )
+            let sessionID = "research-rejected-lifecycle-session-\(mutation.rawValue)"
+            let notebookID = "research_notebook_" + String(
+                repeating: mutation == .archive ? "3" : "4",
+                count: 32
+            )
+            let notebookStore = RuntimeResearchNotebookStore()
+            _ = try notebookStore.create(
+                ownerDeviceID: ownerDeviceID,
+                notebookID: notebookID,
+                backingSessionID: sessionID,
+                title: "Rejected lifecycle race",
+                model: "llama3.1:8b",
+                trustedSourceGrantIDs: [grant.grantID]
+            )
+            let chatStore = RecordingRuntimeChatEventStore(sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: sessionID,
+                    title: "Rejected lifecycle race",
+                    model: "llama3.1:8b",
+                    lastActivityAt: Date(timeIntervalSince1970: 10),
+                    messageCount: 2
+                )
+            ])
+            let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+            let rejectedRouter = makeRouter(
+                backend: MockBackend(models: []),
+                requiresAuthentication: true,
+                trustedDeviceStore: trustedStore,
+                chatEventStore: chatStore,
+                documentIndexStore: documentStore,
+                researchNotebookStore: notebookStore,
+                researchNotebookRejectedRequestCheckpoint: { checkpoint.checkpoint() }
+            )
+            let lifecycleRouter = makeRouter(
+                backend: MockBackend(),
+                requiresAuthentication: true,
+                trustedDeviceStore: trustedStore,
+                chatEventStore: chatStore,
+                researchNotebookStore: notebookStore
+            )
+            let rejectedSink = RecordingSink()
+            let lifecycleSink = RecordingSink()
+            try await authenticateTrustedDevice(
+                router: rejectedRouter,
+                sink: rejectedSink,
+                deviceID: ownerDeviceID,
+                privateKey: deviceKey,
+                clientCapabilities: ["research.notebooks.v1"]
+            )
+            try await authenticateTrustedDevice(
+                router: lifecycleRouter,
+                sink: lifecycleSink,
+                deviceID: ownerDeviceID,
+                privateKey: deviceKey,
+                clientCapabilities: ["research.notebooks.v1"]
+            )
+
+            checkpoint.arm()
+            rejectedRouter.handle(chatSendEnvelope(
+                requestID: "research-rejected-lifecycle-send-\(mutation.rawValue)",
+                sessionID: sessionID,
+                content: "This rejected request must not survive a lifecycle mutation."
+            ), sink: rejectedSink)
+            let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+            XCTAssertTrue(didEnterCheckpoint)
+            guard didEnterCheckpoint else {
+                checkpoint.release()
+                continue
+            }
+
+            let lifecycleType = mutation == .archive
+                ? MessageType.chatSessionArchive
+                : MessageType.chatSessionDelete
+            lifecycleRouter.handle(ProtocolEnvelope(
+                type: lifecycleType,
+                requestID: "research-rejected-lifecycle-mutation-\(mutation.rawValue)",
+                payload: ["session_id": .string(sessionID)]
+            ), sink: lifecycleSink)
+            let lifecycleResponse = try await lifecycleSink.waitForMessages(count: 3).last
+            XCTAssertEqual(lifecycleResponse?.type, lifecycleType)
+
+            checkpoint.release()
+            let rejectedResponse = try await rejectedSink.waitForMessages(count: 3).last
+            XCTAssertEqual(rejectedResponse?.type, MessageType.error)
+            XCTAssertEqual(
+                rejectedResponse?.payload["code"],
+                .string("research_notebook_store_unavailable")
+            )
+            XCTAssertTrue(chatStore.events.allSatisfy { $0.kind != .request })
+        }
+    }
+
+    func testResearchNotebookFollowUpCommitRejectsEveryNotebookStateDrift() async throws {
+        let ownerDeviceID = "research-follow-up-state-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Follow-up State Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: ownerDeviceID,
+            documentID: "research-follow-up-state-source",
+            fileName: "research-follow-up-state-source.md",
+            text: "Approved source for notebook state drift validation.",
+            query: "state drift validation"
+        )
+        let driftCases = ["archived", "deleted", "replaced", "grants"]
+
+        for (index, driftCase) in driftCases.enumerated() {
+            let databaseURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("research-follow-up-state-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("notebooks.sqlite", isDirectory: false)
+            let notebookStore = SQLiteRuntimeResearchNotebookStore(databaseURL: databaseURL)
+            let notebookID = String(format: "research_notebook_%032x", index + 1)
+            let sessionID = "research-follow-up-state-\(driftCase)"
+            _ = try notebookStore.create(
+                ownerDeviceID: ownerDeviceID,
+                notebookID: notebookID,
+                backingSessionID: sessionID,
+                title: "State drift \(driftCase)",
+                model: "llama3.1:8b",
+                trustedSourceGrantIDs: [grant.grantID]
+            )
+            let chatStore = RecordingRuntimeChatEventStore(sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: sessionID,
+                    title: "State drift \(driftCase)",
+                    model: "llama3.1:8b",
+                    lastActivityAt: Date(timeIntervalSince1970: 10),
+                    messageCount: 2
+                )
+            ])
+            let backendRequest = LockedBox<ChatRequest?>(nil)
+            let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+            let router = makeRouter(
+                backend: MockBackend(
+                    models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                    onChatRequest: { backendRequest.value = $0 }
+                ),
+                requiresAuthentication: true,
+                trustedDeviceStore: trustedStore,
+                chatEventStore: chatStore,
+                documentIndexStore: documentStore,
+                researchNotebookStore: notebookStore,
+                researchNotebookFollowUpCommitCheckpoint: { checkpoint.checkpoint() }
+            )
+            let sink = RecordingSink()
+            try await authenticateTrustedDevice(
+                router: router,
+                sink: sink,
+                deviceID: ownerDeviceID,
+                privateKey: deviceKey,
+                clientCapabilities: ["research.notebooks.v1"]
+            )
+
+            checkpoint.arm()
+            router.handle(chatSendEnvelope(
+                requestID: "research-follow-up-state-\(driftCase)",
+                sessionID: sessionID,
+                content: "Reject this stale notebook state."
+            ), sink: sink)
+            let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+            XCTAssertTrue(didEnterCheckpoint, driftCase)
+            guard didEnterCheckpoint else {
+                checkpoint.release()
+                continue
+            }
+            switch driftCase {
+            case "archived":
+                _ = try notebookStore.archive(
+                    ownerDeviceID: ownerDeviceID,
+                    notebookID: notebookID
+                )
+            case "deleted":
+                XCTAssertTrue(try notebookStore.delete(
+                    ownerDeviceID: ownerDeviceID,
+                    notebookID: notebookID
+                ))
+            case "replaced":
+                XCTAssertTrue(try notebookStore.delete(
+                    ownerDeviceID: ownerDeviceID,
+                    notebookID: notebookID
+                ))
+                _ = try notebookStore.create(
+                    ownerDeviceID: ownerDeviceID,
+                    notebookID: String(format: "research_notebook_%032x", index + 100),
+                    backingSessionID: sessionID,
+                    title: "Replacement notebook",
+                    model: "llama3.1:8b",
+                    trustedSourceGrantIDs: [grant.grantID]
+                )
+            case "grants":
+                try executeResearchNotebookSQL(
+                    databaseURL,
+                    "UPDATE runtime_research_notebook_grants "
+                        + "SET grant_id = 'trusted_source_ffffffffffffffffffffffffffffffff'"
+                )
+            default:
+                XCTFail("Unexpected drift case: \(driftCase)")
+            }
+            checkpoint.release()
+
+            let response = try await sink.waitForMessages(count: 3).last
+            XCTAssertEqual(response?.requestID, "research-follow-up-state-\(driftCase)")
+            XCTAssertEqual(
+                response?.payload["code"],
+                .string("research_notebook_store_unavailable"),
+                driftCase
+            )
+            XCTAssertTrue(chatStore.events.isEmpty, driftCase)
+            XCTAssertNil(backendRequest.value, driftCase)
+        }
+    }
+
+    func testResearchNotebookArchiveRecoversDurableIntentAfterPostChatStoreFailure() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let ownerDeviceID = "research-lifecycle-archive-owner"
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Lifecycle Archive Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore()
+        let notebookID = "research_notebook_" + String(repeating: "a", count: 32)
+        let sessionID = "research-lifecycle-archive-session"
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Recover archive intent",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "a", count: 32)]
+        )
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-lifecycle-archive-turn",
+            timestamp: 100
+        )
+        let remainingFailures = LockedBox(1)
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookLifecycleCompletionCheckpoint: {
+                if remainingFailures.value > 0 {
+                    remainingFailures.value = 0
+                    throw RuntimeResearchNotebookStoreError.storageFailure(
+                        "forced post-chat archive completion failure"
+                    )
+                }
+            }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "research-lifecycle-archive",
+            payload: ["session_id": .string(sessionID)]
+        ), sink: sink)
+        let failure = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(failure?.payload["code"], .string("research_notebook_store_unavailable"))
+        XCTAssertEqual(
+            try chatStore.listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: 10,
+                includeArchived: true
+            ).first?.status,
+            "archived"
+        )
+        XCTAssertEqual(
+            try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID)?.lifecycle,
+            .active
+        )
+        XCTAssertEqual(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).count, 1)
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-lifecycle-archive-reconcile",
+            includeArchived: true,
+            limit: 100
+        ), sink: sink)
+        let reconciled = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(reconciled?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(
+            try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID)?.lifecycle,
+            .archived
+        )
+        XCTAssertTrue(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).isEmpty)
+    }
+
+    func testResearchNotebookBulkDeleteRecoversDurableIntentAfterPostChatStoreFailure() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let ownerDeviceID = "research-lifecycle-delete-owner"
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Lifecycle Delete Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore()
+        let notebookID = "research_notebook_" + String(repeating: "b", count: 32)
+        let sessionID = "research-lifecycle-delete-session"
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Recover bulk delete intent",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "b", count: 32)]
+        )
+        _ = try notebookStore.archive(ownerDeviceID: ownerDeviceID, notebookID: notebookID)
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-lifecycle-delete-turn",
+            timestamp: 200
+        )
+        _ = try chatStore.mutateSession(
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-lifecycle-delete-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 203)
+        )
+        let remainingFailures = LockedBox(1)
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookLifecycleCompletionCheckpoint: {
+                if remainingFailures.value > 0 {
+                    remainingFailures.value = 0
+                    throw RuntimeResearchNotebookStoreError.storageFailure(
+                        "forced post-chat bulk delete completion failure"
+                    )
+                }
+            }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.sessions.authoritative_sync.v1",
+            ]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "research-lifecycle-delete-all",
+            payload: [
+                "scope": .string("all_archived"),
+                "limit": .number(200),
+            ]
+        ), sink: sink)
+        let failure = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(failure?.payload["code"], .string("research_notebook_store_unavailable"))
+        XCTAssertTrue(try chatStore.listSessions(
+            ownerDeviceID: ownerDeviceID,
+            limit: 10,
+            includeArchived: true
+        ).isEmpty)
+        XCTAssertNotNil(try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID))
+        XCTAssertEqual(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).count, 1)
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-lifecycle-delete-reconcile",
+            includeArchived: true,
+            limit: 100
+        ), sink: sink)
+        let reconciled = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(reconciled?.type, MessageType.researchNotebooksList)
+        XCTAssertNil(try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID))
+        XCTAssertTrue(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).isEmpty)
+    }
+
+    func testResearchNotebooksListIsStrictOwnerScopedDeterministicSafeAndArchiveAware() async throws {
+        let deviceAKey = P256.Signing.PrivateKey()
+        let deviceBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-list-a",
+            name: "Research List A",
+            publicKeyBase64: deviceAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-list-b",
+            name: "Research List B",
+            publicKeyBase64: deviceBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore(
+            now: { Date(timeIntervalSince1970: 10) }
+        )
+        let grantID = "trusted_source_" + String(repeating: "5", count: 32)
+        let notebookAOldID = "research_notebook_" + String(repeating: "1", count: 32)
+        let notebookANewID = "research_notebook_" + String(repeating: "2", count: 32)
+        let notebookBID = "research_notebook_" + String(repeating: "3", count: 32)
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-list-a",
+            notebookID: notebookAOldID,
+            backingSessionID: "research-list-session-a-old",
+            title: "A old safe title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-list-a",
+            notebookID: notebookANewID,
+            backingSessionID: "research-list-session-a-new",
+            title: "A new safe title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-list-b",
+            notebookID: notebookBID,
+            backingSessionID: "research-list-session-b",
+            title: "B private safe title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        let chatStoreURL = temporaryRuntimeChatJSONLURL()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: chatStoreURL)
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: "research-list-a",
+            sessionID: "research-list-session-a-old",
+            requestID: "research-list-a-old-turn",
+            timestamp: 100
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: "research-list-a",
+            sessionID: "research-list-session-a-new",
+            requestID: "research-list-a-new-turn",
+            timestamp: 200
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: "research-list-b",
+            sessionID: "research-list-session-b",
+            requestID: "research-list-b-turn",
+            timestamp: 300
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let sinkA = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sinkA,
+            deviceID: "research-list-a",
+            privateKey: deviceAKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.sessions.authoritative_sync.v1",
+            ]
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-list-a-active",
+            includeArchived: false,
+            limit: 100
+        ), sink: sinkA)
+        let activeResponse = try await sinkA.waitForMessages(count: 3).last
+        XCTAssertEqual(activeResponse?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(activeResponse?.requestID, "research-list-a-active")
+        guard case .array(let activeNotebooks)? = activeResponse?.payload["notebooks"] else {
+            return XCTFail("Expected research notebook summaries")
+        }
+        XCTAssertEqual(activeNotebooks.compactMap(researchNotebookID), [notebookANewID, notebookAOldID])
+        for case .object(let notebook) in activeNotebooks {
+            XCTAssertEqual(
+                Set(notebook.keys),
+                ["notebook_id", "session_id", "title", "model", "source_count", "created_at", "updated_at"]
+            )
+            XCTAssertNil(notebook["topic"])
+            XCTAssertNil(notebook["prompt"])
+            XCTAssertNil(notebook["trusted_source_grant_ids"])
+            XCTAssertNil(notebook["source_text"])
+        }
+        XCTAssertFalse(String(describing: activeResponse?.payload).contains(notebookBID))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-list-unknown-field",
+            payload: [
+                "include_archived": .bool(false),
+                "limit": .number(100),
+                "cursor": .string("not-allowed"),
+            ]
+        ), sink: sinkA)
+        let unknownField = try await sinkA.waitForMessages(count: 4).last
+        XCTAssertEqual(unknownField?.payload["code"], .string("invalid_payload"))
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-list-missing-limit",
+            payload: ["include_archived": .bool(false)]
+        ), sink: sinkA)
+        let missingLimit = try await sinkA.waitForMessages(count: 5).last
+        XCTAssertEqual(missingLimit?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "research-list-archive",
+            payload: ["session_id": .string("research-list-session-a-new")]
+        ), sink: sinkA)
+        let archiveResponse = try await sinkA.waitForMessages(count: 6).last
+        XCTAssertEqual(archiveResponse?.type, MessageType.chatSessionArchive)
+        XCTAssertEqual(
+            try notebookStore.get(ownerDeviceID: "research-list-a", notebookID: notebookANewID)?.lifecycle,
+            .archived
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-list-a-after-archive",
+            includeArchived: false,
+            limit: 100
+        ), sink: sinkA)
+        let afterArchive = try await sinkA.waitForMessages(count: 7).last
+        guard case .array(let activeAfterArchive)? = afterArchive?.payload["notebooks"] else {
+            return XCTFail("Expected active notebook list after archive")
+        }
+        XCTAssertEqual(activeAfterArchive.compactMap(researchNotebookID), [notebookAOldID])
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-list-a-with-archive",
+            includeArchived: true,
+            limit: 100
+        ), sink: sinkA)
+        let withArchive = try await sinkA.waitForMessages(count: 8).last
+        guard case .array(let allNotebooks)? = withArchive?.payload["notebooks"],
+              case .object(let archivedNotebook)? = allNotebooks.first else {
+            return XCTFail("Expected archived notebook reconciliation")
+        }
+        XCTAssertEqual(allNotebooks.compactMap(researchNotebookID), [notebookANewID, notebookAOldID])
+        XCTAssertNotNil(archivedNotebook["archived_at"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "research-list-delete-all-archived",
+            payload: [
+                "scope": .string("all_archived"),
+                "limit": .number(200),
+            ]
+        ), sink: sinkA)
+        let bulkDelete = try await sinkA.waitForMessages(count: 9).last
+        XCTAssertEqual(bulkDelete?.type, MessageType.chatSessionDelete)
+        XCTAssertEqual(bulkDelete?.payload["affected_count"], .number(1))
+        XCTAssertNil(try notebookStore.get(
+            ownerDeviceID: "research-list-a",
+            notebookID: notebookANewID
+        ))
+        XCTAssertNotNil(try notebookStore.get(
+            ownerDeviceID: "research-list-a",
+            notebookID: notebookAOldID
+        ))
+
+        let sinkB = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sinkB,
+            deviceID: "research-list-b",
+            privateKey: deviceBKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-list-b-owner-scope",
+            includeArchived: true,
+            limit: 100
+        ), sink: sinkB)
+        let ownerBResponse = try await sinkB.waitForMessages(count: 3).last
+        guard case .array(let ownerBNotebooks)? = ownerBResponse?.payload["notebooks"] else {
+            return XCTFail("Expected owner B notebook list")
+        }
+        XCTAssertEqual(ownerBNotebooks.compactMap(researchNotebookID), [notebookBID])
+        XCTAssertFalse(String(describing: ownerBResponse?.payload).contains(notebookAOldID))
+        XCTAssertFalse(String(describing: ownerBResponse?.payload).contains(notebookANewID))
+    }
+
+    func testAuthoritativeResearchNotebooksListPaginates201As100100And1() async throws {
+        let ownerDeviceID = "authoritative-research-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Authoritative Research Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(
+            ownerDeviceID: ownerDeviceID,
+            count: 201
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            researchNotebookStore: fixture.notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "research.notebooks.authoritative_sync.v1",
+            ]
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "authoritative-research-page-1",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let first = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(first?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(first?.payload["snapshot_count"], .number(201))
+        guard case .array(let firstNotebooks)? = first?.payload["notebooks"],
+              case .string(let firstCursor)? = first?.payload["next_cursor"] else {
+            return XCTFail("Expected the first authoritative research notebook page")
+        }
+        XCTAssertEqual(firstNotebooks.count, 100)
+        XCTAssertLessThanOrEqual(firstCursor.utf8.count, 512)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "authoritative-research-continuation-extra-field",
+            payload: [
+                "cursor": .string(firstCursor),
+                "limit": .number(100),
+            ]
+        ), sink: sink)
+        let extraField = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(extraField?.type, MessageType.error)
+        XCTAssertEqual(extraField?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "authoritative-research-page-2",
+            payload: ["cursor": .string(firstCursor)]
+        ), sink: sink)
+        let second = try await sink.waitForMessages(count: 5).last
+        guard case .array(let secondNotebooks)? = second?.payload["notebooks"],
+              case .string(let secondCursor)? = second?.payload["next_cursor"] else {
+            return XCTFail("Expected the second authoritative research notebook page")
+        }
+        XCTAssertEqual(secondNotebooks.count, 100)
+        XCTAssertEqual(second?.payload["snapshot_count"], .number(201))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "authoritative-research-page-3",
+            payload: ["cursor": .string(secondCursor)]
+        ), sink: sink)
+        let third = try await sink.waitForMessages(count: 6).last
+        guard case .array(let thirdNotebooks)? = third?.payload["notebooks"] else {
+            return XCTFail("Expected the final authoritative research notebook page")
+        }
+        XCTAssertEqual(thirdNotebooks.count, 1)
+        XCTAssertEqual(third?.payload["snapshot_count"], .number(201))
+        XCTAssertNil(third?.payload["next_cursor"])
+        XCTAssertEqual(
+            (firstNotebooks + secondNotebooks + thirdNotebooks).compactMap(researchNotebookID),
+            fixture.orderedNotebookIDs
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "authoritative-research-max-page-size",
+            includeArchived: true,
+            limit: 200
+        ), sink: sink)
+        let maximumPage = try await sink.waitForMessages(count: 7).last
+        guard case .array(let maximumPageNotebooks)? = maximumPage?.payload["notebooks"] else {
+            return XCTFail("Expected a 200-item authoritative page")
+        }
+        XCTAssertEqual(maximumPageNotebooks.count, 200)
+        XCTAssertEqual(maximumPage?.payload["snapshot_count"], .number(201))
+        XCTAssertNotNil(maximumPage?.payload["next_cursor"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "authoritative-research-initial-missing-context",
+            payload: ["limit": .number(100)]
+        ), sink: sink)
+        let missingContext = try await sink.waitForMessages(count: 8).last
+        XCTAssertEqual(missingContext?.type, MessageType.error)
+        XCTAssertEqual(missingContext?.payload["code"], .string("invalid_payload"))
+    }
+
+    func testResearchNotebookAuthoritativeCapabilityDowngradesToExactLegacyContract() async throws {
+        let ownerDeviceID = "research-downgrade-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Downgrade Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(
+            ownerDeviceID: ownerDeviceID,
+            count: 201
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            researchNotebookStore: fixture.notebookStore
+        )
+        let legacySink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: legacySink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-downgrade-legacy-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: legacySink)
+        let legacy = try await legacySink.waitForMessages(count: 3).last
+        guard case .array(let legacyNotebooks)? = legacy?.payload["notebooks"] else {
+            return XCTFail("Expected the exact legacy research notebook response")
+        }
+        XCTAssertEqual(legacyNotebooks.count, 100)
+        XCTAssertEqual(Set(legacy?.payload.keys.map { $0 } ?? []), ["notebooks"])
+        XCTAssertNil(legacy?.payload["snapshot_count"])
+        XCTAssertNil(legacy?.payload["next_cursor"])
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-downgrade-legacy-101",
+            includeArchived: false,
+            limit: 101
+        ), sink: legacySink)
+        let oversizedLegacy = try await legacySink.waitForMessages(count: 4).last
+        XCTAssertEqual(oversizedLegacy?.type, MessageType.error)
+        XCTAssertEqual(oversizedLegacy?.payload["code"], .string("invalid_payload"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-downgrade-legacy-cursor",
+            payload: ["cursor": .string("legacy-has-no-cursor")]
+        ), sink: legacySink)
+        let legacyCursor = try await legacySink.waitForMessages(count: 5).last
+        XCTAssertEqual(legacyCursor?.type, MessageType.error)
+        XCTAssertEqual(legacyCursor?.payload["code"], .string("invalid_payload"))
+
+        let authoritativeOnlySink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: authoritativeOnlySink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.authoritative_sync.v1"]
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-downgrade-authoritative-without-base",
+            includeArchived: false,
+            limit: 100
+        ), sink: authoritativeOnlySink)
+        let missingBase = try await authoritativeOnlySink.waitForMessages(count: 3).last
+        XCTAssertEqual(missingBase?.type, MessageType.error)
+        XCTAssertEqual(missingBase?.payload["code"], .string("unsupported_operation"))
+    }
+
+    func testAuthoritativeResearchNotebookCursorRejectsTamperingOtherConnectionAndOwner() async throws {
+        let ownerA = "research-cursor-owner-a"
+        let ownerB = "research-cursor-owner-b"
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerA,
+            name: "Research Cursor Owner A",
+            publicKeyBase64: ownerAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerB,
+            name: "Research Cursor Owner B",
+            publicKeyBase64: ownerBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(ownerDeviceID: ownerA, count: 3)
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            researchNotebookStore: fixture.notebookStore
+        )
+        let capabilities = [
+            "research.notebooks.v1",
+            "research.notebooks.authoritative_sync.v1",
+        ]
+        let ownerASink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: ownerASink,
+            deviceID: ownerA,
+            privateKey: ownerAKey,
+            clientCapabilities: capabilities
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-cursor-owner-a-initial",
+            includeArchived: false,
+            limit: 1
+        ), sink: ownerASink)
+        let initial = try await ownerASink.waitForMessages(count: 3).last
+        guard case .string(let cursor)? = initial?.payload["next_cursor"] else {
+            return XCTFail("Expected an owner-bound research notebook cursor")
+        }
+
+        let tamperedCursor = String(cursor.dropLast()) + (cursor.last == "0" ? "1" : "0")
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-cursor-tampered",
+            payload: ["cursor": .string(tamperedCursor)]
+        ), sink: ownerASink)
+        let tampered = try await ownerASink.waitForMessages(count: 4).last
+        XCTAssertEqual(tampered?.payload["code"], .string("invalid_payload"))
+
+        let otherConnectionSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: otherConnectionSink,
+            deviceID: ownerA,
+            privateKey: ownerAKey,
+            clientCapabilities: capabilities
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-cursor-other-connection",
+            payload: ["cursor": .string(cursor)]
+        ), sink: otherConnectionSink)
+        let otherConnection = try await otherConnectionSink.waitForMessages(count: 3).last
+        XCTAssertEqual(otherConnection?.payload["code"], .string("invalid_payload"))
+
+        let otherOwnerSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: otherOwnerSink,
+            deviceID: ownerB,
+            privateKey: ownerBKey,
+            clientCapabilities: capabilities
+        )
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-cursor-other-owner",
+            payload: ["cursor": .string(cursor)]
+        ), sink: otherOwnerSink)
+        let otherOwner = try await otherOwnerSink.waitForMessages(count: 3).last
+        XCTAssertEqual(otherOwner?.payload["code"], .string("invalid_payload"))
+        XCTAssertFalse(String(describing: otherOwner?.payload).contains(ownerA))
+        XCTAssertFalse(String(describing: otherOwner?.payload).contains(ownerB))
+    }
+
+    func testResearchNotebookLifecycleChangesInvalidateAuthoritativeSnapshots() async throws {
+        let ownerDeviceID = "research-lifecycle-pagination-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Lifecycle Pagination Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(
+            ownerDeviceID: ownerDeviceID,
+            count: 3
+        )
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: ownerDeviceID,
+            documentID: "research-lifecycle-pagination-source",
+            fileName: "research-lifecycle-pagination-source.md",
+            text: "Approved source for research lifecycle pagination invalidation.",
+            query: "lifecycle pagination"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)]
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: fixture.notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "research.notebooks.authoritative_sync.v1",
+            ]
+        )
+        var messageCount = 2
+
+        func freshCursor(_ suffix: String) async throws -> String {
+            router.handle(researchNotebooksListEnvelope(
+                requestID: "research-lifecycle-pagination-\(suffix)-initial",
+                includeArchived: true,
+                limit: 1
+            ), sink: sink)
+            messageCount += 1
+            let response = try await sink.waitForMessages(count: messageCount).last
+            guard case .string(let cursor)? = response?.payload["next_cursor"] else {
+                throw testRuntimeInspectorError("Expected a fresh research notebook cursor")
+            }
+            return cursor
+        }
+
+        func assertInvalidated(_ cursor: String, suffix: String) async throws {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.researchNotebooksList,
+                requestID: "research-lifecycle-pagination-\(suffix)-continuation",
+                payload: ["cursor": .string(cursor)]
+            ), sink: sink)
+            messageCount += 1
+            let response = try await sink.waitForMessages(count: messageCount).last
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+        }
+
+        let archiveCursor = try await freshCursor("archive")
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "research-lifecycle-pagination-archive",
+            payload: ["session_id": .string(fixture.sessionIDs[0])]
+        ), sink: sink)
+        messageCount += 1
+        let archiveResponse = try await sink.waitForMessages(count: messageCount).last
+        XCTAssertEqual(archiveResponse?.type, MessageType.chatSessionArchive)
+        try await assertInvalidated(archiveCursor, suffix: "archive")
+
+        let restoreCursor = try await freshCursor("restore")
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRestore,
+            requestID: "research-lifecycle-pagination-restore",
+            payload: ["session_id": .string(fixture.sessionIDs[0])]
+        ), sink: sink)
+        messageCount += 1
+        let restoreResponse = try await sink.waitForMessages(count: messageCount).last
+        XCTAssertEqual(restoreResponse?.type, MessageType.chatSessionRestore)
+        try await assertInvalidated(restoreCursor, suffix: "restore")
+
+        let deleteCursor = try await freshCursor("delete")
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "research-lifecycle-pagination-delete",
+            payload: ["session_id": .string(fixture.sessionIDs[1])]
+        ), sink: sink)
+        messageCount += 1
+        let deleteResponse = try await sink.waitForMessages(count: messageCount).last
+        XCTAssertEqual(deleteResponse?.type, MessageType.chatSessionDelete)
+        try await assertInvalidated(deleteCursor, suffix: "delete")
+
+        let createCursor = try await freshCursor("create")
+        router.handle(researchBriefCreateEnvelope(
+            requestID: "research-lifecycle-pagination-create",
+            notebookID: "research_notebook_" + String(repeating: "f", count: 32),
+            sessionID: "research-lifecycle-pagination-created-session",
+            topic: "Create a notebook and invalidate prior authoritative pages.",
+            grantIDs: [grant.grantID]
+        ), sink: sink)
+        messageCount += 1
+        let createResponse = try await sink.waitForMessages(count: messageCount).last
+        XCTAssertEqual(createResponse?.type, MessageType.chatDone)
+        try await assertInvalidated(createCursor, suffix: "create")
+    }
+
+    func testResearchNotebookRenameRefreshesAuthoritativeTitleOrderingAndOwnerSnapshot() async throws {
+        let ownerA = "research-rename-owner-a"
+        let ownerB = "research-rename-owner-b"
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerA,
+            name: "Research Rename Owner A",
+            publicKeyBase64: ownerAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerB,
+            name: "Research Rename Owner B",
+            publicKeyBase64: ownerBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+
+        let notebookStore = RuntimeResearchNotebookStore(
+            now: { Date(timeIntervalSince1970: 10) }
+        )
+        let grantID = "trusted_source_" + String(repeating: "b", count: 32)
+        let renamedNotebookID = "research_notebook_" + String(repeating: "1", count: 32)
+        let newerNotebookID = "research_notebook_" + String(repeating: "2", count: 32)
+        let foreignNotebookID = "research_notebook_" + String(repeating: "3", count: 32)
+        let renamedSessionID = "research-rename-session-a-old"
+        let newerSessionID = "research-rename-session-a-new"
+        let foreignSessionID = "research-rename-session-b"
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerA,
+            notebookID: renamedNotebookID,
+            backingSessionID: renamedSessionID,
+            title: "Immutable creation title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerA,
+            notebookID: newerNotebookID,
+            backingSessionID: newerSessionID,
+            title: "Newer immutable creation title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerB,
+            notebookID: foreignNotebookID,
+            backingSessionID: foreignSessionID,
+            title: "Foreign immutable creation title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerA,
+            sessionID: renamedSessionID,
+            requestID: "research-rename-old-turn",
+            timestamp: 100
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerA,
+            sessionID: newerSessionID,
+            requestID: "research-rename-new-turn",
+            timestamp: 200
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerB,
+            sessionID: foreignSessionID,
+            requestID: "research-rename-foreign-turn",
+            timestamp: 300
+        )
+
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let capabilities = [
+            "research.notebooks.v1",
+            "research.notebooks.authoritative_sync.v1",
+        ]
+        let ownerASink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: ownerASink,
+            deviceID: ownerA,
+            privateKey: ownerAKey,
+            clientCapabilities: capabilities
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-rename-before",
+            includeArchived: false,
+            limit: 1
+        ), sink: ownerASink)
+        let beforeRename = try await ownerASink.waitForMessages(count: 3).last
+        guard case .string(let staleCursor)? = beforeRename?.payload["next_cursor"] else {
+            return XCTFail("Expected an authoritative cursor before rename")
+        }
+
+        let renamedTitle = "Renamed authoritative research title"
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "research-rename-session",
+            payload: [
+                "session_id": .string(renamedSessionID),
+                "title": .string(renamedTitle),
+            ]
+        ), sink: ownerASink)
+        let rename = try await ownerASink.waitForMessages(count: 4).last
+        XCTAssertEqual(rename?.type, MessageType.chatSessionRename)
+        XCTAssertEqual(rename?.payload["title"], .string(renamedTitle))
+        guard case .string(let renamedAt)? = rename?.payload["renamed_at"] else {
+            return XCTFail("Expected rename activity timestamp")
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.researchNotebooksList,
+            requestID: "research-rename-stale-cursor",
+            payload: ["cursor": .string(staleCursor)]
+        ), sink: ownerASink)
+        let staleContinuation = try await ownerASink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleContinuation?.type, MessageType.error)
+        XCTAssertEqual(staleContinuation?.payload["code"], .string("invalid_payload"))
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-rename-after",
+            includeArchived: false,
+            limit: 100
+        ), sink: ownerASink)
+        let afterRename = try await ownerASink.waitForMessages(count: 6).last
+        guard case .array(let ownerANotebooks)? = afterRename?.payload["notebooks"],
+              let renamedValue = ownerANotebooks.first(where: {
+                  researchNotebookID($0) == renamedNotebookID
+              }),
+              case .object(let renamedNotebook) = renamedValue else {
+            return XCTFail("Expected renamed authoritative research notebook")
+        }
+        XCTAssertEqual(
+            ownerANotebooks.compactMap(researchNotebookID),
+            [renamedNotebookID, newerNotebookID]
+        )
+        XCTAssertEqual(renamedNotebook["title"], .string(renamedTitle))
+        XCTAssertEqual(renamedNotebook["updated_at"], .string(renamedAt))
+        XCTAssertNotEqual(renamedNotebook["title"], .string("Immutable creation title"))
+
+        let ownerBSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: ownerBSink,
+            deviceID: ownerB,
+            privateKey: ownerBKey,
+            clientCapabilities: capabilities
+        )
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-rename-owner-b-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: ownerBSink)
+        let ownerBList = try await ownerBSink.waitForMessages(count: 3).last
+        guard case .array(let ownerBNotebooks)? = ownerBList?.payload["notebooks"] else {
+            return XCTFail("Expected owner B research notebooks")
+        }
+        XCTAssertEqual(ownerBNotebooks.compactMap(researchNotebookID), [foreignNotebookID])
+        XCTAssertFalse(String(describing: ownerBList?.payload).contains(renamedTitle))
+        XCTAssertFalse(String(describing: ownerBList?.payload).contains(renamedNotebookID))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "research-rename-cross-owner",
+            payload: [
+                "session_id": .string(renamedSessionID),
+                "title": .string("Cross-owner overwrite"),
+            ]
+        ), sink: ownerBSink)
+        let crossOwnerRename = try await ownerBSink.waitForMessages(count: 4).last
+        XCTAssertEqual(crossOwnerRename?.type, MessageType.error)
+        XCTAssertEqual(crossOwnerRename?.payload["code"], .string("chat_session_not_found"))
+        XCTAssertFalse(String(describing: crossOwnerRename?.payload).contains(renamedTitle))
+    }
+
+    func testChatSessionRenameRejectsInvalidTitlesAndCanonicalizesNormalizableInput() async throws {
+        let chatStoreURL = temporaryRuntimeChatJSONLURL()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: chatStoreURL)
+        let sessionID = "rename-invalid-title-session"
+        let originalTitle = "Canonical stored title"
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "rename-invalid-title-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Stored conversation")]
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .done,
+            requestID: "rename-invalid-title-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            finishReason: "stop"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .title,
+            requestID: "rename-original-title",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            title: originalTitle
+        ))
+        let router = makeRouter(backend: MockBackend(), chatEventStore: chatStore)
+        let sink = RecordingSink()
+        let rejectedTitles: [(label: String, title: String)] = [
+            (
+                "over scalar bound",
+                String(repeating: "a", count: RuntimeResearchNotebook.maximumTitleCharacters + 1)
+            ),
+            (
+                "over UTF-8 byte bound",
+                String(repeating: "\u{1F600}", count: RuntimeResearchNotebook.maximumTitleCharacters + 1)
+            ),
+            ("control character", "Control\u{0000}Title"),
+        ]
+        XCTAssertGreaterThan(rejectedTitles[1].title.utf8.count, RuntimeResearchNotebook.maximumTitleUTF8Bytes)
+
+        for (index, rejectedTitle) in rejectedTitles.enumerated() {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionRename,
+                requestID: "rename-invalid-title-\(index)",
+                payload: [
+                    "session_id": .string(sessionID),
+                    "title": .string(rejectedTitle.title),
+                ]
+            ), sink: sink)
+            let response = try await sink.waitForMessages(count: index + 1).last
+            XCTAssertEqual(response?.type, MessageType.error, rejectedTitle.label)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), rejectedTitle.label)
+            XCTAssertEqual(
+                try chatStore.listSessions(limit: 10, includeArchived: true).first?.title,
+                originalTitle,
+                rejectedTitle.label
+            )
+        }
+
+        let normalizableTitles: [(label: String, input: String, canonical: String)] = [
+            ("leading whitespace", " Leading whitespace", "Leading whitespace"),
+            ("trailing whitespace", "Trailing whitespace ", "Trailing whitespace"),
+            ("non-NFC", "cafe\u{0301} title", "caf\u{00E9} title"),
+        ]
+        for (index, normalizableTitle) in normalizableTitles.enumerated() {
+            let messageCount = rejectedTitles.count + index + 1
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionRename,
+                requestID: "rename-normalizable-title-\(index)",
+                payload: [
+                    "session_id": .string(sessionID),
+                    "title": .string(normalizableTitle.input),
+                ]
+            ), sink: sink)
+            let response = try await sink.waitForMessages(count: messageCount).last
+            XCTAssertEqual(response?.type, MessageType.chatSessionRename, normalizableTitle.label)
+            XCTAssertEqual(
+                response?.payload["title"],
+                .string(normalizableTitle.canonical),
+                normalizableTitle.label
+            )
+            XCTAssertEqual(
+                try chatStore.listSessions(limit: 10, includeArchived: true).first?.title,
+                normalizableTitle.canonical,
+                normalizableTitle.label
+            )
+        }
+
+        XCTAssertEqual(
+            try JSONLRuntimeChatEventStore.events(from: chatStoreURL).filter { $0.kind == .title }.count,
+            1 + normalizableTitles.count
+        )
+    }
+
+    func testCorruptStoredTitleFailsClosedBeforeResearchNotebookPublication() async throws {
+        let notebookStore = RuntimeResearchNotebookStore()
+        let notebookID = "research_notebook_" + String(repeating: "d", count: 32)
+        let sessionID = "research-corrupt-title-session"
+        _ = try notebookStore.create(
+            ownerDeviceID: "runtime_local_owner",
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Original notebook title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "d", count: 32)]
+        )
+        let chatStore = RecordingRuntimeChatEventStore(sessions: [
+            RuntimeChatStoredSession(
+                sessionID: sessionID,
+                title: "Corrupt\u{0000}stored title",
+                titleUpdatedAt: Date(timeIntervalSince1970: 102),
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: 101),
+                messageCount: 2
+            )
+        ])
+        let publicationCount = LockedBox(0)
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookListPublicationCheckpoint: {
+                publicationCount.value += 1
+            }
+        )
+        let sink = RecordingSink()
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-corrupt-title-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+        XCTAssertNil(response?.payload["notebooks"])
+        XCTAssertEqual(publicationCount.value, 0)
+    }
+
+    func testSQLiteResearchNotebookRenameAuthoritySurvivesStoreReopen() async throws {
+        let ownerDeviceID = "research-rename-sqlite-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Rename SQLite Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("research-rename-sqlite-\(UUID().uuidString)", isDirectory: true)
+        let notebookDatabaseURL = directory.appendingPathComponent("notebooks.sqlite")
+        let chatDatabaseURL = directory.appendingPathComponent("chat.sqlite")
+        let notebookID = "research_notebook_" + String(repeating: "4", count: 32)
+        let sessionID = "research-rename-sqlite-session"
+        let notebookStore = SQLiteRuntimeResearchNotebookStore(
+            databaseURL: notebookDatabaseURL,
+            now: { Date(timeIntervalSince1970: 10) }
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "SQLite immutable creation title",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "4", count: 32)]
+        )
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: chatDatabaseURL)
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "research-rename-sqlite-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "SQLite stored research topic")],
+            ownerDeviceID: ownerDeviceID
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .done,
+            requestID: "research-rename-sqlite-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            finishReason: "stop",
+            ownerDeviceID: ownerDeviceID
+        ))
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        let renamedTitle = "SQLite renamed authoritative title"
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "research-rename-sqlite",
+            payload: [
+                "session_id": .string(sessionID),
+                "title": .string(renamedTitle),
+            ]
+        ), sink: sink)
+        let rename = try await sink.waitForMessages(count: 3).last
+        guard case .string(let renamedAt)? = rename?.payload["renamed_at"] else {
+            return XCTFail("Expected persisted rename activity timestamp")
+        }
+
+        let reopenedNotebookStore = SQLiteRuntimeResearchNotebookStore(databaseURL: notebookDatabaseURL)
+        let reopenedChatStore = SQLiteRuntimeChatEventStore(databaseURL: chatDatabaseURL)
+        XCTAssertEqual(
+            try reopenedChatStore.listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: 10,
+                includeArchived: true
+            ).first?.title,
+            renamedTitle
+        )
+        XCTAssertEqual(
+            try reopenedNotebookStore.get(
+                ownerDeviceID: ownerDeviceID,
+                notebookID: notebookID
+            )?.title,
+            "SQLite immutable creation title"
+        )
+
+        let reopenedRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: reopenedChatStore,
+            researchNotebookStore: reopenedNotebookStore
+        )
+        let reopenedSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: reopenedRouter,
+            sink: reopenedSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        reopenedRouter.handle(researchNotebooksListEnvelope(
+            requestID: "research-rename-sqlite-reopened-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: reopenedSink)
+        let reopenedList = try await reopenedSink.waitForMessages(count: 3).last
+        guard case .array(let notebooks)? = reopenedList?.payload["notebooks"],
+              case .object(let notebook)? = notebooks.first else {
+            return XCTFail("Expected reopened SQLite research notebook")
+        }
+        XCTAssertEqual(notebooks.compactMap(researchNotebookID), [notebookID])
+        XCTAssertEqual(notebook["title"], .string(renamedTitle))
+        XCTAssertEqual(notebook["updated_at"], .string(renamedAt))
+    }
+
+    func testSupersededAuthoritativeResearchNotebookInitialRequestDoesNotPublish() async throws {
+        let ownerDeviceID = "research-superseded-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Superseded Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(
+            ownerDeviceID: ownerDeviceID,
+            count: 3
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            researchNotebookStore: fixture.notebookStore,
+            researchNotebookListPublicationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "research.notebooks.authoritative_sync.v1",
+            ]
+        )
+
+        checkpoint.arm()
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-superseded-first",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-superseded-second",
+            includeArchived: false,
+            limit: 2
+        ), sink: sink)
+        let fresh = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(fresh?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(fresh?.requestID, "research-superseded-second")
+        checkpoint.release()
+
+        let messages = try await sink.waitForMessages(count: 4, timeout: 0.05)
+        XCTAssertEqual(messages.count, 3)
+        XCTAssertFalse(messages.contains { $0.requestID == "research-superseded-first" })
+    }
+
+    func testAuthoritativeResearchNotebookInitialRequestDoesNotPublishAfterOwnerChange() async throws {
+        let ownerA = "research-stale-owner-a"
+        let ownerB = "research-stale-owner-b"
+        let ownerAKey = P256.Signing.PrivateKey()
+        let ownerBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerA,
+            name: "Research Stale Owner A",
+            publicKeyBase64: ownerAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerB,
+            name: "Research Stale Owner B",
+            publicKeyBase64: ownerBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let fixture = try authoritativeResearchNotebookListFixture(ownerDeviceID: ownerA, count: 3)
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: fixture.chatStore,
+            researchNotebookStore: fixture.notebookStore,
+            researchNotebookListPublicationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        let capabilities = [
+            "research.notebooks.v1",
+            "research.notebooks.authoritative_sync.v1",
+        ]
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerA,
+            privateKey: ownerAKey,
+            clientCapabilities: capabilities
+        )
+
+        checkpoint.arm()
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-stale-owner-a-list",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerB,
+            privateKey: ownerBKey,
+            clientCapabilities: capabilities,
+            existingMessageCount: 2,
+            requestSuffix: "research-stale-owner-b"
+        )
+        checkpoint.release()
+        let staleMessages = try await sink.waitForMessages(count: 5, timeout: 0.05)
+        XCTAssertEqual(staleMessages.count, 4)
+        XCTAssertFalse(staleMessages.contains { $0.requestID == "research-stale-owner-a-list" })
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-stale-owner-b-list",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let fresh = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(fresh?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(fresh?.payload["notebooks"], .array([]))
+        XCTAssertEqual(fresh?.payload["snapshot_count"], .number(0))
+    }
+
+    func testLegacyResearchNotebookListDoesNotPublishStaleTitleAfterRename() async throws {
+        let ownerDeviceID = "research-legacy-title-race-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Legacy Title Race Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore()
+        let notebookID = "research_notebook_" + String(repeating: "e", count: 32)
+        let sessionID = "research-legacy-title-race-session"
+        let oldTitle = "Legacy title before rename"
+        let newTitle = "Legacy title after rename"
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: oldTitle,
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "e", count: 32)]
+        )
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-legacy-title-race-turn",
+            timestamp: 100
+        )
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .title,
+            requestID: "research-legacy-title-before",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            title: oldTitle,
+            ownerDeviceID: ownerDeviceID
+        ))
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookListPublicationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-legacy-title-stale-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "research-legacy-title-rename",
+            payload: [
+                "session_id": .string(sessionID),
+                "title": .string(newTitle),
+            ]
+        ), sink: sink)
+        let rename = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(rename?.type, MessageType.chatSessionRename)
+        XCTAssertEqual(rename?.payload["title"], .string(newTitle))
+
+        checkpoint.release()
+        let afterRelease = try await sink.waitForMessages(count: 4, timeout: 0.1)
+        let staleResponses = afterRelease.filter {
+            $0.requestID == "research-legacy-title-stale-list"
+        }
+        XCTAssertLessThanOrEqual(staleResponses.count, 1)
+        if let staleResponse = staleResponses.first {
+            XCTAssertEqual(staleResponse.type, MessageType.error)
+            XCTAssertNil(staleResponse.payload["notebooks"])
+            XCTAssertFalse(String(describing: staleResponse.payload).contains(oldTitle))
+        }
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-legacy-title-fresh-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let fresh = try await sink.waitForMessages(count: afterRelease.count + 1).last
+        guard case .array(let notebooks)? = fresh?.payload["notebooks"],
+              case .object(let notebook)? = notebooks.first else {
+            return XCTFail("Expected a fresh legacy research notebook list")
+        }
+        XCTAssertEqual(notebook["notebook_id"], .string(notebookID))
+        XCTAssertEqual(notebook["title"], .string(newTitle))
+    }
+
+    func testLocalResearchNotebookListUsesLocalGenerationToFenceStaleTitle() async throws {
+        let notebookStore = RuntimeResearchNotebookStore()
+        let notebookID = "research_notebook_" + String(repeating: "f", count: 32)
+        let sessionID = "research-local-title-race-session"
+        let oldTitle = "Local title before rename"
+        let newTitle = "Local title after rename"
+        _ = try notebookStore.create(
+            ownerDeviceID: "runtime_local_owner",
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: oldTitle,
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "f", count: 32)]
+        )
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "research-local-title-race-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Stored local topic")]
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .done,
+            requestID: "research-local-title-race-turn",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            finishReason: "stop"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .title,
+            requestID: "research-local-title-before",
+            sessionID: sessionID,
+            model: "llama3.1:8b",
+            title: oldTitle
+        ))
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookListPublicationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+
+        checkpoint.arm()
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-local-title-stale-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionRename,
+            requestID: "research-local-title-rename",
+            payload: [
+                "session_id": .string(sessionID),
+                "title": .string(newTitle),
+            ]
+        ), sink: sink)
+        let rename = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(rename?.type, MessageType.chatSessionRename)
+        XCTAssertEqual(rename?.payload["title"], .string(newTitle))
+
+        checkpoint.release()
+        let afterRelease = try await sink.waitForMessages(count: 2, timeout: 0.1)
+        let staleResponses = afterRelease.filter {
+            $0.requestID == "research-local-title-stale-list"
+        }
+        XCTAssertLessThanOrEqual(staleResponses.count, 1)
+        if let staleResponse = staleResponses.first {
+            XCTAssertEqual(staleResponse.type, MessageType.error)
+            XCTAssertNil(staleResponse.payload["notebooks"])
+            XCTAssertFalse(String(describing: staleResponse.payload).contains(oldTitle))
+        }
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-local-title-fresh-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let fresh = try await sink.waitForMessages(count: afterRelease.count + 1).last
+        guard case .array(let notebooks)? = fresh?.payload["notebooks"],
+              case .object(let notebook)? = notebooks.first else {
+            return XCTFail("Expected a fresh local research notebook list")
+        }
+        XCTAssertEqual(notebook["notebook_id"], .string(notebookID))
+        XCTAssertEqual(notebook["title"], .string(newTitle))
+    }
+
+    func testResearchNotebookLiveForeignLifecycleIntentIsNotReconciledBeforeLeaseExpiry() async throws {
+        let ownerDeviceID = "research-live-intent-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Live Intent Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookID = "research_notebook_" + String(repeating: "7", count: 32)
+        let sessionID = "research-live-intent-session"
+        let notebookStore = RuntimeResearchNotebookStore()
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Live intent notebook",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "7", count: 32)]
+        )
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-live-intent-turn",
+            timestamp: 100
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let firstRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookLifecyclePreparedCheckpoint: { checkpoint.checkpoint() }
+        )
+        let secondRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let firstSink = RecordingSink()
+        let secondSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: firstRouter,
+            sink: firstSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        try await authenticateTrustedDevice(
+            router: secondRouter,
+            sink: secondSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        firstRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "research-live-intent-archive",
+            payload: ["session_id": .string(sessionID)]
+        ), sink: firstSink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        secondRouter.handle(researchNotebooksListEnvelope(
+            requestID: "research-live-intent-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: secondSink)
+        let blockedListMessages = try await secondSink.waitForMessages(count: 3, timeout: 0.1)
+        XCTAssertEqual(blockedListMessages.count, 2)
+
+        checkpoint.release()
+        let archive = try await firstSink.waitForMessages(count: 3).last
+        XCTAssertEqual(archive?.type, MessageType.chatSessionArchive)
+        let concurrentList = try await secondSink.waitForMessages(count: 3).last
+        XCTAssertEqual(concurrentList?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(concurrentList?.payload["notebooks"], .array([]))
+        XCTAssertEqual(
+            try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID)?.lifecycle,
+            .archived
+        )
+        XCTAssertTrue(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).isEmpty)
+    }
+
+    func testExpiredLifecycleCannotTakeOverWhileOriginalRouterMutationIsBlocked() async throws {
+        let ownerDeviceID = "research-expired-intent-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Expired Intent Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookID = "research_notebook_" + String(repeating: "e", count: 32)
+        let sessionID = "research-expired-intent-session"
+        let notebookStore = RuntimeResearchNotebookStore()
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Expired intent fencing",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "e", count: 32)]
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let chatStore = RecordingRuntimeChatEventStore(
+            sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: sessionID,
+                    title: "Expired intent fencing",
+                    model: "llama3.1:8b",
+                    lastActivityAt: Date(timeIntervalSince1970: 100),
+                    messageCount: 2
+                )
+            ],
+            onMutation: { checkpoint.checkpoint() }
+        )
+        let firstRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookLifecycleNow: { Date(timeIntervalSince1970: 100) }
+        )
+        let takeoverRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookLifecycleNow: { Date(timeIntervalSince1970: 200) }
+        )
+        let firstSink = RecordingSink()
+        let takeoverSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: firstRouter,
+            sink: firstSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+        try await authenticateTrustedDevice(
+            router: takeoverRouter,
+            sink: takeoverSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        firstRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionArchive,
+            requestID: "research-expired-intent-original",
+            payload: ["session_id": .string(sessionID)]
+        ), sink: firstSink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        takeoverRouter.handle(researchNotebooksListEnvelope(
+            requestID: "research-expired-intent-takeover",
+            includeArchived: true,
+            limit: 100
+        ), sink: takeoverSink)
+        let blockedTakeoverMessages = try await takeoverSink.waitForMessages(count: 3, timeout: 0.1)
+        XCTAssertEqual(blockedTakeoverMessages.count, 2)
+
+        checkpoint.release()
+        let originalResponse = try await firstSink.waitForMessages(count: 3).last
+        XCTAssertEqual(originalResponse?.requestID, "research-expired-intent-original")
+        XCTAssertEqual(originalResponse?.type, MessageType.chatSessionArchive)
+        let takeoverResponse = try await takeoverSink.waitForMessages(count: 3).last
+        XCTAssertEqual(takeoverResponse?.type, MessageType.researchNotebooksList)
+        XCTAssertTrue(try notebookStore.pendingLifecycleMutations(ownerDeviceID: ownerDeviceID).isEmpty)
+        XCTAssertEqual(
+            chatStore.mutationRequests.map(\.mutation),
+            [.archive]
+        )
+        XCTAssertEqual(
+            try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID)?.lifecycle,
+            .archived
+        )
+    }
+
+    func testChatSessionsListFiltersResearchCandidateDeletedByConcurrentRouter() async throws {
+        let ownerDeviceID = "research-session-list-race-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Session List Race Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let researchSessionID = "research-session-list-race-managed"
+        let ordinarySessionID = "research_session_ordinary"
+        let notebookID = "research_notebook_" + String(repeating: "f", count: 32)
+        let notebookStore = RuntimeResearchNotebookStore()
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: researchSessionID,
+            title: "Managed research session",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "f", count: 32)]
+        )
+        _ = try notebookStore.archive(ownerDeviceID: ownerDeviceID, notebookID: notebookID)
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: researchSessionID,
+            requestID: "research-session-list-race-managed-turn",
+            timestamp: 100
+        )
+        _ = try chatStore.mutateSession(
+            ownerDeviceID: ownerDeviceID,
+            sessionID: researchSessionID,
+            requestID: "research-session-list-race-managed-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 103)
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: ordinarySessionID,
+            requestID: "research-session-list-race-ordinary-turn",
+            timestamp: 200
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let listRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookChatSessionCandidatesCheckpoint: { checkpoint.checkpoint() }
+        )
+        let deleteRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let listSink = RecordingSink()
+        let deleteSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: listRouter,
+            sink: listSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.sessions.authoritative_sync.v1",
+            ]
+        )
+        try await authenticateTrustedDevice(
+            router: deleteRouter,
+            sink: deleteSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        listRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "research-session-list-race-list",
+            payload: [
+                "limit": .number(100),
+                "include_archived": .bool(true),
+            ]
+        ), sink: listSink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        deleteRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionDelete,
+            requestID: "research-session-list-race-delete",
+            payload: ["session_id": .string(researchSessionID)]
+        ), sink: deleteSink)
+        let deleteResponse = try await deleteSink.waitForMessages(count: 3).last
+        XCTAssertEqual(deleteResponse?.type, MessageType.chatSessionDelete)
+        XCTAssertNil(try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID))
+
+        checkpoint.release()
+        let listResponse = try await listSink.waitForMessages(count: 3).last
+        XCTAssertEqual(listResponse?.type, MessageType.chatSessionsList)
+        let sessions = try chatSessionObjects(from: XCTUnwrap(listResponse))
+        XCTAssertEqual(sessions.compactMap { session in
+            guard case .string(let sessionID)? = session["session_id"] else { return nil }
+            return sessionID
+        }, [ordinarySessionID])
+    }
+
+    func testChatSessionsListFinalValidationFiltersConcurrentResearchPromotion() async throws {
+        let ownerDeviceID = "research-session-promotion-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Session Promotion Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: ownerDeviceID,
+            documentID: "research-session-promotion-source",
+            fileName: "research-session-promotion-source.md",
+            text: "Approved source for concurrent research promotion.",
+            query: "concurrent promotion"
+        )
+        let sessionID = "research-session-promotion-candidate"
+        let notebookID = "research_notebook_" + String(repeating: "2", count: 32)
+        let notebookStore = RuntimeResearchNotebookStore()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: sessionID,
+            requestID: "research-session-promotion-existing-turn",
+            timestamp: 100
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let listRouter = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookChatSessionPublicationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let promotionRouter = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)]
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore
+        )
+        let listSink = RecordingSink()
+        let promotionSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: listRouter,
+            sink: listSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.sessions.authoritative_sync.v1",
+            ]
+        )
+        try await authenticateTrustedDevice(
+            router: promotionRouter,
+            sink: promotionSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        listRouter.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "research-session-promotion-list",
+            payload: ["limit": .number(100)]
+        ), sink: listSink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+
+        promotionRouter.handle(researchBriefCreateEnvelope(
+            requestID: "research-session-promotion-create",
+            notebookID: notebookID,
+            sessionID: sessionID,
+            topic: "Promote the existing ordinary session.",
+            grantIDs: [grant.grantID]
+        ), sink: promotionSink)
+        let promotionResponse = try await promotionSink.waitForMessages(count: 3).last
+        XCTAssertEqual(promotionResponse?.type, MessageType.chatDone)
+        XCTAssertNotNil(try notebookStore.get(ownerDeviceID: ownerDeviceID, notebookID: notebookID))
+
+        checkpoint.release()
+        let listResponse = try await listSink.waitForMessages(count: 3).last
+        XCTAssertEqual(listResponse?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(listResponse?.payload["sessions"], .array([]))
+        XCTAssertEqual(listResponse?.payload["snapshot_count"], .number(0))
+    }
+
+    func testResearchPromotionInvalidatesExistingAuthoritativePaginationSnapshot() async throws {
+        let ownerDeviceID = "research-pagination-promotion-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Pagination Promotion Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let documentStore = RuntimeDocumentIndexStore()
+        let grant = try approvedTrustedSourceGrant(
+            in: documentStore,
+            actorDeviceID: ownerDeviceID,
+            documentID: "research-pagination-promotion-source",
+            fileName: "research-pagination-promotion-source.md",
+            text: "Approved source for authoritative pagination invalidation.",
+            query: "pagination invalidation"
+        )
+        let promotedSessionID = "research-pagination-promoted-session"
+        let notebookID = "research_notebook_" + String(repeating: "5", count: 32)
+        let notebookStore = RuntimeResearchNotebookStore()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: "research-pagination-newer-ordinary",
+            requestID: "research-pagination-newer-turn",
+            timestamp: 300
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: promotedSessionID,
+            requestID: "research-pagination-promoted-existing-turn",
+            timestamp: 200
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: ownerDeviceID,
+            sessionID: "research-pagination-older-ordinary",
+            requestID: "research-pagination-older-turn",
+            timestamp: 100
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)]
+            ),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            documentIndexStore: documentStore,
+            researchNotebookStore: notebookStore
+        )
+        let listSink = RecordingSink()
+        let promotionSink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: listSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: [
+                "research.notebooks.v1",
+                "chat.sessions.authoritative_sync.v1",
+            ]
+        )
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: promotionSink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "research-pagination-initial",
+            payload: ["limit": .number(1)]
+        ), sink: listSink)
+        let initial = try await listSink.waitForMessages(count: 3).last
+        XCTAssertEqual(initial?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(initial?.payload["snapshot_count"], .number(3))
+        guard case .string(let cursor)? = initial?.payload["next_cursor"] else {
+            return XCTFail("Expected an authoritative cursor before research promotion")
+        }
+
+        router.handle(researchBriefCreateEnvelope(
+            requestID: "research-pagination-promotion-create",
+            notebookID: notebookID,
+            sessionID: promotedSessionID,
+            topic: "Promote a session cached on a later authoritative page.",
+            grantIDs: [grant.grantID]
+        ), sink: promotionSink)
+        let promotionResponse = try await promotionSink.waitForMessages(count: 3).last
+        XCTAssertEqual(promotionResponse?.type, MessageType.chatDone)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "research-pagination-stale-continuation",
+            payload: ["cursor": .string(cursor)]
+        ), sink: listSink)
+        let staleContinuation = try await listSink.waitForMessages(count: 4).last
+        XCTAssertEqual(staleContinuation?.type, MessageType.error)
+        XCTAssertEqual(staleContinuation?.payload["code"], .string("invalid_payload"))
+        XCTAssertNil(staleContinuation?.payload["sessions"])
+    }
+
+    func testResearchNotebookListRejectsAuthorityCapturedBeforeDifferentOwnerReauthentication() async throws {
+        let deviceAKey = P256.Signing.PrivateKey()
+        let deviceBKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-auth-owner-a",
+            name: "Research Auth Owner A",
+            publicKeyBase64: deviceAKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-auth-owner-b",
+            name: "Research Auth Owner B",
+            publicKeyBase64: deviceBKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore()
+        let ownerANotebookID = "research_notebook_" + String(repeating: "8", count: 32)
+        let localNotebookID = "research_notebook_" + String(repeating: "9", count: 32)
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-auth-owner-a",
+            notebookID: ownerANotebookID,
+            backingSessionID: "research-auth-owner-a-session",
+            title: "Owner A private notebook",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "8", count: 32)]
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: "runtime_local_owner",
+            notebookID: localNotebookID,
+            backingSessionID: "research-auth-local-session",
+            title: "Local private notebook",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "9", count: 32)]
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            researchNotebookStore: notebookStore,
+            researchNotebookAuthorizationCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-auth-owner-a",
+            privateKey: deviceAKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        checkpoint.arm()
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-auth-stale-list",
+            includeArchived: true,
+            limit: 100
+        ), sink: sink)
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+        guard didEnterCheckpoint else {
+            checkpoint.release()
+            return
+        }
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-auth-owner-b",
+            privateKey: deviceBKey,
+            clientCapabilities: ["research.notebooks.v1"],
+            existingMessageCount: 2,
+            requestSuffix: "research-auth-owner-b"
+        )
+        checkpoint.release()
+
+        let staleResponse = try await sink.waitForMessages(count: 5).last
+        XCTAssertEqual(staleResponse?.requestID, "research-auth-stale-list")
+        XCTAssertEqual(staleResponse?.type, MessageType.error)
+        XCTAssertEqual(staleResponse?.payload["code"], .string("authentication_required"))
+        XCTAssertFalse(String(describing: staleResponse?.payload).contains(ownerANotebookID))
+        XCTAssertFalse(String(describing: staleResponse?.payload).contains(localNotebookID))
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-auth-fresh-owner-b-list",
+            includeArchived: true,
+            limit: 100
+        ), sink: sink)
+        let freshResponse = try await sink.waitForMessages(count: 6).last
+        XCTAssertEqual(freshResponse?.type, MessageType.researchNotebooksList)
+        XCTAssertEqual(freshResponse?.payload["notebooks"], .array([]))
+    }
+
+    func testResearchNotebooksListRanksAcrossEntireBoundedOwnerStore() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "research-list-complete-owner",
+            name: "Research List Complete Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookStore = RuntimeResearchNotebookStore(
+            now: { Date(timeIntervalSince1970: 10) }
+        )
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: temporaryRuntimeChatJSONLURL())
+        let grantID = "trusted_source_" + String(repeating: "6", count: 32)
+        for index in 0..<101 {
+            let suffix = String(format: "%032x", index)
+            let sessionID = "research-list-filler-\(index)"
+            _ = try notebookStore.create(
+                ownerDeviceID: "research-list-complete-owner",
+                notebookID: "research_notebook_\(suffix)",
+                backingSessionID: sessionID,
+                title: "Filler \(index)",
+                model: "llama3.1:8b",
+                trustedSourceGrantIDs: [grantID]
+            )
+            try appendResearchListSession(
+                to: chatStore,
+                ownerDeviceID: "research-list-complete-owner",
+                sessionID: sessionID,
+                requestID: "research-list-filler-turn-\(index)",
+                timestamp: TimeInterval(index + 1)
+            )
+        }
+        let newestNotebookID = "research_notebook_" + String(repeating: "f", count: 32)
+        let newestSessionID = "research-list-complete-newest"
+        _ = try notebookStore.create(
+            ownerDeviceID: "research-list-complete-owner",
+            notebookID: newestNotebookID,
+            backingSessionID: newestSessionID,
+            title: "Newest by chat activity",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: "research-list-complete-owner",
+            sessionID: newestSessionID,
+            requestID: "research-list-complete-newest-turn",
+            timestamp: 10_000
+        )
+        let ordinaryPrefixedSessionID = "research_session_" + String(repeating: "e", count: 32)
+        try appendResearchListSession(
+            to: chatStore,
+            ownerDeviceID: "research-list-complete-owner",
+            sessionID: ordinaryPrefixedSessionID,
+            requestID: "research-list-complete-ordinary-prefixed-turn",
+            timestamp: 20_000
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "research-list-complete-owner",
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-list-complete-owner-ranked",
+            includeArchived: false,
+            limit: 1
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 3).last
+        guard case .array(let notebooks)? = response?.payload["notebooks"] else {
+            return XCTFail("Expected globally ranked research notebook summaries")
+        }
+        XCTAssertEqual(notebooks.compactMap(researchNotebookID), [newestNotebookID])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "research-list-complete-host-history",
+            payload: ["limit": .number(200)]
+        ), sink: sink)
+        let hostHistory = try await sink.waitForMessages(count: 4).last
+        guard case .array(let sessions)? = hostHistory?.payload["sessions"] else {
+            return XCTFail("Expected host chat session summaries")
+        }
+        XCTAssertEqual(sessions.count, 1)
+        guard case .object(let ordinarySession)? = sessions.first else {
+            return XCTFail("Expected the ordinary prefixed chat session")
+        }
+        XCTAssertEqual(ordinarySession["session_id"], .string(ordinaryPrefixedSessionID))
+        XCTAssertFalse(String(describing: hostHistory?.payload).contains(newestSessionID))
+        XCTAssertFalse(String(describing: hostHistory?.payload).contains("research-list-filler-"))
+    }
+
+    func testResearchNotebooksListTargetsBackingSessionBeyondTenThousandNewerOrdinarySessions() async throws {
+        let ownerDeviceID = "research-targeted-summary-owner"
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: ownerDeviceID,
+            name: "Research Targeted Summary Owner",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let notebookID = "research_notebook_" + String(repeating: "7", count: 32)
+        let backingSessionID = "research-targeted-summary-backing"
+        let notebookStore = RuntimeResearchNotebookStore(
+            now: { Date(timeIntervalSince1970: 10) }
+        )
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: backingSessionID,
+            title: "Old but still authoritative",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: ["trusted_source_" + String(repeating: "7", count: 32)]
+        )
+        let ordinarySessions = (0...10_000).map { index in
+            RuntimeChatStoredSession(
+                sessionID: "newer-ordinary-session-\(index)",
+                title: "Newer ordinary session \(index)",
+                model: "llama3.1:8b",
+                lastActivityAt: Date(timeIntervalSince1970: TimeInterval(20_000 + index)),
+                messageCount: 2
+            )
+        }
+        let backingSession = RuntimeChatStoredSession(
+            sessionID: backingSessionID,
+            title: "Old but still authoritative",
+            model: "llama3.1:8b",
+            lastActivityAt: Date(timeIntervalSince1970: 100),
+            messageCount: 2
+        )
+        let chatStore = RecordingRuntimeChatEventStore(
+            sessions: ordinarySessions + [backingSession]
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            researchNotebookStore: notebookStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: ownerDeviceID,
+            privateKey: deviceKey,
+            clientCapabilities: ["research.notebooks.v1"]
+        )
+
+        router.handle(researchNotebooksListEnvelope(
+            requestID: "research-targeted-summary-list",
+            includeArchived: false,
+            limit: 100
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 3).last
+
+        XCTAssertEqual(response?.type, MessageType.researchNotebooksList)
+        guard case .array(let notebooks)? = response?.payload["notebooks"] else {
+            return XCTFail("Expected targeted research notebook summaries")
+        }
+        XCTAssertEqual(notebooks.compactMap(researchNotebookID), [notebookID])
+        XCTAssertTrue(chatStore.sessionListRequests.isEmpty)
+        XCTAssertEqual(chatStore.targetedSessionSummaryRequests, [
+            RuntimeChatTargetedSessionSummaryRequest(
+                ownerDeviceID: ownerDeviceID,
+                sessionIDs: [backingSessionID],
+                includeArchived: true
+            )
+        ])
+    }
+
     func testChatDoneCapabilityProjectionNeverEmitsLocatorWithoutAttributions() async throws {
         let deviceKey = P256.Signing.PrivateKey()
         let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
@@ -15486,7 +19524,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "hello-too-many-capabilities",
                 [
                     "device_id": .string("android-trusted"),
-                    "client_capabilities": .array((0..<33).map { .string("capability.\($0)") })
+                    "client_capabilities": .array((0..<65).map { .string("capability.\($0)") })
                 ],
                 "client_capabilities"
             ),
@@ -15533,6 +19571,49 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let challenge = try await sink.waitForMessages(count: invalidPayloads.count + 2).last
         XCTAssertEqual(challenge?.type, MessageType.authChallenge)
         XCTAssertEqual(challenge?.requestID, "hello-valid-after-invalid-allowed-types")
+    }
+
+    func testHelloCapabilityCountBoundAccepts64AndRejects65() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-capability-bound",
+            name: "Capability Bound Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store
+        )
+        let acceptedSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-64-capabilities",
+            payload: [
+                "device_id": .string("android-capability-bound"),
+                "client_capabilities": .array(
+                    (0..<64).map { .string("capability.\($0)") }
+                ),
+            ]
+        ), sink: acceptedSink)
+        let accepted = try await acceptedSink.waitForMessages(count: 1).last
+        XCTAssertEqual(accepted?.type, MessageType.authChallenge)
+
+        let rejectedSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-65-capabilities",
+            payload: [
+                "device_id": .string("android-capability-bound"),
+                "client_capabilities": .array(
+                    (0..<65).map { .string("capability.\($0)") }
+                ),
+            ]
+        ), sink: rejectedSink)
+        let rejected = try await rejectedSink.waitForMessages(count: 1).last
+        XCTAssertEqual(rejected?.type, MessageType.error)
+        XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"))
+        XCTAssertTrue(String(describing: rejected?.payload).contains("at most 64"))
     }
 
     func testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication() async throws {
@@ -20022,11 +24103,21 @@ private func makeRouter(
     chatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching = NullRuntimeChatCompactionSummaryCache(),
     memoryStore: any RuntimeMemoryStore = NullRuntimeMemoryStore(),
     documentIndexStore: any RuntimeDocumentIndexReading = RuntimeDocumentIndexStore(),
+    researchNotebookStore: any RuntimeResearchNotebookStoring = RuntimeResearchNotebookStore(),
     routeRefresher: (any RuntimeRouteRefreshing)? = nil,
     runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
     pairedRelayAuthorizationTimeout: TimeInterval = 5,
     requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
-    chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil
+    chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookLifecycleCompletionCheckpoint: (@Sendable () throws -> Void)? = nil,
+    researchNotebookLifecyclePreparedCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookAuthorizationCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookRejectedRequestCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookFollowUpCommitCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookChatSessionCandidatesCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookChatSessionPublicationCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookListPublicationCheckpoint: (@Sendable () -> Void)? = nil,
+    researchNotebookLifecycleNow: @escaping @Sendable () -> Date = { Date() }
 ) -> LocalRuntimeMessageRouter {
     LocalRuntimeMessageRouter(
         backend: backend,
@@ -20036,11 +24127,175 @@ private func makeRouter(
         chatCompactionSummaryCache: chatCompactionSummaryCache,
         memoryStore: memoryStore,
         documentIndexStore: documentIndexStore,
+        researchNotebookStore: researchNotebookStore,
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner,
         pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout,
         requestTaskRegistrationCheckpoint: requestTaskRegistrationCheckpoint,
-        chatSessionLifecycleAuthorizationCheckpoint: chatSessionLifecycleAuthorizationCheckpoint
+        chatSessionLifecycleAuthorizationCheckpoint: chatSessionLifecycleAuthorizationCheckpoint,
+        researchNotebookLifecycleCompletionCheckpoint:
+            researchNotebookLifecycleCompletionCheckpoint,
+        researchNotebookLifecyclePreparedCheckpoint: researchNotebookLifecyclePreparedCheckpoint,
+        researchNotebookAuthorizationCheckpoint: researchNotebookAuthorizationCheckpoint,
+        researchNotebookRejectedRequestCheckpoint: researchNotebookRejectedRequestCheckpoint,
+        researchNotebookFollowUpCommitCheckpoint: researchNotebookFollowUpCommitCheckpoint,
+        researchNotebookChatSessionCandidatesCheckpoint:
+            researchNotebookChatSessionCandidatesCheckpoint,
+        researchNotebookChatSessionPublicationCheckpoint:
+            researchNotebookChatSessionPublicationCheckpoint,
+        researchNotebookListPublicationCheckpoint: researchNotebookListPublicationCheckpoint,
+        researchNotebookLifecycleNow: researchNotebookLifecycleNow
+    )
+}
+
+private func researchBriefCreateEnvelope(
+    requestID: String,
+    notebookID: String,
+    sessionID: String,
+    topic: String,
+    grantIDs: [String],
+    locale: String? = nil
+) -> ProtocolEnvelope {
+    var payload: [String: JSONValue] = [
+        "notebook_id": .string(notebookID),
+        "session_id": .string(sessionID),
+        "topic": .string(topic),
+        "model": .string("llama3.1:8b"),
+        "trusted_source_grant_ids": .array(grantIDs.map(JSONValue.string)),
+    ]
+    if let locale {
+        payload["locale"] = .string(locale)
+    }
+    return ProtocolEnvelope(
+        type: MessageType.researchBriefCreate,
+        requestID: requestID,
+        payload: payload
+    )
+}
+
+private func researchNotebooksListEnvelope(
+    requestID: String,
+    includeArchived: Bool,
+    limit: Int
+) -> ProtocolEnvelope {
+    ProtocolEnvelope(
+        type: MessageType.researchNotebooksList,
+        requestID: requestID,
+        payload: [
+            "include_archived": .bool(includeArchived),
+            "limit": .number(Double(limit)),
+        ]
+    )
+}
+
+private func approvedTrustedSourceGrant(
+    in store: RuntimeDocumentIndexStore,
+    actorDeviceID: String,
+    documentID: String,
+    fileName: String,
+    text: String,
+    query: String
+) throws -> RuntimeTrustedSourceGrant {
+    _ = store.replaceDocument(
+        result: try routerIndexedDocument(fileName: fileName, text: text),
+        documentID: documentID
+    )
+    let sourceAnchorID = try XCTUnwrap(
+        store.query(query, limit: 1, maxSnippetCharacters: 120).first?.sourceAnchorID
+    )
+    let now = Date()
+    let review = try store.prepareTrustedSourceReview(
+        sourceAnchorID: sourceAnchorID,
+        actorDeviceID: actorDeviceID,
+        timestamp: now
+    )
+    return try store.approveTrustedSourceReview(
+        reviewID: review.review.reviewID,
+        confirmationToken: review.review.confirmationToken,
+        disclosureVersion: review.review.disclosureVersion,
+        usageScope: review.review.usageScope,
+        actorDeviceID: actorDeviceID,
+        timestamp: now.addingTimeInterval(1)
+    )
+}
+
+private func appendResearchListSession(
+    to store: JSONLRuntimeChatEventStore,
+    ownerDeviceID: String,
+    sessionID: String,
+    requestID: String,
+    timestamp: TimeInterval
+) throws {
+    try store.append(RuntimeChatStoredEvent(
+        timestamp: Date(timeIntervalSince1970: timestamp),
+        kind: .request,
+        requestID: requestID,
+        sessionID: sessionID,
+        model: "llama3.1:8b",
+        messages: [ChatMessage(role: "user", content: "Stored user topic")],
+        ownerDeviceID: ownerDeviceID
+    ))
+    try store.append(RuntimeChatStoredEvent(
+        timestamp: Date(timeIntervalSince1970: timestamp + 1),
+        kind: .done,
+        requestID: requestID,
+        sessionID: sessionID,
+        model: "llama3.1:8b",
+        finishReason: "stop",
+        ownerDeviceID: ownerDeviceID
+    ))
+}
+
+private func researchNotebookID(_ value: JSONValue) -> String? {
+    guard case .object(let notebook) = value,
+          case .string(let notebookID)? = notebook["notebook_id"] else {
+        return nil
+    }
+    return notebookID
+}
+
+private func authoritativeResearchNotebookListFixture(
+    ownerDeviceID: String,
+    count: Int
+) throws -> (
+    notebookStore: RuntimeResearchNotebookStore,
+    chatStore: RecordingRuntimeChatEventStore,
+    orderedNotebookIDs: [String],
+    sessionIDs: [String]
+) {
+    let notebookStore = RuntimeResearchNotebookStore(
+        now: { Date(timeIntervalSince1970: 10) }
+    )
+    let grantID = "trusted_source_" + String(repeating: "a", count: 32)
+    var notebookIDs: [String] = []
+    var sessionIDs: [String] = []
+    var sessions: [RuntimeChatStoredSession] = []
+    for index in 0..<count {
+        let notebookID = "research_notebook_" + String(format: "%032x", index)
+        let sessionID = "authoritative-research-session-\(index)"
+        _ = try notebookStore.create(
+            ownerDeviceID: ownerDeviceID,
+            notebookID: notebookID,
+            backingSessionID: sessionID,
+            title: "Authoritative notebook \(index)",
+            model: "llama3.1:8b",
+            trustedSourceGrantIDs: [grantID]
+        )
+        notebookIDs.append(notebookID)
+        sessionIDs.append(sessionID)
+        sessions.append(RuntimeChatStoredSession(
+            sessionID: sessionID,
+            title: "Authoritative notebook \(index)",
+            model: "llama3.1:8b",
+            lastActivityAt: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+            messageCount: 2
+        ))
+    }
+    return (
+        notebookStore: notebookStore,
+        chatStore: RecordingRuntimeChatEventStore(sessions: sessions),
+        orderedNotebookIDs: Array(notebookIDs.reversed()),
+        sessionIDs: sessionIDs
     )
 }
 
@@ -21648,13 +25903,18 @@ private func waitForSessionTitle(
     in store: JSONLRuntimeChatEventStore,
     sessionID: String,
     expectedTitle: String,
-    timeout: TimeInterval = 1.0
+    timeout: TimeInterval = 1.0,
+    ownerDeviceID: String? = nil
 ) async throws -> String? {
     let deadline = Date().addingTimeInterval(timeout)
     var lastTitle: String?
     while Date() < deadline {
         lastTitle = try store
-            .listSessions(limit: 20, includeArchived: true)
+            .listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: 20,
+                includeArchived: true
+            )
             .first { $0.sessionID == sessionID }?
             .title
         if lastTitle == expectedTitle {
@@ -21663,6 +25923,28 @@ private func waitForSessionTitle(
         try await Task.sleep(nanoseconds: 20_000_000)
     }
     return lastTitle
+}
+
+private func waitForCondition(
+    timeout: TimeInterval = 1.0,
+    _ condition: () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
+    return condition()
+}
+
+private func placeholderChatSession(sessionID: String) -> RuntimeChatStoredSession {
+    RuntimeChatStoredSession(
+        sessionID: sessionID,
+        title: "New chat",
+        model: "llama3.1:8b",
+        lastActivityAt: Date(timeIntervalSince1970: 100),
+        messageCount: 2
+    )
 }
 
 private func waitForRecordedEvents(
@@ -21796,6 +26078,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private var chatEventBatches: [[ChatStreamEvent]]
     private var chatProviderUsageSources: [ChatProviderUsageSource?]
     private var completedProviderUsageSources: [String: ChatProviderUsageSource] = [:]
+    private var chatStreamFinishBatches: [Bool]
     private let chatContinuationsLock = NSLock()
     private var chatContinuations: [AsyncThrowingStream<ChatStreamEvent, Error>.Continuation] = []
     private let cancelledGenerationIDsLock = NSLock()
@@ -21826,6 +26109,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         ignoreEmbeddingCancellationAfterRelease: Bool = false,
         chatEvents: [ChatStreamEvent] = [],
         chatEventBatches: [[ChatStreamEvent]] = [],
+        chatStreamFinishBatches: [Bool] = [],
         chatProviderUsageSources: [ChatProviderUsageSource?] = [],
         finishChatStream: Bool = true,
         cancelFinishesChatStream: Bool = false,
@@ -21850,6 +26134,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.ignoreEmbeddingCancellationAfterRelease = ignoreEmbeddingCancellationAfterRelease
         self.chatEvents = chatEvents
         self.chatEventBatches = chatEventBatches
+        self.chatStreamFinishBatches = chatStreamFinishBatches
         self.chatProviderUsageSources = chatProviderUsageSources
         self.finishChatStream = finishChatStream
         self.cancelFinishesChatStream = cancelFinishesChatStream
@@ -21952,7 +26237,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
                 }
             }
             batch.events.forEach { continuation.yield($0) }
-            if finishChatStream {
+            if batch.shouldFinishStream {
                 continuation.finish()
             } else {
                 chatContinuationsLock.withLock {
@@ -22040,12 +26325,16 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
 
     private func nextChatBatch() -> (
         events: [ChatStreamEvent],
-        providerUsageSource: ChatProviderUsageSource?
+        providerUsageSource: ChatProviderUsageSource?,
+        shouldFinishStream: Bool
     ) {
         chatEventBatchesLock.withLock {
             let events = chatEventBatches.isEmpty ? chatEvents : chatEventBatches.removeFirst()
             let source = chatProviderUsageSources.isEmpty ? nil : chatProviderUsageSources.removeFirst()
-            return (events, source)
+            let shouldFinishStream = chatStreamFinishBatches.isEmpty
+                ? finishChatStream
+                : chatStreamFinishBatches.removeFirst()
+            return (events, source, shouldFinishStream)
         }
     }
 
@@ -22088,20 +26377,24 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     private var storedSessions: [RuntimeChatStoredSession]
     private var storedMessages: [String: [RuntimeChatStoredMessage]]
     private var recordedSessionListRequests: [RuntimeChatSessionListRequest] = []
+    private var recordedTargetedSessionSummaryRequests: [RuntimeChatTargetedSessionSummaryRequest] = []
     private var recordedAllSessionListRequestCount = 0
     private var recordedMutationRequests: [RuntimeChatMutationRequest] = []
     private let onAppend: ((RuntimeChatStoredEvent) throws -> Void)?
+    private let onMutation: (@Sendable () -> Void)?
     private let sourceAttributionResolution: RuntimeChatResolvedSourceAttribution?
 
     init(
         sessions: [RuntimeChatStoredSession] = [],
         messages: [String: [RuntimeChatStoredMessage]] = [:],
         onAppend: ((RuntimeChatStoredEvent) throws -> Void)? = nil,
+        onMutation: (@Sendable () -> Void)? = nil,
         sourceAttributionResolution: RuntimeChatResolvedSourceAttribution? = nil
     ) {
         self.storedSessions = sessions
         self.storedMessages = messages
         self.onAppend = onAppend
+        self.onMutation = onMutation
         self.sourceAttributionResolution = sourceAttributionResolution
     }
 
@@ -22115,6 +26408,10 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
 
     var sessionListRequests: [RuntimeChatSessionListRequest] {
         lock.withLock { recordedSessionListRequests }
+    }
+
+    var targetedSessionSummaryRequests: [RuntimeChatTargetedSessionSummaryRequest] {
+        lock.withLock { recordedTargetedSessionSummaryRequests }
     }
 
     var allSessionListRequestCount: Int {
@@ -22135,6 +26432,7 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
         mutation: RuntimeChatSessionMutation,
         timestamp: Date
     ) throws -> RuntimeChatSessionMutationResult {
+        onMutation?()
         lock.withLock {
             recordedMutationRequests.append(RuntimeChatMutationRequest(
                 ownerDeviceID: ownerDeviceID,
@@ -22162,6 +26460,33 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
                 includeArchived: includeArchived
             ))
             return Array(storedSessions.prefix(limit))
+        }
+    }
+
+    func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        let validatedSessionIDs = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        let requestedSessionIDs = Set(validatedSessionIDs)
+        return lock.withLock {
+            recordedTargetedSessionSummaryRequests.append(RuntimeChatTargetedSessionSummaryRequest(
+                ownerDeviceID: ownerDeviceID,
+                sessionIDs: validatedSessionIDs,
+                includeArchived: includeArchived
+            ))
+            return storedSessions
+                .filter { session in
+                    guard requestedSessionIDs.contains(session.sessionID) else { return false }
+                    return session.status == "active" || (includeArchived && session.status == "archived")
+                }
+                .sorted { lhs, rhs in
+                    if lhs.lastActivityAt != rhs.lastActivityAt {
+                        return lhs.lastActivityAt > rhs.lastActivityAt
+                    }
+                    return lhs.sessionID < rhs.sessionID
+                }
         }
     }
 
@@ -22203,6 +26528,12 @@ private struct RuntimeChatSessionListRequest: Equatable {
     var includeArchived: Bool
 }
 
+private struct RuntimeChatTargetedSessionSummaryRequest: Equatable {
+    var ownerDeviceID: String?
+    var sessionIDs: [String]
+    var includeArchived: Bool
+}
+
 private struct FailingRuntimeChatEventStore: RuntimeChatEventStore {
     func append(_ event: RuntimeChatStoredEvent) throws {
         throw NSError(
@@ -22217,6 +26548,18 @@ private struct FailingRuntimeChatEventStore: RuntimeChatEventStore {
             domain: "AetherLinkTests",
             code: 2,
             userInfo: [NSLocalizedDescriptionKey: "chat store read failed"]
+        )
+    }
+
+    func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "chat store targeted read failed"]
         )
     }
 
@@ -22276,6 +26619,23 @@ private final class SequencedRuntimeChatEventStore: RuntimeChatEventStore, @unch
 
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         try listAllSessions(limit: limit, includeArchived: includeArchived)
+    }
+
+    func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        let validatedSessionIDs = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        guard !validatedSessionIDs.isEmpty else { return [] }
+        let requestedSessionIDs = Set(validatedSessionIDs)
+        let result = lock.withLock {
+            results.isEmpty ? .success([]) : results.removeFirst()
+        }
+        return try result.get().filter { session in
+            guard requestedSessionIDs.contains(session.sessionID) else { return false }
+            return session.status == "active" || (includeArchived && session.status == "archived")
+        }
     }
 
     func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
@@ -22375,6 +26735,19 @@ private final class SearchHintRecordingRuntimeChatEventStore: RuntimeChatEventSt
         Array(sessions.prefix(limit))
     }
 
+    func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        let validatedSessionIDs = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        let requestedSessionIDs = Set(validatedSessionIDs)
+        return sessions.filter { session in
+            guard requestedSessionIDs.contains(session.sessionID) else { return false }
+            return session.status == "active" || (includeArchived && session.status == "archived")
+        }
+    }
+
     func listSessions(
         ownerDeviceID: String?,
         limit: Int,
@@ -22465,6 +26838,18 @@ private func temporaryRuntimeChatJSONLURL() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
         .appendingPathComponent("runtime-chat-events.jsonl")
+}
+
+private func executeResearchNotebookSQL(_ databaseURL: URL, _ sql: String) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+          let database else {
+        throw testRuntimeInspectorError("Could not open research notebook test database")
+    }
+    defer { sqlite3_close(database) }
+    guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+        throw testRuntimeInspectorError("Could not mutate research notebook test database")
+    }
 }
 
 private func chatSessionObjects(from envelope: ProtocolEnvelope) throws -> [[String: JSONValue]] {

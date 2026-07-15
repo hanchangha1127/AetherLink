@@ -29,6 +29,9 @@ const val RELAY_ALLOCATION_PROTOCOL_VERSION = 2
 const val CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY = "chat.source_attributions.v1"
 const val CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY = "chat.source_attribution.resolve.v1"
 const val CHAT_SESSIONS_SYNC_CAPABILITY = "chat.sessions.authoritative_sync.v1"
+const val RESEARCH_NOTEBOOKS_CAPABILITY = "research.notebooks.v1"
+const val RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY =
+    "research.notebooks.authoritative_sync.v1"
 const val MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.duplicate_suggestions.v1"
 const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.semantic_duplicate_suggestions.v1"
 const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY = "memory.semantic_duplicate_clusters.v1"
@@ -39,6 +42,8 @@ private val ASSISTANT_MESSAGE_ID_PATTERN = Regex("^assistant_message_[0-9a-f]{32
 private val SOURCE_REVIEW_ID_PATTERN = Regex("^source_review_[0-9a-f]{32}$")
 private val SOURCE_CONFIRMATION_TOKEN_PATTERN = Regex("^source_confirmation_[0-9a-f]{64}$")
 private val TRUSTED_SOURCE_GRANT_ID_PATTERN = Regex("^trusted_source_[0-9a-f]{32}$")
+private val RESEARCH_NOTEBOOK_ID_PATTERN = Regex("^research_notebook_[0-9a-f]{32}$")
+private val RESEARCH_NOTEBOOK_CURSOR_PATTERN = Regex("^[A-Za-z0-9._-]+$")
 private val DOCUMENT_CONTENT_FINGERPRINT_PATTERN = Regex("^[0-9a-f]{16}$")
 private val LOWERCASE_HEX_64_PATTERN = Regex("^[0-9a-f]{64}$")
 private val RUNTIME_KEY_BOUND_RELAY_ID_PATTERN = Regex("^rt2-[0-9a-f]{64}$")
@@ -68,6 +73,18 @@ private const val MAX_MEMORY_SEMANTIC_DUPLICATE_CLUSTER_ID_AGGREGATE_UTF8_BYTES 
 private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
 private const val MAX_TRUSTED_SOURCE_GRANT_IDS = 8
 private const val MAX_CHAT_SOURCE_ATTRIBUTIONS = 8
+private const val MAX_CLIENT_CAPABILITIES = 64
+private const val DEFAULT_RESEARCH_NOTEBOOK_LIST_LIMIT = 100
+private const val MAX_RESEARCH_NOTEBOOK_LIST_LIMIT = 200
+private const val MAX_RESEARCH_NOTEBOOK_CURSOR_BYTES = 512
+private const val MAX_RESEARCH_NOTEBOOK_SNAPSHOT_COUNT = 10_000
+private const val MAX_RESEARCH_SESSION_ID_BYTES = 256
+private const val MAX_RESEARCH_MODEL_BYTES = 256
+private const val MAX_RESEARCH_LOCALE_BYTES = 64
+private const val MAX_RESEARCH_TOPIC_CHARACTERS = 2048
+private const val MAX_RESEARCH_TOPIC_BYTES = 8192
+private const val MAX_RESEARCH_NOTEBOOK_TITLE_CHARACTERS = 256
+private const val MAX_RESEARCH_NOTEBOOK_TITLE_BYTES = 1024
 private const val TRUSTED_SOURCE_DISCLOSURE_VERSION = "runtime-trusted-source-v1"
 private const val TRUSTED_SOURCE_USAGE_SCOPE = "chat_context"
 private const val MAX_DOCUMENT_ID_LENGTH = 128
@@ -153,6 +170,7 @@ private val ERROR_CODES = setOf(
     "trusted_source_review_expired",
     "trusted_source_review_stale",
     "trusted_source_not_found",
+    "research_notebook_store_unavailable",
     "memory_store_unavailable",
     "memory_summary_draft_unavailable",
     "memory_summary_draft_stale",
@@ -182,6 +200,22 @@ private fun requireExactRfc3339DateTime(value: String, fieldName: String) {
         Instant.parse(value)
     } catch (error: Exception) {
         throw IllegalArgumentException("$fieldName must be RFC3339 date-time", error)
+    }
+}
+
+private fun requireValidUtf8(value: String, fieldName: String) {
+    require(Charsets.UTF_8.newEncoder().canEncode(value)) {
+        "$fieldName must be valid UTF-8 encodable Unicode"
+    }
+}
+
+private fun requireResearchNotebookCursor(value: String, fieldName: String) {
+    requireValidUtf8(value, fieldName)
+    require(value.toByteArray(Charsets.UTF_8).size in 1..MAX_RESEARCH_NOTEBOOK_CURSOR_BYTES) {
+        "$fieldName must contain 1 to 512 UTF-8 bytes"
+    }
+    require(RESEARCH_NOTEBOOK_CURSOR_PATTERN.matches(value)) {
+        "$fieldName must match ^[A-Za-z0-9._-]+$"
     }
 }
 
@@ -863,6 +897,8 @@ object MessageType {
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
     const val ChatSourceAttributionResolve = "chat.source_attribution.resolve"
+    const val ResearchBriefCreate = "research.brief.create"
+    const val ResearchNotebooksList = "research.notebooks.list"
     const val ChatCancel = "chat.cancel"
     const val ChatSessionsList = "chat.sessions.list"
     const val ChatMessagesList = "chat.messages.list"
@@ -898,9 +934,24 @@ data class HelloPayload(
     @SerialName("device_id") val deviceId: String,
     @SerialName("device_name") val deviceName: String,
     @SerialName("client_capabilities")
-    val capabilities: List<String>,
+    val capabilities: List<String> = emptyList(),
     @SerialName("transport_binding") val transportBinding: String? = null,
-)
+) {
+    init {
+        require(capabilities.size <= MAX_CLIENT_CAPABILITIES) {
+            "hello request client_capabilities must contain at most 64 entries"
+        }
+        capabilities.forEach { capability ->
+            requireValidUtf8(capability, "hello request client_capabilities entry")
+            require(capability.isNotBlank()) {
+                "hello request client_capabilities entries must be nonblank"
+            }
+        }
+        require(capabilities.distinct().size == capabilities.size) {
+            "hello request client_capabilities entries must be unique"
+        }
+    }
+}
 
 @Serializable
 data class AuthChallengePayload(
@@ -2280,6 +2331,418 @@ data class ChatSourceAttributionResolveResultPayload(
                 )
         ) {
             "chat.source_attribution.resolve trusted_source must match the citation identity and document"
+        }
+    }
+}
+
+@Serializable
+private data class ResearchBriefCreateRequestPayloadSurrogate(
+    @SerialName("notebook_id") val notebookId: String,
+    @SerialName("session_id") val sessionId: String,
+    val topic: String,
+    val model: String,
+    val locale: String? = null,
+    @SerialName("trusted_source_grant_ids") val trustedSourceGrantIds: List<String>,
+)
+
+object ResearchBriefCreateRequestPayloadSerializer :
+    KSerializer<ResearchBriefCreateRequestPayload> by object :
+    ExactJsonObjectTransformingSerializer<
+        ResearchBriefCreateRequestPayload,
+        ResearchBriefCreateRequestPayloadSurrogate
+    >(
+        ResearchBriefCreateRequestPayloadSurrogate.serializer(),
+        setOf("notebook_id", "session_id", "topic", "model", "locale", "trusted_source_grant_ids"),
+        "research.brief.create request",
+        validatePayload = { payload ->
+            payload["locale"]?.let { locale ->
+                require(locale is JsonPrimitive && locale.isString) {
+                    "research.brief.create request locale must be a string"
+                }
+            }
+        },
+    ) {
+    override fun fromSurrogate(value: ResearchBriefCreateRequestPayloadSurrogate) =
+        ResearchBriefCreateRequestPayload(
+            notebookId = value.notebookId,
+            sessionId = value.sessionId,
+            topic = value.topic,
+            model = value.model,
+            locale = value.locale,
+            trustedSourceGrantIds = value.trustedSourceGrantIds,
+        )
+
+    override fun toSurrogate(value: ResearchBriefCreateRequestPayload) =
+        ResearchBriefCreateRequestPayloadSurrogate(
+            notebookId = value.notebookId,
+            sessionId = value.sessionId,
+            topic = value.topic,
+            model = value.model,
+            locale = value.locale,
+            trustedSourceGrantIds = value.trustedSourceGrantIds,
+        )
+}
+
+@Serializable(with = ResearchBriefCreateRequestPayloadSerializer::class)
+data class ResearchBriefCreateRequestPayload(
+    @SerialName("notebook_id") val notebookId: String,
+    @SerialName("session_id") val sessionId: String,
+    val topic: String,
+    val model: String,
+    val locale: String? = null,
+    @SerialName("trusted_source_grant_ids") val trustedSourceGrantIds: List<String>,
+) {
+    init {
+        require(RESEARCH_NOTEBOOK_ID_PATTERN.matches(notebookId)) {
+            "research.brief.create request notebook_id must match research_notebook_[32 lowercase hex]"
+        }
+        requireValidUtf8(sessionId, "research.brief.create request session_id")
+        require(sessionId.isNotBlank()) {
+            "research.brief.create request session_id must be nonblank"
+        }
+        require(sessionId.codePointCount(0, sessionId.length) <= MAX_RESEARCH_SESSION_ID_BYTES) {
+            "research.brief.create request session_id must be at most 256 Unicode characters"
+        }
+        requireValidUtf8(topic, "research.brief.create request topic")
+        require(topic.trim().isNotEmpty()) {
+            "research.brief.create request topic must be nonblank after trimming"
+        }
+        require(topic.codePointCount(0, topic.length) <= MAX_RESEARCH_TOPIC_CHARACTERS) {
+            "research.brief.create request topic must be at most 2048 Unicode characters"
+        }
+        require(topic.toByteArray(Charsets.UTF_8).size <= MAX_RESEARCH_TOPIC_BYTES) {
+            "research.brief.create request topic must be at most 8192 UTF-8 bytes"
+        }
+        requireValidUtf8(model, "research.brief.create request model")
+        require(model.isNotBlank()) {
+            "research.brief.create request model must be nonblank"
+        }
+        require(model.codePointCount(0, model.length) <= MAX_RESEARCH_MODEL_BYTES) {
+            "research.brief.create request model must be at most 256 Unicode characters"
+        }
+        locale?.let {
+            requireValidUtf8(it, "research.brief.create request locale")
+            require(it.isNotBlank()) {
+                "research.brief.create request locale must be nonblank"
+            }
+            require(it.codePointCount(0, it.length) <= MAX_RESEARCH_LOCALE_BYTES) {
+                "research.brief.create request locale must be at most 64 Unicode characters"
+            }
+        }
+        require(trustedSourceGrantIds.size in 1..MAX_TRUSTED_SOURCE_GRANT_IDS) {
+            "research.brief.create request trusted_source_grant_ids must contain 1 to 8 entries"
+        }
+        require(trustedSourceGrantIds.distinct().size == trustedSourceGrantIds.size) {
+            "research.brief.create request trusted_source_grant_ids must contain unique entries"
+        }
+        require(trustedSourceGrantIds.all(TRUSTED_SOURCE_GRANT_ID_PATTERN::matches)) {
+            "research.brief.create request trusted_source_grant_ids entries must match trusted_source_[32 lowercase hex]"
+        }
+    }
+}
+
+@Serializable
+private data class ResearchNotebooksListInitialRequestPayloadSurrogate(
+    @SerialName("include_archived") val includeArchived: Boolean,
+    val limit: Int,
+)
+
+@Serializable
+private data class ResearchNotebooksListContinuationRequestPayloadSurrogate(
+    val cursor: String,
+)
+
+object ResearchNotebooksListRequestPayloadSerializer : KSerializer<ResearchNotebooksListRequestPayload> {
+    private val initialSerializer = ResearchNotebooksListInitialRequestPayloadSurrogate.serializer()
+    private val continuationSerializer = ResearchNotebooksListContinuationRequestPayloadSurrogate.serializer()
+    override val descriptor: SerialDescriptor = initialSerializer.descriptor
+
+    override fun deserialize(decoder: Decoder): ResearchNotebooksListRequestPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            setOf("include_archived", "limit", "cursor"),
+            "research.notebooks.list request",
+        )
+        if ("cursor" in payload) {
+            require(payload.keys == setOf("cursor")) {
+                "research.notebooks.list continuation request must contain only cursor"
+            }
+            val continuation = jsonDecoder.json.decodeFromJsonElement(continuationSerializer, payload)
+            return ResearchNotebooksListRequestPayload(cursor = continuation.cursor)
+        }
+        require(payload.keys == setOf("include_archived", "limit")) {
+            "research.notebooks.list initial request must contain exactly include_archived and limit"
+        }
+        payload.requireJsonBoolean("include_archived", "research.notebooks.list initial request")
+        payload.requireJsonInteger("limit", "research.notebooks.list initial request")
+        val initial = jsonDecoder.json.decodeFromJsonElement(initialSerializer, payload)
+        return ResearchNotebooksListRequestPayload(
+            includeArchived = initial.includeArchived,
+            limit = initial.limit,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: ResearchNotebooksListRequestPayload) {
+        if (value.cursor == null) {
+            encoder.encodeSerializableValue(
+                initialSerializer,
+                ResearchNotebooksListInitialRequestPayloadSurrogate(
+                    includeArchived = value.includeArchived,
+                    limit = value.limit,
+                ),
+            )
+            return
+        }
+        encoder.encodeSerializableValue(
+            continuationSerializer,
+            ResearchNotebooksListContinuationRequestPayloadSurrogate(value.cursor),
+        )
+    }
+}
+
+@Serializable(with = ResearchNotebooksListRequestPayloadSerializer::class)
+data class ResearchNotebooksListRequestPayload(
+    @SerialName("include_archived") val includeArchived: Boolean = false,
+    val limit: Int = DEFAULT_RESEARCH_NOTEBOOK_LIST_LIMIT,
+    val cursor: String? = null,
+) {
+    init {
+        require(limit in 1..MAX_RESEARCH_NOTEBOOK_LIST_LIMIT) {
+            "research.notebooks.list initial request limit must be between 1 and 200"
+        }
+        cursor?.let {
+            requireResearchNotebookCursor(it, "research.notebooks.list continuation request cursor")
+        }
+        require(
+            cursor == null || (
+                !includeArchived && limit == DEFAULT_RESEARCH_NOTEBOOK_LIST_LIMIT
+                )
+        ) {
+            "research.notebooks.list continuation request cursor must not be combined with initial request values"
+        }
+    }
+}
+
+@Serializable
+private data class ResearchNotebookPayloadSurrogate(
+    @SerialName("notebook_id") val notebookId: String,
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+    val model: String,
+    @SerialName("source_count") val sourceCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("archived_at") val archivedAt: String? = null,
+)
+
+object ResearchNotebookPayloadSerializer : KSerializer<ResearchNotebookPayload> by object :
+    ExactJsonObjectTransformingSerializer<ResearchNotebookPayload, ResearchNotebookPayloadSurrogate>(
+        ResearchNotebookPayloadSurrogate.serializer(),
+        setOf(
+            "notebook_id",
+            "session_id",
+            "title",
+            "model",
+            "source_count",
+            "created_at",
+            "updated_at",
+            "archived_at",
+        ),
+        "research.notebooks.list response notebook",
+        validatePayload = { payload ->
+            payload.requireJsonInteger("source_count", "research.notebooks.list response notebook")
+            payload["archived_at"]?.let { archivedAt ->
+                require(archivedAt is JsonPrimitive && archivedAt.isString) {
+                    "research.notebooks.list response notebook archived_at must be a string"
+                }
+            }
+        },
+    ) {
+    override fun fromSurrogate(value: ResearchNotebookPayloadSurrogate) = ResearchNotebookPayload(
+        notebookId = value.notebookId,
+        sessionId = value.sessionId,
+        title = value.title,
+        model = value.model,
+        sourceCount = value.sourceCount,
+        createdAt = value.createdAt,
+        updatedAt = value.updatedAt,
+        archivedAt = value.archivedAt,
+    )
+
+    override fun toSurrogate(value: ResearchNotebookPayload) = ResearchNotebookPayloadSurrogate(
+        notebookId = value.notebookId,
+        sessionId = value.sessionId,
+        title = value.title,
+        model = value.model,
+        sourceCount = value.sourceCount,
+        createdAt = value.createdAt,
+        updatedAt = value.updatedAt,
+        archivedAt = value.archivedAt,
+    )
+}
+
+@Serializable(with = ResearchNotebookPayloadSerializer::class)
+data class ResearchNotebookPayload(
+    @SerialName("notebook_id") val notebookId: String,
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+    val model: String,
+    @SerialName("source_count") val sourceCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("archived_at") val archivedAt: String? = null,
+) {
+    init {
+        require(RESEARCH_NOTEBOOK_ID_PATTERN.matches(notebookId)) {
+            "research.notebooks.list response notebook_id must match research_notebook_[32 lowercase hex]"
+        }
+        requireValidUtf8(sessionId, "research.notebooks.list response session_id")
+        require(sessionId.isNotBlank()) {
+            "research.notebooks.list response session_id must be nonblank"
+        }
+        require(sessionId.codePointCount(0, sessionId.length) <= MAX_RESEARCH_SESSION_ID_BYTES) {
+            "research.notebooks.list response session_id must be at most 256 Unicode characters"
+        }
+        requireValidUtf8(title, "research.notebooks.list response title")
+        require(title.isNotBlank()) {
+            "research.notebooks.list response title must be nonblank"
+        }
+        require(title.codePointCount(0, title.length) <= MAX_RESEARCH_NOTEBOOK_TITLE_CHARACTERS) {
+            "research.notebooks.list response title must be at most 256 Unicode characters"
+        }
+        require(title.toByteArray(Charsets.UTF_8).size <= MAX_RESEARCH_NOTEBOOK_TITLE_BYTES) {
+            "research.notebooks.list response title must be at most 1024 UTF-8 bytes"
+        }
+        requireValidUtf8(model, "research.notebooks.list response model")
+        require(model.isNotBlank()) {
+            "research.notebooks.list response model must be nonblank"
+        }
+        require(model.codePointCount(0, model.length) <= MAX_RESEARCH_MODEL_BYTES) {
+            "research.notebooks.list response model must be at most 256 Unicode characters"
+        }
+        require(sourceCount in 1..MAX_TRUSTED_SOURCE_GRANT_IDS) {
+            "research.notebooks.list response source_count must be between 1 and 8"
+        }
+        requireExactRfc3339DateTime(createdAt, "research.notebooks.list response created_at")
+        requireExactRfc3339DateTime(updatedAt, "research.notebooks.list response updated_at")
+        val createdInstant = Instant.parse(createdAt)
+        val updatedInstant = Instant.parse(updatedAt)
+        require(updatedInstant >= createdInstant) {
+            "research.notebooks.list response updated_at must be at or after created_at"
+        }
+        archivedAt?.let {
+            requireExactRfc3339DateTime(it, "research.notebooks.list response archived_at")
+            val archivedInstant = Instant.parse(it)
+            require(archivedInstant >= createdInstant) {
+                "research.notebooks.list response archived_at must be at or after created_at"
+            }
+        }
+    }
+}
+
+private val RESEARCH_NOTEBOOK_COMPARATOR = Comparator<ResearchNotebookPayload> { left, right ->
+    val updatedAtComparison = Instant.parse(right.updatedAt).compareTo(Instant.parse(left.updatedAt))
+    if (updatedAtComparison != 0) return@Comparator updatedAtComparison
+    CANONICAL_UNSIGNED_UTF8_STRING_COMPARATOR.compare(left.notebookId, right.notebookId)
+}
+
+@Serializable
+private data class ResearchNotebooksListResultPayloadSurrogate(
+    val notebooks: List<ResearchNotebookPayload>,
+    @SerialName("snapshot_count") val snapshotCount: Int? = null,
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+object ResearchNotebooksListResultPayloadSerializer : KSerializer<ResearchNotebooksListResultPayload> {
+    private val surrogateSerializer = ResearchNotebooksListResultPayloadSurrogate.serializer()
+    private val notebookListSerializer = ListSerializer(ResearchNotebookPayload.serializer())
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    override fun deserialize(decoder: Decoder): ResearchNotebooksListResultPayload {
+        val (jsonDecoder, payload) = decoder.decodeExactJsonObject(
+            setOf("notebooks", "snapshot_count", "next_cursor"),
+            "research.notebooks.list response",
+        )
+        require("notebooks" in payload) {
+            "research.notebooks.list response must contain notebooks"
+        }
+        val hasSnapshotCount = "snapshot_count" in payload
+        val hasNextCursor = "next_cursor" in payload
+        if (!hasSnapshotCount) {
+            require(!hasNextCursor && payload.keys == setOf("notebooks")) {
+                "research.notebooks.list legacy response must contain only notebooks"
+            }
+        } else {
+            require(
+                payload.keys == setOf("notebooks", "snapshot_count") ||
+                    payload.keys == setOf("notebooks", "snapshot_count", "next_cursor")
+            ) {
+                "research.notebooks.list capable response must contain notebooks, snapshot_count, and optional next_cursor"
+            }
+            payload.requireJsonInteger("snapshot_count", "research.notebooks.list capable response")
+            payload["next_cursor"]?.let { nextCursor ->
+                require(nextCursor is JsonPrimitive && nextCursor.isString) {
+                    "research.notebooks.list capable response next_cursor must be a string"
+                }
+            }
+        }
+        val value = jsonDecoder.json.decodeFromJsonElement(surrogateSerializer, payload)
+        return ResearchNotebooksListResultPayload(
+            notebooks = value.notebooks,
+            snapshotCount = value.snapshotCount,
+            nextCursor = value.nextCursor,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: ResearchNotebooksListResultPayload) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw IllegalArgumentException("research.notebooks.list response requires JSON encoding")
+        val payload = buildMap<String, kotlinx.serialization.json.JsonElement> {
+            put(
+                "notebooks",
+                jsonEncoder.json.encodeToJsonElement(notebookListSerializer, value.notebooks),
+            )
+            value.snapshotCount?.let { put("snapshot_count", JsonPrimitive(it)) }
+            value.nextCursor?.let { put("next_cursor", JsonPrimitive(it)) }
+        }
+        jsonEncoder.encodeJsonElement(JsonObject(payload))
+    }
+}
+
+@Serializable(with = ResearchNotebooksListResultPayloadSerializer::class)
+data class ResearchNotebooksListResultPayload(
+    val notebooks: List<ResearchNotebookPayload>,
+    @SerialName("snapshot_count") val snapshotCount: Int? = null,
+    @SerialName("next_cursor") val nextCursor: String? = null,
+) {
+    init {
+        val pageLimit = if (snapshotCount == null) {
+            DEFAULT_RESEARCH_NOTEBOOK_LIST_LIMIT
+        } else {
+            MAX_RESEARCH_NOTEBOOK_LIST_LIMIT
+        }
+        require(notebooks.size <= pageLimit) {
+            "research.notebooks.list response notebooks must contain at most $pageLimit entries"
+        }
+        require(notebooks.distinctBy(ResearchNotebookPayload::notebookId).size == notebooks.size) {
+            "research.notebooks.list response notebook_id values must be unique"
+        }
+        require(notebooks.distinctBy(ResearchNotebookPayload::sessionId).size == notebooks.size) {
+            "research.notebooks.list response session_id values must be unique"
+        }
+        require(notebooks.sortedWith(RESEARCH_NOTEBOOK_COMPARATOR) == notebooks) {
+            "research.notebooks.list response notebooks must be sorted by updated_at descending then notebook_id using canonical unsigned UTF-8 byte order"
+        }
+        require(snapshotCount == null || snapshotCount in 0..MAX_RESEARCH_NOTEBOOK_SNAPSHOT_COUNT) {
+            "research.notebooks.list capable response snapshot_count must be between 0 and 10000"
+        }
+        require(nextCursor == null || snapshotCount != null) {
+            "research.notebooks.list response next_cursor requires snapshot_count"
+        }
+        nextCursor?.let {
+            requireResearchNotebookCursor(it, "research.notebooks.list capable response next_cursor")
+        }
+        require(snapshotCount == null || notebooks.size <= snapshotCount) {
+            "research.notebooks.list capable response notebooks size must not exceed snapshot_count"
         }
     }
 }

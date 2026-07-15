@@ -5884,9 +5884,7 @@ internal fun EmbeddingModelPanel(
     showHeader: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val embeddingModels = state.models
-        .filter { it.isEmbeddingModel() }
-        .sortedWith(compareBy<RuntimeModel> { !it.installed }.thenBy { it.name.lowercase() })
+    val embeddingModels = embeddingModelMenuModels(state.models)
     val selectedEmbeddingModel = embeddingModels.firstOrNull { it.id == state.selectedEmbeddingModelId }
     val selectedEmbeddingModelUnavailable =
         state.selectedEmbeddingModelId != null && selectedEmbeddingModel == null
@@ -6001,6 +5999,52 @@ internal fun EmbeddingModelPanel(
             }
         }
     }
+}
+
+internal fun embeddingModelMenuModels(models: List<RuntimeModel>): List<RuntimeModel> {
+    return models
+        .filter {
+            isCanonicalProviderQualifiedModelId(it.id) &&
+                it.isEmbeddingModel() &&
+                it.isRuntimeHostLocalModel()
+        }
+        .sortedWith(compareBy<RuntimeModel> { !it.installed }.thenBy { it.name.lowercase(Locale.US) })
+}
+
+private data class EmbeddingModelCapabilityDisplay(
+    val visualLine: String,
+    val accessibilityLine: String,
+)
+
+@Composable
+private fun embeddingModelCapabilityDisplay(model: RuntimeModel): EmbeddingModelCapabilityDisplay {
+    val labels = buildList {
+        add(stringResource(R.string.model_capability_embedding))
+        model.contextWindowTokens
+            ?.takeIf { it > 0 }
+            ?.let { contextWindowTokens ->
+                add(
+                    stringResource(
+                        R.string.model_capability_context_window,
+                        contextWindowTokens,
+                    )
+                )
+            }
+    }
+    var visualLine = labels.first()
+    var accessibilityLine = labels.first()
+    for (label in labels.drop(1)) {
+        visualLine = stringResource(R.string.model_capability_visual_pair, visualLine, label)
+        accessibilityLine = stringResource(
+            R.string.model_capability_accessibility_pair,
+            accessibilityLine,
+            label,
+        )
+    }
+    return EmbeddingModelCapabilityDisplay(
+        visualLine = visualLine,
+        accessibilityLine = accessibilityLine,
+    )
 }
 
 @Composable
@@ -6146,6 +6190,16 @@ private fun EmbeddingModelRow(
         runtimeProviderDisplayName(model.provider),
         quickModelStatus(model = model, installing = false),
     )
+    val capabilityDisplay = embeddingModelCapabilityDisplay(model)
+    val modelDetailText = stringResource(
+        R.string.model_status_capabilities_value,
+        modelStatusText,
+        capabilityDisplay.visualLine,
+    )
+    val capabilityAccessibilitySummary = stringResource(
+        R.string.model_capabilities_accessibility,
+        capabilityDisplay.accessibilityLine,
+    )
     val accessibilitySummary = stringResource(
         if (selected) {
             R.string.embedding_model_row_summary_selected
@@ -6154,6 +6208,7 @@ private fun EmbeddingModelRow(
         },
         model.name,
         modelStatusText,
+        capabilityAccessibilitySummary,
     )
     val rowEnabled = enabled && model.installed
     val rowDisabledStateDescription = when {
@@ -6197,12 +6252,10 @@ private fun EmbeddingModelRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = modelStatusText,
+                    text = modelDetailText,
                     modifier = Modifier.testTag(embeddingModelRowStatusTestTag(model.id)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

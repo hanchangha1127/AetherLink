@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "document_type": "aetherlink.memory-semantic-duplicate-acceptance-review",
+  "review_id": "memory_semantic_duplicate_acceptance_v1_recommended",
+  "status": "proposed_not_selected",
+  "evidence_status": "blocked_missing_representative_corpus",
+  "measurement_status": "not_started",
+  "approval_required": {
+    "decision_id": null,
+    "approval_source": null,
+    "selected_recommendation_count": 0,
+    "explicit_user_approval_required": true,
+    "decision_boundary": "separate_versioned_decision_before_behavior_change",
+    "unresolved_inputs": [
+      "label_coverage_policy",
+      "precommitted_acceptance_floors",
+      "privacy_review",
+      "representative_batch_evaluator",
+      "representative_corpus",
+      "target_model_artifact_matrix"
+    ],
+    "required_before": [
+      "representative_corpus_intake",
+      "representative_batch_evaluator",
+      "target_matrix_execution",
+      "threshold_default_or_range_change",
+      "automatic_merge",
+      "automatic_memory_mutation",
+      "protocol_change"
+    ]
+  },
+  "current_behavior": {
+    "review_threshold_basis_points": 9000,
+    "minimum_threshold_basis_points": 8000,
+    "maximum_threshold_basis_points": 10000,
+    "default_threshold_change_authorized": false,
+    "threshold_range_change_authorized": false,
+    "automatic_memory_mutation_authorized": false,
+    "automatic_merge_authorized": false,
+    "protocol_change_authorized": false,
+    "representative_corpus_intake_authorized": false,
+    "additional_live_matrix_execution_authorized": false
+  },
+  "representative_corpus_recommendation": {
+    "status": "proposed_not_selected",
+    "corpus_artifact_path": null,
+    "corpus_sha256": null,
+    "acceptance_eligible": false,
+    "requirements": {
+      "minimum_entry_count": 200,
+      "minimum_labeled_pair_count": 500,
+      "minimum_positive_label_count": 100,
+      "minimum_negative_label_count": 100,
+      "minimum_language_count": 5,
+      "minimum_entries_per_language": 20,
+      "minimum_independent_reviewers_per_pair": 2,
+      "adjudication_required": true,
+      "declared_label_coverage_policy_required": true,
+      "source_group_disjoint_holdout_required": true,
+      "locked_holdout_required": true,
+      "representative_batch_evaluator_required": true,
+      "consented_or_synthetic_provenance_required": true,
+      "raw_production_memory_forbidden": true,
+      "secrets_forbidden": true,
+      "direct_identifiers_forbidden": true,
+      "opaque_entry_ids_required": true,
+      "privacy_review_required": true,
+      "label_guideline_version_required": true,
+      "exact_pair_labels_required": true,
+      "complete_link_cluster_labels_required": true
+    },
+    "current_synthetic_fixture": {
+      "path": "shared/evaluation/memory-semantic-duplicate-calibration-v1.json",
+      "sha256": "d41a31045a5a4d35ad8ce4ee05af34fc0937326b114a1512fb1160be75b571ff",
+      "classification": "synthetic_evaluator_only",
+      "acceptance_eligible": false
+    }
+  },
+  "target_model_artifact_matrix_recommendation": {
+    "status": "proposed_not_selected",
+    "required_provider_families": [
+      "lm_studio",
+      "ollama"
+    ],
+    "minimum_required_artifact_count": 2,
+    "candidate_artifacts": [
+      {
+        "provider_family": "ollama",
+        "model_id": "ollama:embeddinggemma:latest",
+        "artifact_fingerprint": "ollama-sha256:85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1",
+        "historical_report_path": "build/qa/memory-semantic-calibration-live-ollama-embeddinggemma-20260714.json",
+        "historical_report_sha256": "c733979b0c721fb32a11bd997c66789ce6a6003669d89be0eb91e155e5475544",
+        "observed_corpus_id": "memory-semantic-duplicate-calibration-v1",
+        "observed_corpus_sha256": "d41a31045a5a4d35ad8ce4ee05af34fc0937326b114a1512fb1160be75b571ff",
+        "classification": "observed_synthetic_only",
+        "acceptance_eligible": false
+      }
+    ],
+    "matrix_complete": false,
+    "missing_required_artifact_count": 1
+  },
+  "acceptance_floor_recommendation": {
+    "status": "proposed_not_selected",
+    "minimum_pair_precision_basis_points": 9500,
+    "minimum_pair_recall_basis_points": 8000,
+    "minimum_pair_f1_basis_points": 8500,
+    "minimum_predicted_positive_count": 100,
+    "minimum_actual_positive_count": 100,
+    "minimum_language_stratum_precision_basis_points": 9000,
+    "minimum_language_stratum_recall_basis_points": 7000,
+    "minimum_language_stratum_predicted_positive_count": 20,
+    "minimum_language_stratum_actual_positive_count": 20,
+    "minimum_hard_negative_count": 20,
+    "minimum_hard_negative_specificity_basis_points": 9500,
+    "null_precision_fails": true,
+    "review_clusters_exact_match_required": true,
+    "all_required_artifacts_must_pass": true,
+    "single_shared_threshold_required": true,
+    "same_language_stratum_required": true,
+    "cross_language_stratum_required": true,
+    "hard_negative_stratum_required": true,
+    "per_artifact_and_stratum_pass_required": true,
+    "aggregate_averaging_forbidden": true
+  },
+  "current_assessment": {
+    "representative_corpus_available": false,
+    "target_matrix_complete": false,
+    "acceptance_floors_approved": false,
+    "privacy_review_complete": false,
+    "acceptance_decision_eligible": false,
+    "selected_threshold_basis_points": null,
+    "reason_codes": [
+      "acceptance_floors_not_approved",
+      "privacy_review_incomplete",
+      "representative_batch_evaluator_missing",
+      "representative_corpus_missing",
+      "target_matrix_incomplete"
+    ]
+  },
+  "immutability": {
+    "record_state": "closed",
+    "amendment_policy": "supersede_with_new_versioned_review"
+  }
+}

@@ -223,6 +223,10 @@
 "%d models" = "모델 %d개";
 "Chat" = "채팅";
 "Embedding" = "임베딩";
+"Vision" = "비전";
+"Context: %@ tokens" = "컨텍스트: %@ 토큰";
+"%@, %@" = "%@, %@";
+"%@. Capabilities: %@." = "%@. 기능: %@.";
 "Running" = "실행 중";
 "Not running" = "실행 안 됨";
 "Unnamed model" = "이름 없는 모델";

@@ -4,6 +4,8 @@ import CryptoKit
 public enum ProtocolCodecError: Error, Equatable {
     case invalidFrameLength(Int)
     case truncatedFrame
+    case invalidJSON
+    case duplicateJSONObjectKey(String)
 }
 
 public enum RelayFrameCipherError: Error, Equatable {
@@ -41,6 +43,7 @@ public struct ProtocolCodec: Sendable {
     }
 
     public func decodeEnvelope(_ data: Data) throws -> ProtocolEnvelope {
+        try JSONDuplicateKeyValidator.validate(data)
         var envelope = try decoder.decode(ProtocolEnvelope.self, from: data)
         if [
             MessageType.memorySemanticDuplicateSuggestionsList,
@@ -73,6 +76,180 @@ public struct ProtocolCodec: Sendable {
     public func validateFrameBodyLength(_ bodyLength: Int) throws {
         guard bodyLength > 0 && bodyLength <= Self.maxFrameBytes else {
             throw ProtocolCodecError.invalidFrameLength(bodyLength)
+        }
+    }
+}
+
+private struct JSONDuplicateKeyValidator {
+    private static let maximumNestingDepth = 512
+
+    private let bytes: [UInt8]
+    private var index = 0
+
+    static func validate(_ data: Data) throws {
+        var parser = JSONDuplicateKeyValidator(bytes: Array(data))
+        try parser.parseDocument()
+    }
+
+    private mutating func parseDocument() throws {
+        skipWhitespace()
+        try parseValue(depth: 0)
+        skipWhitespace()
+        guard index == bytes.count else { throw ProtocolCodecError.invalidJSON }
+    }
+
+    private mutating func parseValue(depth: Int) throws {
+        guard depth <= Self.maximumNestingDepth, index < bytes.count else {
+            throw ProtocolCodecError.invalidJSON
+        }
+        switch bytes[index] {
+        case UInt8(ascii: "{"):
+            try parseObject(depth: depth)
+        case UInt8(ascii: "["):
+            try parseArray(depth: depth)
+        case UInt8(ascii: "\""):
+            _ = try parseString()
+        case UInt8(ascii: "t"):
+            try consumeLiteral("true")
+        case UInt8(ascii: "f"):
+            try consumeLiteral("false")
+        case UInt8(ascii: "n"):
+            try consumeLiteral("null")
+        case UInt8(ascii: "-"), UInt8(ascii: "0")...UInt8(ascii: "9"):
+            try parseNumber()
+        default:
+            throw ProtocolCodecError.invalidJSON
+        }
+    }
+
+    private mutating func parseObject(depth: Int) throws {
+        index += 1
+        skipWhitespace()
+        if consume(UInt8(ascii: "}")) { return }
+
+        var keys = Set<String>()
+        while true {
+            guard index < bytes.count, bytes[index] == UInt8(ascii: "\"") else {
+                throw ProtocolCodecError.invalidJSON
+            }
+            let key = try parseString()
+            guard keys.insert(key).inserted else {
+                throw ProtocolCodecError.duplicateJSONObjectKey(key)
+            }
+            skipWhitespace()
+            guard consume(UInt8(ascii: ":")) else { throw ProtocolCodecError.invalidJSON }
+            skipWhitespace()
+            try parseValue(depth: depth + 1)
+            skipWhitespace()
+            if consume(UInt8(ascii: "}")) { return }
+            guard consume(UInt8(ascii: ",")) else { throw ProtocolCodecError.invalidJSON }
+            skipWhitespace()
+        }
+    }
+
+    private mutating func parseArray(depth: Int) throws {
+        index += 1
+        skipWhitespace()
+        if consume(UInt8(ascii: "]")) { return }
+
+        while true {
+            try parseValue(depth: depth + 1)
+            skipWhitespace()
+            if consume(UInt8(ascii: "]")) { return }
+            guard consume(UInt8(ascii: ",")) else { throw ProtocolCodecError.invalidJSON }
+            skipWhitespace()
+        }
+    }
+
+    private mutating func parseString() throws -> String {
+        let start = index
+        index += 1
+        while index < bytes.count {
+            let byte = bytes[index]
+            if byte == UInt8(ascii: "\"") {
+                index += 1
+                let encoded = Data(bytes[start..<index])
+                guard let value = try? JSONDecoder().decode(String.self, from: encoded) else {
+                    throw ProtocolCodecError.invalidJSON
+                }
+                return value
+            }
+            if byte < 0x20 { throw ProtocolCodecError.invalidJSON }
+            if byte == UInt8(ascii: "\\") {
+                index += 1
+                guard index < bytes.count else { throw ProtocolCodecError.invalidJSON }
+                if bytes[index] == UInt8(ascii: "u") {
+                    guard index + 4 < bytes.count else { throw ProtocolCodecError.invalidJSON }
+                    index += 4
+                }
+            }
+            index += 1
+        }
+        throw ProtocolCodecError.invalidJSON
+    }
+
+    private mutating func parseNumber() throws {
+        _ = consume(UInt8(ascii: "-"))
+        guard index < bytes.count else { throw ProtocolCodecError.invalidJSON }
+
+        if consume(UInt8(ascii: "0")) {
+            guard index == bytes.count || !isDigit(bytes[index]) else {
+                throw ProtocolCodecError.invalidJSON
+            }
+        } else {
+            guard consumeDigit(in: UInt8(ascii: "1")...UInt8(ascii: "9")) else {
+                throw ProtocolCodecError.invalidJSON
+            }
+            while index < bytes.count, isDigit(bytes[index]) { index += 1 }
+        }
+
+        if consume(UInt8(ascii: ".")) {
+            guard consumeDigit(in: UInt8(ascii: "0")...UInt8(ascii: "9")) else {
+                throw ProtocolCodecError.invalidJSON
+            }
+            while index < bytes.count, isDigit(bytes[index]) { index += 1 }
+        }
+
+        if index < bytes.count, bytes[index] == UInt8(ascii: "e") || bytes[index] == UInt8(ascii: "E") {
+            index += 1
+            if index < bytes.count, bytes[index] == UInt8(ascii: "+") || bytes[index] == UInt8(ascii: "-") {
+                index += 1
+            }
+            guard consumeDigit(in: UInt8(ascii: "0")...UInt8(ascii: "9")) else {
+                throw ProtocolCodecError.invalidJSON
+            }
+            while index < bytes.count, isDigit(bytes[index]) { index += 1 }
+        }
+    }
+
+    private mutating func consumeLiteral(_ literal: StaticString) throws {
+        let literalBytes = Array(String(describing: literal).utf8)
+        guard index + literalBytes.count <= bytes.count,
+              bytes[index..<(index + literalBytes.count)].elementsEqual(literalBytes) else {
+            throw ProtocolCodecError.invalidJSON
+        }
+        index += literalBytes.count
+    }
+
+    private mutating func consume(_ byte: UInt8) -> Bool {
+        guard index < bytes.count, bytes[index] == byte else { return false }
+        index += 1
+        return true
+    }
+
+    private mutating func consumeDigit(in range: ClosedRange<UInt8>) -> Bool {
+        guard index < bytes.count, range.contains(bytes[index]) else { return false }
+        index += 1
+        return true
+    }
+
+    private func isDigit(_ byte: UInt8) -> Bool {
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+    }
+
+    private mutating func skipWhitespace() {
+        while index < bytes.count, [0x20, 0x09, 0x0a, 0x0d].contains(bytes[index]) {
+            index += 1
         }
     }
 }

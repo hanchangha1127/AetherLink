@@ -28,9 +28,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +73,7 @@ import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
@@ -127,6 +132,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -146,6 +152,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
+import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
@@ -427,6 +434,7 @@ private fun LocalAgentBridgeApp(
 ) {
     val viewModel: RuntimeClientViewModel = viewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val researchNotebookState by viewModel.researchNotebooks.collectAsStateWithLifecycle()
     val baseContext = LocalContext.current
     var systemLanguageReconciled by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel, baseContext) {
@@ -461,6 +469,7 @@ private fun LocalAgentBridgeApp(
             var renameDraft by rememberSaveable { mutableStateOf("") }
             var chatSearchQuery by rememberSaveable { mutableStateOf("") }
             var showPairingQrScanner by rememberSaveable { mutableStateOf(false) }
+            var showResearchBriefDialog by rememberSaveable { mutableStateOf(false) }
             var settingsOpenedForPairingOnboarding by rememberSaveable { mutableStateOf(false) }
             var returnToChatAfterPairing by rememberSaveable { mutableStateOf(false) }
             val effectiveDestination = resolveAppDestination(
@@ -601,6 +610,25 @@ private fun LocalAgentBridgeApp(
                 }
             }
 
+            if (showResearchBriefDialog) {
+                ResearchBriefCreateDialog(
+                    state = state,
+                    onDismiss = { showResearchBriefDialog = false },
+                    onCreate = { topic, model, sourceAnchorIds ->
+                        val created = viewModel.createResearchBriefFromApprovedSources(
+                            topic = topic,
+                            model = model,
+                            selectedTrustedSourceAnchorIds = sourceAnchorIds,
+                            locale = state.selectedLanguageTag,
+                        )
+                        if (created) {
+                            showResearchBriefDialog = false
+                            destination = AppDestination.Chat
+                        }
+                    },
+                )
+            }
+
             if (showPairingQrScanner) {
                 PairingQrScannerScreen(
                     onResult = { rawValue ->
@@ -627,6 +655,8 @@ private fun LocalAgentBridgeApp(
                 drawerContent = {
                     AetherLinkNavigationDrawerContent(
                         state = state,
+                        researchNotebooks = researchNotebookState.notebooks,
+                        isResearchNotebooksLoading = researchNotebookState.isLoading,
                         effectiveDestination = effectiveDestination,
                         chatSearchQuery = chatSearchQuery,
                         hasAnyChatSessions = hasAnyChatSessions,
@@ -639,6 +669,30 @@ private fun LocalAgentBridgeApp(
                             viewModel.startNewChat()
                             destination = AppDestination.Chat
                             scope.launch { drawerState.close() }
+                        },
+                        onCreateResearchBrief = {
+                            viewModel.refreshTrustedSources()
+                            showResearchBriefDialog = true
+                            scope.launch { drawerState.close() }
+                        },
+                        onSelectResearchNotebook = { notebook ->
+                            if (viewModel.selectChatSession(notebook.sessionId)) {
+                                destination = AppDestination.Chat
+                                scope.launch { drawerState.close() }
+                            }
+                        },
+                        onRenameResearchNotebook = { notebook ->
+                            renamingSessionId = notebook.sessionId
+                            renameDraft = notebook.title
+                        },
+                        onArchiveResearchNotebook = { notebook ->
+                            viewModel.archiveChatSession(notebook.sessionId)
+                        },
+                        onRestoreResearchNotebook = { notebook ->
+                            viewModel.unarchiveChatSession(notebook.sessionId)
+                        },
+                        onPermanentlyDeleteResearchNotebook = { notebook ->
+                            viewModel.deleteChatSession(notebook.sessionId)
                         },
                         onSelectChatSession = { session ->
                             if (viewModel.selectChatSession(session.id)) {
@@ -841,16 +895,25 @@ private fun LocalAgentBridgeApp(
 
             val sessionBeingRenamed = (state.chatSessions + state.archivedChatSessions)
                 .firstOrNull { it.id == renamingSessionId }
-            if (sessionBeingRenamed != null) {
+            val researchNotebookBeingRenamed = researchNotebookState.notebooks
+                .firstOrNull { it.sessionId == renamingSessionId }
+            if (sessionBeingRenamed != null || researchNotebookBeingRenamed != null) {
                 RenameChatSessionDialog(
                     title = renameDraft,
+                    isResearchNotebook = researchNotebookBeingRenamed != null,
                     onTitleChange = { renameDraft = it },
                     onDismiss = {
                         renamingSessionId = null
                         renameDraft = ""
                     },
                     onConfirm = {
-                        viewModel.renameChatSession(sessionBeingRenamed.id, renameDraft)
+                        renamingSessionId?.let { sessionId ->
+                            if (researchNotebookBeingRenamed != null) {
+                                viewModel.renameResearchNotebook(sessionId, renameDraft)
+                            } else {
+                                viewModel.renameChatSession(sessionId, renameDraft)
+                            }
+                        }
                         renamingSessionId = null
                         renameDraft = ""
                     },
@@ -1507,16 +1570,20 @@ private fun ChatModelMenuItem(
     actionsEnabled: Boolean = true,
     visionRecoveryMode: Boolean = false,
     onSelect: () -> Unit,
+    rowTestTag: String = chatModelMenuItemTestTag(model.id),
+    capabilityTestTag: String = chatModelMenuItemCapabilityTestTag(model.id),
 ) {
     val statusLine = modelMenuStatusLine(
         model = model,
         installing = installing,
         visionRecoveryMode = visionRecoveryMode,
     )
+    val capabilityDisplay = modelMenuCapabilityDisplay(model)
     val rowContentDescription = chatModelMenuItemContentDescription(
         model = model,
         selected = selected,
         statusLine = statusLine,
+        capabilityAccessibilityLine = capabilityDisplay.accessibilityLine,
     )
     val rowActionLabel = stringResource(
         if (visionRecoveryMode && !model.supportsImageInput()) {
@@ -1536,7 +1603,7 @@ private fun ChatModelMenuItem(
             visionRecoveryMode = visionRecoveryMode,
             contentDescription = rowContentDescription,
             actionLabel = rowActionLabel,
-        ).testTag(chatModelMenuItemTestTag(model.id)),
+        ).testTag(rowTestTag),
         text = {
             Column {
                 Text(
@@ -1545,11 +1612,14 @@ private fun ChatModelMenuItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = statusLine,
+                    text = stringResource(
+                        R.string.model_status_capabilities_value,
+                        statusLine,
+                        capabilityDisplay.visualLine,
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(capabilityTestTag),
                 )
             }
         },
@@ -1585,6 +1655,24 @@ private fun ChatModelMenuItem(
             visionRecoveryMode = visionRecoveryMode,
         ),
         onClick = onSelect,
+    )
+}
+
+@Composable
+internal fun ResearchBriefModelMenuItem(
+    model: RuntimeModel,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+) {
+    ChatModelMenuItem(
+        model = model,
+        selected = selected,
+        installing = false,
+        actionsEnabled = enabled,
+        onSelect = onSelect,
+        rowTestTag = researchBriefModelMenuItemTestTag(model.id),
+        capabilityTestTag = researchBriefModelMenuItemCapabilityTestTag(model.id),
     )
 }
 
@@ -1630,7 +1718,12 @@ private fun chatModelMenuItemContentDescription(
     model: RuntimeModel,
     selected: Boolean,
     statusLine: String,
+    capabilityAccessibilityLine: String,
 ): String {
+    val capabilitySummary = stringResource(
+        R.string.model_capabilities_accessibility,
+        capabilityAccessibilityLine,
+    )
     return stringResource(
         if (selected) {
             R.string.chat_model_row_summary_selected
@@ -1639,6 +1732,7 @@ private fun chatModelMenuItemContentDescription(
         },
         model.name,
         statusLine,
+        capabilitySummary,
     )
 }
 
@@ -1674,6 +1768,43 @@ private fun modelMenuStatusLine(
         R.string.model_status_value,
         runtimeProviderDisplayName(model.provider),
         availability,
+    )
+}
+
+private data class ModelMenuCapabilityDisplay(
+    val visualLine: String,
+    val accessibilityLine: String,
+)
+
+@Composable
+private fun modelMenuCapabilityDisplay(model: RuntimeModel): ModelMenuCapabilityDisplay {
+    val labels = buildList {
+        add(stringResource(R.string.model_capability_chat))
+        if (model.supportsImageInput()) {
+            add(stringResource(R.string.model_capability_vision))
+        }
+        model.contextWindowTokens?.takeIf { it > 0 }?.let { contextWindowTokens ->
+            add(
+                stringResource(
+                    R.string.model_capability_context_window,
+                    contextWindowTokens,
+                )
+            )
+        }
+    }
+    var visualLine = labels.first()
+    var accessibilityLine = labels.first()
+    for (label in labels.drop(1)) {
+        visualLine = stringResource(R.string.model_capability_visual_pair, visualLine, label)
+        accessibilityLine = stringResource(
+            R.string.model_capability_accessibility_pair,
+            accessibilityLine,
+            label,
+        )
+    }
+    return ModelMenuCapabilityDisplay(
+        visualLine = visualLine,
+        accessibilityLine = accessibilityLine,
     )
 }
 
@@ -1878,6 +2009,47 @@ internal const val CHAT_MODEL_REFRESH_ROW_TEST_TAG = "aetherlink_chat_model_refr
 internal const val CHAT_MODEL_REFRESH_TEXT_TEST_TAG = "aetherlink_chat_model_refresh_text"
 internal const val CHAT_MODEL_REFRESH_LABEL_TEST_TAG = "aetherlink_chat_model_refresh_label"
 internal const val CHAT_MODEL_REFRESH_DETAIL_TEST_TAG = "aetherlink_chat_model_refresh_detail"
+internal const val DRAWER_RESEARCH_NOTEBOOKS_TEST_TAG = "aetherlink_research_notebooks"
+internal const val DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG =
+    "aetherlink_research_notebooks_active"
+internal const val DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG =
+    "aetherlink_research_notebooks_archived"
+internal const val RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG =
+    "aetherlink_research_notebook_delete_dialog"
+internal const val RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG =
+    "aetherlink_research_notebook_delete_message"
+internal const val RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG =
+    "aetherlink_research_notebook_delete_confirm"
+internal const val RESEARCH_BRIEF_DIALOG_TEST_TAG = "aetherlink_research_brief_dialog"
+internal const val RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG = "aetherlink_research_brief_model_picker"
+internal const val RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG = "aetherlink_research_source_selector_row"
+
+internal fun researchBriefModelMenuItemTestTag(modelId: String): String =
+    "aetherlink_research_brief_model_item_$modelId"
+
+internal fun researchBriefModelMenuItemCapabilityTestTag(modelId: String): String =
+    "aetherlink_research_brief_model_capability_$modelId"
+
+internal fun researchNotebookDrawerRowTestTag(sessionId: String): String =
+    "aetherlink_research_notebook_$sessionId"
+
+internal fun researchNotebookDrawerOptionsTestTag(sessionId: String): String =
+    "aetherlink_research_notebook_options_$sessionId"
+
+internal fun researchNotebookDrawerMenuItemTestTag(sessionId: String, action: String): String =
+    "aetherlink_research_notebook_${action}_$sessionId"
+
+internal data class ResearchNotebookDrawerGroups(
+    val active: List<ResearchNotebookPayload>,
+    val archived: List<ResearchNotebookPayload>,
+)
+
+internal fun researchNotebookDrawerGroups(
+    notebooks: List<ResearchNotebookPayload>,
+): ResearchNotebookDrawerGroups = ResearchNotebookDrawerGroups(
+    active = notebooks.filter { it.archivedAt == null },
+    archived = notebooks.filter { it.archivedAt != null },
+)
 
 internal fun drawerChatRowTestTag(sessionId: String): String = "$DRAWER_CHAT_ROW_TEST_TAG_PREFIX$sessionId"
 
@@ -1904,15 +2076,21 @@ internal fun drawerChatRowMenuItemLabelTestTag(sessionId: String, action: String
 
 internal fun chatModelMenuItemTestTag(modelId: String): String = "$CHAT_MODEL_MENU_ITEM_TEST_TAG_PREFIX$modelId"
 
+internal fun chatModelMenuItemCapabilityTestTag(modelId: String): String =
+    "$CHAT_MODEL_CAPABILITY_TEST_TAG_PREFIX$modelId"
+
 internal fun chatModelVisionWarningIconTestTag(modelId: String): String =
     "$CHAT_MODEL_VISION_WARNING_ICON_TEST_TAG_PREFIX$modelId"
 
 internal const val CHAT_MODEL_MENU_ITEM_TEST_TAG_PREFIX = "aetherlink_chat_model_item_"
+internal const val CHAT_MODEL_CAPABILITY_TEST_TAG_PREFIX = "aetherlink_chat_model_capability_"
 internal const val CHAT_MODEL_VISION_WARNING_ICON_TEST_TAG_PREFIX = "aetherlink_chat_model_vision_warning_"
 
 @Composable
 internal fun AetherLinkNavigationDrawerContent(
     state: RuntimeUiState,
+    researchNotebooks: List<ResearchNotebookPayload> = emptyList(),
+    isResearchNotebooksLoading: Boolean = false,
     effectiveDestination: AppDestination,
     chatSearchQuery: String,
     hasAnyChatSessions: Boolean,
@@ -1923,6 +2101,12 @@ internal fun AetherLinkNavigationDrawerContent(
     onChatSearchQueryChange: (String) -> Unit,
     onClearChatSearch: () -> Unit,
     onNewChat: () -> Unit,
+    onCreateResearchBrief: () -> Unit = {},
+    onSelectResearchNotebook: (ResearchNotebookPayload) -> Unit = {},
+    onRenameResearchNotebook: (ResearchNotebookPayload) -> Unit = {},
+    onArchiveResearchNotebook: (ResearchNotebookPayload) -> Unit = {},
+    onRestoreResearchNotebook: (ResearchNotebookPayload) -> Unit = {},
+    onPermanentlyDeleteResearchNotebook: (ResearchNotebookPayload) -> Unit = {},
     onSelectChatSession: (RuntimeChatSession) -> Unit,
     onRenameChatSession: (RuntimeChatSession) -> Unit,
     onArchiveChatSession: (RuntimeChatSession) -> Unit,
@@ -1933,6 +2117,53 @@ internal fun AetherLinkNavigationDrawerContent(
     val newChatStateDescription = newChatActionStateDescription(state)
     val newChatActionLabel = stringResource(R.string.new_chat)
     val settingsStateDescription = stringResource(R.string.settings_destination_state_ready)
+    val researchNotebookGroups = remember(researchNotebooks) {
+        researchNotebookDrawerGroups(researchNotebooks)
+    }
+    val groupedChatSessions = remember(filteredChatSessions, chatSessionGroupingNowMillis) {
+        chatSessionDrawerGroups(
+            sessions = filteredChatSessions,
+            nowMillis = chatSessionGroupingNowMillis,
+        )
+    }
+    val researchActionsEnabled = state.isConnected &&
+        !state.isStreaming &&
+        !state.isChatHistoryActionPending
+    var expandedResearchNotebookMenuSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var expandedChatSessionMenuId by rememberSaveable { mutableStateOf<String?>(null) }
+    var researchNotebookDeleteTarget by remember { mutableStateOf<ResearchNotebookPayload?>(null) }
+    var researchNotebookDeleteConfirmationStep by rememberSaveable { mutableStateOf(0) }
+
+    LaunchedEffect(researchNotebooks) {
+        val expandedSessionId = expandedResearchNotebookMenuSessionId ?: return@LaunchedEffect
+        if (researchNotebooks.none { notebook -> notebook.sessionId == expandedSessionId }) {
+            expandedResearchNotebookMenuSessionId = null
+        }
+    }
+    LaunchedEffect(filteredChatSessions) {
+        val expandedSessionId = expandedChatSessionMenuId ?: return@LaunchedEffect
+        if (filteredChatSessions.none { session -> session.id == expandedSessionId }) {
+            expandedChatSessionMenuId = null
+        }
+    }
+
+    researchNotebookDeleteTarget?.let { notebook ->
+        ResearchNotebookDeleteConfirmationDialog(
+            notebook = notebook,
+            step = researchNotebookDeleteConfirmationStep,
+            enabled = researchActionsEnabled,
+            onStepChange = { researchNotebookDeleteConfirmationStep = it },
+            onDismiss = {
+                researchNotebookDeleteConfirmationStep = 0
+                researchNotebookDeleteTarget = null
+            },
+            onConfirm = {
+                researchNotebookDeleteConfirmationStep = 0
+                researchNotebookDeleteTarget = null
+                onPermanentlyDeleteResearchNotebook(notebook)
+            },
+        )
+    }
 
     ModalDrawerSheet {
         Column(
@@ -1964,58 +2195,191 @@ internal fun AetherLinkNavigationDrawerContent(
                 Spacer(Modifier.size(8.dp))
                 Text(newChatActionLabel)
             }
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState())
                     .testTag(DRAWER_HISTORY_TEST_TAG),
             ) {
-                DrawerSectionLabel(text = stringResource(R.string.previous_chats))
-                if (hasAnyChatSessions) {
-                    ChatHistorySearchField(
-                        query = chatSearchQuery,
-                        onQueryChange = onChatSearchQueryChange,
-                        onClear = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                            onClearChatSearch()
+                item(
+                    key = "research-notebooks-header",
+                    contentType = "section-header",
+                ) {
+                    Column(modifier = Modifier.testTag(DRAWER_RESEARCH_NOTEBOOKS_TEST_TAG)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 28.dp, end = 12.dp, top = 8.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.research_notebooks),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { heading() },
+                            )
+                            IconButton(
+                                onClick = onCreateResearchBrief,
+                                enabled = researchActionsEnabled,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = stringResource(R.string.create_research_brief),
+                                )
+                            }
+                        }
+                        if (isResearchNotebooksLoading && researchNotebooks.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.loading_research_notebooks),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
+                item(
+                    key = "research-notebooks-active-heading",
+                    contentType = "group-heading",
+                ) {
+                    Box(modifier = Modifier.testTag(DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG)) {
+                        DrawerHistoryGroupLabel(text = stringResource(R.string.active_research_notebooks))
+                    }
+                }
+                items(
+                    items = researchNotebookGroups.active,
+                    key = { notebook -> "research-notebook-${notebook.sessionId}" },
+                    contentType = { "research-notebook" },
+                ) { notebook ->
+                    ResearchNotebookDrawerItem(
+                        notebook = notebook,
+                        selected = notebook.sessionId == state.activeChatSessionId,
+                        enabled = researchActionsEnabled,
+                        menuExpanded = expandedResearchNotebookMenuSessionId == notebook.sessionId,
+                        onOpenMenu = { expandedResearchNotebookMenuSessionId = notebook.sessionId },
+                        onDismissMenu = {
+                            if (expandedResearchNotebookMenuSessionId == notebook.sessionId) {
+                                expandedResearchNotebookMenuSessionId = null
+                            }
+                        },
+                        onSelect = { onSelectResearchNotebook(notebook) },
+                        onRename = { onRenameResearchNotebook(notebook) },
+                        onArchive = { onArchiveResearchNotebook(notebook) },
+                        onRestore = null,
+                        onPermanentlyDelete = null,
+                    )
+                }
+                item(
+                    key = "research-notebooks-archived-heading",
+                    contentType = "group-heading",
+                ) {
+                    Box(modifier = Modifier.testTag(DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG)) {
+                        DrawerHistoryGroupLabel(text = stringResource(R.string.archived_research_notebooks))
+                    }
+                }
+                items(
+                    items = researchNotebookGroups.archived,
+                    key = { notebook -> "research-notebook-${notebook.sessionId}" },
+                    contentType = { "research-notebook" },
+                ) { notebook ->
+                    ResearchNotebookDrawerItem(
+                        notebook = notebook,
+                        selected = false,
+                        enabled = researchActionsEnabled,
+                        menuExpanded = expandedResearchNotebookMenuSessionId == notebook.sessionId,
+                        onOpenMenu = { expandedResearchNotebookMenuSessionId = notebook.sessionId },
+                        onDismissMenu = {
+                            if (expandedResearchNotebookMenuSessionId == notebook.sessionId) {
+                                expandedResearchNotebookMenuSessionId = null
+                            }
+                        },
+                        onSelect = null,
+                        onRename = { onRenameResearchNotebook(notebook) },
+                        onArchive = null,
+                        onRestore = { onRestoreResearchNotebook(notebook) },
+                        onPermanentlyDelete = {
+                            researchNotebookDeleteTarget = notebook
+                            researchNotebookDeleteConfirmationStep = 1
                         },
                     )
                 }
+                item(
+                    key = "research-notebooks-divider",
+                    contentType = "divider",
+                ) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+                item(
+                    key = "previous-chats-heading",
+                    contentType = "section-heading",
+                ) {
+                    DrawerSectionLabel(text = stringResource(R.string.previous_chats))
+                }
+                if (hasAnyChatSessions) {
+                    item(
+                        key = "chat-history-search",
+                        contentType = "search",
+                    ) {
+                        ChatHistorySearchField(
+                            query = chatSearchQuery,
+                            onQueryChange = onChatSearchQueryChange,
+                            onClear = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                onClearChatSearch()
+                            },
+                        )
+                    }
+                }
                 if (hasChatSearchQuery && !hasChatSearchResults) {
-                    val noSearchResultsText = stringResource(R.string.no_chat_search_results)
-                    Text(
-                        text = noSearchResultsText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(horizontal = 28.dp, vertical = 8.dp)
-                            .testTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG)
-                            .semantics {
-                                contentDescription = noSearchResultsText
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                    )
+                    item(
+                        key = "chat-history-no-search-results",
+                        contentType = "empty-state",
+                    ) {
+                        val noSearchResultsText = stringResource(R.string.no_chat_search_results)
+                        Text(
+                            text = noSearchResultsText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(horizontal = 28.dp, vertical = 8.dp)
+                                .testTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG)
+                                .semantics {
+                                    contentDescription = noSearchResultsText
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                        )
+                    }
                 } else if (!hasChatSearchQuery && state.chatSessions.isEmpty()) {
-                    val noPreviousChatsText = stringResource(R.string.no_previous_chats)
-                    Text(
-                        text = noPreviousChatsText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(horizontal = 28.dp, vertical = 8.dp)
-                            .testTag(DRAWER_EMPTY_HISTORY_TEST_TAG)
-                            .semantics {
-                                contentDescription = noPreviousChatsText
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                    )
+                    item(
+                        key = "chat-history-empty",
+                        contentType = "empty-state",
+                    ) {
+                        val noPreviousChatsText = stringResource(R.string.no_previous_chats)
+                        Text(
+                            text = noPreviousChatsText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(horizontal = 28.dp, vertical = 8.dp)
+                                .testTag(DRAWER_EMPTY_HISTORY_TEST_TAG)
+                                .semantics {
+                                    contentDescription = noPreviousChatsText
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                        )
+                    }
                 } else {
-                    chatSessionDrawerGroups(
-                        sessions = filteredChatSessions,
-                        nowMillis = chatSessionGroupingNowMillis,
-                    ).forEach { group ->
-                        DrawerHistoryGroupLabel(text = stringResource(group.labelRes))
-                        group.sessions.forEach { session ->
+                    groupedChatSessions.forEach { group ->
+                        item(
+                            key = "chat-history-group-${group.labelRes}",
+                            contentType = "group-heading",
+                        ) {
+                            DrawerHistoryGroupLabel(text = stringResource(group.labelRes))
+                        }
+                        items(
+                            items = group.sessions,
+                            key = { session -> "chat-session-${session.id}" },
+                            contentType = { "chat-session" },
+                        ) { session ->
                             ChatSessionDrawerItem(
                                 session = session,
                                 models = state.models,
@@ -2033,6 +2397,10 @@ internal fun AetherLinkNavigationDrawerContent(
                                 },
                                 onRestore = null,
                                 onDelete = null,
+                                menuExpanded = expandedChatSessionMenuId == session.id,
+                                onMenuExpandedChange = { expanded ->
+                                    expandedChatSessionMenuId = if (expanded) session.id else null
+                                },
                             )
                         }
                     }
@@ -2051,6 +2419,501 @@ internal fun AetherLinkNavigationDrawerContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun ResearchNotebookDrawerItem(
+    notebook: ResearchNotebookPayload,
+    selected: Boolean,
+    enabled: Boolean,
+    menuExpanded: Boolean,
+    onOpenMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onSelect: (() -> Unit)?,
+    onRename: () -> Unit,
+    onArchive: (() -> Unit)?,
+    onRestore: (() -> Unit)?,
+    onPermanentlyDelete: (() -> Unit)?,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val isArchived = notebook.archivedAt != null
+    val sourceCount = pluralStringResource(
+        R.plurals.research_notebook_source_count,
+        notebook.sourceCount,
+        notebook.sourceCount,
+    )
+    val status = stringResource(
+        if (isArchived) R.string.archived_research_notebook else R.string.active_research_notebook,
+    )
+    val rowSummary = stringResource(
+        R.string.research_notebook_row_summary,
+        notebook.title,
+        sourceCount,
+        status,
+    )
+    val optionsDescription = stringResource(R.string.research_notebook_more_named, notebook.title)
+    val openDescription = stringResource(R.string.open_research_notebook_named, notebook.title)
+    val renameDescription = stringResource(R.string.rename_research_notebook_named, notebook.title)
+    val archiveDescription = stringResource(R.string.archive_research_notebook_named, notebook.title)
+    val restoreDescription = stringResource(R.string.restore_research_notebook_named, notebook.title)
+    val deleteDescription = stringResource(
+        R.string.permanently_delete_research_notebook_named,
+        notebook.title,
+    )
+    val selectableModifier = if (onSelect != null) {
+        Modifier.clickable(
+            enabled = enabled,
+            role = Role.Button,
+            onClick = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                onSelect()
+            },
+        )
+    } else {
+        Modifier
+    }
+
+    Surface(
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            Color.Transparent
+        },
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.46f)
+            .testTag(researchNotebookDrawerRowTestTag(notebook.sessionId)),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .then(selectableModifier)
+                .semantics {
+                    contentDescription = rowSummary
+                    if (onSelect != null) {
+                        onClick(label = openDescription, action = null)
+                    }
+                    if (!enabled) disabled()
+                }
+                .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null)
+            Spacer(Modifier.size(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = notebook.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = sourceCount,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Box {
+                IconButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        onOpenMenu()
+                    },
+                    enabled = enabled,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag(researchNotebookDrawerOptionsTestTag(notebook.sessionId))
+                        .semantics {
+                            contentDescription = optionsDescription
+                            if (enabled) {
+                                onClick(label = optionsDescription, action = null)
+                            } else {
+                                disabled()
+                            }
+                        },
+                ) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = null)
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = onDismissMenu,
+                ) {
+                    ResearchNotebookDrawerMenuItem(
+                        notebook = notebook,
+                        action = "rename",
+                        enabled = enabled,
+                        label = stringResource(R.string.rename_research_notebook),
+                        contentDescription = renameDescription,
+                        icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                        onClick = onRename,
+                        onDismiss = onDismissMenu,
+                    )
+                    if (onArchive != null) {
+                        ResearchNotebookDrawerMenuItem(
+                            notebook = notebook,
+                            action = "archive",
+                            enabled = enabled,
+                            label = stringResource(R.string.archive_research_notebook),
+                            contentDescription = archiveDescription,
+                            icon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            onClick = onArchive,
+                            onDismiss = onDismissMenu,
+                        )
+                    }
+                    if (onRestore != null) {
+                        ResearchNotebookDrawerMenuItem(
+                            notebook = notebook,
+                            action = "restore",
+                            enabled = enabled,
+                            label = stringResource(R.string.restore_research_notebook),
+                            contentDescription = restoreDescription,
+                            icon = { Icon(Icons.Filled.Unarchive, contentDescription = null) },
+                            onClick = onRestore,
+                            onDismiss = onDismissMenu,
+                        )
+                    }
+                    if (onPermanentlyDelete != null) {
+                        ResearchNotebookDrawerMenuItem(
+                            notebook = notebook,
+                            action = "delete",
+                            enabled = enabled,
+                            label = stringResource(R.string.permanently_delete),
+                            contentDescription = deleteDescription,
+                            icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = onPermanentlyDelete,
+                            onDismiss = onDismissMenu,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResearchNotebookDrawerMenuItem(
+    notebook: ResearchNotebookPayload,
+    action: String,
+    enabled: Boolean,
+    label: String,
+    contentDescription: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenuItem(
+        enabled = enabled,
+        text = { Text(label) },
+        leadingIcon = icon,
+        modifier = Modifier
+            .testTag(researchNotebookDrawerMenuItemTestTag(notebook.sessionId, action))
+            .semantics {
+                this.contentDescription = contentDescription
+                if (enabled) {
+                    onClick(label = contentDescription, action = null)
+                } else {
+                    disabled()
+                }
+            },
+        onClick = {
+            onDismiss()
+            onClick()
+        },
+    )
+}
+
+@Composable
+private fun ResearchNotebookDeleteConfirmationDialog(
+    notebook: ResearchNotebookPayload,
+    step: Int,
+    enabled: Boolean,
+    onStepChange: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (step !in 1..2) return
+    val hapticFeedback = LocalHapticFeedback.current
+    val subject = stringResource(
+        R.string.permanently_delete_research_notebook_named,
+        notebook.title,
+    )
+    val confirmDescription = stringResource(
+        if (step == 1) {
+            R.string.confirmation_continue_action_named
+        } else {
+            R.string.confirmation_final_action_named
+        },
+        subject,
+    )
+    val cancelDescription = stringResource(R.string.confirmation_cancel_action_named, subject)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier
+            .widthIn(max = 360.dp)
+            .testTag(RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG),
+        title = { Text(stringResource(R.string.permanently_delete_research_notebook)) },
+        text = {
+            Text(
+                text = stringResource(
+                    if (step == 1) {
+                        R.string.permanently_delete_research_notebook_confirm_first
+                    } else {
+                        R.string.permanently_delete_research_notebook_confirm_second
+                    },
+                    notebook.title,
+                ),
+                modifier = Modifier.testTag(RESEARCH_NOTEBOOK_DELETE_MESSAGE_TEST_TAG),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(
+                        if (step == 1) {
+                            AetherLinkInteractionFeedback.PrimaryAction
+                        } else {
+                            AetherLinkInteractionFeedback.Destructive
+                        },
+                    )
+                    if (step == 1) onStepChange(2) else onConfirm()
+                },
+                enabled = enabled,
+                modifier = Modifier
+                    .testTag(RESEARCH_NOTEBOOK_DELETE_CONFIRM_TEST_TAG)
+                    .semantics {
+                        contentDescription = confirmDescription
+                        onClick(label = confirmDescription, action = null)
+                    },
+            ) {
+                Text(
+                    text = stringResource(
+                        if (step == 1) R.string.continue_action else R.string.permanently_delete,
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.semantics {
+                    contentDescription = cancelDescription
+                    onClick(label = cancelDescription, action = null)
+                },
+            ) {
+                Text(
+                    text = stringResource(R.string.cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ResearchBriefCreateDialog(
+    state: RuntimeUiState,
+    onDismiss: () -> Unit,
+    onCreate: (String, String, List<String>) -> Unit,
+) {
+    val models = chatModelMenuModels(state.models).filter(RuntimeModel::installed)
+    var topic by remember { mutableStateOf("") }
+    var selectedModelId by remember { mutableStateOf<String?>(null) }
+    var selectedSourceAnchorIds by remember { mutableStateOf(emptyList<String>()) }
+    var modelMenuExpanded by remember { mutableStateOf(false) }
+    val selectedModel = models.firstOrNull { it.id == selectedModelId }
+    val canCreate = topic.isNotBlank() &&
+        selectedModel != null &&
+        selectedSourceAnchorIds.size in 1..8 &&
+        !state.isStreaming
+    val modelPickerActionLabel = stringResource(R.string.choose_model)
+    val modelPickerContentDescription = selectedModel?.let { model ->
+        stringResource(R.string.model_value, model.name)
+    } ?: modelPickerActionLabel
+    val modelPickerStateDescription = stringResource(
+        when {
+            state.isStreaming -> R.string.model_picker_state_wait_for_stream
+            models.isEmpty() -> R.string.model_unavailable
+            selectedModel != null -> R.string.selection_state_selected
+            else -> R.string.choose_model
+        }
+    )
+
+    LaunchedEffect(models, state.selectedModelId) {
+        if (models.none { model -> model.id == selectedModelId }) {
+            selectedModelId = state.selectedModelId
+                ?.takeIf { selected -> models.any { model -> model.id == selected } }
+                ?: models.firstOrNull()?.id
+        }
+        if (models.isEmpty()) {
+            modelMenuExpanded = false
+        }
+    }
+
+    LaunchedEffect(state.isStreaming) {
+        if (state.isStreaming) {
+            modelMenuExpanded = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag(RESEARCH_BRIEF_DIALOG_TEST_TAG),
+        title = { Text(stringResource(R.string.create_research_brief)) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                OutlinedTextField(
+                    value = topic,
+                    onValueChange = { topic = it },
+                    label = { Text(stringResource(R.string.research_topic)) },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = stringResource(R.string.selected_model),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { modelMenuExpanded = true },
+                        enabled = models.isNotEmpty() && !state.isStreaming,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(RESEARCH_BRIEF_MODEL_PICKER_TEST_TAG)
+                            .semantics {
+                                contentDescription = modelPickerContentDescription
+                                stateDescription = modelPickerStateDescription
+                                if (models.isNotEmpty() && !state.isStreaming) {
+                                    onClick(label = modelPickerActionLabel, action = null)
+                                }
+                            },
+                    ) {
+                        Text(
+                            text = selectedModel?.name ?: stringResource(R.string.choose_model),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
+                    }
+                    DropdownMenu(
+                        expanded = modelMenuExpanded && models.isNotEmpty() && !state.isStreaming,
+                        onDismissRequest = { modelMenuExpanded = false },
+                    ) {
+                        models.forEach { model ->
+                            ResearchBriefModelMenuItem(
+                                model = model,
+                                selected = model.id == selectedModelId,
+                                enabled = !state.isStreaming,
+                                onSelect = {
+                                    selectedModelId = model.id
+                                    modelMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.approved_sources),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                if (state.trustedSources.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.no_approved_sources),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        state.trustedSources.forEach { source ->
+                            val checked = source.sourceAnchorId in selectedSourceAnchorIds
+                            val enabled = checked || selectedSourceAnchorIds.size < 8
+                            ResearchSourceSelectorRow(
+                                label = source.document.displayName,
+                                checked = checked,
+                                enabled = enabled,
+                                onCheckedChange = { shouldSelect ->
+                                    selectedSourceAnchorIds = if (shouldSelect) {
+                                        (selectedSourceAnchorIds + source.sourceAnchorId)
+                                            .distinct()
+                                    } else {
+                                        selectedSourceAnchorIds - source.sourceAnchorId
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    selectedModelId?.let { modelId ->
+                        onCreate(topic.trim(), modelId, selectedSourceAnchorIds)
+                    }
+                },
+                enabled = canCreate,
+            ) {
+                Text(stringResource(R.string.research_create_action))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ResearchSourceSelectorRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(RESEARCH_SOURCE_SELECTOR_ROW_TEST_TAG)
+            .semantics(mergeDescendants = true) {}
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange,
+            )
+            .padding(vertical = 4.dp),
+    ) {
+        Checkbox(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = null,
+        )
+        Text(
+            text = label,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -2336,8 +3199,55 @@ internal fun ChatSessionDrawerItem(
     onArchive: (() -> Unit)?,
     onRestore: (() -> Unit)?,
     onDelete: (() -> Unit)?,
+    menuExpanded: Boolean? = null,
+    onMenuExpandedChange: ((Boolean) -> Unit)? = null,
 ) {
-    var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
+    if (menuExpanded != null && onMenuExpandedChange != null) {
+        ChatSessionDrawerItemContent(
+            session = session,
+            models = models,
+            selected = selected,
+            enabled = enabled,
+            onClick = onClick,
+            onRename = onRename,
+            onArchive = onArchive,
+            onRestore = onRestore,
+            onDelete = onDelete,
+            menuExpanded = menuExpanded,
+            onMenuExpandedChange = onMenuExpandedChange,
+        )
+    } else {
+        var localMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
+        ChatSessionDrawerItemContent(
+            session = session,
+            models = models,
+            selected = selected,
+            enabled = enabled,
+            onClick = onClick,
+            onRename = onRename,
+            onArchive = onArchive,
+            onRestore = onRestore,
+            onDelete = onDelete,
+            menuExpanded = localMenuExpanded,
+            onMenuExpandedChange = { localMenuExpanded = it },
+        )
+    }
+}
+
+@Composable
+private fun ChatSessionDrawerItemContent(
+    session: RuntimeChatSession,
+    models: List<RuntimeModel>,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onRename: (() -> Unit)?,
+    onArchive: (() -> Unit)?,
+    onRestore: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+    menuExpanded: Boolean,
+    onMenuExpandedChange: (Boolean) -> Unit,
+) {
     val hapticFeedback = LocalHapticFeedback.current
     val title = session.localizedTitle(stringResource(R.string.untitled_chat))
     val chatSessionOptionsContentDescription = stringResource(R.string.chat_session_more_named, title)
@@ -2453,7 +3363,7 @@ internal fun ChatSessionDrawerItem(
                 IconButton(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                        isMenuExpanded = true
+                        onMenuExpandedChange(true)
                     },
                     enabled = enabled,
                     modifier = Modifier
@@ -2471,11 +3381,12 @@ internal fun ChatSessionDrawerItem(
                     )
                 }
                 DropdownMenu(
-                    expanded = isMenuExpanded,
-                    onDismissRequest = { isMenuExpanded = false },
+                    expanded = menuExpanded,
+                    onDismissRequest = { onMenuExpandedChange(false) },
                 ) {
                     if (onRename != null) {
                         DropdownMenuItem(
+                            enabled = enabled,
                             text = {
                                 Text(
                                     renameActionLabel,
@@ -2489,16 +3400,22 @@ internal fun ChatSessionDrawerItem(
                                 .testTag(drawerChatRowMenuItemTestTag(session.id, "rename"))
                                 .semantics {
                                     contentDescription = renameActionContentDescription
-                                    onClick(label = renameActionContentDescription, action = null)
+                                    if (enabled) {
+                                        onClick(label = renameActionContentDescription, action = null)
+                                    } else {
+                                        disabled()
+                                        disabledStateDescription?.let { stateDescription = it }
+                                    }
                                 },
                             onClick = {
-                                isMenuExpanded = false
+                                onMenuExpandedChange(false)
                                 onRename()
                             },
                         )
                     }
                     if (onArchive != null) {
                         DropdownMenuItem(
+                            enabled = enabled,
                             text = {
                                 Text(
                                     archiveActionLabel,
@@ -2512,16 +3429,22 @@ internal fun ChatSessionDrawerItem(
                                 .testTag(drawerChatRowMenuItemTestTag(session.id, "archive"))
                                 .semantics {
                                     contentDescription = archiveActionContentDescription
-                                    onClick(label = archiveActionContentDescription, action = null)
+                                    if (enabled) {
+                                        onClick(label = archiveActionContentDescription, action = null)
+                                    } else {
+                                        disabled()
+                                        disabledStateDescription?.let { stateDescription = it }
+                                    }
                                 },
                             onClick = {
-                                isMenuExpanded = false
+                                onMenuExpandedChange(false)
                                 onArchive()
                             },
                         )
                     }
                     if (onRestore != null) {
                         DropdownMenuItem(
+                            enabled = enabled,
                             text = {
                                 Text(
                                     restoreActionLabel,
@@ -2535,16 +3458,22 @@ internal fun ChatSessionDrawerItem(
                                 .testTag(drawerChatRowMenuItemTestTag(session.id, "restore"))
                                 .semantics {
                                     contentDescription = restoreActionContentDescription
-                                    onClick(label = restoreActionContentDescription, action = null)
+                                    if (enabled) {
+                                        onClick(label = restoreActionContentDescription, action = null)
+                                    } else {
+                                        disabled()
+                                        disabledStateDescription?.let { stateDescription = it }
+                                    }
                                 },
                             onClick = {
-                                isMenuExpanded = false
+                                onMenuExpandedChange(false)
                                 onRestore()
                             },
                         )
                     }
                     if (onDelete != null) {
                         DropdownMenuItem(
+                            enabled = enabled,
                             text = {
                                 Text(
                                     deleteActionLabel,
@@ -2558,10 +3487,15 @@ internal fun ChatSessionDrawerItem(
                                 .testTag(drawerChatRowMenuItemTestTag(session.id, "delete"))
                                 .semantics {
                                     contentDescription = deleteActionContentDescription
-                                    onClick(label = deleteActionContentDescription, action = null)
+                                    if (enabled) {
+                                        onClick(label = deleteActionContentDescription, action = null)
+                                    } else {
+                                        disabled()
+                                        disabledStateDescription?.let { stateDescription = it }
+                                    }
                                 },
                             onClick = {
-                                isMenuExpanded = false
+                                onMenuExpandedChange(false)
                                 onDelete()
                             },
                         )
@@ -2601,6 +3535,7 @@ private const val LEGACY_DEFAULT_CHAT_TITLE = "New chat"
 @Composable
 internal fun RenameChatSessionDialog(
     title: String,
+    isResearchNotebook: Boolean = false,
     onTitleChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
@@ -2612,8 +3547,15 @@ internal fun RenameChatSessionDialog(
     } else {
         stringResource(R.string.rename_chat_title_state_ready)
     }
-    val titleContentDescription = stringResource(R.string.chat_title_label)
-    val renameSubject = stringResource(R.string.rename_chat)
+    val titleLabelRes = if (isResearchNotebook) {
+        R.string.research_notebook_title_label
+    } else {
+        R.string.chat_title_label
+    }
+    val titleContentDescription = stringResource(titleLabelRes)
+    val renameSubject = stringResource(
+        if (isResearchNotebook) R.string.rename_research_notebook else R.string.rename_chat,
+    )
     val confirmRenameActionLabel = stringResource(
         R.string.confirmation_final_action_named,
         renameSubject,
@@ -2638,7 +3580,7 @@ internal fun RenameChatSessionDialog(
             OutlinedTextField(
                 value = title,
                 onValueChange = onTitleChange,
-                label = { Text(stringResource(R.string.chat_title_label)) },
+                label = { Text(stringResource(titleLabelRes)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()

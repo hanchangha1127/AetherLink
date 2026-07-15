@@ -71,6 +71,9 @@ public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
     case sessionNotFound(String)
     case sessionMustBeArchivedBeforeDelete(String)
     case bulkMutationUnsupported
+    case invalidTargetedSessionSummarySessionID
+    case duplicateTargetedSessionSummarySessionID
+    case targetedSessionSummaryLimitExceeded(maximum: Int)
     case corruptEventLog(line: Int, reason: String)
 
     public var errorDescription: String? {
@@ -81,6 +84,12 @@ public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
             return "Chat session must be archived before deletion: \(sessionID)"
         case .bulkMutationUnsupported:
             return "Atomic bulk chat session mutation is not supported by this store."
+        case .invalidTargetedSessionSummarySessionID:
+            return "Targeted chat session summary lookup contains an invalid session id."
+        case .duplicateTargetedSessionSummarySessionID:
+            return "Targeted chat session summary lookup contains a duplicate session id."
+        case .targetedSessionSummaryLimitExceeded(let maximum):
+            return "Targeted chat session summary lookup exceeds the maximum of \(maximum) session ids."
         case .corruptEventLog(let line, let reason):
             return "Runtime chat event log is corrupt at line \(line): \(reason)"
         }
@@ -488,6 +497,8 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
 public struct RuntimeChatStoredSession: Equatable, Sendable {
     public var sessionID: String
     public var title: String
+    public var titleUpdatedAt: Date?
+    public var titleRevision: Int
     public var model: String
     public var lastActivityAt: Date
     public var messageCount: Int
@@ -501,6 +512,8 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
     public init(
         sessionID: String,
         title: String,
+        titleUpdatedAt: Date? = nil,
+        titleRevision: Int = 0,
         model: String,
         lastActivityAt: Date,
         messageCount: Int,
@@ -513,6 +526,8 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
     ) {
         self.sessionID = sessionID
         self.title = title
+        self.titleUpdatedAt = titleUpdatedAt
+        self.titleRevision = titleRevision
         self.model = model
         self.lastActivityAt = lastActivityAt
         self.messageCount = messageCount
@@ -619,9 +634,39 @@ public struct RuntimeChatSemanticEmbeddingRecord: Equatable, Sendable {
     }
 }
 
+public enum RuntimeChatEventStoreLimits {
+    public static let maximumTargetedSessionSummaryCount = 10_000
+}
+
+func validatedTargetedSessionSummaryIDs(_ sessionIDs: [String]) throws -> [String] {
+    guard sessionIDs.count <= RuntimeChatEventStoreLimits.maximumTargetedSessionSummaryCount else {
+        throw RuntimeChatEventStoreError.targetedSessionSummaryLimitExceeded(
+            maximum: RuntimeChatEventStoreLimits.maximumTargetedSessionSummaryCount
+        )
+    }
+    var uniqueSessionIDs = Set<String>()
+    uniqueSessionIDs.reserveCapacity(sessionIDs.count)
+    for sessionID in sessionIDs {
+        do {
+            try runtimeResearchNotebookValidateBackingSessionID(sessionID)
+        } catch {
+            throw RuntimeChatEventStoreError.invalidTargetedSessionSummarySessionID
+        }
+        guard uniqueSessionIDs.insert(sessionID).inserted else {
+            throw RuntimeChatEventStoreError.duplicateTargetedSessionSummarySessionID
+        }
+    }
+    return sessionIDs
+}
+
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
+    func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession]
     func listSessions(
         ownerDeviceID: String?,
         limit: Int,
@@ -946,6 +991,15 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
         []
     }
 
+    public func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        _ = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        return []
+    }
+
     public func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         []
     }
@@ -1028,6 +1082,27 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             try Self.sessions(
                 from: readEvents(ownerDeviceID: ownerDeviceID),
                 limit: limit,
+                includeArchived: includeArchived
+            )
+        }
+    }
+
+    public func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        let validatedSessionIDs = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        guard !validatedSessionIDs.isEmpty else { return [] }
+        let requestedSessionIDs = Set(validatedSessionIDs)
+        return try lock.withLock {
+            let targetedEvents = try readEvents(
+                ownerDeviceID: ownerDeviceID,
+                sessionIDs: requestedSessionIDs
+            )
+            return try Self.sessions(
+                from: targetedEvents,
+                limit: validatedSessionIDs.count,
                 includeArchived: includeArchived
             )
         }
@@ -1210,6 +1285,17 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         return try readEvents().filter { $0.ownerDeviceID == scopedOwnerDeviceID }
     }
 
+    private func readEvents(
+        ownerDeviceID: String?,
+        sessionIDs: Set<String>
+    ) throws -> [RuntimeChatStoredEvent] {
+        try Self.events(
+            from: fileURL,
+            ownerDeviceID: ownerDeviceID.normalizedOwnerDeviceID,
+            sessionIDs: sessionIDs
+        )
+    }
+
     private func readEvents() throws -> [RuntimeChatStoredEvent] {
         try Self.events(from: fileURL)
     }
@@ -1218,7 +1304,24 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
             let indexedEvents = try decodedEventsInAppendOrder(from: fileURL)
             try validateCompactionResolutionBindings(indexedEvents)
-            return indexedEvents.map(\.event).sorted { $0.timestamp < $1.timestamp }
+            return indexedEvents.map(\.event)
+        }
+    }
+
+    private static func events(
+        from fileURL: URL,
+        ownerDeviceID: String?,
+        sessionIDs: Set<String>
+    ) throws -> [RuntimeChatStoredEvent] {
+        try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+            let indexedEvents = try decodedEventsInAppendOrder(from: fileURL)
+            try validateCompactionResolutionBindings(indexedEvents)
+            return indexedEvents
+                .filter { indexedEvent in
+                    indexedEvent.event.ownerDeviceID == ownerDeviceID
+                        && sessionIDs.contains(indexedEvent.event.sessionID)
+                }
+                .map(\.event)
         }
     }
 
@@ -1239,7 +1342,8 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             }
             let lineData = Data(line.utf8)
             do {
-                let event = try decoder.decode(RuntimeChatStoredEvent.self, from: lineData)
+                let decoded = try decoder.decode(RuntimeChatStoredEvent.self, from: lineData)
+                let event = Self.projectingLegacyTitleForReplay(decoded)
                 try Self.validateStoredEvent(event, line: index + 1)
                 events.append((line: index + 1, event: event))
             } catch {
@@ -1390,7 +1494,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 try requireNonBlank(message.role, line: line, reason: "chat request message role is empty")
             }
         case .title:
-            try requireNonBlank(event.title, line: line, reason: "chat title is empty")
+            try requireCanonicalChatTitle(event.title, line: line)
         case .assistantDelta:
             try requireNonEmpty(event.delta, line: line, reason: "chat assistant delta is empty")
         case .reasoningDelta:
@@ -1407,6 +1511,60 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         case .done, .cancelled, .archived, .restored, .deleted:
             break
         }
+    }
+
+    private static func requireCanonicalChatTitle(_ value: String?, line: Int) throws {
+        guard let value else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat title is empty"
+            )
+        }
+        let normalized = value.precomposedStringWithCanonicalMapping
+        guard !normalized.isEmpty,
+              value.unicodeScalars.elementsEqual(normalized.unicodeScalars),
+              value == value.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.unicodeScalars.count <= RuntimeResearchNotebook.maximumTitleCharacters,
+              value.unicodeScalars.allSatisfy({
+                  !CharacterSet.controlCharacters.contains($0)
+              }) else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "chat title is not canonical or exceeds the title limit"
+            )
+        }
+    }
+
+    static func projectingLegacyTitleForReplay(
+        _ event: RuntimeChatStoredEvent
+    ) -> RuntimeChatStoredEvent {
+        guard event.kind == .title, let title = event.title, !title.isEmpty else {
+            return event
+        }
+        var projectedEvent = event
+        projectedEvent.title = legacyCanonicalChatTitleProjection(title)
+        return projectedEvent
+    }
+
+    private static func legacyCanonicalChatTitleProjection(_ value: String) -> String {
+        let controlFree = String(String.UnicodeScalarView(
+            value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        ))
+        let normalized = controlFree
+            .precomposedStringWithCanonicalMapping
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var scalarCount = 0
+        var bounded = ""
+        for character in normalized {
+            let characterScalarCount = String(character).unicodeScalars.count
+            guard scalarCount + characterScalarCount <= RuntimeResearchNotebook.maximumTitleCharacters else {
+                break
+            }
+            bounded.append(character)
+            scalarCount += characterScalarCount
+        }
+        let projected = bounded.trimmingCharacters(in: .whitespacesAndNewlines)
+        return projected.isEmpty ? defaultSessionTitle : projected
     }
 
     private static func validateCompactionMetadata(
@@ -1839,11 +1997,14 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             let chatEvents = events.filter { !$0.kind.isSessionMetadata }
             guard let last = latestEvent(from: chatEvents)
                     ?? latestEvent(from: events) else { return nil }
+            let storedTitle = latestStoredTitle(from: events)
             let messages = messages(from: events, sessionID: sessionID, limit: Int.max)
             let archivedAt = state == .archived ? latestLifecycleEvent(from: events)?.timestamp : nil
             return RuntimeChatStoredSession(
                 sessionID: sessionID,
-                title: latestStoredTitle(from: events) ?? defaultSessionTitle,
+                title: storedTitle?.title ?? defaultSessionTitle,
+                titleUpdatedAt: storedTitle?.timestamp,
+                titleRevision: storedTitle?.revision ?? 0,
                 model: last.model,
                 lastActivityAt: last.timestamp,
                 messageCount: messages.count,
@@ -1957,22 +2118,23 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         lhs.role == rhs.role && lhs.content == rhs.content
     }
 
-    private static func latestStoredTitle(from events: [RuntimeChatStoredEvent]) -> String? {
-        events
-            .enumerated()
-            .filter { $0.element.kind == .title }
-            .compactMap { offset, event -> (offset: Int, event: RuntimeChatStoredEvent, title: String)? in
-                let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard !title.isEmpty else { return nil }
-                return (offset, event, title)
-            }
-            .max { lhs, rhs in
-                if lhs.event.timestamp == rhs.event.timestamp {
-                    return lhs.offset < rhs.offset
-                }
-                return lhs.event.timestamp < rhs.event.timestamp
-            }?
-            .title
+    private static func latestStoredTitle(
+        from events: [RuntimeChatStoredEvent]
+    ) -> (title: String, timestamp: Date, revision: Int)? {
+        var latest: (event: RuntimeChatStoredEvent, title: String)?
+        var revision = 0
+        for event in events where event.kind == .title {
+            let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !title.isEmpty else { continue }
+            revision += 1
+            latest = (event, title)
+        }
+        guard let latest else { return nil }
+        return (
+            title: latest.title,
+            timestamp: latest.event.timestamp,
+            revision: revision
+        )
     }
 
     static func latestModel(from events: [RuntimeChatStoredEvent]) -> String {

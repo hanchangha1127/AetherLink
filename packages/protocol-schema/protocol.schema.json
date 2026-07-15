@@ -42,6 +42,8 @@
         "trusted_source.dismiss",
         "trusted_source.list",
         "trusted_source.revoke",
+        "research.brief.create",
+        "research.notebooks.list",
         "memory.list",
         "memory.upsert",
         "memory.delete",
@@ -193,6 +195,14 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/trustedSourceRevokePayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "research.brief.create" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/researchBriefCreatePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "research.notebooks.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/researchNotebooksListPayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "memory.list" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memoryListPayload" } } }
     },
@@ -314,6 +324,10 @@
       "type": "string",
       "pattern": "^trusted_source_[0-9a-f]{32}$"
     },
+    "researchNotebookID": {
+      "type": "string",
+      "pattern": "^research_notebook_[0-9a-f]{32}$"
+    },
     "iso8601DateTime": {
       "type": "string",
       "minLength": 1,
@@ -387,6 +401,7 @@
         "client_capabilities": {
           "type": "array",
           "items": { "$ref": "#/$defs/nonBlankString" },
+          "maxItems": 64,
           "uniqueItems": true
         },
         "transport_binding": { "$ref": "#/$defs/transportBinding" }
@@ -850,6 +865,148 @@
         }
       },
       "additionalProperties": false
+    },
+    "researchBriefCreatePayload": {
+      "type": "object",
+      "required": [
+        "notebook_id",
+        "session_id",
+        "topic",
+        "model",
+        "trusted_source_grant_ids"
+      ],
+      "properties": {
+        "notebook_id": { "$ref": "#/$defs/researchNotebookID" },
+        "session_id": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "topic": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 2048 }
+          ]
+        },
+        "model": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "locale": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 64 }
+          ]
+        },
+        "trusted_source_grant_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trustedSourceGrantID" },
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "researchNotebook": {
+      "type": "object",
+      "required": [
+        "notebook_id",
+        "session_id",
+        "title",
+        "model",
+        "source_count",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "notebook_id": { "$ref": "#/$defs/researchNotebookID" },
+        "session_id": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "title": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "model": {
+          "allOf": [
+            { "$ref": "#/$defs/nonBlankString" },
+            { "maxLength": 256 }
+          ]
+        },
+        "source_count": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "created_at": { "$ref": "#/$defs/iso8601DateTime" },
+        "updated_at": { "$ref": "#/$defs/iso8601DateTime" },
+        "archived_at": { "$ref": "#/$defs/iso8601DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "researchNotebooksListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["include_archived", "limit"],
+          "properties": {
+            "include_archived": { "type": "boolean" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["cursor"],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["notebooks"],
+          "properties": {
+            "notebooks": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/researchNotebook" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["notebooks", "snapshot_count"],
+          "properties": {
+            "notebooks": {
+              "type": "array",
+              "maxItems": 200,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/researchNotebook" }
+            },
+            "snapshot_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+            "next_cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "chatDeltaPayload": {
       "type": "object",
@@ -2146,6 +2303,7 @@
             "trusted_source_review_expired",
             "trusted_source_review_stale",
             "trusted_source_not_found",
+            "research_notebook_store_unavailable",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",

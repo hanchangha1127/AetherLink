@@ -223,6 +223,10 @@
 "%d models" = "%d 件のモデル";
 "Chat" = "チャット";
 "Embedding" = "メモリ インデックス";
+"Vision" = "ビジョン";
+"Context: %@ tokens" = "コンテキスト：%@ トークン";
+"%@, %@" = "%@、%@";
+"%@. Capabilities: %@." = "%@。機能：%@。";
 "Running" = "実行中";
 "Not running" = "未実行";
 "Unnamed model" = "名前のないモデル";

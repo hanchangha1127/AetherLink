@@ -71,6 +71,12 @@ import com.localagentbridge.android.core.protocol.RetrievalQueryResultItemPayloa
 import com.localagentbridge.android.core.protocol.RetrievalQueryResultPayload
 import com.localagentbridge.android.core.protocol.RelayAllocationAuthorizationPayload
 import com.localagentbridge.android.core.protocol.RelayAllocationChallengePayload
+import com.localagentbridge.android.core.protocol.RESEARCH_NOTEBOOKS_CAPABILITY
+import com.localagentbridge.android.core.protocol.RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY
+import com.localagentbridge.android.core.protocol.ResearchBriefCreateRequestPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebookPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebooksListRequestPayload
+import com.localagentbridge.android.core.protocol.ResearchNotebooksListResultPayload
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
@@ -118,10 +124,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -19126,7 +19135,7 @@ class RuntimeClientViewModelTest {
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatMessagesList },
             )
             fixture.viewModel.disconnect()
-            runCurrent()
+            advanceUntilIdle()
         } finally {
             Dispatchers.resetMain()
         }
@@ -19169,7 +19178,22 @@ class RuntimeClientViewModelTest {
             )
             runCurrent()
 
-            val replacementHistoryRequest = replacementChannel.sentEnvelopes.single {
+            val replacementResearchRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            replacementChannel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = replacementResearchRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = emptyList(),
+                        snapshotCount = 0,
+                    ),
+                ),
+            )
+            runCurrent()
+            val replacementHistoryRequest = replacementChannel.sentEnvelopes.last {
                 it.type == MessageType.ChatSessionsList
             }
             assertNotEquals(staleRequest.requestId, replacementHistoryRequest.requestId)
@@ -24040,7 +24064,23 @@ class RuntimeClientViewModelTest {
                 viewModel = viewModel,
                 channel = channel,
             )
-            advanceUntilIdle()
+            runCurrent()
+
+            val researchRequest = channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = researchRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = emptyList(),
+                        snapshotCount = 0,
+                    ),
+                ),
+            )
+            runCurrent()
 
             assertEquals("relay.example.test", requireNotNull(capturedRelayRoute).host)
             val sessionsRequest = channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
@@ -27573,6 +27613,3190 @@ class RuntimeClientViewModelTest {
         )
     }
 
+    @Test
+    fun runtimeClientAdvertisesResearchNotebooksCapability() {
+        assertTrue(RESEARCH_NOTEBOOKS_CAPABILITY in RUNTIME_CLIENT_CAPABILITIES)
+        assertTrue(RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY in RUNTIME_CLIENT_CAPABILITIES)
+        assertTrue(RESEARCH_NOTEBOOKS_CAPABILITY in runtimeClientCapabilities(false))
+        assertTrue(RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY in runtimeClientCapabilities(false))
+        assertEquals(1, RUNTIME_CLIENT_CAPABILITIES.count { it == RESEARCH_NOTEBOOKS_CAPABILITY })
+        assertEquals(
+            1,
+            RUNTIME_CLIENT_CAPABILITIES.count { it == RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY },
+        )
+    }
+
+    @Test
+    fun routeRefreshEnabledRuntimeCapabilitiesAreUniqueAndWithinHelloLimit() {
+        val capabilities = runtimeClientCapabilities(authenticatedRouteRefreshEnabled = true)
+
+        assertEquals(capabilities.size, capabilities.distinct().size)
+        assertTrue(capabilities.size <= 64)
+        assertTrue(MessageType.RouteRefresh in capabilities)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authenticatedRuntimeRequestsCanonicalResearchNotebookListAndRejectsUncorrelatedOrMalformedResults() =
+        runTest {
+            val mainDispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(mainDispatcher)
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ResearchNotebooksList
+                }
+                val requestPayload = json.decodeFromJsonElement(
+                    ResearchNotebooksListRequestPayload.serializer(),
+                    request.payload,
+                )
+                assertTrue(requestPayload.includeArchived)
+                assertEquals(100, requestPayload.limit)
+                assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ResearchNotebooksList,
+                        requestId = "unsolicited-research-list",
+                        serializer = ResearchNotebooksListResultPayload.serializer(),
+                        payload = ResearchNotebooksListResultPayload(
+                            notebooks = listOf(researchNotebookPayload()),
+                        ),
+                    ),
+                )
+                runCurrent()
+                assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ResearchNotebooksList,
+                        requestId = request.requestId,
+                        payload = buildJsonObject {
+                            put("notebooks", JsonArray(emptyList()))
+                            put("unexpected", JsonPrimitive(true))
+                        },
+                    ),
+                )
+                runCurrent()
+                assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+                assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+
+                fixture.viewModel.refreshResearchNotebooks()
+                runCurrent()
+                val retry = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ResearchNotebooksList
+                }
+                val activeNotebook = researchNotebookPayload(1)
+                val archivedNotebook = researchNotebookPayload(2).copy(
+                    archivedAt = "2026-07-14T00:02:00Z",
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ResearchNotebooksList,
+                        requestId = retry.requestId,
+                        serializer = ResearchNotebooksListResultPayload.serializer(),
+                        payload = ResearchNotebooksListResultPayload(
+                            listOf(activeNotebook, archivedNotebook),
+                        ),
+                    ),
+                )
+                runCurrent()
+                assertEquals(
+                    listOf(activeNotebook, archivedNotebook),
+                    fixture.viewModel.researchNotebooks.value.notebooks,
+                )
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeResearchNotebookSyncUsesShared201PaginationAndPublishesOnlyTerminalSnapshot() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+                val baseline = researchNotebookPayload(9_000)
+                completeResearchNotebookList(fixture, listOf(baseline))
+                val sharedFixture = authoritativeResearchNotebookSyncWireFixture()
+                assertEquals(
+                    RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY,
+                    sharedFixture.getValue("capability").jsonPrimitive.content,
+                )
+                val pagination = sharedFixture
+                    .getValue("pagination")
+                    .jsonObject
+                val pages = pagination.getValue("pages").jsonArray
+                val series = sharedFixture.getValue("notebook_series").jsonObject
+                val totalCount = series.getValue("count").jsonPrimitive.int
+                val notebookIdPrefix = series.getValue("notebook_id_prefix").jsonPrimitive.content
+                val notebookIdHexWidth = series.getValue("notebook_id_hex_width").jsonPrimitive.int
+                val sessionIdPrefix = series.getValue("session_id_prefix").jsonPrimitive.content
+                val sessionIdWidth = series.getValue("session_id_width").jsonPrimitive.int
+                val titlePrefix = series.getValue("title_prefix").jsonPrimitive.content
+                val model = series.getValue("model").jsonPrimitive.content
+                val sourceCount = series.getValue("source_count").jsonPrimitive.int
+                val createdAt = series.getValue("created_at").jsonPrimitive.content
+                val baseUpdatedAt = Instant.parse(
+                    series.getValue("base_updated_at").jsonPrimitive.content,
+                )
+                val updatedAtStepSeconds = series
+                    .getValue("updated_at_step_seconds")
+                    .jsonPrimitive
+                    .content
+                    .toLong()
+                val notebooks = (totalCount - 1 downTo 0).map { index ->
+                    ResearchNotebookPayload(
+                        notebookId = notebookIdPrefix +
+                            index.toString(16).padStart(notebookIdHexWidth, '0'),
+                        sessionId = sessionIdPrefix + index.toString().padStart(sessionIdWidth, '0'),
+                        title = titlePrefix + index,
+                        model = model,
+                        sourceCount = sourceCount,
+                        createdAt = createdAt,
+                        updatedAt = baseUpdatedAt
+                            .plusSeconds(index * updatedAtStepSeconds)
+                            .toString(),
+                    )
+                }
+
+                assertEquals(201, notebooks.size)
+                assertEquals(listOf(100, 100, 1), pages.map { page ->
+                    page.jsonObject.getValue("count").jsonPrimitive.int
+                })
+                fixture.viewModel.refreshResearchNotebooks()
+                runCurrent()
+
+                pages.forEachIndexed { pageIndex, pageElement ->
+                    val page = pageElement.jsonObject
+                    val request = fixture.channel.sentEnvelopes.last {
+                        it.type == MessageType.ResearchNotebooksList
+                    }
+                    if (pageIndex == 0) {
+                        assertEquals(setOf("include_archived", "limit"), request.payload.keys)
+                        assertEquals(JsonPrimitive(true), request.payload["include_archived"])
+                        assertEquals(JsonPrimitive(100), request.payload["limit"])
+                    } else {
+                        assertEquals(setOf("cursor"), request.payload.keys)
+                        assertEquals(
+                            pages[pageIndex - 1].jsonObject.getValue("next_cursor"),
+                            request.payload["cursor"],
+                        )
+                    }
+                    val offset = page.getValue("offset").jsonPrimitive.int
+                    val count = page.getValue("count").jsonPrimitive.int
+                    fixture.channel.enqueue(
+                        envelope(
+                            type = MessageType.ResearchNotebooksList,
+                            requestId = request.requestId,
+                            serializer = ResearchNotebooksListResultPayload.serializer(),
+                            payload = ResearchNotebooksListResultPayload(
+                                notebooks = notebooks.subList(offset, offset + count),
+                                snapshotCount = page.getValue("snapshot_count").jsonPrimitive.int,
+                                nextCursor = page["next_cursor"]?.jsonPrimitive?.content,
+                            ),
+                        ),
+                    )
+                    runCurrent()
+
+                    if (pageIndex < pages.lastIndex) {
+                        assertEquals(listOf(baseline), fixture.viewModel.researchNotebooks.value.notebooks)
+                        assertEquals(
+                            setOf(baseline.sessionId),
+                            fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds"),
+                        )
+                        assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+                    }
+                }
+
+                assertEquals(notebooks, fixture.viewModel.researchNotebooks.value.notebooks)
+                assertEquals(
+                    notebooks.mapTo(linkedSetOf(), ResearchNotebookPayload::sessionId),
+                    fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds"),
+                )
+                assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+                assertTrue(
+                    fixture.viewModel.privateField<Boolean>(
+                        "researchNotebooksAuthoritativeSyncSupported",
+                    ) == true,
+                )
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun successfulResearchNotebookListsPublishLegacyAndCapableTerminalSnapshotsAtomically() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                val baseline = researchNotebookPayload(9_050)
+                completeResearchNotebookList(fixture, listOf(baseline), capable = false)
+                val emissions = mutableListOf<RuntimeResearchNotebooksUiState>()
+                val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    fixture.viewModel.researchNotebooks.collect(emissions::add)
+                }
+
+                suspend fun assertAtomicCompletion(
+                    notebooks: List<ResearchNotebookPayload>,
+                    capable: Boolean,
+                ) {
+                    val previousNotebooks = fixture.viewModel.researchNotebooks.value.notebooks
+                    fixture.viewModel.refreshResearchNotebooks()
+                    runCurrent()
+                    assertEquals(previousNotebooks, fixture.viewModel.researchNotebooks.value.notebooks)
+                    assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+                    emissions.clear()
+
+                    respondToPendingResearchNotebookList(
+                        fixture,
+                        ResearchNotebooksListResultPayload(
+                            notebooks = notebooks,
+                            snapshotCount = notebooks.size.takeIf { capable },
+                        ),
+                    )
+
+                    assertEquals(
+                        listOf(
+                            RuntimeResearchNotebooksUiState(
+                                notebooks = notebooks,
+                                isLoading = false,
+                            ),
+                        ),
+                        emissions,
+                    )
+                }
+
+                assertAtomicCompletion(listOf(researchNotebookPayload(9_051)), capable = false)
+                assertAtomicCompletion(listOf(researchNotebookPayload(9_052)), capable = true)
+                collector.cancel()
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeResearchNotebookZeroSnapshotClearsPublishedAndTransientAuthority() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val notebook = researchNotebookPayload(9_100)
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(notebook),
+                    snapshotCount = 1,
+                ),
+            )
+            assertTrue(fixture.viewModel.selectChatSession(notebook.sessionId))
+            runCurrent()
+            val chatRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = emptyList(),
+                    snapshotCount = 0,
+                ),
+            )
+
+            assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+            assertTrue(
+                fixture.viewModel.privateField<Set<String>>(
+                    "researchNotebookSessionIds",
+                ).orEmpty().isEmpty(),
+            )
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertNull(fixture.viewModel.privateField<Any>("pendingChatMessagesRequestId"))
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList } >
+                    chatRefreshCount,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookLegacyListRemainsCompatibleUntilCapableModeThenDowngradeIsRejected() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                leaveResearchNotebooksPending = true,
+            )
+            val heldOrdinarySessionId = "legacy-must-not-unlock-chat"
+            val chatRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = chatRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(runtimeHistorySummary(heldOrdinarySessionId, messageCount = 0)),
+                        snapshotCount = 1,
+                    ),
+                ),
+            )
+            runCurrent()
+            val legacyNotebook = researchNotebookPayload(9_200)
+            completeResearchNotebookList(fixture, listOf(legacyNotebook), capable = false)
+            assertEquals(listOf(legacyNotebook), fixture.viewModel.researchNotebooks.value.notebooks)
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertNotNull(fixture.viewModel.privateField<Any>("heldRuntimeChatSessionsSnapshot"))
+            assertFalse(
+                fixture.viewModel.privateField<Boolean>(
+                    "hasResolvedAuthoritativeResearchNotebookList",
+                ) == true,
+            )
+            assertFalse(
+                fixture.viewModel.privateField<Boolean>(
+                    "researchNotebooksAuthoritativeSyncSupported",
+                ) == true,
+            )
+
+            val capableNotebook = researchNotebookPayload(9_201)
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(capableNotebook),
+                    snapshotCount = 1,
+                ),
+            )
+            assertEquals(listOf(capableNotebook), fixture.viewModel.researchNotebooks.value.notebooks)
+            assertEquals(
+                listOf(heldOrdinarySessionId),
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertEquals(
+                listOf(heldOrdinarySessionId),
+                fixture.localStore.data.sessions.map { it.id },
+            )
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(notebooks = emptyList()),
+            )
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(listOf(capableNotebook), fixture.viewModel.researchNotebooks.value.notebooks)
+            assertEquals(
+                setOf(capableNotebook.sessionId),
+                fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds"),
+            )
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableResearchNotebookSyncRejectsDuplicateCountCursorAndOrderingFailures() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val baseline = researchNotebookPayload(9_300)
+            completeResearchNotebookList(fixture, listOf(baseline))
+
+            suspend fun begin(payload: ResearchNotebooksListResultPayload) {
+                fixture.viewModel.refreshResearchNotebooks()
+                runCurrent()
+                respondToPendingResearchNotebookList(fixture, payload)
+            }
+
+            fun assertRejectedWithBaseline(detail: String) {
+                assertEquals(detail, "invalid_payload", fixture.viewModel.state.value.error?.code)
+                assertEquals(
+                    detail,
+                    listOf(baseline),
+                    fixture.viewModel.researchNotebooks.value.notebooks,
+                )
+                assertEquals(
+                    detail,
+                    setOf(baseline.sessionId),
+                    fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds"),
+                )
+                assertFalse(detail, fixture.viewModel.researchNotebooks.value.isLoading)
+            }
+
+            val duplicateNotebook = researchNotebookPayload(100)
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(duplicateNotebook),
+                    snapshotCount = 2,
+                    nextCursor = "duplicate-notebook",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(
+                        duplicateNotebook.copy(
+                            sessionId = "research_session_${"a".repeat(32)}",
+                        ),
+                    ),
+                    snapshotCount = 2,
+                ),
+            )
+            assertRejectedWithBaseline("duplicate notebook ID")
+
+            val duplicateSession = researchNotebookPayload(110)
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(duplicateSession),
+                    snapshotCount = 2,
+                    nextCursor = "duplicate-session",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(
+                        researchNotebookPayload(111).copy(sessionId = duplicateSession.sessionId),
+                    ),
+                    snapshotCount = 2,
+                ),
+            )
+            assertRejectedWithBaseline("duplicate session ID")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(120)),
+                    snapshotCount = 2,
+                    nextCursor = "count-drift",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(121)),
+                    snapshotCount = 3,
+                ),
+            )
+            assertRejectedWithBaseline("snapshot_count drift")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(130)),
+                    snapshotCount = 2,
+                    nextCursor = "count-overflow",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(
+                        researchNotebookPayload(131),
+                        researchNotebookPayload(132),
+                    ),
+                    snapshotCount = 2,
+                ),
+            )
+            assertRejectedWithBaseline("snapshot_count overflow")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = emptyList(),
+                    snapshotCount = 1,
+                    nextCursor = "empty-page",
+                ),
+            )
+            assertRejectedWithBaseline("empty nonterminal page")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(140)),
+                    snapshotCount = 3,
+                    nextCursor = "cursor-loop",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(141)),
+                    snapshotCount = 3,
+                    nextCursor = "cursor-loop",
+                ),
+            )
+            assertRejectedWithBaseline("cursor loop")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(151)),
+                    snapshotCount = 2,
+                    nextCursor = "bad-order",
+                ),
+            )
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(150)),
+                    snapshotCount = 2,
+                ),
+            )
+            assertRejectedWithBaseline("cross-page ordering")
+
+            begin(
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(160)),
+                    snapshotCount = 2,
+                ),
+            )
+            assertRejectedWithBaseline("terminal count mismatch")
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun capableResearchNotebookSyncStopsAt100PageBudgetWithoutPublishing() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val baseline = researchNotebookPayload(9_400)
+            completeResearchNotebookList(fixture, listOf(baseline))
+            val requestCountBefore = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+
+            repeat(100) { page ->
+                respondToPendingResearchNotebookList(
+                    fixture,
+                    ResearchNotebooksListResultPayload(
+                        notebooks = listOf(researchNotebookPayload(1_000 + page)),
+                        snapshotCount = 101,
+                        nextCursor = "page-${page + 1}",
+                    ),
+                )
+            }
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(listOf(baseline), fixture.viewModel.researchNotebooks.value.notebooks)
+            assertEquals(
+                requestCountBefore + 100,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList },
+            )
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookListTimeoutClearsLoadingAndAllowsRetry() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                leaveResearchNotebooksPending = true,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+
+            advanceTimeBy(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS)
+            runCurrent()
+
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val retry = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertNotEquals(initialRequest.requestId, retry.requestId)
+            assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = retry.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun staleResearchNotebookTimeoutCannotClearNewerAuthorityRequest() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                leaveResearchNotebooksPending = true,
+            )
+            val initialRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            advanceTimeBy(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS - 1)
+
+            val initialAuthority = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            fixture.viewModel.setPrivateField("pendingResearchNotebooksListRun", null)
+            fixture.viewModel.setPrivateField("researchNotebooksListRequestTimeoutJob", null)
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                initialAuthority + 1,
+            )
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertNotEquals(initialRequest.requestId, currentRequest.requestId)
+
+            advanceTimeBy(1)
+            runCurrent()
+
+            assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = currentRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRunRejectsStaleChannelConnectionAuthorityAndAuthenticationResponses() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+                fixture.viewModel.refreshResearchNotebooks()
+                runCurrent()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ResearchNotebooksList
+                }
+                val notebook = researchNotebookPayload(9_500)
+                val response = envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = request.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = listOf(notebook),
+                        snapshotCount = 1,
+                    ),
+                )
+
+                val replacementChannel = ScriptedRuntimeProtocolChannel()
+                fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+                fixture.channel.enqueue(response)
+                runCurrent()
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+                fixture.viewModel.setPrivateField("activeChannel", fixture.channel)
+
+                val connectionGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+                )
+                fixture.viewModel.setPrivateField(
+                    "activeConnectionGeneration",
+                    connectionGeneration + 1,
+                )
+                fixture.channel.enqueue(response)
+                runCurrent()
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+                fixture.viewModel.setPrivateField("activeConnectionGeneration", connectionGeneration)
+
+                val authorityGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+                )
+                fixture.viewModel.setPrivateField(
+                    "runtimeSessionAuthorityGeneration",
+                    authorityGeneration + 1,
+                )
+                fixture.channel.enqueue(response)
+                runCurrent()
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+                fixture.viewModel.setPrivateField("runtimeSessionAuthorityGeneration", authorityGeneration)
+
+                fixture.viewModel.setPrivateField("isSessionAuthenticated", false)
+                fixture.channel.enqueue(response)
+                runCurrent()
+                assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+                fixture.viewModel.setPrivateField("isSessionAuthenticated", true)
+
+                fixture.channel.enqueue(response)
+                runCurrent()
+                assertEquals(listOf(notebook), fixture.viewModel.researchNotebooks.value.notebooks)
+                assertNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookContinuationTimeoutIsPerRequestAndRejectsLateTerminalPage() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val baseline = researchNotebookPayload(9_600)
+            completeResearchNotebookList(fixture, listOf(baseline))
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            advanceTimeBy(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS - 1)
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(researchNotebookPayload(200)),
+                    snapshotCount = 2,
+                    nextCursor = "continuation-timeout",
+                ),
+            )
+            val continuation = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertEquals(setOf("cursor"), continuation.payload.keys)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertTrue(fixture.viewModel.researchNotebooks.value.isLoading)
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+
+            advanceTimeBy(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS - 1)
+            runCurrent()
+            assertFalse(fixture.viewModel.researchNotebooks.value.isLoading)
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            assertEquals(listOf(baseline), fixture.viewModel.researchNotebooks.value.notebooks)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = continuation.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = listOf(researchNotebookPayload(201)),
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertEquals(listOf(baseline), fixture.viewModel.researchNotebooks.value.notebooks)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchBriefCreateAndCappedRefreshKeepActiveTransientSessionWithoutPersistingResearchContent() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(model),
+                selectedModelId = model.id,
+                leaveResearchNotebooksPending = true,
+            )
+            completeResearchNotebookList(fixture, capable = false)
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+            fixture.viewModel.refreshTrustedSources()
+            runCurrent()
+            val sourcesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = sourcesRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            runCurrent()
+
+            assertFalse(
+                fixture.viewModel.createResearchBrief(
+                    topic = "   ",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Duplicate source",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId, grantId),
+                ),
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertFalse(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Stale source",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(
+                        "trusted_source_ffffffffffffffffffffffffffffffff",
+                    ),
+                ),
+            )
+            assertEquals("trusted_source_not_found", fixture.viewModel.state.value.error?.code)
+
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Compare the approved source",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                    locale = "en",
+                ),
+            )
+            runCurrent()
+            val createEnvelope = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+            val createPayload = json.decodeFromJsonElement(
+                ResearchBriefCreateRequestPayload.serializer(),
+                createEnvelope.payload,
+            )
+            assertTrue(Regex("^research_notebook_[0-9a-f]{32}$").matches(createPayload.notebookId))
+            assertTrue(Regex("^research_session_[0-9a-f]{32}$").matches(createPayload.sessionId))
+            assertEquals("Compare the approved source", createPayload.topic)
+            assertEquals(model.id, createPayload.model)
+            assertEquals(listOf(grantId), createPayload.trustedSourceGrantIds)
+            assertEquals(createPayload.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals(1, fixture.viewModel.state.value.messages.count {
+                it.role == "user" && it.content == createPayload.topic
+            })
+            assertFalse(fixture.localStore.data.toString().contains(createPayload.topic))
+            assertFalse(fixture.localStore.data.toString().contains(grantId))
+            assertFalse(fixture.localStore.data.toString().contains(createPayload.sessionId))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = "unsolicited-create-stream",
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "ignored"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = createEnvelope.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "Research answer"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = createEnvelope.requestId,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(finishReason = "stop"),
+                ),
+            )
+            runCurrent()
+            val completed = fixture.viewModel.state.value
+            assertFalse(completed.isStreaming)
+            assertEquals("Research answer", completed.messages.last().content)
+            assertFalse(completed.messages.any { it.content.contains("ignored") })
+            assertFalse(fixture.localStore.data.toString().contains("Research answer"))
+
+            val cappedRefresh = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            val otherNotebooks = (1..100).map(::researchNotebookPayload)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = cappedRefresh.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(otherNotebooks),
+                ),
+            )
+            runCurrent()
+            assertEquals(otherNotebooks, fixture.viewModel.researchNotebooks.value.notebooks)
+            assertTrue(
+                fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds")
+                    .orEmpty()
+                    .contains(createPayload.sessionId),
+            )
+
+            fixture.viewModel.updateChatInput("Follow up")
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            val followUp = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val followUpPayload = json.decodeFromJsonElement(ChatSendPayload.serializer(), followUp.payload)
+            assertEquals(createPayload.sessionId, followUpPayload.sessionId)
+            assertTrue(followUpPayload.trustedSourceGrantIds.isEmpty())
+            assertFalse(fixture.localStore.data.toString().contains("Follow up"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val providerManagedModel = textChatModel().copy(
+                id = "cloud:managed-research-chat",
+                name = "Managed Research Chat",
+                source = "cloud",
+            )
+            val unknownSourceModel = textChatModel().copy(
+                id = "unknown:research-chat",
+                name = "Unknown Source Research Chat",
+                source = null,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(providerManagedModel, unknownSourceModel),
+            )
+            val grantId = prepareResearchBriefTrustedSource(fixture)
+            val requestsBefore = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchBriefCreate
+            }
+
+            listOf(providerManagedModel, unknownSourceModel).forEach { model ->
+                assertFalse(
+                    fixture.viewModel.createResearchBrief(
+                        topic = "Reject nonlocal model ${model.id}",
+                        model = model.id,
+                        selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                    ),
+                )
+                assertEquals("select_chat_model", fixture.viewModel.state.value.error?.code)
+            }
+            runCurrent()
+
+            assertEquals(
+                requestsBefore,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchBriefCreate },
+            )
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertNull(fixture.viewModel.state.value.activeRequestId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeZeroNotebookSnapshotPreservesPendingCreateUntilFreshPostStreamSnapshot() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val model = textChatModel()
+                val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+                val grantId = prepareResearchBriefTrustedSource(fixture)
+
+                assertTrue(
+                    fixture.viewModel.createResearchBrief(
+                        topic = "Pending authoritative reconciliation",
+                        model = model.id,
+                        selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                    ),
+                )
+                runCurrent()
+                val createRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ResearchBriefCreate
+                }
+                val createPayload = json.decodeFromJsonElement(
+                    ResearchBriefCreateRequestPayload.serializer(),
+                    createRequest.payload,
+                )
+
+                fixture.viewModel.refreshResearchNotebooks()
+                runCurrent()
+                respondToPendingResearchNotebookList(
+                    fixture,
+                    ResearchNotebooksListResultPayload(
+                        notebooks = emptyList(),
+                        snapshotCount = 0,
+                    ),
+                )
+
+                assertTrue(
+                    createPayload.sessionId in fixture.viewModel.privateField<Set<String>>(
+                        "researchNotebookSessionIds",
+                    ).orEmpty(),
+                )
+                assertTrue(
+                    fixture.viewModel.privateField<Map<String, *>>(
+                        "transientResearchMessagesBySessionId",
+                    ).orEmpty().containsKey(createPayload.sessionId),
+                )
+                assertEquals(createPayload.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+                assertEquals(createRequest.requestId, fixture.viewModel.state.value.activeRequestId)
+                assertTrue(fixture.viewModel.state.value.isStreaming)
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatDelta,
+                        requestId = createRequest.requestId,
+                        serializer = ChatDeltaPayload.serializer(),
+                        payload = ChatDeltaPayload(delta = "Transient research result"),
+                    ),
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatDone,
+                        requestId = createRequest.requestId,
+                        serializer = ChatDonePayload.serializer(),
+                        payload = ChatDonePayload(finishReason = "stop"),
+                    ),
+                )
+                runCurrent()
+
+                val freshNotebook = researchNotebookPayload().copy(sessionId = createPayload.sessionId)
+                respondToPendingResearchNotebookList(
+                    fixture,
+                    ResearchNotebooksListResultPayload(
+                        notebooks = listOf(freshNotebook),
+                        snapshotCount = 1,
+                    ),
+                )
+
+                assertEquals(listOf(freshNotebook), fixture.viewModel.researchNotebooks.value.notebooks)
+                assertEquals(
+                    "Transient research result",
+                    fixture.viewModel.state.value.messages.last().content,
+                )
+                assertFalse(fixture.localStore.data.toString().contains(createPayload.sessionId))
+                assertFalse(fixture.localStore.data.toString().contains("Transient research result"))
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchBriefCompletionQueuesFreshNotebookListAndSkipsStaleTerminalSnapshot() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val model = textChatModel()
+            val baseline = researchNotebookPayload(50)
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+            completeResearchNotebookList(fixture, listOf(baseline))
+            val grantId = prepareResearchBriefTrustedSource(fixture)
+
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Queue a post-completion notebook reconciliation",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            runCurrent()
+            val createRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+            val createPayload = json.decodeFromJsonElement(
+                ResearchBriefCreateRequestPayload.serializer(),
+                createRequest.payload,
+            )
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val staleListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = createRequest.requestId,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(finishReason = "stop"),
+                ),
+            )
+            runCurrent()
+
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun"))
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = staleListRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = emptyList(),
+                        snapshotCount = 0,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(listOf(baseline), fixture.viewModel.researchNotebooks.value.notebooks)
+            val freshListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertNotEquals(staleListRequest.requestId, freshListRequest.requestId)
+            val completedNotebook = researchNotebookPayload(51).copy(
+                sessionId = createPayload.sessionId,
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = freshListRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = listOf(baseline, completedNotebook),
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                listOf(baseline, completedNotebook),
+                fixture.viewModel.researchNotebooks.value.notebooks,
+            )
+            assertEquals(createPayload.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+            assertFalse(fixture.localStore.data.toString().contains(createPayload.sessionId))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun emptyResearchBriefCreateDeltaDoesNotResetIdleTimeout() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+            val grantId = prepareResearchBriefTrustedSource(fixture)
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Empty delta must not extend the stream",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            runCurrent()
+            val createRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+            val messagesBeforeEmptyDelta = fixture.viewModel.state.value.messages
+
+            advanceTimeBy(RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS - 1)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = createRequest.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = ""),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = createRequest.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "   "),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(messagesBeforeEmptyDelta, fixture.viewModel.state.value.messages)
+            assertTrue(fixture.viewModel.state.value.isStreaming)
+            advanceTimeBy(1)
+            runCurrent()
+
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertNull(fixture.viewModel.state.value.activeRequestId)
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchBriefCreate"))
+            assertEquals("runtime_error", fixture.viewModel.state.value.error?.code)
+            fixture.viewModel.disconnect()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchBriefCreateIdleTimeoutResetsOnMatchingDeltaThenClosesTransientState() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+            val grantId = prepareResearchBriefTrustedSource(fixture)
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Bound the idle stream",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            runCurrent()
+            val createRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+            val sessionId = json.decodeFromJsonElement(
+                ResearchBriefCreateRequestPayload.serializer(),
+                createRequest.payload,
+            ).sessionId
+
+            advanceTimeBy(RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS - 1)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = createRequest.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "progress"),
+                ),
+            )
+            runCurrent()
+            assertEquals("progress", fixture.viewModel.state.value.messages.last().content)
+            advanceTimeBy(RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS - 1)
+            runCurrent()
+            assertTrue(fixture.viewModel.state.value.isStreaming)
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingResearchBriefCreate"))
+
+            advanceTimeBy(1)
+            runCurrent()
+
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertNull(fixture.viewModel.state.value.activeRequestId)
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchBriefCreate"))
+            assertNull(fixture.viewModel.privateField<Any>("researchBriefCreateIdleTimeoutJob"))
+            assertFalse(
+                sessionId in fixture.viewModel.privateField<Set<String>>(
+                    "researchNotebookSessionIds",
+                ).orEmpty(),
+            )
+            assertEquals("runtime_error", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.localStore.data.toString().contains(sessionId))
+            assertFalse(fixture.localStore.data.toString().contains("progress"))
+            fixture.viewModel.disconnect()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun lateResearchCreateTimeoutErrorAndDeltaCannotMutateStateAfterAuthorityChange() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val model = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+            val grantId = prepareResearchBriefTrustedSource(fixture)
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Old authority stream",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            runCurrent()
+            val createRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val authorityRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = authorityRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "pairing_required",
+                        message = "Rotate authority",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertNull(fixture.viewModel.privateField<Any>("pendingResearchBriefCreate"))
+
+            val newAuthorityState = fixture.viewModel.state.value.copy(
+                activeChatSessionId = "new-authority-session",
+                messages = listOf(RuntimeChatMessage(role = "assistant", content = "New authority state")),
+                activeRequestId = "new-authority-request",
+                isStreaming = true,
+                error = null,
+            )
+            fixture.viewModel.replaceStateForTest { newAuthorityState }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    requestId = createRequest.requestId,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(delta = "late delta"),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = createRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "late error",
+                        retryable = false,
+                    ),
+                ),
+            )
+            advanceTimeBy(RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS + 1)
+            runCurrent()
+
+            assertEquals(newAuthorityState, fixture.viewModel.state.value)
+            assertNull(fixture.viewModel.privateField<Any>("researchBriefCreateIdleTimeoutJob"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun malformedOrUnknownFieldResearchCreateErrorClosesProvisionalStreamWithoutRevokingAuthentication() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val model = textChatModel()
+                val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(model))
+                completeResearchNotebookList(fixture)
+                val anchorId = "source_anchor_aabbccddeeff0011"
+                val citationId = "citation_aabbccddeeff00112233445566778899"
+                val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+                fixture.viewModel.refreshTrustedSources()
+                runCurrent()
+                val sourcesRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.TrustedSourceList
+                }
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.TrustedSourceList,
+                        requestId = sourcesRequest.requestId,
+                        payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                    ),
+                )
+                runCurrent()
+
+                val rejectedPayloads = listOf(
+                    buildJsonObject {
+                        put("code", "invalid_payload")
+                        put("message", "Unknown metadata must close the payload")
+                        put("retryable", false)
+                        put("unexpected", true)
+                    },
+                    buildJsonObject {
+                        put("code", "invalid_payload")
+                        put("message", "Missing retryable must close the payload")
+                    },
+                )
+                rejectedPayloads.forEachIndexed { index, rejectedPayload ->
+                    assertTrue(
+                        fixture.viewModel.createResearchBrief(
+                            topic = "Close provisional brief $index",
+                            model = model.id,
+                            selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                        ),
+                    )
+                    runCurrent()
+                    val createRequest = fixture.channel.sentEnvelopes.last {
+                        it.type == MessageType.ResearchBriefCreate
+                    }
+                    val provisionalSessionId = json.decodeFromJsonElement(
+                        ResearchBriefCreateRequestPayload.serializer(),
+                        createRequest.payload,
+                    ).sessionId
+                    fixture.channel.enqueue(
+                        ProtocolEnvelope(
+                            type = MessageType.Error,
+                            requestId = createRequest.requestId,
+                            payload = rejectedPayload,
+                        ),
+                    )
+                    runCurrent()
+
+                    assertNull(fixture.viewModel.privateField<String>("activeResearchBriefSessionId"))
+                    assertNull(fixture.viewModel.privateField<Any>("pendingResearchBriefCreate"))
+                    assertFalse(
+                        provisionalSessionId in fixture.viewModel.privateField<Set<String>>(
+                            "researchNotebookSessionIds",
+                        ).orEmpty(),
+                    )
+                    assertNull(fixture.viewModel.state.value.activeRequestId)
+                    assertFalse(fixture.viewModel.state.value.isStreaming)
+                    assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+                    assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+                    assertFalse(fixture.localStore.data.toString().contains(provisionalSessionId))
+                }
+                fixture.viewModel.disconnect()
+                runCurrent()
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun normalChatNavigationLeavesActiveTransientResearchSession() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = textChatModel().id,
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "normal-session",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Normal history")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Normal draft", sessionId = "normal-session")
+                .withActiveSession("normal-session")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+            val notebook = researchNotebookPayload()
+            completeResearchNotebookList(fixture, listOf(notebook))
+
+            assertTrue(fixture.viewModel.openPreviousChat(notebook.sessionId))
+            runCurrent()
+            assertEquals(notebook.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+
+            fixture.viewModel.startNewChat()
+            runCurrent()
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+
+            assertTrue(fixture.viewModel.openPreviousChat(notebook.sessionId))
+            runCurrent()
+            assertTrue(fixture.viewModel.openPreviousChat("normal-session"))
+            runCurrent()
+            assertEquals("normal-session", fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("Normal history", fixture.viewModel.state.value.messages.single().content)
+            assertEquals("Normal draft", fixture.viewModel.state.value.chatInput)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun failedResearchCreateRestoresPersistedChatAndIgnoresDelayedPairingError() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val model = textChatModel()
+            val initialData = PersistedRuntimeData(
+                selectedModelId = model.id,
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "normal-session",
+                    messages = listOf(RuntimeChatMessage(role = "assistant", content = "Persisted answer")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Persisted draft", sessionId = "normal-session")
+                .withActiveSession("normal-session")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(model),
+                initialData = initialData,
+            )
+            completeResearchNotebookList(fixture)
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+            fixture.viewModel.refreshTrustedSources()
+            runCurrent()
+            val sourcesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.TrustedSourceList
+            }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = sourcesRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            runCurrent()
+
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Fail this provisional brief",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            runCurrent()
+            val createRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchBriefCreate
+            }
+            val provisionalSessionId = json.decodeFromJsonElement(
+                ResearchBriefCreateRequestPayload.serializer(),
+                createRequest.payload,
+            ).sessionId
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = createRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "Rejected research brief",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            val restored = fixture.viewModel.state.value
+            assertEquals("normal-session", restored.activeChatSessionId)
+            assertEquals("Persisted answer", restored.messages.single().content)
+            assertEquals("Persisted draft", restored.chatInput)
+            assertFalse(restored.isStreaming)
+            assertEquals("invalid_payload", restored.error?.code)
+            assertFalse(
+                fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds")
+                    .orEmpty()
+                    .contains(provisionalSessionId),
+            )
+            assertFalse(fixture.localStore.data.toString().contains(provisionalSessionId))
+            completeResearchNotebookList(fixture)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = createRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "pairing_required",
+                        message = "Delayed stale error",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertFalse(fixture.viewModel.state.value.runtimeStatus == "pairing_required")
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("normal-session", fixture.viewModel.state.value.activeChatSessionId)
+
+            fixture.channel.sendFailure = IllegalStateException("research create send failed")
+            assertTrue(
+                fixture.viewModel.createResearchBrief(
+                    topic = "Fail before the request reaches the runtime",
+                    model = model.id,
+                    selectedApprovedTrustedSourceGrantIds = listOf(grantId),
+                ),
+            )
+            val sendFailureSessionId = fixture.viewModel.state.value.activeChatSessionId
+            assertNotNull(sendFailureSessionId)
+            assertNotEquals("normal-session", sendFailureSessionId)
+            runCurrent()
+            fixture.channel.sendFailure = null
+
+            val sendFailureRestored = fixture.viewModel.state.value
+            assertEquals("normal-session", sendFailureRestored.activeChatSessionId)
+            assertEquals("Persisted answer", sendFailureRestored.messages.single().content)
+            assertEquals("Persisted draft", sendFailureRestored.chatInput)
+            assertEquals("send_failed", sendFailureRestored.error?.code)
+            assertFalse(
+                fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds")
+                    .orEmpty()
+                    .contains(sendFailureSessionId),
+            )
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+            fixture.viewModel.clearForTest()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSnapshotWithArbitraryResearchSessionIdWaitsForCapableNotebookAuthority() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val researchSessionId = "opaque-notebook-backing-session"
+                val ordinarySessionId = "ordinary-runtime-session"
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    leaveResearchNotebooksPending = true,
+                )
+                val initialChatList = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = initialChatList.requestId,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(researchSessionId, messageCount = 1),
+                                runtimeHistorySummary(ordinarySessionId, messageCount = 0),
+                            ),
+                            snapshotCount = 2,
+                        ),
+                    ),
+                )
+                runCurrent()
+                assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+                assertTrue(fixture.localStore.data.sessions.isEmpty())
+                assertNotNull(fixture.viewModel.privateField<Any>("heldRuntimeChatSessionsSnapshot"))
+
+                val notebook = researchNotebookPayload().copy(sessionId = researchSessionId)
+                completeResearchNotebookList(fixture, listOf(notebook))
+                runCurrent()
+
+                assertEquals(listOf(notebook), fixture.viewModel.researchNotebooks.value.notebooks)
+                assertEquals(listOf(ordinarySessionId), fixture.viewModel.state.value.chatSessions.map { it.id })
+                assertEquals(listOf(ordinarySessionId), fixture.localStore.data.sessions.map { it.id })
+                assertFalse(fixture.localStore.data.toString().contains(researchSessionId))
+                assertNull(fixture.viewModel.privateField<Any>("heldRuntimeChatSessionsSnapshot"))
+                assertTrue(
+                    fixture.viewModel.privateField<Boolean>(
+                        "hasResolvedAuthoritativeResearchNotebookList",
+                    ) == true,
+                )
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun heldChatSnapshotFromPriorAuthorityCannotPublishAfterCapableNotebookCompletion() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                leaveResearchNotebooksPending = true,
+            )
+            val oldChatRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = oldChatRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(runtimeHistorySummary("stale-held-session", messageCount = 0)),
+                        snapshotCount = 1,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertNotNull(fixture.viewModel.privateField<Any>("heldRuntimeChatSessionsSnapshot"))
+
+            advanceTimeBy(RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS)
+            runCurrent()
+            val oldAuthorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                oldAuthorityGeneration + 1,
+            )
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = emptyList(),
+                    snapshotCount = 0,
+                ),
+            )
+
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.isEmpty())
+            assertNull(fixture.viewModel.privateField<Any>("heldRuntimeChatSessionsSnapshot"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun notebookAuthorityChangeRedactsPriorBackingSessionAcrossAtomicChatPagination() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val priorNotebook = researchNotebookPayload(1)
+            val currentNotebook = researchNotebookPayload(2)
+            val ordinarySessionId = "ordinary-session-after-notebook-deletion"
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            completePendingChatSessionsList(fixture)
+            completeResearchNotebookList(fixture, listOf(priorNotebook))
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            fixture.viewModel.refreshRuntimeChatHistory()
+            runCurrent()
+            val firstChatPageRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = firstChatPageRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            runtimeHistorySummary(priorNotebook.sessionId, messageCount = 1),
+                        ),
+                        nextCursor = "after-prior-notebook-session",
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            val secondChatPageRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            assertNotEquals(firstChatPageRequest.requestId, secondChatPageRequest.requestId)
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertFalse(
+                json.encodeToString(fixture.localStore.data).contains(priorNotebook.sessionId),
+            )
+
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(currentNotebook),
+                    snapshotCount = 1,
+                ),
+            )
+
+            assertEquals(
+                secondChatPageRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"),
+            )
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertFalse(
+                json.encodeToString(fixture.localStore.data).contains(priorNotebook.sessionId),
+            )
+            val chatRequestCountBeforeTerminal = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = secondChatPageRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            runtimeHistorySummary(ordinarySessionId, messageCount = 0),
+                        ),
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                listOf(ordinarySessionId),
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            val storedSnapshot = json.encodeToString(fixture.localStore.data)
+            assertFalse(storedSnapshot.contains(priorNotebook.sessionId))
+            assertFalse(storedSnapshot.contains(currentNotebook.sessionId))
+            assertEquals(
+                chatRequestCountBeforeTerminal + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatPaginationRedactsResearchSessionObservedOnlyBetweenPages() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val transientNotebook = researchNotebookPayload(70)
+            val ordinarySessionId = "ordinary-session-before-transient-research-authority"
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            runCurrent()
+            val firstPageRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = firstPageRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(runtimeHistorySummary(ordinarySessionId, messageCount = 0)),
+                        nextCursor = "after-ordinary-before-transient-research",
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+            val terminalPageRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(transientNotebook),
+                    snapshotCount = 1,
+                ),
+            )
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = emptyList(),
+                    snapshotCount = 0,
+                ),
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = terminalPageRequest.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            runtimeHistorySummary(transientNotebook.sessionId, messageCount = 1),
+                        ),
+                        snapshotCount = 2,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                listOf(ordinarySessionId),
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertFalse(fixture.localStore.data.toString().contains(transientNotebook.sessionId))
+            assertFalse(
+                fixture.viewModel.privateField<Set<String>>("researchNotebookSessionIds")
+                    .orEmpty().contains(transientNotebook.sessionId),
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchListReclassifiesActivePersistedSessionAndReloadsBeforeChatSnapshot() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val sessionId = "research_session_${"b".repeat(32)}"
+            val initialData = PersistedRuntimeData(
+                activeSessionId = sessionId,
+                selectedModelId = textChatModel().id,
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = sessionId,
+                        title = "Previously ordinary",
+                        modelId = textChatModel().id,
+                        composerDraft = "Stale persisted draft",
+                        createdAtMillis = 1L,
+                        updatedAtMillis = 1L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                        messages = listOf(
+                            PersistedChatMessage(
+                                id = "stale-persisted-message",
+                                role = "assistant",
+                                content = "Stale persisted history",
+                                createdAtMillis = 1L,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+                leaveResearchNotebooksPending = true,
+            )
+            val initialChatList = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            val notebook = researchNotebookPayload().copy(sessionId = sessionId)
+
+            completeResearchNotebookList(fixture, listOf(notebook))
+            runCurrent()
+
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            val messagesRequestPayload = json.decodeFromJsonElement(
+                ChatMessagesListRequestPayload.serializer(),
+                messagesRequest.payload,
+            )
+            assertEquals(sessionId, messagesRequestPayload.sessionId)
+            assertEquals(sessionId, fixture.viewModel.state.value.activeChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertEquals(sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.localStore.data.sessions.none { it.id == sessionId })
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = initialChatList.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                ),
+            )
+            runCurrent()
+            assertEquals(sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Fresh notebook history",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                "Fresh notebook history",
+                fixture.viewModel.state.value.messages.single().content,
+            )
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.localStore.data.sessions.none { it.id == sessionId })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun selectingResearchNotebookUsesExistingChatSelectionAndKeepsHistoryTransient() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val notebook = researchNotebookPayload()
+            completeResearchNotebookList(fixture, listOf(notebook))
+
+            assertTrue(fixture.viewModel.selectChatSession(notebook.sessionId))
+            runCurrent()
+            assertEquals(notebook.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            val messagesRequestPayload = json.decodeFromJsonElement(
+                ChatMessagesListRequestPayload.serializer(),
+                messagesRequest.payload,
+            )
+            assertEquals(notebook.sessionId, messagesRequestPayload.sessionId)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = notebook.sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Runtime-owned notebook history",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+            assertEquals(
+                "Runtime-owned notebook history",
+                fixture.viewModel.state.value.messages.single().content,
+            )
+            assertFalse(fixture.localStore.data.toString().contains(notebook.sessionId))
+            assertFalse(fixture.localStore.data.toString().contains(notebook.title))
+            assertFalse(fixture.localStore.data.toString().contains("Runtime-owned notebook history"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRenameUsesBackingSessionCommandAndAppliesAckWithoutPersistence() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+            val chatRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            val notebookRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "  Optimistic notebook  ")
+            runCurrent()
+
+            assertEquals(
+                "Optimistic notebook",
+                fixture.viewModel.researchNotebooks.value.notebooks.single().title,
+            )
+            val renameRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            val requestPayload = json.decodeFromJsonElement(
+                ChatSessionRenamePayload.serializer(),
+                renameRequest.payload,
+            )
+            assertEquals(notebook.sessionId, requestPayload.sessionId)
+            assertEquals("Optimistic notebook", requestPayload.title)
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains("Optimistic notebook"))
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRename,
+                    requestId = renameRequest.requestId,
+                    serializer = ChatSessionRenamePayload.serializer(),
+                    payload = ChatSessionRenamePayload(
+                        sessionId = notebook.sessionId,
+                        title = "Runtime accepted notebook",
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                "Runtime accepted notebook",
+                fixture.viewModel.researchNotebooks.value.notebooks.single().title,
+            )
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList } >
+                    chatRefreshCount,
+            )
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList } >
+                    notebookRefreshCount,
+            )
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains("Runtime accepted notebook"))
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRenameErrorRollsBackTransientTitleAndResyncs() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+            val notebookRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "Rejected notebook")
+            runCurrent()
+            val renameRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = renameRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "Runtime rejected notebook rename",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(notebook.title, fixture.viewModel.researchNotebooks.value.notebooks.single().title)
+            assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList } >
+                    notebookRefreshCount,
+            )
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains("Rejected notebook"))
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRenameResponsesPreserveNewerAuthoritativeSnapshots() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "Rejected optimistic title")
+            runCurrent()
+            val rejectedRename = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            val authoritativeAfterFailure = notebook.copy(
+                title = "Authoritative title after optimistic request",
+                updatedAt = "2026-07-14T00:05:00Z",
+            )
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(authoritativeAfterFailure),
+                    snapshotCount = 1,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = rejectedRename.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "invalid_payload",
+                        message = "Reject stale optimistic rename",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                authoritativeAfterFailure,
+                fixture.viewModel.researchNotebooks.value.notebooks.single(),
+            )
+            completeResearchNotebookList(fixture, listOf(authoritativeAfterFailure))
+            completePendingChatSessionsList(fixture)
+
+            val sameTitleWithNewerRevision = "Same title with newer authoritative timestamp"
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, sameTitleWithNewerRevision)
+            runCurrent()
+            val acceptedRename = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            val authoritativeBeforeAck = authoritativeAfterFailure.copy(
+                title = sameTitleWithNewerRevision,
+                updatedAt = "2026-07-14T00:06:00Z",
+            )
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            respondToPendingResearchNotebookList(
+                fixture,
+                ResearchNotebooksListResultPayload(
+                    notebooks = listOf(authoritativeBeforeAck),
+                    snapshotCount = 1,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRename,
+                    requestId = acceptedRename.requestId,
+                    serializer = ChatSessionRenamePayload.serializer(),
+                    payload = ChatSessionRenamePayload(
+                        sessionId = notebook.sessionId,
+                        title = "Stale acknowledgement title",
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                authoritativeBeforeAck,
+                fixture.viewModel.researchNotebooks.value.notebooks.single(),
+            )
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains(sameTitleWithNewerRevision))
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun staleResearchNotebookRenameAckIsIgnoredAndMalformedCurrentAckRollsBack() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "Pending notebook")
+            runCurrent()
+            val renameRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRename,
+                    requestId = renameRequest.requestId,
+                    serializer = ChatSessionRenamePayload.serializer(),
+                    payload = ChatSessionRenamePayload(
+                        sessionId = notebook.sessionId,
+                        title = "Stale channel title",
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                "Pending notebook",
+                fixture.viewModel.researchNotebooks.value.notebooks.single().title,
+            )
+            assertTrue(
+                renameRequest.requestId in fixture.viewModel.privateField<Set<String>>(
+                    "pendingChatSessionRenameRequestIds",
+                ).orEmpty(),
+            )
+
+            fixture.viewModel.setPrivateField("activeChannel", fixture.channel)
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.ChatSessionRename,
+                    requestId = renameRequest.requestId,
+                    payload = buildJsonObject {
+                        put("session_id", notebook.sessionId)
+                        put("title", "Malformed title")
+                        put("unexpected", true)
+                    },
+                ),
+            )
+            runCurrent()
+
+            assertEquals(notebook.title, fixture.viewModel.researchNotebooks.value.notebooks.single().title)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(
+                fixture.viewModel.privateField<Set<String>>(
+                    "pendingChatSessionRenameRequestIds",
+                ).orEmpty().isEmpty(),
+            )
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains("Pending notebook"))
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookLifecycleWaitsForSameSessionRename() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "Pending notebook")
+            runCurrent()
+            val archiveCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionArchive
+            }
+
+            fixture.viewModel.archiveChatSession(notebook.sessionId)
+            runCurrent()
+
+            assertEquals(
+                archiveCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionArchive },
+            )
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                "Pending notebook",
+                fixture.viewModel.researchNotebooks.value.notebooks.single().title,
+            )
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRenameDoesNotBlockDifferentSessionLifecycle() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val renamedNotebook = researchNotebookPayload(1)
+            val archivedNotebook = researchNotebookPayload(2)
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(renamedNotebook, archivedNotebook))
+            completePendingChatSessionsList(fixture)
+
+            fixture.viewModel.renameResearchNotebook(renamedNotebook.sessionId, "Pending notebook")
+            fixture.viewModel.archiveChatSession(archivedNotebook.sessionId)
+            runCurrent()
+
+            val archiveRequest = fixture.channel.sentEnvelopes.single {
+                it.type == MessageType.ChatSessionArchive
+            }
+            assertEquals(
+                archivedNotebook.sessionId,
+                json.decodeFromJsonElement(
+                    ChatSessionLifecyclePayload.serializer(),
+                    archiveRequest.payload,
+                ).sessionId,
+            )
+            assertEquals(
+                "Pending notebook",
+                fixture.viewModel.researchNotebooks.value.notebooks
+                    .single { it.sessionId == renamedNotebook.sessionId }
+                    .title,
+            )
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookRenameTimeoutRollsBackAndRejectsLateResponses() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var runtimeViewModel: RuntimeClientViewModel? = null
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            runtimeViewModel = fixture.viewModel
+            completeResearchNotebookList(fixture, listOf(notebook))
+            completePendingChatSessionsList(fixture)
+            val chatRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            val notebookRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+
+            fixture.viewModel.renameResearchNotebook(notebook.sessionId, "Timed out notebook")
+            runCurrent()
+            val renameRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionRename
+            }
+            advanceTimeBy(CHAT_SESSION_RENAME_REQUEST_TIMEOUT_MS)
+            runCurrent()
+
+            assertEquals(notebook.title, fixture.viewModel.researchNotebooks.value.notebooks.single().title)
+            assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList } >
+                    chatRefreshCount,
+            )
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList } >
+                    notebookRefreshCount,
+            )
+            val runtimeStatusAfterTimeout = fixture.viewModel.state.value.runtimeStatus
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRename,
+                    requestId = renameRequest.requestId,
+                    serializer = ChatSessionRenamePayload.serializer(),
+                    payload = ChatSessionRenamePayload(
+                        sessionId = notebook.sessionId,
+                        title = "Late accepted notebook",
+                    ),
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = renameRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Late timed out rename error",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(notebook.title, fixture.viewModel.researchNotebooks.value.notebooks.single().title)
+            assertEquals(runtimeStatusAfterTimeout, fixture.viewModel.state.value.runtimeStatus)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.sessions.none { it.id == notebook.sessionId })
+            assertFalse(fixture.localStore.data.toString().contains("Timed out notebook"))
+            assertFalse(fixture.localStore.data.toString().contains("Late accepted notebook"))
+        } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun mixedResearchNotebookAuthorityRedactsActiveAndArchivedBackingSessionsFromChatStateAndStore() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                val activeNotebook = researchNotebookPayload(1)
+                val archivedNotebook = researchNotebookPayload(2).copy(
+                    archivedAt = "2026-07-14T00:02:00Z",
+                )
+                val ordinarySessionId = "ordinary-runtime-session"
+                val initialData = PersistedRuntimeData(
+                    activeSessionId = ordinarySessionId,
+                    selectedModelId = textChatModel().id,
+                    trustedRuntimeAutoReconnectEnabled = false,
+                    sessions = listOf(activeNotebook.sessionId, archivedNotebook.sessionId, ordinarySessionId).map {
+                        sessionId ->
+                        PersistedChatSession(
+                            id = sessionId,
+                            title = "Persisted $sessionId",
+                            modelId = textChatModel().id,
+                            createdAtMillis = 1L,
+                            updatedAtMillis = 1L,
+                            runtimeOwned = true,
+                        )
+                    },
+                )
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    initialData = initialData,
+                    leaveResearchNotebooksPending = true,
+                )
+
+                completeResearchNotebookList(fixture, listOf(activeNotebook, archivedNotebook))
+                val chatRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = chatRequest.requestId,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(
+                            sessions = listOf(
+                                runtimeHistorySummary(activeNotebook.sessionId, messageCount = 1),
+                                runtimeHistorySummary(archivedNotebook.sessionId, messageCount = 1),
+                                runtimeHistorySummary(ordinarySessionId, messageCount = 0),
+                            ),
+                        ),
+                    ),
+                )
+                runCurrent()
+
+                assertEquals(listOf(ordinarySessionId), fixture.viewModel.state.value.chatSessions.map { it.id })
+                assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+                assertEquals(listOf(ordinarySessionId), fixture.localStore.data.sessions.map { it.id })
+                assertFalse(fixture.localStore.data.toString().contains(activeNotebook.sessionId))
+                assertFalse(fixture.localStore.data.toString().contains(archivedNotebook.sessionId))
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun researchNotebookLifecycleAcksRefreshBothAuthoritiesWithoutCrossingChannelOrAuthState() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val activeNotebook = researchNotebookPayload(1)
+            val archivedNotebook = researchNotebookPayload(2).copy(
+                archivedAt = "2026-07-14T00:02:00Z",
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            completeResearchNotebookList(fixture, listOf(activeNotebook, archivedNotebook))
+            fixture.channel.sentEnvelopes.lastOrNull { it.type == MessageType.ChatSessionsList }?.let { request ->
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(emptyList()),
+                    ),
+                )
+                runCurrent()
+            }
+
+            assertTrue(fixture.viewModel.selectChatSession(activeNotebook.sessionId))
+            runCurrent()
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = activeNotebook.sessionId,
+                        messages = listOf(ChatStoredMessagePayload(role = "assistant", content = "Transient research")),
+                    ),
+                ),
+            )
+            runCurrent()
+            fixture.viewModel.updateChatInput("Transient follow-up")
+
+            val anchorId = "source_anchor_aabbccddeeff0011"
+            val citationId = "citation_aabbccddeeff00112233445566778899"
+            val grantId = "trusted_source_aabbccddeeff00112233445566778899"
+            fixture.viewModel.refreshTrustedSources()
+            runCurrent()
+            val sourceRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.TrustedSourceList }
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.TrustedSourceList,
+                    requestId = sourceRequest.requestId,
+                    payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+                ),
+            )
+            runCurrent()
+            fixture.viewModel.toggleTrustedSourceSelection(anchorId)
+
+            val chatRefreshCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList }
+            val notebookRefreshCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            fixture.viewModel.archiveChatSession(activeNotebook.sessionId)
+            runCurrent()
+            val archiveRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionArchive }
+            assertEquals(
+                activeNotebook.sessionId,
+                json.decodeFromJsonElement(ChatSessionLifecyclePayload.serializer(), archiveRequest.payload).sessionId,
+            )
+
+            val replacementChannel = ScriptedRuntimeProtocolChannel()
+            fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    requestId = archiveRequest.requestId,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(activeNotebook.sessionId, status = "archived"),
+                ),
+            )
+            runCurrent()
+            assertTrue(archiveRequest.requestId in fixture.viewModel.privateField<Set<String>>(
+                "pendingChatSessionLifecycleRequestIds",
+            ).orEmpty())
+
+            fixture.viewModel.setPrivateField("activeChannel", fixture.channel)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    requestId = archiveRequest.requestId,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(activeNotebook.sessionId, status = "archived"),
+                ),
+            )
+            runCurrent()
+
+            assertTrue(fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList } > chatRefreshCount)
+            assertTrue(
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList } >
+                    notebookRefreshCount,
+            )
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.selectedTrustedSourceAnchorIds)
+            assertEquals(listOf(anchorId), fixture.viewModel.state.value.trustedSources.map { it.sourceAnchorId })
+            assertNotNull(
+                fixture.viewModel.researchNotebooks.value.notebooks
+                    .single { it.sessionId == activeNotebook.sessionId }
+                    .archivedAt,
+            )
+            assertFalse(
+                fixture.viewModel.privateField<Map<String, List<RuntimeChatMessage>>>(
+                    "transientResearchMessagesBySessionId",
+                ).orEmpty().containsKey(activeNotebook.sessionId),
+            )
+            assertFalse(fixture.localStore.data.toString().contains(activeNotebook.sessionId))
+            assertFalse(fixture.localStore.data.toString().contains("Transient research"))
+            assertFalse(fixture.localStore.data.toString().contains("Transient follow-up"))
+
+            val archivedActiveNotebook = activeNotebook.copy(
+                updatedAt = "2026-07-14T00:03:00Z",
+                archivedAt = "2026-07-14T00:03:00Z",
+            )
+            completeResearchNotebookList(fixture, listOf(archivedActiveNotebook, archivedNotebook))
+            val archiveChatRefresh = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = archiveChatRefresh.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+
+            fixture.viewModel.unarchiveChatSession(archivedNotebook.sessionId)
+            runCurrent()
+            val restoreRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionRestore }
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            fixture.viewModel.setPrivateField("runtimeSessionAuthorityGeneration", authorityGeneration + 1)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRestore,
+                    requestId = restoreRequest.requestId,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(archivedNotebook.sessionId, status = "restored"),
+                ),
+            )
+            runCurrent()
+            assertTrue(restoreRequest.requestId in fixture.viewModel.privateField<Set<String>>(
+                "pendingChatSessionLifecycleRequestIds",
+            ).orEmpty())
+            fixture.viewModel.setPrivateField("runtimeSessionAuthorityGeneration", authorityGeneration)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionRestore,
+                    requestId = restoreRequest.requestId,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(archivedNotebook.sessionId, status = "restored"),
+                ),
+            )
+            runCurrent()
+            assertNull(
+                fixture.viewModel.researchNotebooks.value.notebooks
+                    .single { it.sessionId == archivedNotebook.sessionId }
+                    .archivedAt,
+            )
+
+            val restoredNotebook = archivedNotebook.copy(
+                updatedAt = "2026-07-14T00:04:00Z",
+                archivedAt = null,
+            )
+            completeResearchNotebookList(fixture, listOf(restoredNotebook, archivedActiveNotebook))
+            val restoreChatRefresh = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = restoreChatRefresh.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+
+            fixture.viewModel.deleteChatSession(archivedActiveNotebook.sessionId)
+            runCurrent()
+            val deleteRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionDelete }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionDelete,
+                    requestId = deleteRequest.requestId,
+                    serializer = ChatSessionLifecyclePayload.serializer(),
+                    payload = ChatSessionLifecyclePayload(archivedActiveNotebook.sessionId, status = "deleted"),
+                ),
+            )
+            runCurrent()
+            assertFalse(
+                fixture.viewModel.researchNotebooks.value.notebooks.any { notebook ->
+                    notebook.sessionId == archivedActiveNotebook.sessionId
+                },
+            )
+            completeResearchNotebookList(fixture, listOf(restoredNotebook))
+            val deleteChatRefresh = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSessionsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = deleteChatRefresh.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+
+            assertTrue(fixture.channel.sentEnvelopes.any { it.type == MessageType.ChatSessionArchive })
+            assertTrue(fixture.channel.sentEnvelopes.any { it.type == MessageType.ChatSessionRestore })
+            assertTrue(fixture.channel.sentEnvelopes.any { it.type == MessageType.ChatSessionDelete })
+            assertNotNull(fixture.viewModel.privateField<Map<String, String>>(
+                "trustedSourceGrantsBySourceAnchorId",
+            )?.get(anchorId))
+            assertFalse(fixture.localStore.data.toString().contains(activeNotebook.sessionId))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authoritativeArchiveRefreshExitsActiveResearchNotebookAndRejectsArchivedSend() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            completeResearchNotebookList(fixture, listOf(notebook))
+            assertTrue(fixture.viewModel.selectChatSession(notebook.sessionId))
+            runCurrent()
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = notebook.sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(role = "assistant", content = "Transient notebook"),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+            fixture.viewModel.updateChatInput("Transient draft")
+            fixture.viewModel.replaceStateForTest { current ->
+                current.copy(pendingAttachments = listOf(textAttachment()))
+            }
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val refresh = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertTrue(fixture.viewModel.selectChatSession(notebook.sessionId))
+            runCurrent()
+            assertNotNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = refresh.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = listOf(notebook.copy(archivedAt = notebook.updatedAt)),
+                        snapshotCount = 1,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+            assertFalse(fixture.viewModel.selectChatSession(notebook.sessionId))
+            fixture.viewModel.replaceStateForTest { current ->
+                current.copy(
+                    activeChatSessionId = notebook.sessionId,
+                    chatInput = "Blocked archived send",
+                )
+            }
+            val sendsBefore = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend }
+            fixture.viewModel.sendChatMessage()
+            runCurrent()
+            assertEquals(sendsBefore, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.localStore.data.toString().contains("Transient notebook"))
+            assertFalse(fixture.localStore.data.toString().contains("Transient draft"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun closedResearchLifecycleErrorCannotRevokeReauthenticatedSession() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val notebook = researchNotebookPayload()
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            completeResearchNotebookList(fixture, listOf(notebook))
+            fixture.channel.sentEnvelopes.lastOrNull { it.type == MessageType.ChatSessionsList }?.let { request ->
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionsList,
+                        requestId = request.requestId,
+                        serializer = ChatSessionsListResultPayload.serializer(),
+                        payload = ChatSessionsListResultPayload(emptyList()),
+                    ),
+                )
+                runCurrent()
+            }
+            fixture.viewModel.archiveChatSession(notebook.sessionId)
+            runCurrent()
+            val archiveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+
+            fixture.viewModel.requestModels()
+            runCurrent()
+            val modelsRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = modelsRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair this device again.",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "research-lifecycle-reauthenticated",
+            )
+            runCurrent()
+            val reauthenticatedResearchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = reauthenticatedResearchRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(emptyList()),
+                ),
+            )
+            runCurrent()
+            fixture.viewModel.replaceStateForTest { current ->
+                current.copy(isConnected = true, error = null)
+            }
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = archiveRequest.requestId,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "pairing_required",
+                        message = "Delayed old lifecycle error",
+                        retryable = false,
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun cappedResearchNotebookRefreshKeepsConfirmedSessionOutOfHostChatHistory() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                leaveResearchNotebooksPending = true,
+            )
+            val confirmedNotebook = researchNotebookPayload()
+            val firstCappedPage = (listOf(confirmedNotebook) + (1..99).map(::researchNotebookPayload))
+                .sortedBy(ResearchNotebookPayload::notebookId)
+            completeResearchNotebookList(fixture, firstCappedPage, capable = false)
+
+            assertTrue(fixture.viewModel.selectChatSession(confirmedNotebook.sessionId))
+            runCurrent()
+            val messagesRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    requestId = messagesRequest.requestId,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = confirmedNotebook.sessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Confirmed notebook history",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+            fixture.viewModel.updateChatInput("Transient notebook draft")
+
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+            val refreshRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            val nextCappedPage = (101..200).map(::researchNotebookPayload)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    requestId = refreshRequest.requestId,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(nextCappedPage),
+                ),
+            )
+            runCurrent()
+
+            val ordinaryPrefixedSessionId = "research_session_${"f".repeat(32)}"
+            val pendingChatList = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = pendingChatList.requestId,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            runtimeHistorySummary(confirmedNotebook.sessionId, messageCount = 1),
+                            runtimeHistorySummary(ordinaryPrefixedSessionId, messageCount = 0),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+
+            val confirmedIds = fixture.viewModel.privateField<Set<String>>(
+                "researchNotebookSessionIds",
+            ).orEmpty()
+            assertEquals(200, confirmedIds.size)
+            assertTrue(confirmedNotebook.sessionId in confirmedIds)
+            assertEquals(confirmedNotebook.sessionId, fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("Transient notebook draft", fixture.viewModel.state.value.chatInput)
+            assertEquals("Confirmed notebook history", fixture.viewModel.state.value.messages.single().content)
+            assertFalse(fixture.viewModel.state.value.chatSessions.any { it.id == confirmedNotebook.sessionId })
+            assertFalse(fixture.viewModel.state.value.chatSessions.any { it.id == ordinaryPrefixedSessionId })
+            assertFalse(fixture.localStore.data.toString().contains(confirmedNotebook.sessionId))
+            assertFalse(fixture.localStore.data.toString().contains("Transient notebook draft"))
+            assertFalse(fixture.localStore.data.toString().contains("Confirmed notebook history"))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.prepareResearchBriefTrustedSource(
+        fixture: RuntimeClientFixture,
+    ): String {
+        val anchorId = "source_anchor_1122334455667788"
+        val citationId = "citation_11223344556677889900aabbccddeeff"
+        val grantId = "trusted_source_11223344556677889900aabbccddeeff"
+        fixture.viewModel.refreshTrustedSources()
+        runCurrent()
+        val request = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.TrustedSourceList
+        }
+        fixture.channel.enqueue(
+            ProtocolEnvelope(
+                type = MessageType.TrustedSourceList,
+                requestId = request.requestId,
+                payload = trustedSourceListResultJson(anchorId, citationId, grantId),
+            ),
+        )
+        runCurrent()
+        return grantId
+    }
+
+    private fun researchNotebookPayload(): ResearchNotebookPayload = ResearchNotebookPayload(
+        notebookId = "research_notebook_00112233445566778899aabbccddeeff",
+        sessionId = "research_session_00112233445566778899aabbccddeeff",
+        title = "Approved source comparison",
+        model = "ollama:llama3.1:8b",
+        sourceCount = 1,
+        createdAt = "2026-07-14T00:00:00Z",
+        updatedAt = "2026-07-14T00:01:00Z",
+    )
+
+    private fun researchNotebookPayload(sequence: Int): ResearchNotebookPayload {
+        val suffix = sequence.toString(16).padStart(32, '0')
+        return ResearchNotebookPayload(
+            notebookId = "research_notebook_$suffix",
+            sessionId = "research_session_$suffix",
+            title = "Research notebook $sequence",
+            model = "ollama:llama3.1:8b",
+            sourceCount = 1,
+            createdAt = "2026-07-14T00:00:00Z",
+            updatedAt = "2026-07-14T00:01:00Z",
+        )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.completeResearchNotebookList(
+        fixture: RuntimeClientFixture,
+        notebooks: List<ResearchNotebookPayload> = emptyList(),
+        capable: Boolean = true,
+    ) {
+        if (fixture.viewModel.privateField<Any>("pendingResearchNotebooksListRun") == null) {
+            fixture.viewModel.refreshResearchNotebooks()
+            runCurrent()
+        }
+        val request = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.ResearchNotebooksList
+        }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ResearchNotebooksList,
+                requestId = request.requestId,
+                serializer = ResearchNotebooksListResultPayload.serializer(),
+                payload = ResearchNotebooksListResultPayload(
+                    notebooks = notebooks,
+                    snapshotCount = notebooks.size.takeIf { capable },
+                ),
+            ),
+        )
+        runCurrent()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.completePendingChatSessionsList(
+        fixture: RuntimeClientFixture,
+    ) {
+        val requestId = fixture.viewModel.privateField<String>("pendingChatSessionsRequestId") ?: return
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ChatSessionsList,
+                requestId = requestId,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(sessions = emptyList()),
+            ),
+        )
+        runCurrent()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private suspend fun TestScope.respondToPendingResearchNotebookList(
+        fixture: RuntimeClientFixture,
+        payload: ResearchNotebooksListResultPayload,
+    ): ProtocolEnvelope {
+        val request = fixture.channel.sentEnvelopes.last {
+            it.type == MessageType.ResearchNotebooksList
+        }
+        fixture.channel.enqueue(
+            envelope(
+                type = MessageType.ResearchNotebooksList,
+                requestId = request.requestId,
+                serializer = ResearchNotebooksListResultPayload.serializer(),
+                payload = payload,
+            ),
+        )
+        runCurrent()
+        return request
+    }
+
     private data class PostPairingAuthenticationFixture(
         val viewModel: RuntimeClientViewModel,
         val channel: ScriptedRuntimeProtocolChannel,
@@ -28004,6 +31228,12 @@ class RuntimeClientViewModelTest {
     private fun authoritativeSessionSyncWireFixture(): JsonObject {
         return json.parseToJsonElement(
             sharedProtocolFixture("chat-sessions-authoritative-sync-smoke-v1.json"),
+        ).jsonObject
+    }
+
+    private fun authoritativeResearchNotebookSyncWireFixture(): JsonObject {
+        return json.parseToJsonElement(
+            sharedProtocolFixture("research-notebooks-authoritative-sync-smoke-v1.json"),
         ).jsonObject
     }
 
@@ -30376,6 +33606,7 @@ class RuntimeClientViewModelTest {
         redactRuntimeOwnedLocalDataOnSave: Boolean = false,
         initialData: PersistedRuntimeData? = null,
         replacementChannel: ScriptedRuntimeProtocolChannel? = null,
+        leaveResearchNotebooksPending: Boolean = false,
     ): RuntimeClientFixture {
         val channel = ScriptedRuntimeProtocolChannel()
         var relayConnectionCount = 0
@@ -30417,7 +33648,25 @@ class RuntimeClientViewModelTest {
             viewModel = viewModel,
             channel = channel,
         )
-        advanceUntilIdle()
+        if (!leaveResearchNotebooksPending) {
+            val researchNotebooksRequest = channel.sentEnvelopes.lastOrNull {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            if (researchNotebooksRequest != null) {
+                channel.enqueue(
+                    envelope(
+                        type = MessageType.ResearchNotebooksList,
+                        requestId = researchNotebooksRequest.requestId,
+                        serializer = ResearchNotebooksListResultPayload.serializer(),
+                        payload = ResearchNotebooksListResultPayload(
+                            notebooks = emptyList(),
+                            snapshotCount = 0,
+                        ),
+                    ),
+                )
+            }
+        }
+        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
         channel.enqueue(
             envelope(
                 type = MessageType.RuntimeHealth,
@@ -30426,7 +33675,7 @@ class RuntimeClientViewModelTest {
                 requestId = "runtime-health",
             ),
         )
-        advanceUntilIdle()
+        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
         val modelsRequest = channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
         channel.enqueue(
             envelope(
@@ -30438,7 +33687,7 @@ class RuntimeClientViewModelTest {
                 requestId = modelsRequest.requestId,
             ),
         )
-        advanceUntilIdle()
+        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
 
         return RuntimeClientFixture(
             viewModel = viewModel,

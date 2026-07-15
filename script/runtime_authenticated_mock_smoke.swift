@@ -29,6 +29,114 @@ enum SmokeFailure: Error, CustomStringConvertible {
     }
 }
 
+struct ResearchNotebookFixtureRow {
+    let notebookID: String
+    let sessionID: String
+    let title: String
+    let model: String
+    let sourceCount: Int
+    let createdAtText: String
+    let createdAt: Date
+    let updatedAtText: String
+    let updatedAt: Date
+}
+
+func researchNotebookAuthoritativeSyncFixture() throws -> [String: Any] {
+    let projectRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let fixtureURL = projectRoot.appendingPathComponent(
+        "shared/protocol/fixtures/research-notebooks-authoritative-sync-smoke-v1.json"
+    )
+    let data = try Data(contentsOf: fixtureURL)
+    guard let fixture = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          fixture["document_type"] as? String
+            == "aetherlink.research-notebooks-authoritative-sync-wire-smoke",
+          fixture["capability"] as? String
+            == "research.notebooks.authoritative_sync.v1",
+          fixture["proof_scope"] as? String
+            == "no-device/no-network wire-contract fixture only",
+          let series = fixture["notebook_series"] as? [String: Any],
+          series["count"] as? Int == 201,
+          let pagination = fixture["pagination"] as? [String: Any],
+          pagination["continuation_request_keys"] as? [String] == ["cursor"],
+          let pages = pagination["pages"] as? [[String: Any]],
+          pages.count == 3,
+          pages.compactMap({ $0["offset"] as? Int }) == [0, 100, 200],
+          pages.compactMap({ $0["count"] as? Int }) == [100, 100, 1],
+          pages.allSatisfy({ $0["snapshot_count"] as? Int == 201 }),
+          pages[0]["next_cursor"] is String,
+          pages[1]["next_cursor"] is String,
+          pages[2]["next_cursor"] == nil else {
+        throw SmokeFailure.message(
+            "research notebook authoritative sync fixture is malformed or no longer 201 rows across 100/100/1 pages"
+        )
+    }
+    return fixture
+}
+
+func researchNotebookFixtureRows(_ fixture: [String: Any]) throws -> [ResearchNotebookFixtureRow] {
+    guard let series = fixture["notebook_series"] as? [String: Any],
+          let count = series["count"] as? Int,
+          count == 201,
+          let notebookIDPrefix = series["notebook_id_prefix"] as? String,
+          let notebookIDHexWidth = series["notebook_id_hex_width"] as? Int,
+          let sessionIDPrefix = series["session_id_prefix"] as? String,
+          let sessionIDWidth = series["session_id_width"] as? Int,
+          let titlePrefix = series["title_prefix"] as? String,
+          let model = series["model"] as? String,
+          let sourceCount = series["source_count"] as? Int,
+          sourceCount == 2,
+          let createdAtText = series["created_at"] as? String,
+          let createdAt = smokeRFC3339Date(createdAtText),
+          let baseUpdatedAtText = series["base_updated_at"] as? String,
+          let baseUpdatedAt = smokeRFC3339Date(baseUpdatedAtText),
+          let updatedAtStepSeconds = series["updated_at_step_seconds"] as? Int,
+          updatedAtStepSeconds > 0,
+          series["canonical_order"] as? [String] == [
+              "updated_at_desc",
+              "notebook_id_unsigned_utf8_asc"
+          ] else {
+        throw SmokeFailure.message("research notebook fixture series metadata is malformed")
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return try (0..<count).map { index in
+        let notebookIDSuffix = String(index, radix: 16)
+        let sessionIDSuffix = String(index)
+        guard notebookIDSuffix.count <= notebookIDHexWidth,
+              sessionIDSuffix.count <= sessionIDWidth else {
+            throw SmokeFailure.message("research notebook fixture series width is too small")
+        }
+        let updatedAt = baseUpdatedAt.addingTimeInterval(
+            TimeInterval(index * updatedAtStepSeconds)
+        )
+        return ResearchNotebookFixtureRow(
+            notebookID: notebookIDPrefix
+                + String(repeating: "0", count: notebookIDHexWidth - notebookIDSuffix.count)
+                + notebookIDSuffix,
+            sessionID: sessionIDPrefix
+                + String(repeating: "0", count: sessionIDWidth - sessionIDSuffix.count)
+                + sessionIDSuffix,
+            title: titlePrefix + String(index),
+            model: model,
+            sourceCount: sourceCount,
+            createdAtText: createdAtText,
+            createdAt: createdAt,
+            updatedAtText: formatter.string(from: updatedAt),
+            updatedAt: updatedAt
+        )
+    }
+}
+
+func smokeRFC3339Date(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)
+}
+
 enum BackendMode {
     case mock
     case realOllama
@@ -187,7 +295,6 @@ let expectedP2PRouteRefresh = ExpectedP2PRouteRefresh(
 )
 
 let smokeSessionID = "smoke-session-\(UUID().uuidString)"
-let smokeTitleSessionID = "\(smokeSessionID)-title"
 let smokeLifecycleSessionID = "\(smokeSessionID)-lifecycle"
 let smokeResidencySessionID = "\(smokeSessionID)-residency"
 let smokeSummaryDismissSessionID = "\(smokeSessionID)-summary-dismiss"
@@ -217,7 +324,9 @@ let primaryClientCapabilities = [
     "chat.source_attribution.resolve.v1",
     "memory.duplicate_suggestions.v1",
     "memory.semantic_duplicate_suggestions.v1",
-    "memory.semantic_duplicate_clusters.v1"
+    "memory.semantic_duplicate_clusters.v1",
+    "research.notebooks.v1",
+    "research.notebooks.authoritative_sync.v1"
 ]
 let smokeRetrievalDocumentID = "smoke-retrieval-doc"
 let smokeRetrievalDocumentName = "runtime-retrieval-smoke.md"
@@ -1022,6 +1131,210 @@ func runAndCapture(_ arguments: [String]) throws -> String {
         throw SmokeFailure.message("\(arguments.joined(separator: " ")) failed:\n\(output)")
     }
     return output.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func runSQLiteScript(databaseURL: URL, script: String, context: String) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+    process.arguments = [databaseURL.path]
+    let input = Pipe()
+    let output = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    input.fileHandleForWriting.write(Data(script.utf8))
+    try input.fileHandleForWriting.close()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        let detail = String(data: data, encoding: .utf8) ?? ""
+        throw SmokeFailure.message("\(context) sqlite setup failed: \(detail)")
+    }
+}
+
+func sqliteStringLiteral(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
+}
+
+func researchNotebookFixtureEventJSON(
+    row: ResearchNotebookFixtureRow,
+    ownerDeviceID: String,
+    index: Int
+) throws -> String {
+    let object: [String: Any] = [
+        "id": "research-notebook-pagination-fixture-\(index)",
+        "timestamp": row.updatedAtText,
+        "kind": "title",
+        "request_id": "research-notebook-pagination-fixture-\(index)",
+        "session_id": row.sessionID,
+        "model": row.model,
+        "title": row.title,
+        "owner_device_id": ownerDeviceID
+    ]
+    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    guard let value = String(data: data, encoding: .utf8) else {
+        throw SmokeFailure.message("research notebook fixture event JSON was not UTF-8")
+    }
+    return value
+}
+
+func seedResearchNotebookFixtureRows(
+    _ rows: [ResearchNotebookFixtureRow],
+    ownerDeviceID: String,
+    chatDatabaseURL: URL,
+    notebookDatabaseURL: URL
+) throws {
+    let grantIDs = [
+        "trusted_source_00000000000000000000000000000001",
+        "trusted_source_00000000000000000000000000000002"
+    ]
+    var chatSQL = "PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE;\n"
+    var notebookSQL = """
+    PRAGMA busy_timeout = 5000;
+    PRAGMA foreign_keys = ON;
+    BEGIN IMMEDIATE;
+    CREATE TABLE IF NOT EXISTS runtime_research_notebooks(
+        notebook_id TEXT PRIMARY KEY NOT NULL,
+        owner_device_id TEXT NOT NULL,
+        backing_session_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        model TEXT NOT NULL,
+        lifecycle TEXT NOT NULL CHECK(lifecycle IN ('active', 'archived')),
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL CHECK(updated_at >= created_at),
+        UNIQUE(owner_device_id, backing_session_id)
+    );
+    CREATE TABLE IF NOT EXISTS runtime_research_notebook_lifecycle_intents(
+        notebook_id TEXT PRIMARY KEY NOT NULL,
+        owner_device_id TEXT NOT NULL,
+        backing_session_id TEXT NOT NULL,
+        mutation TEXT NOT NULL CHECK(mutation IN ('create', 'archive', 'restore', 'delete')),
+        coordinator_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        lease_expires_at REAL NOT NULL,
+        FOREIGN KEY(notebook_id) REFERENCES runtime_research_notebooks(notebook_id) ON DELETE CASCADE,
+        FOREIGN KEY(owner_device_id, backing_session_id)
+            REFERENCES runtime_research_notebooks(owner_device_id, backing_session_id)
+            ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS runtime_research_notebook_grants(
+        notebook_id TEXT NOT NULL,
+        position INTEGER NOT NULL CHECK(position >= 0 AND position < 8),
+        grant_id TEXT NOT NULL,
+        PRIMARY KEY(notebook_id, position),
+        UNIQUE(notebook_id, grant_id),
+        FOREIGN KEY(notebook_id) REFERENCES runtime_research_notebooks(notebook_id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS runtime_research_notebook_store_metadata(
+        singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton = 1),
+        schema_version INTEGER NOT NULL CHECK(schema_version = 3)
+    );
+    INSERT OR IGNORE INTO runtime_research_notebook_store_metadata(singleton, schema_version)
+    VALUES (1, 3);
+    CREATE INDEX IF NOT EXISTS idx_runtime_research_notebooks_owner_order
+    ON runtime_research_notebooks(owner_device_id, lifecycle, updated_at DESC, notebook_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_runtime_research_notebook_lifecycle_intents_owner
+    ON runtime_research_notebook_lifecycle_intents(
+        owner_device_id, lease_expires_at, backing_session_id, notebook_id
+    );
+    PRAGMA user_version = 3;
+    """
+    for (index, row) in rows.enumerated() {
+        let eventJSON = try researchNotebookFixtureEventJSON(
+            row: row,
+            ownerDeviceID: ownerDeviceID,
+            index: index
+        )
+        chatSQL += """
+        INSERT INTO runtime_chat_events(
+            event_id, timestamp, kind, request_id, session_id, owner_device_id, model, event_json
+        ) VALUES (
+            \(sqliteStringLiteral("research-notebook-pagination-fixture-\(index)")),
+            \(sqliteStringLiteral(row.updatedAtText)),
+            'title',
+            \(sqliteStringLiteral("research-notebook-pagination-fixture-\(index)")),
+            \(sqliteStringLiteral(row.sessionID)),
+            \(sqliteStringLiteral(ownerDeviceID)),
+            \(sqliteStringLiteral(row.model)),
+            \(sqliteStringLiteral(eventJSON))
+        );
+        """
+        notebookSQL += """
+        INSERT INTO runtime_research_notebooks(
+            notebook_id, owner_device_id, backing_session_id, title, model,
+            lifecycle, created_at, updated_at
+        ) VALUES (
+            \(sqliteStringLiteral(row.notebookID)),
+            \(sqliteStringLiteral(ownerDeviceID)),
+            \(sqliteStringLiteral(row.sessionID)),
+            \(sqliteStringLiteral(row.title)),
+            \(sqliteStringLiteral(row.model)),
+            'active',
+            \(row.createdAt.timeIntervalSince1970),
+            \(row.updatedAt.timeIntervalSince1970)
+        );
+        """
+        for (position, grantID) in grantIDs.prefix(row.sourceCount).enumerated() {
+            notebookSQL += """
+            INSERT INTO runtime_research_notebook_grants(notebook_id, position, grant_id)
+            VALUES (
+                \(sqliteStringLiteral(row.notebookID)),
+                \(position),
+                \(sqliteStringLiteral(grantID))
+            );
+            """
+        }
+    }
+    chatSQL += "COMMIT;\n"
+    notebookSQL += "COMMIT;\n"
+    try runSQLiteScript(
+        databaseURL: chatDatabaseURL,
+        script: chatSQL,
+        context: "research notebook fixture chat rows"
+    )
+    try runSQLiteScript(
+        databaseURL: notebookDatabaseURL,
+        script: notebookSQL,
+        context: "research notebook fixture metadata rows"
+    )
+}
+
+func removeResearchNotebookFixtureRows(
+    ownerDeviceID: String,
+    chatDatabaseURL: URL,
+    notebookDatabaseURL: URL
+) throws {
+    let owner = sqliteStringLiteral(ownerDeviceID)
+    let sessionPattern = sqliteStringLiteral("wire-research-session-%")
+    try runSQLiteScript(
+        databaseURL: notebookDatabaseURL,
+        script: """
+        PRAGMA busy_timeout = 5000;
+        PRAGMA foreign_keys = ON;
+        BEGIN IMMEDIATE;
+        DELETE FROM runtime_research_notebook_grants
+        WHERE notebook_id IN (
+            SELECT notebook_id FROM runtime_research_notebooks
+            WHERE owner_device_id = \(owner) AND backing_session_id LIKE \(sessionPattern)
+        );
+        DELETE FROM runtime_research_notebooks
+        WHERE owner_device_id = \(owner) AND backing_session_id LIKE \(sessionPattern);
+        COMMIT;
+        """,
+        context: "research notebook fixture metadata cleanup"
+    )
+    try runSQLiteScript(
+        databaseURL: chatDatabaseURL,
+        script: """
+        PRAGMA busy_timeout = 5000;
+        BEGIN IMMEDIATE;
+        DELETE FROM runtime_chat_events
+        WHERE owner_device_id = \(owner) AND session_id LIKE \(sessionPattern);
+        COMMIT;
+        """,
+        context: "research notebook fixture chat cleanup"
+    )
 }
 
 func seedTrustedDevicesFile(
@@ -3428,6 +3741,8 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("trusted_source.dismiss", "smoke-unauthenticated-trusted-source-dismiss", [:]),
         ("trusted_source.list", "smoke-unauthenticated-trusted-source-list", [:]),
         ("trusted_source.revoke", "smoke-unauthenticated-trusted-source-revoke", [:]),
+        ("research.brief.create", "smoke-unauthenticated-research-brief-create", [:]),
+        ("research.notebooks.list", "smoke-unauthenticated-research-notebooks-list", [:]),
         ("memory.list", "smoke-unauthenticated-memory", [:]),
         ("memory.duplicate_suggestions.list", "smoke-unauthenticated-memory-duplicates", [:]),
         (
@@ -3549,6 +3864,81 @@ func runAuthenticatedSemanticDuplicateMissingCapabilityCheck(
         requestID: "smoke-memory-semantic-clusters-no-capability",
         context: "authenticated memory semantic duplicate clusters without capability"
     )
+}
+
+func runAuthenticatedResearchMissingCapabilityCheck(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey,
+    runtimeProof: RuntimeProofExpectation? = nil
+) throws {
+    print("Checking authenticated research notebook capability closure...")
+    do {
+        let client = try authenticateFreshClient(
+            host: host,
+            port: port,
+            relay: relay,
+            deviceID: deviceID,
+            privateKey: privateKey,
+            requestPrefix: "smoke-research-no-capability",
+            clientCapabilities: primaryClientCapabilities.filter {
+                $0 != "research.notebooks.v1"
+            },
+            runtimeProof: runtimeProof
+        )
+        defer { client.close() }
+        for (type, requestID) in [
+            ("research.brief.create", "smoke-research-brief-create-no-capability"),
+            ("research.notebooks.list", "smoke-research-notebooks-list-no-capability")
+        ] {
+            let response = try sendAndRead(
+                client,
+                type: type,
+                requestID: requestID,
+                payload: [:]
+            )
+            try requireErrorCode(
+                response,
+                "unsupported_operation",
+                requestID: requestID,
+                context: "authenticated \(type) without capability"
+            )
+        }
+    }
+
+    let legacyClient = try authenticateFreshClient(
+        host: host,
+        port: port,
+        relay: relay,
+        deviceID: deviceID,
+        privateKey: privateKey,
+        requestPrefix: "smoke-research-legacy-capability",
+        clientCapabilities: primaryClientCapabilities.filter {
+            $0 != "research.notebooks.authoritative_sync.v1"
+        },
+        runtimeProof: runtimeProof
+    )
+    defer { legacyClient.close() }
+    let legacyList = try sendAndRead(
+        legacyClient,
+        type: "research.notebooks.list",
+        requestID: "smoke-research-notebooks-list-legacy",
+        payload: ["include_archived": false, "limit": 100]
+    )
+    try requireType(
+        legacyList,
+        "research.notebooks.list",
+        context: "legacy research notebooks list"
+    )
+    let legacyPayload = try payload(legacyList, context: "legacy research notebooks list")
+    guard Set(legacyPayload.keys) == ["notebooks"],
+          legacyPayload["notebooks"] as? [[String: Any]] != nil else {
+        throw SmokeFailure.message(
+            "legacy research notebook client received authoritative pagination metadata: \(legacyList)"
+        )
+    }
 }
 
 func runTrustedDeviceRevocationCheck(client: TCPClient, trustedDevicesFile: URL) throws {
@@ -3800,6 +4190,10 @@ func startServer(
     environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SQLITE_FILE"] = trustedDevicesFile
         .deletingLastPathComponent()
         .appendingPathComponent("runtime-document-index.sqlite")
+        .path
+    environment["AETHERLINK_DEV_RUNTIME_RESEARCH_NOTEBOOK_SQLITE_FILE"] = trustedDevicesFile
+        .deletingLastPathComponent()
+        .appendingPathComponent("runtime-research-notebooks.sqlite")
         .path
     environment["AETHERLINK_DEV_RUNTIME_DOCUMENT_INDEX_SEED_SMOKE"] = "1"
     environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"] = "0"
@@ -4110,6 +4504,9 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "memory.semantic_duplicate_suggestions.v1",
         "memory.semantic_duplicate_clusters.list",
         "memory.semantic_duplicate_clusters.v1",
+        "research.brief.create",
+        "research.notebooks.list",
+        "research.notebooks.v1",
         "memory.delete",
         "memory.summary.drafts.list",
         "memory.summary.draft.generate",
@@ -4292,7 +4689,7 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         smokeRetrievalPrivateBodyCanary,
         smokeRetrievalSecondaryBodyCanary,
         "index.build",
-        "research.brief.create",
+        "research.web.query",
         "citation.sources.list",
         "source_anchor.resolve",
         "source_anchor.metadata.get",
@@ -4342,7 +4739,7 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "smoke-future-backend-configure",
         "smoke-future-embeddings-create",
         "smoke-future-index-build",
-        "smoke-future-research-brief-create",
+        "smoke-future-research-web-query",
         "smoke-future-citation-sources-list",
         "smoke-future-source-anchor-metadata-get",
         "smoke-future-source-control-status",
@@ -4387,7 +4784,7 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "future backend configure namespace smoke",
         "future embeddings create namespace smoke",
         "future index build namespace smoke",
-        "future research brief namespace smoke",
+        "future external research namespace smoke",
         "future citation sources namespace smoke",
         "future source anchor metadata namespace smoke",
         "future source control status namespace smoke",
@@ -5119,12 +5516,52 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         throw SmokeFailure.message("lifecycle seed chat did not stream mock text: \(seedText)")
     }
 
+    let titlePreconditionResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-title-precondition-nonplaceholder",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "title": "Lifecycle title precondition"
+        ]
+    )
+    try requireType(
+        titlePreconditionResponse,
+        "chat.session.rename",
+        context: "chat.title.request non-placeholder precondition"
+    )
+    try requireRequestID(
+        titlePreconditionResponse,
+        "smoke-title-precondition-nonplaceholder",
+        context: "chat.title.request non-placeholder precondition"
+    )
+
+    let titlePlaceholderResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-title-precondition-placeholder",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "title": "New chat"
+        ]
+    )
+    try requireType(
+        titlePlaceholderResponse,
+        "chat.session.rename",
+        context: "chat.title.request placeholder precondition"
+    )
+    try requireRequestID(
+        titlePlaceholderResponse,
+        "smoke-title-precondition-placeholder",
+        context: "chat.title.request placeholder precondition"
+    )
+
     let titleInvalidLocaleTypeResponse = try sendAndRead(
         client,
         type: "chat.title.request",
         requestID: "smoke-title-invalid-locale-type",
         payload: [
-            "session_id": smokeTitleSessionID,
+            "session_id": smokeLifecycleSessionID,
             "model": "dev-mock",
             "locale": ["en"],
             "messages": [
@@ -5165,7 +5602,7 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         type: "chat.title.request",
         requestID: "smoke-title-blank-model",
         payload: [
-            "session_id": smokeTitleSessionID,
+            "session_id": smokeLifecycleSessionID,
             "model": "   \n\t",
             "messages": [
                 ["role": "user", "content": "Create a session for lifecycle smoke."],
@@ -5185,7 +5622,7 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         type: "chat.title.request",
         requestID: "smoke-title-unknown-metadata",
         payload: [
-            "session_id": smokeTitleSessionID,
+            "session_id": smokeLifecycleSessionID,
             "model": "dev-mock",
             "locale": "en",
             "messages": [
@@ -5220,7 +5657,7 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         type: "chat.title.request",
         requestID: "smoke-title",
         payload: [
-            "session_id": smokeTitleSessionID,
+            "session_id": smokeLifecycleSessionID,
             "model": "dev-mock",
             "locale": "en",
             "messages": [
@@ -7136,7 +7573,7 @@ func runAuthenticatedHistoryAndMemoryChecks(
         client,
         type: "memory.summary.drafts.list",
         requestID: "smoke-memory-summary-after-approve",
-        payload: ["limit": 5]
+        payload: ["limit": 100]
     )
     try requireType(
         summaryAfterApproveResponse,
@@ -7661,10 +8098,10 @@ func runAuthenticatedFutureNamespaceRejectionChecks(client: TCPClient) throws {
             ]
         ),
         (
-            "research.brief.create",
-            "smoke-future-research-brief-create",
+            "research.web.query",
+            "smoke-future-research-web-query",
             [
-                "prompt": "future research brief namespace smoke",
+                "query": "future external research namespace smoke",
                 "source": smokeFilePayloadLabel,
             ]
         ),
@@ -7976,6 +8413,254 @@ func runAuthenticatedNonObjectPayloadChecks(client: TCPClient) throws {
             context: "\(malformed.context) connection survival"
         )
     }
+}
+
+func requireCanonicalResearchNotebookCursor(
+    _ cursor: String,
+    expectedLimit: Int,
+    expectedSnapshotCount: Int,
+    expectedOffset: Int,
+    context: String
+) throws {
+    let fields = cursor.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+    guard cursor.utf8.count <= 512,
+          cursor.utf8.allSatisfy({ $0 >= 0x21 && $0 <= 0x7e }),
+          fields.count == 8,
+          fields[0] == "v1",
+          let snapshotID = UUID(uuidString: fields[1]),
+          snapshotID.uuidString.lowercased() == fields[1],
+          fields[2] == "1",
+          Int(fields[3]) == expectedLimit,
+          String(expectedLimit) == fields[3],
+          Int(fields[4]) == expectedSnapshotCount,
+          String(expectedSnapshotCount) == fields[4],
+          Int(fields[5]) == expectedOffset,
+          String(expectedOffset) == fields[5],
+          let expiry = Int64(fields[6]),
+          expiry > Int64(Date().timeIntervalSince1970),
+          String(expiry) == fields[6],
+          fields[7].utf8.count == 64,
+          fields[7].utf8.allSatisfy({ byte in
+              (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) ||
+                  (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+          }) else {
+        throw SmokeFailure.message("\(context) returned a non-canonical cursor: \(cursor)")
+    }
+}
+
+func runAuthenticatedResearchNotebookSeriesPaginationChecks(
+    client: TCPClient,
+    ownerDeviceID: String,
+    chatDatabaseURL: URL,
+    notebookDatabaseURL: URL
+) throws {
+    print("Checking authenticated 201-row research notebook pagination...")
+    let fixture = try researchNotebookAuthoritativeSyncFixture()
+    let rows = try researchNotebookFixtureRows(fixture)
+    guard let pagination = fixture["pagination"] as? [String: Any],
+          let initialRequest = pagination["initial_request"] as? [String: Any],
+          Set(initialRequest.keys) == ["include_archived", "limit"],
+          initialRequest["include_archived"] as? Bool == true,
+          let pageLimit = initialRequest["limit"] as? Int,
+          pageLimit == 100,
+          let expectedPages = pagination["pages"] as? [[String: Any]],
+          expectedPages.count == 3 else {
+        throw SmokeFailure.message("research notebook fixture pagination metadata is malformed")
+    }
+
+    _ = try listChatSessions(
+        client: client,
+        requestID: "smoke-research-series-chat-store-initialize",
+        includeArchived: true
+    )
+    let emptyList = try sendAndRead(
+        client,
+        type: "research.notebooks.list",
+        requestID: "smoke-research-series-store-initialize",
+        payload: initialRequest
+    )
+    try requireType(
+        emptyList,
+        "research.notebooks.list",
+        context: "research notebook series empty initialization"
+    )
+    let emptyPayload = try payload(
+        emptyList,
+        context: "research notebook series empty initialization"
+    )
+    guard let emptyNotebooks = emptyPayload["notebooks"] as? [[String: Any]],
+          emptyNotebooks.isEmpty,
+          emptyPayload["snapshot_count"] as? Int == 0,
+          emptyPayload["next_cursor"] == nil else {
+        throw SmokeFailure.message(
+            "research notebook series fixture did not start from an empty owner scope: \(emptyList)"
+        )
+    }
+
+    try seedResearchNotebookFixtureRows(
+        rows,
+        ownerDeviceID: ownerDeviceID,
+        chatDatabaseURL: chatDatabaseURL,
+        notebookDatabaseURL: notebookDatabaseURL
+    )
+    var fixtureRowsRemoved = false
+    defer {
+        if !fixtureRowsRemoved {
+            try? removeResearchNotebookFixtureRows(
+                ownerDeviceID: ownerDeviceID,
+                chatDatabaseURL: chatDatabaseURL,
+                notebookDatabaseURL: notebookDatabaseURL
+            )
+        }
+    }
+
+    let expectedRows = Array(rows.reversed())
+    var actualRows: [[String: Any]] = []
+    var notebookIDs = Set<String>()
+    var sessionIDs = Set<String>()
+    var cursors = Set<String>()
+    var cursor: String?
+    for (pageIndex, expectedPage) in expectedPages.enumerated() {
+        let requestID = "smoke-research-series-page-\(pageIndex + 1)"
+        let requestPayload: [String: Any] = cursor.map { ["cursor": $0] } ?? initialRequest
+        let response = try sendAndRead(
+            client,
+            type: "research.notebooks.list",
+            requestID: requestID,
+            payload: requestPayload
+        )
+        try requireType(
+            response,
+            "research.notebooks.list",
+            context: "research notebook series page \(pageIndex + 1)"
+        )
+        let pagePayload = try payload(
+            response,
+            context: "research notebook series page \(pageIndex + 1)"
+        )
+        let pageKeys = Set(pagePayload.keys)
+        guard pageKeys.contains("notebooks"),
+              pageKeys.contains("snapshot_count"),
+              pageKeys.isSubset(of: ["notebooks", "snapshot_count", "next_cursor"]),
+              let pageRows = pagePayload["notebooks"] as? [[String: Any]],
+              let expectedOffset = expectedPage["offset"] as? Int,
+              let expectedCount = expectedPage["count"] as? Int,
+              pageRows.count == expectedCount,
+              expectedOffset == actualRows.count,
+              pagePayload["snapshot_count"] as? Int == rows.count else {
+            throw SmokeFailure.message(
+                "research notebook series page shape/count drifted from the fixture: \(response)"
+            )
+        }
+
+        for (pageOffset, notebook) in pageRows.enumerated() {
+            let expected = expectedRows[expectedOffset + pageOffset]
+            guard Set(notebook.keys) == [
+                "notebook_id",
+                "session_id",
+                "title",
+                "model",
+                "source_count",
+                "created_at",
+                "updated_at"
+            ],
+            notebook["notebook_id"] as? String == expected.notebookID,
+            notebook["session_id"] as? String == expected.sessionID,
+            notebook["title"] as? String == expected.title,
+            notebook["model"] as? String == expected.model,
+            notebook["source_count"] as? Int == expected.sourceCount,
+            let createdAtText = notebook["created_at"] as? String,
+            smokeRFC3339Date(createdAtText) == expected.createdAt,
+            let updatedAtText = notebook["updated_at"] as? String,
+            smokeRFC3339Date(updatedAtText) == expected.updatedAt,
+            notebookIDs.insert(expected.notebookID).inserted,
+            sessionIDs.insert(expected.sessionID).inserted else {
+                throw SmokeFailure.message(
+                    "research notebook series returned malformed, duplicate, or non-canonical rows"
+                )
+            }
+        }
+        actualRows.append(contentsOf: pageRows)
+
+        let nextCursor = pagePayload["next_cursor"] as? String
+        if pageIndex < expectedPages.count - 1 {
+            guard !pageRows.isEmpty, let nextCursor else {
+                throw SmokeFailure.message(
+                    "research notebook series returned an empty or terminal nonterminal page"
+                )
+            }
+            let expectedNextOffset = expectedOffset + expectedCount
+            try requireCanonicalResearchNotebookCursor(
+                nextCursor,
+                expectedLimit: pageLimit,
+                expectedSnapshotCount: rows.count,
+                expectedOffset: expectedNextOffset,
+                context: "research notebook series page \(pageIndex + 1)"
+            )
+            guard cursors.insert(nextCursor).inserted else {
+                throw SmokeFailure.message("research notebook series repeated a continuation cursor")
+            }
+            if pageIndex == 0 {
+                let cursorWithLimitRequestID = "smoke-research-series-cursor-with-limit"
+                let cursorWithLimit = try sendAndRead(
+                    client,
+                    type: "research.notebooks.list",
+                    requestID: cursorWithLimitRequestID,
+                    payload: [
+                        "cursor": nextCursor,
+                        "limit": pageLimit
+                    ]
+                )
+                try requireErrorCode(
+                    cursorWithLimit,
+                    "invalid_payload",
+                    requestID: cursorWithLimitRequestID,
+                    context: "research notebook cursor with limit"
+                )
+
+                let cursorWithArchivedRequestID =
+                    "smoke-research-series-cursor-with-include-archived"
+                let cursorWithArchived = try sendAndRead(
+                    client,
+                    type: "research.notebooks.list",
+                    requestID: cursorWithArchivedRequestID,
+                    payload: [
+                        "cursor": nextCursor,
+                        "include_archived": true
+                    ]
+                )
+                try requireErrorCode(
+                    cursorWithArchived,
+                    "invalid_payload",
+                    requestID: cursorWithArchivedRequestID,
+                    context: "research notebook cursor with include_archived"
+                )
+            }
+        } else {
+            guard nextCursor == nil, !pageKeys.contains("next_cursor") else {
+                throw SmokeFailure.message(
+                    "research notebook series terminal page returned a continuation cursor"
+                )
+            }
+        }
+        cursor = nextCursor
+    }
+
+    guard cursor == nil,
+          actualRows.count == rows.count,
+          notebookIDs.count == rows.count,
+          sessionIDs.count == rows.count,
+          cursors.count == expectedPages.count - 1 else {
+        throw SmokeFailure.message(
+            "research notebook series did not complete one stable unique 201-row snapshot"
+        )
+    }
+    try removeResearchNotebookFixtureRows(
+        ownerDeviceID: ownerDeviceID,
+        chatDatabaseURL: chatDatabaseURL,
+        notebookDatabaseURL: notebookDatabaseURL
+    )
+    fixtureRowsRemoved = true
 }
 
 func runMultiDeviceOwnerIsolationChecks(
@@ -9040,6 +9725,300 @@ func runMockBackendChecks(
         )
     }
 
+    let researchNotebookID = "research_notebook_" + UUID().uuidString
+        .replacingOccurrences(of: "-", with: "")
+        .lowercased()
+    let researchSessionID = "\(smokeSessionID)-research-\(UUID().uuidString.lowercased())"
+    let researchTopic = "Build a brief from the approved seeded runtime source."
+    let researchCreateRequestID = "smoke-research-brief-create"
+    let researchSyncFixture = try researchNotebookAuthoritativeSyncFixture()
+    guard let researchWireTranscript = researchSyncFixture["wire_transcript"] as? [String: Any],
+          let researchWireInitialRequest = researchWireTranscript["initial_request"] as? [String: Any],
+          Set(researchWireInitialRequest.keys) == ["include_archived", "limit"],
+          researchWireInitialRequest["limit"] as? Int == 1,
+          let researchWirePages = researchWireTranscript["pages"] as? [[String: Any]],
+          researchWirePages.count == 2 else {
+        throw SmokeFailure.message(
+            "research notebook authoritative sync wire transcript is missing its exact two-page contract"
+        )
+    }
+    try client.send(envelope(
+        "research.brief.create",
+        requestID: researchCreateRequestID,
+        payload: [
+            "notebook_id": researchNotebookID,
+            "session_id": researchSessionID,
+            "topic": researchTopic,
+            "model": "dev-mock",
+            "locale": "en-US",
+            "trusted_source_grant_ids": [grantID]
+        ]
+    ))
+    let researchText = try readStoppedChatStream(
+        client: client,
+        requestID: researchCreateRequestID,
+        context: "research brief create"
+    ) { donePayload in
+        guard let attributions = donePayload["source_attributions"] as? [[String: Any]],
+              attributions.count == 1 else {
+            throw SmokeFailure.message(
+                "research brief did not reuse trusted-source attribution: \(donePayload)"
+            )
+        }
+    }
+    guard researchText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("research brief did not reuse chat streaming: \(researchText)")
+    }
+    let researchBackendMessages = try mockChatRequestAuditMessages(
+        fileURL: chatRequestAuditFile,
+        sessionID: researchSessionID,
+        context: "research brief backend request"
+    )
+    let researchBackendDescription = String(describing: researchBackendMessages)
+    guard researchBackendDescription.contains("runtime-owned research notebook"),
+          researchBackendDescription.contains("Runtime trusted source excerpts"),
+          researchBackendDescription.contains(smokeRetrievalSnippetMarker) else {
+        throw SmokeFailure.message(
+            "research runtime guard or approved source did not reach backend: \(researchBackendMessages)"
+        )
+    }
+
+    let researchStoredMessages = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-research-chat-messages",
+        payload: ["session_id": researchSessionID, "limit": 20]
+    )
+    let researchStoredDescription = String(describing: try payload(
+        researchStoredMessages,
+        context: "research stored chat messages"
+    ))
+    guard researchStoredDescription.contains(researchTopic),
+          !researchStoredDescription.contains("runtime-owned research notebook"),
+          !researchStoredDescription.contains(smokeRetrievalSnippetMarker),
+          !researchStoredDescription.contains(grantID) else {
+        throw SmokeFailure.message(
+            "research runtime-only context entered chat history: \(researchStoredMessages)"
+        )
+    }
+
+    let secondResearchNotebookID = "research_notebook_" + UUID().uuidString
+        .replacingOccurrences(of: "-", with: "")
+        .lowercased()
+    let secondResearchSessionID = "\(smokeSessionID)-research-\(UUID().uuidString.lowercased())"
+    let secondResearchCreateRequestID = "smoke-research-brief-create-second"
+    try client.send(envelope(
+        "research.brief.create",
+        requestID: secondResearchCreateRequestID,
+        payload: [
+            "notebook_id": secondResearchNotebookID,
+            "session_id": secondResearchSessionID,
+            "topic": "Build a second pagination smoke brief.",
+            "model": "dev-mock",
+            "locale": "en-US",
+            "trusted_source_grant_ids": [grantID]
+        ]
+    ))
+    _ = try readStoppedChatStream(
+        client: client,
+        requestID: secondResearchCreateRequestID,
+        context: "second research brief create"
+    )
+
+    var researchListCursor: String?
+    var researchSnapshotCount: Int?
+    var researchListPageCount = 0
+    var researchNotebooks: [[String: Any]] = []
+    var researchNotebookIDs = Set<String>()
+    var researchNotebookSessionIDs = Set<String>()
+    var researchListCursors = Set<String>()
+    var previousResearchUpdatedAt: Date?
+    var previousResearchNotebookID: String?
+    repeat {
+        researchListPageCount += 1
+        guard researchListPageCount <= 100 else {
+            throw SmokeFailure.message("research notebook pagination exceeded 100 pages")
+        }
+        let requestID = "smoke-research-notebooks-list-\(researchListPageCount)"
+        let requestPayload: [String: Any]
+        if let researchListCursor {
+            requestPayload = ["cursor": researchListCursor]
+        } else {
+            requestPayload = researchWireInitialRequest
+        }
+        let researchList = try sendAndRead(
+            client,
+            type: "research.notebooks.list",
+            requestID: requestID,
+            payload: requestPayload
+        )
+        try requireType(
+            researchList,
+            "research.notebooks.list",
+            context: "research notebooks authoritative page \(researchListPageCount)"
+        )
+        let pagePayload = try payload(
+            researchList,
+            context: "research notebooks authoritative page \(researchListPageCount)"
+        )
+        let pageKeys = Set(pagePayload.keys)
+        guard pageKeys.contains("notebooks"),
+              pageKeys.contains("snapshot_count"),
+              pageKeys.isSubset(of: ["notebooks", "snapshot_count", "next_cursor"]),
+              let pageNotebooks = pagePayload["notebooks"] as? [[String: Any]],
+              let pageSnapshotCount = pagePayload["snapshot_count"] as? Int,
+              pageSnapshotCount == researchWirePages.count,
+              pageNotebooks.count <= 1,
+              researchSnapshotCount == nil || researchSnapshotCount == pageSnapshotCount else {
+            throw SmokeFailure.message(
+                "research notebook authoritative page had an invalid shape or count: \(researchList)"
+            )
+        }
+        researchSnapshotCount = pageSnapshotCount
+        for notebook in pageNotebooks {
+            guard let notebookID = notebook["notebook_id"] as? String,
+                  let sessionID = notebook["session_id"] as? String,
+                  let updatedAtText = notebook["updated_at"] as? String,
+                  let updatedAt = smokeRFC3339Date(updatedAtText),
+                  researchNotebookIDs.insert(notebookID).inserted,
+                  researchNotebookSessionIDs.insert(sessionID).inserted else {
+                throw SmokeFailure.message(
+                    "research notebook authoritative pagination returned duplicate ids or malformed ordering metadata"
+                )
+            }
+            if let previousResearchUpdatedAt,
+               let previousResearchNotebookID {
+                guard previousResearchUpdatedAt > updatedAt || (
+                    previousResearchUpdatedAt == updatedAt &&
+                    previousResearchNotebookID.utf8.lexicographicallyPrecedes(notebookID.utf8)
+                ) else {
+                    throw SmokeFailure.message(
+                        "research notebook authoritative pagination was not globally canonical"
+                    )
+                }
+            }
+            previousResearchUpdatedAt = updatedAt
+            previousResearchNotebookID = notebookID
+        }
+        researchNotebooks.append(contentsOf: pageNotebooks)
+        guard researchNotebooks.count <= pageSnapshotCount else {
+            throw SmokeFailure.message(
+                "research notebook authoritative pagination exceeded snapshot_count"
+            )
+        }
+        let nextCursor = pagePayload["next_cursor"] as? String
+        if let nextCursor {
+            guard !pageNotebooks.isEmpty,
+                  nextCursor.utf8.count <= 512,
+                  nextCursor.unicodeScalars.allSatisfy({ scalar in
+                      scalar.isASCII && (
+                          CharacterSet.alphanumerics.contains(scalar) ||
+                          scalar == "." || scalar == "_" || scalar == "-"
+                      )
+                  }),
+                  researchListCursors.insert(nextCursor).inserted else {
+                throw SmokeFailure.message(
+                    "research notebook authoritative pagination returned an invalid, repeated, or empty-page cursor"
+                )
+            }
+            if researchListPageCount == 1 {
+                let mixedCursorRequestID = "smoke-research-notebooks-list-mixed-cursor"
+                let mixedCursor = try sendAndRead(
+                    client,
+                    type: "research.notebooks.list",
+                    requestID: mixedCursorRequestID,
+                    payload: ["cursor": nextCursor, "limit": 1]
+                )
+                try requireErrorCode(
+                    mixedCursor,
+                    "invalid_payload",
+                    requestID: mixedCursorRequestID,
+                    context: "research notebooks mixed cursor continuation"
+                )
+            }
+        }
+        researchListCursor = nextCursor
+    } while researchListCursor != nil
+
+    guard researchListPageCount == researchWirePages.count,
+          researchNotebooks.count == researchSnapshotCount,
+          Set(researchNotebooks.compactMap { $0["notebook_id"] as? String }).isSuperset(
+              of: [researchNotebookID, secondResearchNotebookID]
+          ),
+          let researchNotebook = researchNotebooks.first(where: {
+              $0["notebook_id"] as? String == researchNotebookID
+          }),
+          Set(researchNotebook.keys) == [
+              "notebook_id",
+              "session_id",
+              "title",
+              "model",
+              "source_count",
+              "created_at",
+              "updated_at"
+          ],
+          researchNotebook["session_id"] as? String == researchSessionID,
+          researchNotebook["source_count"] as? Int == 1 else {
+        throw SmokeFailure.message(
+            "research notebook authoritative pagination did not return both safe summaries"
+        )
+    }
+    let researchListDescription = String(describing: researchNotebooks)
+    for forbidden in [
+        grantID,
+        retrievalSourceAnchorID,
+        smokeRetrievalSnippetMarker,
+        smokeRetrievalPrivateBodyCanary,
+        "trusted_source_grant_ids",
+        "source_text",
+        "source_path",
+        "backend_url"
+    ] where researchListDescription.contains(forbidden) {
+        throw SmokeFailure.message(
+            "research notebook summary exposed forbidden metadata \(forbidden)"
+        )
+    }
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-research-follow-up",
+        payload: [
+            "session_id": researchSessionID,
+            "model": "dev-mock",
+            "messages": [["role": "user", "content": "What remains uncertain?"]]
+        ]
+    ))
+    _ = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-research-follow-up",
+        context: "research follow-up pinned sources"
+    ) { donePayload in
+        guard let attributions = donePayload["source_attributions"] as? [[String: Any]],
+              attributions.count == 1 else {
+            throw SmokeFailure.message(
+                "research follow-up did not reuse pinned source: \(donePayload)"
+            )
+        }
+    }
+
+    let mismatchedResearchFollowUp = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-research-follow-up-mismatched-source",
+        payload: [
+            "session_id": researchSessionID,
+            "model": "dev-mock",
+            "messages": [["role": "user", "content": "Use a different source."]],
+            "trusted_source_grant_ids": ["trusted_source_ffffffffffffffffffffffffffffffff"]
+        ]
+    )
+    try requireErrorCode(
+        mismatchedResearchFollowUp,
+        "invalid_payload",
+        requestID: "smoke-research-follow-up-mismatched-source",
+        context: "research follow-up mismatched source"
+    )
+
     let historicalSourceResolve = try sendAndRead(
         client,
         type: "chat.source_attribution.resolve",
@@ -9200,6 +10179,35 @@ func runMockBackendChecks(
         throw SmokeFailure.message(
             "revoked trusted-source grant reached backend audit: \(revokedGrantBackendEntries)"
         )
+    }
+    let researchBackendCountBeforeRevokedFollowUp = try mockChatRequestAuditEntries(
+        fileURL: chatRequestAuditFile
+    ).filter { entry in
+        entry["session_id"] as? String == researchSessionID
+    }.count
+    let revokedResearchFollowUp = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-research-follow-up-after-revoke",
+        payload: [
+            "session_id": researchSessionID,
+            "model": "dev-mock",
+            "messages": [["role": "user", "content": "This must fail before dispatch."]]
+        ]
+    )
+    try requireErrorCode(
+        revokedResearchFollowUp,
+        "trusted_source_not_found",
+        requestID: "smoke-research-follow-up-after-revoke",
+        context: "research follow-up after source revoke"
+    )
+    let researchBackendCountAfterRevokedFollowUp = try mockChatRequestAuditEntries(
+        fileURL: chatRequestAuditFile
+    ).filter { entry in
+        entry["session_id"] as? String == researchSessionID
+    }.count
+    guard researchBackendCountAfterRevokedFollowUp == researchBackendCountBeforeRevokedFollowUp else {
+        throw SmokeFailure.message("revoked research source reached backend dispatch")
     }
     let emptyTrustedSourceList = try sendAndRead(
         client,
@@ -10167,6 +11175,9 @@ func main() throws {
     let mockChatRequestAuditFile = temporaryDirectory.appendingPathComponent("mock-chat-request-audit.jsonl")
     let mockEmbeddingRequestAuditFile = temporaryDirectory
         .appendingPathComponent("mock-embedding-request-audit.jsonl")
+    let runtimeChatDatabaseURL = temporaryDirectory.appendingPathComponent("runtime-chat-events.sqlite")
+    let runtimeResearchNotebookDatabaseURL = temporaryDirectory
+        .appendingPathComponent("runtime-research-notebooks.sqlite")
     let ownerDeviceBID = "aetherlink-auth-smoke-device-b"
     let ownerDeviceBPrivateKey = P256.Signing.PrivateKey()
     let ownerDeviceBPublicKeyBase64 = ownerDeviceBPrivateKey.publicKey.derRepresentation.base64EncodedString()
@@ -10409,6 +11420,15 @@ func main() throws {
         runtimeProof: runtimeProof
     )
 
+    try runAuthenticatedResearchMissingCapabilityCheck(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey,
+        runtimeProof: runtimeProof
+    )
+
     print("Authenticating a fresh \(options.transportMode.name) connection with P-256 challenge-response...")
     do {
         let client = try authenticateFreshClient(
@@ -10428,6 +11448,13 @@ func main() throws {
         try runAuthenticatedFutureNamespaceRejectionChecks(client: client)
         try runAuthenticatedFutureMemoryNamespaceRejectionChecks(client: client)
         try runAuthenticatedFutureRouteNamespaceRejectionChecks(client: client)
+
+        try runAuthenticatedResearchNotebookSeriesPaginationChecks(
+            client: client,
+            ownerDeviceID: deviceID,
+            chatDatabaseURL: runtimeChatDatabaseURL,
+            notebookDatabaseURL: runtimeResearchNotebookDatabaseURL
+        )
 
         switch options.backendMode {
         case .mock:

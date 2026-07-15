@@ -39,6 +39,10 @@ class ProtocolCodec(
         val body = bytes.decodeToString()
         val rawInspection = RawJsonObjectInspector(body).inspect()
         val duplicateKeyStrictMessageType = when {
+            MessageType.ResearchBriefCreate in rawInspection.topLevelTypeValues ->
+                MessageType.ResearchBriefCreate
+            MessageType.ResearchNotebooksList in rawInspection.topLevelTypeValues ->
+                MessageType.ResearchNotebooksList
             MessageType.MemorySemanticDuplicateSuggestionsList in rawInspection.topLevelTypeValues ->
                 MessageType.MemorySemanticDuplicateSuggestionsList
             MessageType.MemorySemanticDuplicateClustersList in rawInspection.topLevelTypeValues ->

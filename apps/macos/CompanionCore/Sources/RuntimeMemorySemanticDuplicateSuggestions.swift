@@ -465,7 +465,7 @@ enum RuntimeMemorySemanticDuplicateSuggester {
         )
     }
 
-    private static func normalized(
+    static func normalized(
         _ embeddings: [[Double]],
         cancellationCheck: () throws -> Void
     ) throws -> [[Double]] {
@@ -528,7 +528,7 @@ enum RuntimeMemorySemanticDuplicateSuggester {
         return normalizedEmbeddings
     }
 
-    private static func similarityBasisPoints(
+    static func similarityBasisPoints(
         _ lhs: [Double],
         _ rhs: [Double],
         cancellationCheck: () throws -> Void
@@ -547,7 +547,7 @@ enum RuntimeMemorySemanticDuplicateSuggester {
         )
     }
 
-    private static func utf8LexicographicallyPrecedes(_ lhs: String, _ rhs: String) -> Bool {
+    static func utf8LexicographicallyPrecedes(_ lhs: String, _ rhs: String) -> Bool {
         RuntimeMemoryExactDuplicateSuggester.utf8LexicographicallyPrecedes(lhs, rhs)
     }
 

@@ -16,6 +16,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.File
 
 class ProtocolCodecTest {
     @Test
@@ -565,6 +566,109 @@ class ProtocolCodecTest {
         )
         assertEquals(null, json["capabilities"])
         assertEquals(null, json["transport_binding"])
+    }
+
+    @Test
+    fun helloPayloadEnforcesOptionalUniqueNonblankUtf8CapabilitiesAnd64EntryLimit() {
+        val maximumCapabilities = List(64) { index -> "capability.$index" }
+
+        val accepted = HelloPayload(
+            deviceId = "client-1",
+            deviceName = "AetherLink Client",
+            capabilities = maximumCapabilities,
+        )
+        assertEquals(
+            maximumCapabilities,
+            Json.decodeFromString<HelloPayload>(Json.encodeToString(accepted)).capabilities,
+        )
+        assertEquals(
+            emptyList<String>(),
+            Json.decodeFromString<HelloPayload>(
+                """{"device_id":"client-1","device_name":"AetherLink Client"}""",
+            ).capabilities,
+        )
+
+        val invalidCapabilities = listOf(
+            "blank" to listOf(""),
+            "whitespace-only" to listOf(" \t\n"),
+            "duplicate" to listOf("chat", "chat"),
+            "invalid UTF-8" to listOf("\uD800"),
+            "65 entries" to List(65) { index -> "capability.$index" },
+        )
+        invalidCapabilities.forEach { (description, capabilities) ->
+            assertThrows("expected $description constructor rejection", IllegalArgumentException::class.java) {
+                HelloPayload(
+                    deviceId = "client-1",
+                    deviceName = "AetherLink Client",
+                    capabilities = capabilities,
+                )
+            }
+            val encodedCapabilities = Json.encodeToString(capabilities)
+            assertThrows("expected $description decode rejection", Exception::class.java) {
+                Json.decodeFromString<HelloPayload>(
+                    """{"device_id":"client-1","device_name":"AetherLink Client","client_capabilities":$encodedCapabilities}""",
+                )
+            }
+        }
+        assertThrows("explicit null is not an optional array", Exception::class.java) {
+            Json.decodeFromString<HelloPayload>(
+                """{"device_id":"client-1","device_name":"AetherLink Client","client_capabilities":null}""",
+            )
+        }
+    }
+
+    @Test
+    fun protocolSchemaPins64CapabilitiesAndStrictResearchNotebookSyncBranches() {
+        val schema = Json.parseToJsonElement(
+            sharedRepoFile("packages/protocol-schema/protocol.schema.json"),
+        ).jsonObject
+        val definitions = schema.getValue("\$defs").jsonObject
+        val helloCapabilities = definitions.getValue("helloPayload").jsonObject
+            .getValue("properties").jsonObject
+            .getValue("client_capabilities").jsonObject
+        assertEquals("64", helloCapabilities.getValue("maxItems").jsonPrimitive.content)
+        assertTrue(helloCapabilities.getValue("uniqueItems").jsonPrimitive.boolean)
+
+        val branches = definitions.getValue("researchNotebooksListPayload").jsonObject
+            .getValue("oneOf").jsonArray
+            .map { it.jsonObject }
+        assertEquals(4, branches.size)
+        assertTrue(branches.none {
+            it.getValue("additionalProperties").jsonPrimitive.boolean
+        })
+        val branchesByRequired = branches.associateBy { branch ->
+            branch.getValue("required").jsonArray.map { it.jsonPrimitive.content }.toSet()
+        }
+        val initial = branchesByRequired.getValue(setOf("include_archived", "limit"))
+        val continuation = branchesByRequired.getValue(setOf("cursor"))
+        val legacy = branchesByRequired.getValue(setOf("notebooks"))
+        val capable = branchesByRequired.getValue(setOf("notebooks", "snapshot_count"))
+        assertEquals(
+            "200",
+            initial.getValue("properties").jsonObject.getValue("limit").jsonObject
+                .getValue("maximum").jsonPrimitive.content,
+        )
+        assertEquals(
+            "512",
+            continuation.getValue("properties").jsonObject.getValue("cursor").jsonObject
+                .getValue("maxLength").jsonPrimitive.content,
+        )
+        assertEquals(
+            "100",
+            legacy.getValue("properties").jsonObject.getValue("notebooks").jsonObject
+                .getValue("maxItems").jsonPrimitive.content,
+        )
+        val capableProperties = capable.getValue("properties").jsonObject
+        assertEquals(
+            "200",
+            capableProperties.getValue("notebooks").jsonObject
+                .getValue("maxItems").jsonPrimitive.content,
+        )
+        assertEquals(
+            "10000",
+            capableProperties.getValue("snapshot_count").jsonObject
+                .getValue("maximum").jsonPrimitive.content,
+        )
     }
 
     @Test
@@ -2485,6 +2589,591 @@ class ProtocolCodecTest {
                 canonicalSourceReviewPayload(),
                 canonicalTrustedSourcePayload().copy(citationId = "citation_${"f".repeat(32)}"),
             )
+        }
+    }
+
+    @Test
+    fun researchNotebookPayloadsRoundTripExactCanonicalWireContract() {
+        val grantIds = listOf(
+            "trusted_source_${"1".repeat(32)}",
+            "trusted_source_${"2".repeat(32)}",
+        )
+        val topic = "  Compare the approved runtime notes.  "
+        val createRequest = ResearchBriefCreateRequestPayload(
+            notebookId = "research_notebook_${"a".repeat(32)}",
+            sessionId = "session-research-1",
+            topic = topic,
+            model = "ollama:llama3.1:8b",
+            locale = "ko-KR",
+            trustedSourceGrantIds = grantIds,
+        )
+        val listRequest = ResearchNotebooksListRequestPayload()
+        val maximumListRequest = ResearchNotebooksListRequestPayload(
+            includeArchived = true,
+            limit = 200,
+        )
+        val continuation = ResearchNotebooksListRequestPayload(cursor = "snapshot-cursor-2")
+        val result = ResearchNotebooksListResultPayload(
+            notebooks = listOf(
+                canonicalResearchNotebook(
+                    notebookHex = "1".repeat(32),
+                    sessionId = "session-research-new",
+                    title = "Newest research",
+                    updatedAt = "2026-07-14T03:00:00Z",
+                ),
+                canonicalResearchNotebook(
+                    notebookHex = "2".repeat(32),
+                    sessionId = "session-research-old",
+                    title = "Earlier research",
+                    updatedAt = "2026-07-14T02:00:00Z",
+                    archivedAt = "2026-07-14T04:00:00Z",
+                ),
+            ),
+            snapshotCount = 3,
+            nextCursor = "snapshot-cursor-2",
+        )
+        val legacyResult = ResearchNotebooksListResultPayload(result.notebooks)
+        val encodeDefaultsJson = Json { encodeDefaults = true }
+
+        val createEncoded = Json.encodeToString(createRequest)
+        val createJson = Json.parseToJsonElement(createEncoded).jsonObject
+        val listRequestEncoded = Json.encodeToString(listRequest)
+        val listRequestJson = Json.parseToJsonElement(listRequestEncoded).jsonObject
+        val maximumListRequestJson = Json.parseToJsonElement(
+            Json.encodeToString(maximumListRequest),
+        ).jsonObject
+        val continuationJson = Json.parseToJsonElement(
+            encodeDefaultsJson.encodeToString(continuation),
+        ).jsonObject
+        val resultEncoded = Json.encodeToString(result)
+        val resultJson = Json.parseToJsonElement(resultEncoded).jsonObject
+        val legacyResultJson = Json.parseToJsonElement(
+            encodeDefaultsJson.encodeToString(legacyResult),
+        ).jsonObject
+        val notebookJson = resultJson.getValue("notebooks").jsonArray.first().jsonObject
+
+        assertEquals("research.notebooks.v1", RESEARCH_NOTEBOOKS_CAPABILITY)
+        assertEquals(
+            "research.notebooks.authoritative_sync.v1",
+            RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY,
+        )
+        assertEquals("research.brief.create", MessageType.ResearchBriefCreate)
+        assertEquals("research.notebooks.list", MessageType.ResearchNotebooksList)
+        assertEquals(
+            setOf("notebook_id", "session_id", "topic", "model", "locale", "trusted_source_grant_ids"),
+            createJson.keys,
+        )
+        assertEquals(topic, createJson.getValue("topic").jsonPrimitive.content)
+        assertEquals(grantIds, createJson.getValue("trusted_source_grant_ids").jsonArray.map {
+            it.jsonPrimitive.content
+        })
+        assertEquals(createRequest, Json.decodeFromString<ResearchBriefCreateRequestPayload>(createEncoded))
+        assertEquals(setOf("include_archived", "limit"), listRequestJson.keys)
+        assertEquals("false", listRequestJson.getValue("include_archived").jsonPrimitive.content)
+        assertEquals("100", listRequestJson.getValue("limit").jsonPrimitive.content)
+        assertEquals(listRequest, Json.decodeFromString<ResearchNotebooksListRequestPayload>(listRequestEncoded))
+        assertEquals("200", maximumListRequestJson.getValue("limit").jsonPrimitive.content)
+        assertEquals(setOf("cursor"), continuationJson.keys)
+        assertEquals("snapshot-cursor-2", continuationJson.getValue("cursor").jsonPrimitive.content)
+        assertEquals(
+            continuation,
+            Json.decodeFromString<ResearchNotebooksListRequestPayload>(continuationJson.toString()),
+        )
+        assertEquals(setOf("notebooks", "snapshot_count", "next_cursor"), resultJson.keys)
+        assertEquals("3", resultJson.getValue("snapshot_count").jsonPrimitive.content)
+        assertEquals("snapshot-cursor-2", resultJson.getValue("next_cursor").jsonPrimitive.content)
+        assertEquals(setOf("notebooks"), legacyResultJson.keys)
+        assertEquals(
+            setOf(
+                "notebook_id",
+                "session_id",
+                "title",
+                "model",
+                "source_count",
+                "created_at",
+                "updated_at",
+            ),
+            notebookJson.keys,
+        )
+        assertEquals(result, Json.decodeFromString<ResearchNotebooksListResultPayload>(resultEncoded))
+        listOf(
+            "trusted_source_grant_ids",
+            "grant_id",
+            "source_anchor_id",
+            "url",
+            "path",
+            "endpoint",
+            "embedding_model_id",
+            "tool",
+            "web",
+        ).forEach { forbiddenField ->
+            assertFalse(resultEncoded.contains("\"$forbiddenField\""))
+        }
+    }
+
+    @Test
+    fun researchBriefCreateRejectsMissingUnknownUnsafeMalformedAndBoundedValues() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val grantId = "trusted_source_${"1".repeat(32)}"
+        val valid = Json.parseToJsonElement(
+            """{"notebook_id":"research_notebook_${"a".repeat(32)}","session_id":"session-1","topic":"Research topic","model":"ollama:model","locale":"ko","trusted_source_grant_ids":["$grantId"]}""",
+        ).jsonObject
+
+        listOf("notebook_id", "session_id", "topic", "model", "trusted_source_grant_ids").forEach { field ->
+            assertThrows("expected missing $field rejection", Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchBriefCreateRequestPayload>(JsonObject(valid - field).toString())
+            }
+        }
+        listOf(
+            "embedding_model_id",
+            "url",
+            "path",
+            "endpoint",
+            "source_anchor_id",
+            "source_text",
+            "tool",
+            "web",
+        ).forEach { field ->
+            val unsafe = JsonObject(valid + (field to JsonPrimitive("secret"))).toString()
+            val error = assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchBriefCreateRequestPayload>(unsafe)
+            }
+            assertTrue(error.message.orEmpty().contains("unknown field"))
+        }
+
+        val invalidPayloads = listOf(
+            valid.replacing("notebook_id", JsonPrimitive("research_notebook_${"A".repeat(32)}")).toString(),
+            valid.replacing("session_id", JsonPrimitive("   ")).toString(),
+            valid.replacing("session_id", JsonPrimitive("s".repeat(257))).toString(),
+            valid.replacing("topic", JsonPrimitive("   ")).toString(),
+            valid.replacing("topic", JsonPrimitive("x".repeat(2049))).toString(),
+            valid.replacing("topic", JsonPrimitive(1)).toString(),
+            valid.replacing("model", JsonPrimitive("   ")).toString(),
+            valid.replacing("model", JsonPrimitive("m".repeat(257))).toString(),
+            valid.replacing("locale", JsonPrimitive("l".repeat(65))).toString(),
+            valid.replacing("locale", kotlinx.serialization.json.JsonNull).toString(),
+            JsonObject(
+                valid + ("trusted_source_grant_ids" to kotlinx.serialization.json.JsonArray(emptyList())),
+            ).toString(),
+            JsonObject(
+                valid + (
+                    "trusted_source_grant_ids" to kotlinx.serialization.json.JsonArray(
+                        listOf(JsonPrimitive(grantId), JsonPrimitive(grantId)),
+                    )
+                ),
+            ).toString(),
+            JsonObject(
+                valid + ("trusted_source_grant_ids" to kotlinx.serialization.json.JsonArray(List(9) { index ->
+                    JsonPrimitive("trusted_source_${index.toString(16).padStart(32, '0')}")
+                })),
+            ).toString(),
+            JsonObject(
+                valid + (
+                    "trusted_source_grant_ids" to kotlinx.serialization.json.JsonArray(
+                        listOf(JsonPrimitive("trusted_source_${"g".repeat(32)}")),
+                    )
+                ),
+            ).toString(),
+        )
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid research create rejection: $payload", Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchBriefCreateRequestPayload>(payload)
+            }
+        }
+        val unicodeError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ResearchBriefCreateRequestPayload>(
+                """{"notebook_id":"research_notebook_${"a".repeat(32)}","session_id":"session-1","topic":"\uD800","model":"ollama:model","trusted_source_grant_ids":["$grantId"]}""",
+            )
+        }
+        assertTrue(unicodeError.message.orEmpty().contains("UTF-8 encodable Unicode"))
+
+        val boundary = ResearchBriefCreateRequestPayload(
+            notebookId = "research_notebook_${"f".repeat(32)}",
+            sessionId = "s".repeat(256),
+            topic = "\uD83D\uDE00".repeat(2048),
+            model = "m".repeat(256),
+            locale = "l".repeat(64),
+            trustedSourceGrantIds = List(8) { index ->
+                "trusted_source_${index.toString(16).padStart(32, '0')}"
+            },
+        )
+        assertEquals(8192, boundary.topic.toByteArray(Charsets.UTF_8).size)
+    }
+
+    @Test
+    fun researchNotebooksListRequestRequiresExplicitTypedBoundedFields() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val maximumCursor = "c".repeat(512)
+        val invalidPayloads = listOf(
+            "{}",
+            """{"include_archived":false}""",
+            """{"limit":100}""",
+            """{"include_archived":0,"limit":100}""",
+            """{"include_archived":"false","limit":100}""",
+            """{"include_archived":false,"limit":true}""",
+            """{"include_archived":false,"limit":100.0}""",
+            """{"include_archived":false,"limit":0}""",
+            """{"include_archived":false,"limit":201}""",
+            """{"include_archived":false,"limit":100,"cursor":"secret"}""",
+            """{"cursor":"secret","include_archived":false}""",
+            """{"cursor":"secret","limit":100}""",
+            """{"cursor":null}""",
+            """{"cursor":1}""",
+            """{"cursor":"\uD800"}""",
+        ) + invalidResearchNotebookCursors().map { cursor ->
+            """{"cursor":${JsonPrimitive(cursor)}}"""
+        }
+
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid research list request rejection: $payload", Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchNotebooksListRequestPayload>(payload)
+            }
+        }
+        assertEquals(
+            ResearchNotebooksListRequestPayload(includeArchived = true, limit = 200),
+            Json.decodeFromString<ResearchNotebooksListRequestPayload>(
+                """{"include_archived":true,"limit":200}""",
+            ),
+        )
+        assertEquals(
+            maximumCursor,
+            Json.decodeFromString<ResearchNotebooksListRequestPayload>(
+                """{"cursor":"$maximumCursor"}""",
+            ).cursor,
+        )
+        invalidResearchNotebookCursors().forEach { cursor ->
+            assertThrows("expected invalid research cursor constructor rejection", IllegalArgumentException::class.java) {
+                ResearchNotebooksListRequestPayload(cursor = cursor)
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListRequestPayload(cursor = "\uD800")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListRequestPayload(includeArchived = true, cursor = "secret")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListRequestPayload(limit = 200, cursor = "secret")
+        }
+    }
+
+    @Test
+    fun researchNotebookResponseRejectsMalformedUnsafeUnicodeAndNoncanonicalTimeValues() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val valid = Json.parseToJsonElement(
+            Json.encodeToString(canonicalResearchNotebook()),
+        ).jsonObject
+        val requiredFields = setOf(
+            "notebook_id",
+            "session_id",
+            "title",
+            "model",
+            "source_count",
+            "created_at",
+            "updated_at",
+        )
+        requiredFields.forEach { field ->
+            assertThrows("expected missing $field rejection", Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchNotebookPayload>(JsonObject(valid - field).toString())
+            }
+        }
+        listOf("trusted_source_grant_ids", "grant_id", "source_anchor_id", "source_text", "url", "path").forEach {
+            field ->
+            val error = assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchNotebookPayload>(
+                    JsonObject(valid + (field to JsonPrimitive("secret"))).toString(),
+                )
+            }
+            assertTrue(error.message.orEmpty().contains("unknown field"))
+        }
+
+        val invalidPayloads = listOf(
+            valid.replacing("notebook_id", JsonPrimitive("research_notebook_${"A".repeat(32)}")).toString(),
+            valid.replacing("session_id", JsonPrimitive("   ")).toString(),
+            valid.replacing("session_id", JsonPrimitive("s".repeat(257))).toString(),
+            valid.replacing("title", JsonPrimitive("   ")).toString(),
+            valid.replacing("title", JsonPrimitive("x".repeat(257))).toString(),
+            valid.replacing("model", JsonPrimitive("m".repeat(257))).toString(),
+            valid.replacing("source_count", JsonPrimitive(0)).toString(),
+            valid.replacing("source_count", JsonPrimitive(9)).toString(),
+            valid.replacing("source_count", JsonPrimitive(1.0)).toString(),
+            valid.replacing("source_count", JsonPrimitive(true)).toString(),
+            valid.replacing("created_at", JsonPrimitive("2026-07-14 00:00:00Z")).toString(),
+            valid.replacing("updated_at", JsonPrimitive("2026-07-13T23:59:59Z")).toString(),
+            JsonObject(valid + ("archived_at" to JsonPrimitive("2026-07-13T23:59:59Z"))).toString(),
+            JsonObject(valid + ("archived_at" to kotlinx.serialization.json.JsonNull)).toString(),
+        )
+        invalidPayloads.forEach { payload ->
+            assertThrows("expected invalid research notebook rejection: $payload", Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchNotebookPayload>(payload)
+            }
+        }
+        val unicodeError = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ResearchNotebookPayload>(
+                """{"notebook_id":"research_notebook_${"0".repeat(32)}","session_id":"session-1","title":"\uD800","model":"ollama:model","source_count":1,"created_at":"2026-07-14T00:00:00Z","updated_at":"2026-07-14T00:00:00Z"}""",
+            )
+        }
+        assertTrue(unicodeError.message.orEmpty().contains("UTF-8 encodable Unicode"))
+
+        val boundary = canonicalResearchNotebook(
+            sessionId = "\uD83D\uDE00".repeat(256),
+            title = "\uD83D\uDE00".repeat(256),
+            model = "\uD83D\uDE00".repeat(256),
+            createdAt = "2026-07-14T00:00:00.000Z",
+            updatedAt = "2026-07-14T01:00:00.123Z",
+        )
+        assertEquals(1024, boundary.title.toByteArray(Charsets.UTF_8).size)
+    }
+
+    @Test
+    fun researchNotebooksListResponseEnforcesExactUniqueBoundedDeterministicOrder() {
+        val permissiveJson = Json { ignoreUnknownKeys = true }
+        val tieFirst = canonicalResearchNotebook(
+            notebookHex = "0".repeat(32),
+            sessionId = "session-tie-first",
+            updatedAt = "2026-07-14T02:00:00Z",
+        )
+        val tieSecond = canonicalResearchNotebook(
+            notebookHex = "f".repeat(32),
+            sessionId = "session-tie-second",
+            updatedAt = "2026-07-14T02:00:00Z",
+        )
+        val older = canonicalResearchNotebook(
+            notebookHex = "1".repeat(32),
+            sessionId = "session-older",
+            updatedAt = "2026-07-14T01:00:00Z",
+        )
+        ResearchNotebooksListResultPayload(listOf(tieFirst, tieSecond, older))
+
+        listOf(
+            listOf(tieSecond, tieFirst, older),
+            listOf(older, tieFirst, tieSecond),
+        ).forEach { notebooks ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ResearchNotebooksListResultPayload(notebooks)
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListResultPayload(
+                listOf(tieFirst, tieFirst.copy(sessionId = "different-session")),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListResultPayload(
+                listOf(tieFirst, tieSecond.copy(sessionId = tieFirst.sessionId)),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListResultPayload(
+                List(101) { index ->
+                    canonicalResearchNotebook(
+                        notebookHex = index.toString(16).padStart(32, '0'),
+                        sessionId = "session-$index",
+                    )
+                },
+            )
+        }
+        val capablePage = List(200) { index ->
+            canonicalResearchNotebook(
+                notebookHex = index.toString(16).padStart(32, '0'),
+                sessionId = "capable-session-$index",
+            )
+        }
+        val capableResult = ResearchNotebooksListResultPayload(
+            notebooks = capablePage,
+            snapshotCount = 201,
+            nextCursor = "snapshot-cursor-200",
+        )
+        assertEquals(
+            capableResult,
+            Json.decodeFromString<ResearchNotebooksListResultPayload>(Json.encodeToString(capableResult)),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListResultPayload(
+                notebooks = capablePage + canonicalResearchNotebook(
+                    notebookHex = "f".repeat(32),
+                    sessionId = "capable-session-200",
+                ),
+                snapshotCount = 201,
+            )
+        }
+
+        val encoded = Json.encodeToString(ResearchNotebooksListResultPayload(listOf(tieFirst)))
+        listOf(
+            "{}",
+            encoded.dropLast(1) + ",\"unexpected\":true}",
+            encoded.replace("\"title\"", "\"grant_id\":\"secret\",\"title\""),
+        ).forEach { payload ->
+            assertThrows(Exception::class.java) {
+                permissiveJson.decodeFromString<ResearchNotebooksListResultPayload>(payload)
+            }
+        }
+    }
+
+    @Test
+    fun researchNotebooksListCapableResponseRejectsBranchMixingAndInvalidSnapshotMetadata() {
+        val notebookJson = Json.encodeToString(canonicalResearchNotebook())
+        val invalidResponses = listOf(
+            """{"notebooks":[],"next_cursor":"snapshot-cursor-1"}""" to "legacy response",
+            """{"notebooks":[],"snapshot_count":null}""" to "snapshot_count",
+            """{"notebooks":[],"snapshot_count":0,"next_cursor":null}""" to "next_cursor",
+            """{"notebooks":[],"snapshot_count":-1}""" to "snapshot_count",
+            """{"notebooks":[],"snapshot_count":10001}""" to "snapshot_count",
+            """{"notebooks":[],"snapshot_count":0.0}""" to "snapshot_count",
+            """{"notebooks":[],"snapshot_count":true}""" to "snapshot_count",
+            """{"notebooks":[$notebookJson],"snapshot_count":0}""" to "snapshot_count",
+            """{"notebooks":[],"snapshot_count":0,"next_cursor":"\uD800"}""" to "next_cursor",
+        ) + invalidResearchNotebookCursors().map { cursor ->
+            """{"notebooks":[],"snapshot_count":0,"next_cursor":${JsonPrimitive(cursor)}}""" to
+                "next_cursor"
+        }
+
+        invalidResponses.forEach { (payload, expected) ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ResearchNotebooksListResultPayload>(payload)
+            }
+            assertTrue(
+                "expected $expected in ${error.message}",
+                error.message.orEmpty().contains(expected),
+            )
+        }
+
+        val maximumCursor = "c".repeat(512)
+        val boundary = ResearchNotebooksListResultPayload(
+            notebooks = emptyList(),
+            snapshotCount = 0,
+            nextCursor = maximumCursor,
+        )
+        assertEquals(
+            boundary,
+            Json.decodeFromString<ResearchNotebooksListResultPayload>(Json.encodeToString(boundary)),
+        )
+        invalidResearchNotebookCursors().forEach { cursor ->
+            assertThrows("expected invalid next_cursor constructor rejection", IllegalArgumentException::class.java) {
+                ResearchNotebooksListResultPayload(
+                    notebooks = emptyList(),
+                    snapshotCount = 0,
+                    nextCursor = cursor,
+                )
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResearchNotebooksListResultPayload(
+                notebooks = emptyList(),
+                snapshotCount = 0,
+                nextCursor = "\uD800",
+            )
+        }
+    }
+
+    @Test
+    fun researchNotebooksAuthoritativeSyncFixtureGenerates201RowsAcross1001001Pages() {
+        val fixture = Json.parseToJsonElement(
+            sharedProtocolFixture("research-notebooks-authoritative-sync-smoke-v1.json"),
+        ).jsonObject
+        val wireTranscript = fixture.getValue("wire_transcript").jsonObject
+        val initialRequest = wireTranscript.getValue("initial_request").jsonObject
+        val continuationRequest = wireTranscript.getValue("continuation_request").jsonObject
+        val wirePages = wireTranscript.getValue("pages").jsonArray
+
+        assertEquals(
+            "research.notebooks.authoritative_sync.v1",
+            fixture.getValue("capability").jsonPrimitive.content,
+        )
+        assertEquals(setOf("include_archived", "limit"), initialRequest.keys)
+        assertEquals(
+            ResearchNotebooksListRequestPayload(includeArchived = true, limit = 1),
+            Json.decodeFromString<ResearchNotebooksListRequestPayload>(initialRequest.toString()),
+        )
+        assertEquals(setOf("cursor"), continuationRequest.keys)
+        assertEquals(
+            continuationRequest.getValue("cursor").jsonPrimitive.content,
+            Json.decodeFromString<ResearchNotebooksListRequestPayload>(
+                continuationRequest.toString(),
+            ).cursor,
+        )
+        assertEquals(
+            listOf(2, 2),
+            wirePages.map { page ->
+                Json.decodeFromString<ResearchNotebooksListResultPayload>(page.toString()).snapshotCount
+            },
+        )
+        val legacyResponse = wireTranscript.getValue("legacy_response").jsonObject
+        assertEquals(setOf("notebooks"), legacyResponse.keys)
+        assertNull(
+            Json.decodeFromString<ResearchNotebooksListResultPayload>(legacyResponse.toString()).snapshotCount,
+        )
+
+        val series = fixture.getValue("notebook_series").jsonObject
+        val totalCount = series.getValue("count").jsonPrimitive.content.toInt()
+        val notebookIdPrefix = series.getValue("notebook_id_prefix").jsonPrimitive.content
+        val notebookIdHexWidth = series.getValue("notebook_id_hex_width").jsonPrimitive.content.toInt()
+        val sessionIdPrefix = series.getValue("session_id_prefix").jsonPrimitive.content
+        val sessionIdWidth = series.getValue("session_id_width").jsonPrimitive.content.toInt()
+        val titlePrefix = series.getValue("title_prefix").jsonPrimitive.content
+        val model = series.getValue("model").jsonPrimitive.content
+        val sourceCount = series.getValue("source_count").jsonPrimitive.content.toInt()
+        val createdAt = series.getValue("created_at").jsonPrimitive.content
+        val baseUpdatedAt = java.time.Instant.parse(
+            series.getValue("base_updated_at").jsonPrimitive.content,
+        )
+        val updatedAtStepSeconds = series.getValue("updated_at_step_seconds").jsonPrimitive.content.toLong()
+        val generatedNotebooks = (totalCount - 1 downTo 0).map { index ->
+            ResearchNotebookPayload(
+                notebookId = notebookIdPrefix + index.toString(16).padStart(notebookIdHexWidth, '0'),
+                sessionId = sessionIdPrefix + index.toString().padStart(sessionIdWidth, '0'),
+                title = titlePrefix + index,
+                model = model,
+                sourceCount = sourceCount,
+                createdAt = createdAt,
+                updatedAt = baseUpdatedAt.plusSeconds(index * updatedAtStepSeconds).toString(),
+            )
+        }
+        assertEquals(201, generatedNotebooks.size)
+        assertEquals(201, generatedNotebooks.map(ResearchNotebookPayload::notebookId).toSet().size)
+        assertEquals(201, generatedNotebooks.map(ResearchNotebookPayload::sessionId).toSet().size)
+
+        val pagination = fixture.getValue("pagination").jsonObject
+        assertEquals(
+            setOf("include_archived", "limit"),
+            pagination.getValue("initial_request").jsonObject.keys,
+        )
+        assertEquals(
+            listOf("cursor"),
+            pagination.getValue("continuation_request_keys").jsonArray.map {
+                it.jsonPrimitive.content
+            },
+        )
+        val generatedPages = pagination.getValue("pages").jsonArray.map { pageElement ->
+            val page = pageElement.jsonObject
+            val offset = page.getValue("offset").jsonPrimitive.content.toInt()
+            val count = page.getValue("count").jsonPrimitive.content.toInt()
+            ResearchNotebooksListResultPayload(
+                notebooks = generatedNotebooks.subList(offset, offset + count),
+                snapshotCount = page.getValue("snapshot_count").jsonPrimitive.content.toInt(),
+                nextCursor = page["next_cursor"]?.jsonPrimitive?.content,
+            )
+        }
+        assertEquals(listOf(100, 100, 1), generatedPages.map { it.notebooks.size })
+        assertEquals(listOf(201, 201, 201), generatedPages.map { it.snapshotCount })
+        assertEquals(201, generatedPages.sumOf { it.notebooks.size })
+        assertNull(generatedPages.last().nextCursor)
+    }
+
+    @Test
+    fun researchNotebookWireRejectsDuplicateObjectKeysBeforeMaterialization() {
+        val codec = ProtocolCodec()
+        val envelopes = listOf(
+            """{"version":1,"type":"research.brief.create","request_id":"research-create-duplicate","timestamp":"2026-07-14T00:00:00Z","payload":{"notebook_id":"research_notebook_${"a".repeat(32)}","session_id":"session-1","topic":"first","top\u0069c":"second","model":"ollama:model","trusted_source_grant_ids":["trusted_source_${"1".repeat(32)}"]}}""",
+            """{"version":1,"type":"research.notebooks.list","request_id":"research-list-duplicate","timestamp":"2026-07-14T00:00:00Z","payload":{"include_archived":false,"limit":100,"l\u0069mit":1}}""",
+            """{"version":1,"type":"research.notebooks.list","request_id":"research-list-response-duplicate","timestamp":"2026-07-14T00:00:00Z","payload":{"notebooks":[],"snapshot_count":1,"snapshot\u005fcount":2}}""",
+        )
+
+        envelopes.forEach { rawEnvelope ->
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(rawEnvelope.encodeToByteArray())
+            }
+            assertTrue(error.message.orEmpty().contains("duplicate JSON object key"))
         }
     }
 
@@ -4690,6 +5379,50 @@ class ProtocolCodecTest {
     private val canonicalReviewId = "source_review_${"1".repeat(32)}"
     private val canonicalConfirmationToken = "source_confirmation_${"2".repeat(64)}"
     private val canonicalGrantId = "trusted_source_${"3".repeat(32)}"
+
+    private fun invalidResearchNotebookCursors() = listOf(
+        "",
+        "cursor token",
+        "   ",
+        "\u20ac",
+        "cursor/value",
+        "cursor+value",
+        "cursor=value",
+        "cursor\u0001value",
+        "c".repeat(513),
+    )
+
+    private fun canonicalResearchNotebook(
+        notebookHex: String = "0".repeat(32),
+        sessionId: String = "session-research-1",
+        title: String = "Runtime research",
+        model: String = "ollama:llama3.1:8b",
+        sourceCount: Int = 2,
+        createdAt: String = "2026-07-14T00:00:00Z",
+        updatedAt: String = "2026-07-14T01:00:00Z",
+        archivedAt: String? = null,
+    ) = ResearchNotebookPayload(
+        notebookId = "research_notebook_$notebookHex",
+        sessionId = sessionId,
+        title = title,
+        model = model,
+        sourceCount = sourceCount,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        archivedAt = archivedAt,
+    )
+
+    private fun sharedProtocolFixture(name: String): String {
+        return sharedRepoFile("shared/protocol/fixtures/$name")
+    }
+
+    private fun sharedRepoFile(relativePath: String): String {
+        val file = generateSequence(File(System.getProperty("user.dir") ?: ".")) { it.parentFile }
+            .map { File(it, relativePath) }
+            .firstOrNull { it.isFile }
+            ?: error("Missing repository file: $relativePath")
+        return file.readText().trim()
+    }
 
     private fun canonicalDocumentPayload() = RuntimeDocumentIndexDocumentPayload(
         id = "doc-1",

@@ -223,6 +223,10 @@
 "%d models" = "%d modèles";
 "Chat" = "Discussion";
 "Embedding" = "Indexation de la mémoire";
+"Vision" = "Vision";
+"Context: %@ tokens" = "Contexte : %@ jetons";
+"%@, %@" = "%@, %@";
+"%@. Capabilities: %@." = "%@. Capacités : %@.";
 "Running" = "En cours";
 "Not running" = "À l’arrêt";
 "Unnamed model" = "Modèle sans nom";

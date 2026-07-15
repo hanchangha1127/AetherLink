@@ -5,14 +5,66 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import errno
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
 import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CALIBRATION_GUARDED_FILES = {
+    "shared/evaluation/memory-semantic-duplicate-calibration-v1.json": 8 * 1_024 * 1_024,
+    "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json": 1 * 1_024 * 1_024,
+}
+
+
+def read_bounded_regular_file(path: Path, maximum_bytes: int) -> bytes:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ValueError("unreadable") from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError("not_regular")
+    if metadata.st_size <= 0 or metadata.st_size > maximum_bytes:
+        raise ValueError("size_invalid")
+
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ValueError("not_regular") from error
+        raise ValueError("unreadable") from error
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(opened_metadata.st_mode):
+            raise ValueError("not_regular")
+        if opened_metadata.st_size <= 0 or opened_metadata.st_size > maximum_bytes:
+            raise ValueError("size_invalid")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(128 * 1_024, maximum_bytes + 1 - total))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > maximum_bytes:
+                raise ValueError("size_invalid")
+            chunks.append(chunk)
+    except OSError as error:
+        raise ValueError("unreadable") from error
+    finally:
+        os.close(descriptor)
+    data = b"".join(chunks)
+    if not data:
+        raise ValueError("size_invalid")
+    return data
 
 
 @dataclass(frozen=True)
@@ -9850,6 +9902,26 @@ def android_chat_model_menu_guard_failures() -> list[str]:
             "Model menu status copy must be formatted through localized resources.",
         ),
         (
+            "modelMenuCapabilityDisplay(model)",
+            "Chat model rows must project runtime model capabilities through the bounded localized display helper.",
+        ),
+        (
+            "R.string.model_status_capabilities_value",
+            "Visible model status and capability metadata must be combined through localized resources.",
+        ),
+        (
+            "R.string.model_capability_visual_pair",
+            "Visible model capability separators must remain independently localizable.",
+        ),
+        (
+            "R.string.model_capability_accessibility_pair",
+            "Spoken model capability separators must remain independent from visual punctuation.",
+        ),
+        (
+            "chatModelMenuItemCapabilityTestTag(model.id)",
+            "Model capability metadata must keep a stable compact-layout test tag.",
+        ),
+        (
             "val menuContext = LocalContext.current",
             "Chat model picker popup content must preserve the localized app context.",
         ),
@@ -9909,6 +9981,17 @@ def android_chat_model_menu_guard_failures() -> list[str]:
     for snippet, guidance in required_main_snippets:
         if snippet not in main_text:
             failures.append(f"{main_relative}: {guidance}")
+
+    capability_tag = "modifier = Modifier.testTag(capabilityTestTag)"
+    capability_tag_index = main_text.find(capability_tag)
+    capability_text_start = main_text.rfind("Text(", 0, capability_tag_index)
+    capability_text_block = main_text[capability_text_start:capability_tag_index]
+    if capability_tag_index < 0 or capability_text_start < 0:
+        failures.append(f"{main_relative}: Model capability detail Text block is missing.")
+    elif "maxLines =" in capability_text_block or "TextOverflow.Ellipsis" in capability_text_block:
+        failures.append(
+            f"{main_relative}: Model capability detail text must wrap without max-line ellipsis truncation."
+        )
 
     if main_text.count("onSelectEmbeddingModel = viewModel::selectEmbeddingModel") != 1:
         failures.append(
@@ -9975,8 +10058,33 @@ def android_chat_model_menu_guard_failures() -> list[str]:
     )
     if any(snippet not in ui_text for snippet in embedding_compact_layout_snippets):
         failures.append(
-            f"{ui_relative}: Settings embedding model rows must keep stable compact-layout tags and two-line text bounds."
+            f"{ui_relative}: Settings embedding model rows must keep stable compact-layout tags and compact model-name bounds."
         )
+    embedding_capability_display_snippets = (
+        "embeddingModelMenuModels(state.models)",
+        "isCanonicalProviderQualifiedModelId(it.id) &&",
+        "it.isEmbeddingModel() &&",
+        "it.isRuntimeHostLocalModel()",
+        "private fun embeddingModelCapabilityDisplay(model: RuntimeModel)",
+        "add(stringResource(R.string.model_capability_embedding))",
+        "?.takeIf { it > 0 }",
+        "R.string.model_status_capabilities_value",
+        "R.string.model_capabilities_accessibility",
+    )
+    if any(snippet not in ui_text for snippet in embedding_capability_display_snippets):
+        failures.append(
+            f"{ui_relative}: Settings embedding rows must keep the bounded runtime-host-local capability projection."
+        )
+    embedding_detail_start = ui_text.find("text = modelDetailText")
+    embedding_detail_end = ui_text.find("\n                )", embedding_detail_start)
+    if embedding_detail_start < 0 or embedding_detail_end < 0:
+        failures.append(f"{ui_relative}: Missing Settings embedding model capability detail text.")
+    else:
+        embedding_detail_block = ui_text[embedding_detail_start:embedding_detail_end]
+        if "maxLines =" in embedding_detail_block or "overflow =" in embedding_detail_block:
+            failures.append(
+                f"{ui_relative}: Settings embedding model capability detail must wrap without ellipsis."
+            )
     embedding_settings_screen_layout_test_snippets = (
         "settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages",
         "SettingsScreen(",
@@ -10102,7 +10210,9 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         if snippet not in viewmodel_text:
             failures.append(f"{viewmodel_relative}: {guidance}")
 
-    hardcoded_status_pattern = re.compile(r"runtimeProviderDisplayName\(model\.provider\).*-\s*\$", re.DOTALL)
+    hardcoded_status_pattern = re.compile(
+        r"runtimeProviderDisplayName\(model\.provider\)[^\r\n]*-\s*\$"
+    )
     for relative, text in ((main_relative, main_text), (ui_relative, ui_text)):
         if hardcoded_status_pattern.search(text):
             failures.append(f"{relative}: Model provider/status rows must not hard-code a dash-formatted status string.")
@@ -10214,6 +10324,12 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "chatTopBarModelPickerExposesInstallActionForUninstalledLocalChatModel",
         "chatTopBarModelPickerRowsExposeAccessibilitySummaries",
         "chatTopBarModelPickerRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages",
+        "chatModelMenuItemCapabilityTestTag",
+        "raw_future_capability",
+        "Capabilities: Chat, Context: 131,072 tokens.",
+        "model_capability_visual_pair",
+        "model_capability_accessibility_pair",
+        "assertTextContains(detailText, substring = false)",
         "chatTopBarModelPickerEmptyStatesShowLocalizedTitleAndLiveRegion",
         "model_picker_empty_state_summary",
         "no_models_connected_title",
@@ -10239,9 +10355,10 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "chatModelRowsNarrowRootTestTag",
         "hasAnyAncestor(hasTestTag(rowTag))",
-        "assertBoundsInside(\"$languageTag model picker row status ${model.id}\", statusBounds, rowBounds)",
+        '"$languageTag model picker row model details ${model.id}"',
+        "detailBounds,\n                rowBounds",
         "assertBoundsInside(\n                    \"$languageTag model picker install action ${model.id}\"",
-        "model picker install action should not overlap status",
+        "model picker install action should not overlap details",
         "선택된 채팅 모델 Qwen3 8B. Ollama - 설치됨.",
         "選択中のチャットモデル「Qwen3 8B」。Ollama - インストール済み。",
         "已选择聊天模型“Qwen3 8B”。Ollama - 已安装。",
@@ -10295,6 +10412,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "languagePreferenceOptionLabelTestTag(languageTag)",
         "assertFalse(\n                \"$languageTag $label radio should not overlap label.\"",
         "settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages",
+        "embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels",
         "settingsEmbeddingModelRowsExposeSelectedStateToAccessibility",
         "settingsEmbeddingModelControlsAreDisabledWhileStreaming",
         "settingsEmbeddingModelRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages",
@@ -10302,14 +10420,22 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsEmbeddingModelRowsNarrowRootTestTag",
         "assertBoundsInside(\"$languageTag embedding row status ${model.id}\", statusBounds, rowBounds)",
+        "embedding row name and status should not overlap",
         "SAVED_EMBEDDING_MODEL_DETAIL_TEST_TAG",
-        "Selected memory indexing model Nomic Embed Text. Ollama - Installed.",
+        "Selected memory indexing model Nomic Embed Text. Ollama - Installed. \" +",
+        "Capabilities: Embedding, Context: 8,192 tokens.",
+        "raw_future_capability",
+        "Provider Managed Embedding",
+        "Noncanonical Local Embedding",
+        "contextWindowTokens = -1",
+        "contextWindowTokens = 0",
+        "Ollama - Installed · Embedding",
         "Saved memory indexing model $savedModelName. Saved memory indexing model is missing from the runtime list. Refresh or choose another.",
-        "선택된 메모리 색인 모델 Nomic Embed Text. Ollama - 설치됨.",
+        "기능: 임베딩, 컨텍스트: 8,192 토큰.",
         "저장된 메모리 색인 모델 $savedModelName. 저장된 메모리 색인 모델이 런타임 목록에 없습니다. 새로고침하거나 다른 모델을 선택하세요.",
         "保存済みのメモリ インデックスモデル「$savedModelName」。保存済みのメモリ インデックスモデルはランタイム一覧にありません。更新するか別のモデルを選択してください。",
         "已保存的记忆索引模型“$savedModelName”。已保存的记忆索引模型不在运行时列表中。请刷新或选择其他模型。",
-        "Modèle d’indexation de la mémoire sélectionné « Nomic Embed Text ». Ollama - Installé.",
+        "Capacités : Indexation de la mémoire, Contexte : 8\\u202F192 jetons.",
         "Modèle d’indexation de la mémoire enregistré « $savedModelName ». Le modèle d’indexation de la mémoire enregistré manque dans la liste du runtime. Actualisez ou choisissez-en un autre.",
         "chatTopBarModelPickerStatusLineUsesLocalizedResources",
         'assertNoVisibleText("Memory indexing model")',
@@ -10320,6 +10446,19 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         if snippet not in compose_test_text:
             failures.append(
                 f"{compose_test_relative}: Missing Android localized model-status Compose regression {snippet}."
+            )
+
+    for evidence_path in (
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/progress.md",
+        ROOT / "docs/qa-evidence.md",
+    ):
+        if "Android Memory Indexing Model Capability Display" not in evidence_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ):
+            failures.append(
+                f"{evidence_path.relative_to(ROOT)}: Missing Android Memory Indexing Model Capability Display evidence section."
             )
 
     return failures
@@ -10938,7 +11077,8 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
     strings_text = strings_path.read_text(encoding="utf-8", errors="replace")
 
     required_drawer_snippets = (
-        "if (hasChatSearchQuery && !hasChatSearchResults) {\n                    val noSearchResultsText = stringResource(R.string.no_chat_search_results)",
+        "if (hasChatSearchQuery && !hasChatSearchResults) {",
+        "val noSearchResultsText = stringResource(R.string.no_chat_search_results)",
         "DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG",
         "DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG",
         ".testTag(DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG)",
@@ -10948,7 +11088,7 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "DRAWER_EMPTY_HISTORY_TEST_TAG",
         ".testTag(DRAWER_EMPTY_HISTORY_TEST_TAG)",
         "val noPreviousChatsText = stringResource(R.string.no_previous_chats)",
-        "contentDescription = noPreviousChatsText\n                                liveRegion = LiveRegionMode.Polite",
+        "contentDescription = noPreviousChatsText\n                                    liveRegion = LiveRegionMode.Polite",
     )
     for snippet in required_drawer_snippets:
         if snippet not in main_text:
@@ -13784,6 +13924,7 @@ def android_haptic_guard_failures() -> list[str]:
         'name="embedding_model_none_row_summary_selected"',
         'name="embedding_model_row_summary"',
         'name="embedding_model_row_summary_selected"',
+        'name="model_capability_embedding"',
         'name="saved_embedding_model_row_summary"',
     )
     for snippet in required_string_snippets:
@@ -13804,9 +13945,15 @@ def android_haptic_guard_failures() -> list[str]:
             failures.append(f"{locale_relative}: Missing Android localized strings file for embedding row summaries.")
             continue
         locale_strings_text = locale_strings_path.read_text(encoding="utf-8")
-        if 'name="saved_embedding_model_row_summary"' not in locale_strings_text:
+        required_embedding_locale_snippets = (
+            'name="embedding_model_row_summary"',
+            'name="embedding_model_row_summary_selected"',
+            'name="model_capability_embedding"',
+            'name="saved_embedding_model_row_summary"',
+        )
+        if any(snippet not in locale_strings_text for snippet in required_embedding_locale_snippets):
             failures.append(
-                f"{locale_relative}: Missing saved embedding model accessibility summary string."
+                f"{locale_relative}: Missing localized embedding model capability or accessibility summary string."
             )
 
     required_scanner_test_snippets = (
@@ -20904,7 +21051,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`session_id` must be a non-blank string, `title` must be a string and remain non-empty after trimming",
+            "`title` must be a string, is NFC-normalized and trimmed by the runtime, must remain nonempty",
             "Protocol docs must document strict chat.session.rename allowed-field rejection.",
         ),
         (
@@ -23621,7 +23768,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android runtime chat mutations must serialize operations targeting the same session.",
         ),
         (
-            "previousUpdatedAtMillis = mutation.previousUpdatedAtMillis",
+            "previousUpdatedAtMillis = previousSession.updatedAtMillis",
             "Android rename rollback must restore the exact pre-mutation ordering timestamp.",
         ),
         (
@@ -23945,8 +24092,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime chat session projection must preserve append-order tie-breaks for same-timestamp events.",
         ),
         (
-            "compactMap { offset, event -> (offset: Int, event: RuntimeChatStoredEvent, title: String)?",
-            "Runtime chat title projection must preserve append-order tie-breaks for same-timestamp title events.",
+            "for event in events where event.kind == .title",
+            "Runtime chat title projection must derive title revision authority from event append order.",
+        ),
+        (
+            "latest = (event, title)",
+            "Runtime chat title projection must let the latest appended title event replace older wall-clock timestamps.",
         ),
         (
             "public enum RuntimeChatEventStoreDefaults",
@@ -24065,7 +24216,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_relative,
-            "sessions = try await semanticChatSessions(",
+            "candidateSessions = try await semanticChatSessions(",
             "chat.sessions.list must dispatch selected embedding models to real semantic ranking.",
         ),
         (
@@ -25841,13 +25992,29 @@ def macos_model_visibility_guard_failures() -> list[str]:
     failures: list[str] = []
     status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
     test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
 
-    if not status_path.exists() or not test_path.exists():
+    required_paths = (
+        status_path,
+        test_path,
+        render_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    if any(not path.exists() for path in required_paths):
         failures.append("macOS model visibility guard files are missing.")
         return failures
 
     status_text = status_path.read_text(encoding="utf-8", errors="replace")
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
+    render_test_text = render_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     status_relative = status_path.relative_to(ROOT)
     test_relative = test_path.relative_to(ROOT)
 
@@ -25888,6 +26055,30 @@ def macos_model_visibility_guard_failures() -> list[str]:
             ".lineLimit(2)\n                    .truncationMode(.middle)",
             "Status Models rows must allow long local model names enough vertical space before truncating.",
         ),
+        (
+            "modelCapabilityDisplay(for: model)",
+            "Status Models rows must project only the bounded runtime model capability display.",
+        ),
+        (
+            '!capabilities.isDisjoint(with: ["vision", "image", "multimodal"])',
+            "Status Models capability display must keep the closed Vision alias allowlist.",
+        ),
+        (
+            "contextWindowTokens > 0",
+            "Status Models capability display must reject nonpositive context windows.",
+        ),
+        (
+            "ForEach(capabilityDisplay.additionalBadges)",
+            "Status Models rows must render only projected capability badges.",
+        ),
+        (
+            "capabilities: capabilityDisplay.accessibilityLine",
+            "Status Models rows must expose the bounded capability projection to VoiceOver.",
+        ),
+        (
+            'NSLocalizedString("%@, %@", comment: "")',
+            "Status Models spoken capability separators must remain independently localizable.",
+        ),
     )
     for snippet, guidance in required_status_snippets:
         if snippet not in status_text:
@@ -25897,12 +26088,45 @@ def macos_model_visibility_guard_failures() -> list[str]:
         "testVisibleModelGroupsShowOnlyInstalledLocalModels",
         "testRuntimeOverviewTreatsHiddenModelsAsNotLoaded",
         "testModelGroupHeaderAccessibilityLabelUsesSelectedLanguage",
+        "testModelCapabilityDisplayProjectsOnlyKnownCapabilitiesAcrossSupportedLanguages",
+        "testModelCapabilityDisplayOmitsInvalidContextAndRawUnknownCapabilities",
+        "testModelRowAccessibilityLabelIncludesKnownCapabilitiesAcrossSupportedLanguages",
+        "raw_future_capability",
         "provider-managed-chat",
         "uninstalled-embedding",
     )
     for snippet in required_test_snippets:
         if snippet not in test_text:
             failures.append(f"{test_relative}: Missing macOS model visibility regression {snippet}.")
+
+    for snippet in (
+        "testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances",
+        "ModelRow(model: model)",
+        'capabilities: ["chat", "vision", "raw_future_capability"]',
+        "contextWindowTokens: 131_072",
+    ):
+        if snippet not in render_test_text:
+            failures.append(
+                f"{render_test_path.relative_to(ROOT)}: Missing macOS model capability render regression {snippet}."
+            )
+
+    for snippet in (
+        "AetherLinkLocalizationTests/testModelCapabilityDisplayProjectsOnlyKnownCapabilitiesAcrossSupportedLanguages",
+        "AetherLinkLocalizationTests/testModelCapabilityDisplayOmitsInvalidContextAndRawUnknownCapabilities",
+        "AetherLinkLocalizationTests/testModelRowAccessibilityLabelIncludesKnownCapabilitiesAcrossSupportedLanguages",
+        "AetherLinkLocalizationTests/testModelRowAccessibilityLabelUsesModelContext",
+        "Covered v0.4 addendum: macOS runtime model capability display",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must pin macOS model capability coverage; missing {snippet}."
+            )
+
+    for path in (roadmap_path, progress_path, qa_evidence_path):
+        if "macOS Runtime Model Capability Display" not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing macOS Runtime Model Capability Display evidence section."
+            )
 
     return failures
 
@@ -30079,6 +30303,22 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android Settings developer diagnostics toggle compact layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels",
+            "Default no-device gate must run the Android memory indexing runtime-host-local filter regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsExposeSelectedStateToAccessibility",
+            "Default no-device gate must run the Android memory indexing capability accessibility regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsEmbeddingModelControlsAreDisabledWhileStreaming",
+            "Default no-device gate must run the Android memory indexing streaming-lockout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages",
+            "Default no-device gate must run the localized Android memory indexing capability summary regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings embedding model compact row layout regression.",
         ),
@@ -31407,6 +31647,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android model picker general row compact layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsExposeAccessibilitySummaries",
+            "Default no-device gate must run the runtime-mediated model capability accessibility regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages",
+            "Default no-device gate must run the localized model capability summary regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerVisionRecoveryRowsStayBoundedAtLargeFontOnNarrowSurface",
             "Default no-device gate must run the Android model picker vision recovery compact row layout regression.",
         ),
@@ -31437,6 +31685,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android model picker general row compact layout",
             "Default no-device gate coverage summary must mention Android model picker general row compact layout.",
+        ),
+        (
+            "Android runtime-mediated model capability display",
+            "Default no-device gate coverage summary must mention runtime-mediated model capability display.",
+        ),
+        (
+            "Android memory indexing model capability display",
+            "Default no-device gate coverage summary must mention Android memory indexing model capability display.",
         ),
         (
             "Android model picker vision recovery compact row layout",
@@ -36908,6 +37164,461 @@ def suggested_questions_removed_guard_failures() -> list[str]:
     return failures
 
 
+def runtime_research_notebook_guard_failures() -> list[str]:
+    failures: list[str] = []
+    requirements = {
+        ROOT / "packages/protocol-schema/protocol.schema.json": (
+            '"research.brief.create"',
+            '"research.notebooks.list"',
+            '"researchNotebookID"',
+            '"researchNotebooksListPayload"',
+        ),
+        ROOT / "script/check_protocol_schema.py": (
+            "ALLOWED_RESEARCH_TYPES = {",
+            '"research.brief.create"',
+            '"research.notebooks.list"',
+            "check_research_notebook_payload_schema_contract",
+        ),
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt": (
+            'RESEARCH_NOTEBOOKS_CAPABILITY = "research.notebooks.v1"',
+            'RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY =',
+            '"research.notebooks.authoritative_sync.v1"',
+            "ResearchBriefCreateRequestPayload",
+            "ResearchNotebooksListRequestPayload",
+            "ResearchNotebooksListResultPayload",
+            "ResearchNotebooksListContinuationRequestPayloadSurrogate",
+            "snapshotCount: Int? = null",
+            "nextCursor: String? = null",
+            'RESEARCH_NOTEBOOK_CURSOR_PATTERN = Regex("^[A-Za-z0-9._-]+$")',
+            "requireResearchNotebookCursor",
+            "hello request client_capabilities entries must be unique",
+        ),
+        ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt": (
+            "helloPayloadEnforcesOptionalUniqueNonblankUtf8CapabilitiesAnd64EntryLimit",
+            "researchNotebooksListRequestRequiresExplicitTypedBoundedFields",
+            "researchNotebooksListCapableResponseRejectsBranchMixingAndInvalidSnapshotMetadata",
+            "invalidResearchNotebookCursors()",
+            '"cursor/value"',
+            '"c".repeat(513)',
+        ),
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt": (
+            "MessageType.ResearchBriefCreate in rawInspection.topLevelTypeValues",
+            "MessageType.ResearchNotebooksList in rawInspection.topLevelTypeValues",
+            "contains duplicate JSON object key",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/RuntimeResearchNotebookStore.swift": (
+            "maximumTrustedSourceGrantCount = 8",
+            "maximumListLimit = 100",
+            "maximumStoreListLimit = 10_000",
+            "maximumRowsPerOwner = maximumStoreListLimit",
+            "RuntimeResearchNotebookLifecycleIntent",
+            "coordinatorID: String",
+            "leaseExpiresAt: Date",
+            "func renewLifecycleMutation(",
+            "func withLifecycleCoordination<Result>(",
+            "createPendingChatPersistence",
+            "pendingLifecycleMutations",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeResearchNotebookStore.swift": (
+            "RuntimeResearchNotebookStoring",
+            "runtime_research_notebooks",
+            "runtime_research_notebook_grants",
+            "runtime_research_notebook_lifecycle_intents",
+            "beforeSchemaMigrationLock",
+            "let lockedVersion = try schemaUserVersion(database)",
+            "private static func migrateV2Schema(",
+            "SQLiteResearchNotebookLockRegistry.lock(for: databaseURL)",
+            "createPendingChatPersistence",
+            "public func renewLifecycleMutation(",
+            "private static func sqliteCanonicalDate(",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift": (
+            "maximumTargetedSessionSummaryCount = 10_000",
+            "validatedTargetedSessionSummaryIDs",
+            "func listSessionSummaries(",
+            "targetedSessionSummaryLimitExceeded",
+            "duplicateTargetedSessionSummarySessionID",
+            "invalidTargetedSessionSummarySessionID",
+            "titleUpdatedAt: Date?",
+            "titleRevision: Int",
+            "titleUpdatedAt: storedTitle?.timestamp",
+            "titleRevision: storedTitle?.revision ?? 0",
+            "lastActivityAt: last.timestamp",
+            "events.filter { !$0.kind.isSessionMetadata }",
+            "requireCanonicalChatTitle",
+            "projectingLegacyTitleForReplay",
+            "legacyCanonicalChatTitleProjection",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift": (
+            "public func listSessionSummaries(",
+            "sessionIDs: validatedSessionIDs",
+            "matchingOwnerDeviceID:",
+            "targeted session summary lookup",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift": (
+            "handleResearchBriefCreate",
+            "handleResearchNotebooksList",
+            "supportsAuthoritativeResearchNotebookSync",
+            "publishAuthoritativeResearchNotebookSnapshot",
+            "invalidateAuthoritativeResearchNotebookSnapshots",
+            "RuntimeResearchNotebookPagination",
+            "chatEventStore.listSessionSummaries(",
+            "runtimeClientCapabilityCountLimit = 64",
+            "RuntimeResearchNotebook.maximumStoreListLimit",
+            "let authoritativeNotebook = RuntimeResearchNotebook(",
+            "title: authoritativeTitle",
+            "session.titleUpdatedAt ?? notebook.updatedAt",
+            "normalizedChatSessionTitle",
+            "materializationGeneration",
+            "capturedSession.titleRevision",
+            "authorization: researchAuthorization",
+            "canonicalChatTitleMutationDate(after previousTitleUpdatedAt: Date?)",
+            "runtime-owned research notebook backed only by the approved trusted-source excerpts",
+            'return "research_notebook_store_unavailable"',
+            "reconcilePendingResearchNotebookLifecycle",
+            "completeResearchNotebookLifecycleMutations",
+            "researchNotebookLifecycleCoordinatorID",
+            "intent.leaseExpiresAt <= researchNotebookLifecycleNow()",
+            "renewResearchNotebookLifecycleMutation",
+            "researchBackingSessionIDsBeforeMaterialization",
+            "researchBackingSessionIDsAfterMaterialization",
+            "finalResearchBackingSessionIDs",
+            "validateResearchNotebookFollowUpAtCommit",
+        ),
+        ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift": (
+            "AETHERLINK_DEV_RUNTIME_RESEARCH_NOTEBOOK_SQLITE_FILE",
+            "SQLiteRuntimeResearchNotebookStore",
+        ),
+        ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt": (
+            "transientResearchMessagesBySessionId",
+            "createResearchBriefFromApprovedSources",
+            "private fun requestResearchNotebooks(requireFreshAfterCurrent: Boolean = false)",
+            "RESEARCH_NOTEBOOKS_CAPABILITY",
+            "RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY",
+            "pendingResearchNotebooksListRun",
+            "requestResearchNotebooksContinuation",
+            "response omitted snapshot_count after authoritative sync was established",
+            "HeldRuntimeChatSessionsSnapshot",
+            "heldRuntimeChatSessionsSnapshot",
+            "publishHeldRuntimeChatSessionsSnapshot",
+            "RESEARCH_BRIEF_CREATE_IDLE_TIMEOUT_MS = 30_000L",
+            "scheduleResearchBriefCreateIdleTimeout",
+            "if (updatedState == currentState) return",
+            "clearPendingResearchNotebooksListRun(run, clearLoading = false)",
+            "provisionalResearchSessionIds",
+            "newlyClassifiedActiveSessionId",
+            "includeArchived = true",
+            "applyResearchNotebookLifecycleResult",
+            "clearTransientResearchSessionAfterLifecycleExit",
+            "isClosedChatSessionLifecycleRequest",
+            "decodeClosedPayload(ErrorPayload.serializer(), envelope.payload) ?: run {",
+            "fun renameResearchNotebook(sessionId: String, title: String)",
+            "previousResearchNotebook: ResearchNotebookPayload?",
+            "private fun beginOptimisticResearchNotebookRename(",
+            "private fun PendingChatSessionRenameMutation.matchesCurrentAuthority(",
+            "chatSessionRenameRequestTimeoutJobsByRequestId",
+            "closedChatSessionRenameRequests",
+            "closePendingChatSessionRenameRequest",
+            "requiresRefreshAfterCompletion",
+            "invalidLifecycleTimestampField",
+            "isActivelyCorrelatedGenericError",
+            "observedResearchSessionIds",
+            "requireFreshAfterCurrent",
+            "OptimisticResearchNotebookRevision",
+            "replaceResearchNotebookIfOptimisticCurrent",
+            "!selectedModel.isRuntimeHostLocalModel()",
+        ),
+        ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt": (
+            "LazyColumn(",
+            'key = { notebook -> "research-notebook-${notebook.sessionId}" }',
+            'contentType = { "research-notebook" }',
+            "expandedResearchNotebookMenuSessionId",
+            "expandedChatSessionMenuId",
+            "ResearchBriefCreateDialog",
+            "RESEARCH_BRIEF_DIALOG_TEST_TAG",
+            ".semantics(mergeDescendants = true) {}",
+            "role = Role.Checkbox",
+            "onCheckedChange = null",
+            "R.plurals.research_notebook_source_count",
+            "DRAWER_RESEARCH_NOTEBOOKS_ACTIVE_TEST_TAG",
+            "DRAWER_RESEARCH_NOTEBOOKS_ARCHIVED_TEST_TAG",
+            "RESEARCH_NOTEBOOK_DELETE_DIALOG_TEST_TAG",
+            "enabled = enabled",
+            "onRenameResearchNotebook",
+            "R.string.rename_research_notebook_named",
+            "isResearchNotebook = researchNotebookBeingRenamed != null",
+            "ResearchBriefModelMenuItem",
+            "models.none { model -> model.id == selectedModelId }",
+            "modelMenuExpanded && models.isNotEmpty() && !state.isStreaming",
+            "model.contextWindowTokens?.takeIf { it > 0 }",
+            "R.string.model_value",
+            "R.string.model_picker_state_wait_for_stream",
+        ),
+        ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt": (
+            "runtimeClientAdvertisesResearchNotebooksCapability",
+            "researchBriefCreateAndCappedRefreshKeepActiveTransientSessionWithoutPersistingResearchContent",
+            "malformedOrUnknownFieldResearchCreateErrorClosesProvisionalStreamWithoutRevokingAuthentication",
+            "normalChatNavigationLeavesActiveTransientResearchSession",
+            "failedResearchCreateRestoresPersistedChatAndIgnoresDelayedPairingError",
+            'IllegalStateException("research create send failed")',
+            'message = "Delayed stale error"',
+            "cappedResearchNotebookRefreshKeepsConfirmedSessionOutOfHostChatHistory",
+            'val ordinaryPrefixedSessionId = "research_session_',
+            "selectingResearchNotebookUsesExistingChatSelectionAndKeepsHistoryTransient",
+            "cappedResearchNotebookRefreshKeepsConfirmedSessionOutOfHostChatHistory",
+            'assertEquals(200, confirmedIds.size)',
+            "researchNotebookListTimeoutClearsLoadingAndAllowsRetry",
+            "staleResearchNotebookTimeoutCannotClearNewerAuthorityRequest",
+            "authoritativeResearchNotebookSyncUsesShared201PaginationAndPublishesOnlyTerminalSnapshot",
+            "authoritativeResearchNotebookZeroSnapshotClearsPublishedAndTransientAuthority",
+            "researchNotebookLegacyListRemainsCompatibleUntilCapableModeThenDowngradeIsRejected",
+            "capableResearchNotebookSyncRejectsDuplicateCountCursorAndOrderingFailures",
+            "capableResearchNotebookSyncStopsAt100PageBudgetWithoutPublishing",
+            "researchNotebookRunRejectsStaleChannelConnectionAuthorityAndAuthenticationResponses",
+            "researchNotebookContinuationTimeoutIsPerRequestAndRejectsLateTerminalPage",
+            "authoritativeZeroNotebookSnapshotPreservesPendingCreateUntilFreshPostStreamSnapshot",
+            "successfulResearchNotebookListsPublishLegacyAndCapableTerminalSnapshotsAtomically",
+            "emptyResearchBriefCreateDeltaDoesNotResetIdleTimeout",
+            "researchBriefCreateIdleTimeoutResetsOnMatchingDeltaThenClosesTransientState",
+            "lateResearchCreateTimeoutErrorAndDeltaCannotMutateStateAfterAuthorityChange",
+            "chatSnapshotWithArbitraryResearchSessionIdWaitsForCapableNotebookAuthority",
+            "heldChatSnapshotFromPriorAuthorityCannotPublishAfterCapableNotebookCompletion",
+            "researchListReclassifiesActivePersistedSessionAndReloadsBeforeChatSnapshot",
+            "researchNotebookLifecycleAcksRefreshBothAuthoritiesWithoutCrossingChannelOrAuthState",
+            "authoritativeArchiveRefreshExitsActiveResearchNotebookAndRejectsArchivedSend",
+            "closedResearchLifecycleErrorCannotRevokeReauthenticatedSession",
+            "researchNotebookRenameUsesBackingSessionCommandAndAppliesAckWithoutPersistence",
+            "researchNotebookRenameErrorRollsBackTransientTitleAndResyncs",
+            "staleResearchNotebookRenameAckIsIgnoredAndMalformedCurrentAckRollsBack",
+            "researchNotebookLifecycleWaitsForSameSessionRename",
+            "researchNotebookRenameDoesNotBlockDifferentSessionLifecycle",
+            "researchNotebookRenameTimeoutRollsBackAndRejectsLateResponses",
+            "notebookAuthorityChangeRedactsPriorBackingSessionAcrossAtomicChatPagination",
+            "researchBriefCompletionQueuesFreshNotebookListAndSkipsStaleTerminalSnapshot",
+            "chatPaginationRedactsResearchSessionObservedOnlyBetweenPages",
+            "researchNotebookRenameResponsesPreserveNewerAuthoritativeSnapshots",
+            "researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch",
+        ),
+        ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ResearchNotebookDrawerTest.kt": (
+            "researchNotebookDrawerGroupsPreserveRuntimeOrderAndSeparateArchivedRows",
+        ),
+        ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt": (
+            "navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation",
+            "navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove",
+            "navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority",
+            "navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot",
+            "composedResearchSemantics in 0 until 100",
+            "performScrollToIndex(10_002)",
+            "researchNotebookDrawerFitsCompactHeightAtLargeFontScale",
+            "lifecycleActionsBlocked",
+            "researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont",
+            "researchBriefDialogDisablesOnlyUncheckedSourcesAtSelectionLimit",
+            "renameResearchNotebookDialogLocalizesNotebookActionSemantics",
+            "researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming",
+            "researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            'hasContentDescription("Model: Vision Research Model")',
+            "contextWindowTokens = 0",
+        ),
+        ROOT / "apps/android/app/src/main/res/values/strings.xml": (
+            '<plurals name="research_notebook_source_count">',
+            '<item quantity="one">%1$d source</item>',
+            '<item quantity="other">%1$d sources</item>',
+            '<string name="rename_research_notebook">Rename notebook</string>',
+            '<string name="rename_research_notebook_named">Rename research notebook %1$s</string>',
+            '<string name="research_notebook_title_label">Notebook title</string>',
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testResearchBriefCreateRejectsUnnegotiatedCapabilityAndStrictInvalidPayloads",
+            "testResearchBriefCreateAcceptsEightUniqueGrantsAndStreamsUnderOriginalRequest",
+            "testResearchNotebookFollowUpsPinGrantsAndRejectMismatchOrRevocationBeforeBackend",
+            "testResearchNotebookArchiveRecoversDurableIntentAfterPostChatStoreFailure",
+            "testResearchNotebookBulkDeleteRecoversDurableIntentAfterPostChatStoreFailure",
+            "testResearchNotebookLiveForeignLifecycleIntentIsNotReconciledBeforeLeaseExpiry",
+            "testResearchNotebookListRejectsAuthorityCapturedBeforeDifferentOwnerReauthentication",
+            "testResearchNotebooksListRanksAcrossEntireBoundedOwnerStore",
+            "testResearchNotebookFollowUpRejectsDifferentOwnerReauthenticationAtCommitBoundary",
+            "testResearchNotebookRejectedRequestRevalidatesOwnerAfterAsyncFailure",
+            "testResearchNotebookRejectedRequestRejectsConcurrentArchiveAndDelete",
+            "testResearchNotebookFollowUpCommitRejectsEveryNotebookStateDrift",
+            "testExpiredLifecycleCannotTakeOverWhileOriginalRouterMutationIsBlocked",
+            "testChatSessionsListFiltersResearchCandidateDeletedByConcurrentRouter",
+            "testChatSessionsListFinalValidationFiltersConcurrentResearchPromotion",
+            "testResearchPromotionInvalidatesExistingAuthoritativePaginationSnapshot",
+            "testAuthoritativeResearchNotebooksListPaginates201As100100And1",
+            "testResearchNotebookAuthoritativeCapabilityDowngradesToExactLegacyContract",
+            "testAuthoritativeResearchNotebookCursorRejectsTamperingOtherConnectionAndOwner",
+            "testResearchNotebookLifecycleChangesInvalidateAuthoritativeSnapshots",
+            "testResearchNotebookRenameRefreshesAuthoritativeTitleOrderingAndOwnerSnapshot",
+            "testSQLiteResearchNotebookRenameAuthoritySurvivesStoreReopen",
+            "testChatSessionRenameRejectsInvalidTitlesAndCanonicalizesNormalizableInput",
+            "testLegacyResearchNotebookListDoesNotPublishStaleTitleAfterRename",
+            "testLocalResearchNotebookListUsesLocalGenerationToFenceStaleTitle",
+            "testChatTitleRequestFencesReauthenticatedOwnerAndInvalidatesResearchCursorOnCommit",
+            "testChatTitleRequestRejectsNonexistentSessionBeforeBackendDispatch",
+            "testChatTitleRequestDoesNotOverwriteTitleChangedAfterRequestCapture",
+            "testAutomaticChatTitleDoesNotCrossOwnerAfterReauthentication",
+            "testAutomaticChatTitlePreservesConcurrentManualRename",
+            "testAutomaticChatTitlePreservesConcurrentPlaceholderRevision",
+            "testAutomaticChatTitleNormalizesBoundsAndInvalidatesChatAndResearchCursors",
+            "testRuntimeChatSessionRenameStoresRuntimeTitle",
+            "testCorruptStoredTitleFailsClosedBeforeResearchNotebookPublication",
+            "testSupersededAuthoritativeResearchNotebookInitialRequestDoesNotPublish",
+            "testHelloCapabilityCountBoundAccepts64AndRejects65",
+            "testResearchNotebooksListTargetsBackingSessionBeyondTenThousandNewerOrdinarySessions",
+            'ordinaryPrefixedSessionID = "research_session_"',
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift": (
+            "testTargetedSessionSummariesMatchJSONLAndSQLiteAcrossBatchesArchiveAndOwnerScope",
+            "testTargetedSessionSummaryInputBoundsFailClosedForJSONLAndSQLite",
+            "testChatEventStoresRejectInvalidTitleEventsAndAcceptCanonicalBoundedTitles",
+            "testJSONLAndSQLitePreserveSameTimestampTitleAppendOrderAfterReopen",
+            "testJSONLAndSQLitePreserveReverseTimestampTitleAppendOrderAfterReopen",
+            "testLegacyInvalidTitlesProjectCanonicallyWithoutBlockingJSONLOrSQLiteReplay",
+            "testSQLiteLegacyImportPreservesReverseTimestampTitleAppendOrder",
+        ),
+        ROOT / "apps/macos/CompanionCore/Sources/RuntimeResearchNotebookPagination.swift": (
+            "RuntimeResearchNotebookPagination",
+            "AetherLink research notebook pagination cursor v1",
+            "maximumSnapshotCount = 10_000",
+            "maximumGlobalSnapshots = 8",
+            "maximumCursorUTF8Bytes = 512",
+            "snapshotTTL: TimeInterval = 120",
+            "HMAC<SHA256>.authenticationCode",
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeResearchNotebookPaginationTests.swift": (
+            "testPaginatesStable201ItemSnapshotAs100100And1",
+            "testRejectsCursorTamperingAndConnectionOwnerContextCountLimitAndOffsetDrift",
+            "testRejectsWallAndMonotonicExpiryAndInvalidatedSnapshots",
+            "testEnforcesSnapshotBoundsAndOneSnapshotPerConnection",
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeResearchNotebookStoreTests.swift": (
+            "testLifecycleIntentRenewalIsAtomicAndFencesLostOwnership",
+        ),
+        ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeResearchNotebookStoreTests.swift": (
+            "testLifecycleIntentsPersistAcrossReopenAndCompleteOrCancelAtomically",
+            "testConcurrentLegacyMigrationRechecksLockedVersionBeforePreservingV3Intent",
+            "testLifecycleIntentRenewalPersistsAndFencesStaleLease",
+            "testPendingCreateCanRenewLeaseBeforeCompletion",
+            "testPendingCreateDateRoundTripsBeforeDirectCompletion",
+            "testPreparedLifecycleMutationDateRoundTripsBeforeCompletion",
+            "testLifecycleCoordinationIsSharedAcrossStoreInstances",
+            "testTrueV2PendingIntentMigratesToExpiredCanonicalV3Intent",
+            'for legacyVersion in [1, 2]',
+            'XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 3)',
+        ),
+        ROOT / "script/runtime_authenticated_mock_smoke.swift": (
+            '"smoke-research-brief-create"',
+            '"research.notebooks.authoritative_sync.v1"',
+            "researchNotebookAuthoritativeSyncFixture()",
+            "runAuthenticatedResearchNotebookSeriesPaginationChecks",
+            "seedResearchNotebookFixtureRows",
+            '"shared/protocol/fixtures/research-notebooks-authoritative-sync-smoke-v1.json"',
+            "pages.compactMap({ $0[\"count\"] as? Int }) == [100, 100, 1]",
+            '"smoke-research-notebooks-list-legacy"',
+            '"smoke-research-notebooks-list-\\(researchListPageCount)"',
+            '"smoke-research-notebooks-list-mixed-cursor"',
+            '"smoke-research-series-cursor-with-limit"',
+            '"smoke-research-series-cursor-with-include-archived"',
+            "research notebook series did not complete one stable unique 201-row snapshot",
+            "research notebook pagination exceeded 100 pages",
+            "researchNotebookIDs.insert(notebookID).inserted",
+            "researchListCursors.insert(nextCursor).inserted",
+            "research notebook authoritative pagination was not globally canonical",
+            '"smoke-future-research-web-query"',
+            "future external research namespace smoke",
+            "AETHERLINK_DEV_RUNTIME_RESEARCH_NOTEBOOK_SQLITE_FILE",
+        ),
+        ROOT / "script/check_no_device_quality.sh": (
+            "--tests com.localagentbridge.android.ResearchNotebookDrawerTest",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming",
+            "--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch",
+            "Android authoritative drawer virtualization",
+            "Android research brief model capability selection",
+            "swift test --filter 'ResearchNotebook|ResearchBrief|ResearchPromotion|ExpiredLifecycleCannotTakeOver|ChatSessionsList.*Research|ChatTitleRequest|AutomaticChatTitle|RuntimeChatSessionRenameStoresRuntimeTitle|ChatSessionRenameRejectsInvalidTitles|ChatEventStoresRejectInvalidTitleEvents|SameTimestampTitleAppendOrder|ReverseTimestampTitle|LegacyInvalidTitles'",
+            "runtime-owned research notebooks addendum",
+            "complete 10000-row candidate ranking before the 100-row legacy wire limit and capable authoritative snapshot pagination",
+            "runtime-authoritative research notebook pagination addendum",
+            "research notebook rename title-authority addendum",
+            "research.notebooks.authoritative_sync.v1",
+            "201-notebook 100/100/1 stress flow",
+            "bounded hello capability ceiling is 64 with 65 rejected",
+            "LocalRuntimeMessageRouterTests/testHelloCapabilityCountBoundAccepts64AndRejects65",
+            "shared lifecycle coordination and final research-session publication filtering",
+            "rejected follow-up lifecycle fencing",
+            "authoritative pagination invalidation after promotion",
+            "authority-bound list timeout and active-session reclassification reload",
+            "mixed active and archived Android notebook authority",
+            "closed lifecycle errors",
+            "two-step permanent delete",
+            "research.web.query",
+        ),
+        ROOT / "docs/protocol.md": (
+            "`research.notebooks.v1` advertises runtime-owned, chat-backed research notebooks",
+            "`research.notebooks.authoritative_sync.v1`",
+            "`research.brief.create` requires exactly",
+            "`research.notebooks.list` returns only safe notebook summaries",
+            "The backing runtime-owned chat session is the title authority",
+            "including `research.web.query`",
+        ),
+        ROOT / "docs/connection-overlay.md": (
+            "RAG/research action namespaces stay closed to the implemented contracts",
+            "`research.brief.create`, `research.notebooks.list`",
+            "must not expose source text, paths, URLs, backend settings, tokens, vectors, or prompt internals",
+        ),
+        ROOT / "docs/roadmap.md": (
+            "v0.4 Android Research Brief Model Capability Selection",
+            "v0.4 Android Authoritative Drawer Virtualization",
+            "v0.3 Research Notebook Rename Title Authority",
+            "v0.3 Runtime-Authoritative Research Notebook Pagination",
+            "v0.3 Runtime-Owned Research Notebooks And Brief Generation",
+            "No web search, external network access, whole-document authority",
+            "no-device evidence only",
+        ),
+        ROOT / "docs/progress.md": (
+            "v0.4 Android Research Brief Model Capability Selection",
+            "v0.4 Android Authoritative Drawer Virtualization",
+            "v0.3 Research Notebook Rename Title Authority",
+            "v0.3 Runtime-Authoritative Research Notebook Pagination",
+            "v0.3 Runtime-Owned Research Notebooks And Brief Generation",
+            "research.notebooks.v1",
+            "no-device evidence only",
+        ),
+        ROOT / "docs/qa-evidence.md": (
+            "v0.4 Android Research Brief Model Capability Selection",
+            "v0.4 Android Authoritative Drawer Virtualization",
+            "v0.3 Research Notebook Rename Title Authority",
+            "v0.3 Runtime-Authoritative Research Notebook Pagination",
+            "v0.3 Runtime-Owned Research Notebooks And Brief Generation",
+            "research.web.query",
+            "no-device evidence only",
+        ),
+        ROOT / "shared/protocol/fixtures/research-notebooks-authoritative-sync-smoke-v1.json": (
+            '"document_type": "aetherlink.research-notebooks-authoritative-sync-wire-smoke"',
+            '"capability": "research.notebooks.authoritative_sync.v1"',
+            '"count": 201',
+            '"snapshot_count": 201',
+            '"proof_scope": "no-device/no-network wire-contract fixture only"',
+        ),
+    }
+    for path, snippets in requirements.items():
+        if not path.exists():
+            failures.append(
+                f"{path.relative_to(ROOT)} is missing for runtime research notebook coverage."
+            )
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing runtime research notebook guard {snippet!r}."
+                )
+    return failures
+
+
 def protocol_reserved_namespace_guard_failures() -> list[str]:
     failures: list[str] = []
     protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
@@ -37007,7 +37718,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "python.*, projects.*, automation.*, permission.*, approval.*, audit.*,",
         "file.*, terminal.*, network.*, backend.*, embeddings.*,",
         "unsupported retrieval.* beyond retrieval.query, unsupported index.*,",
-        "research.*, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*,",
+        "unsupported research.* beyond research.brief.create/research.notebooks.list, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*,",
         "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*,",
         "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names",
         "future_memory_message_types(",
@@ -37148,7 +37859,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         '"smoke-future-backend-configure"',
         '"smoke-future-embeddings-create"',
         '"smoke-future-index-build"',
-        '"smoke-future-research-brief-create"',
+        '"smoke-future-research-web-query"',
         '"smoke-future-citation-sources-list"',
         '"smoke-future-source-anchor-metadata-get"',
         '"smoke-citation-resolve"',
@@ -37213,7 +37924,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "future embeddings create namespace smoke",
         "retrieval.query unknown metadata",
         "future index build namespace smoke",
-        "future research brief namespace smoke",
+        "future external research namespace smoke",
         "future citation sources namespace smoke",
         "future source anchor metadata namespace smoke",
         "Checking citation and trusted-source review lifecycle",
@@ -37275,7 +37986,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "protocol reserved runtime action namespace guard addendum",
         "file., terminal., network., and backend. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
         "protocol reserved RAG/research namespace guard addendum",
-        "approved semantic retrieval is active only through retrieval.query; embeddings., unsupported retrieval.* beyond retrieval.query, unsupported index.* beyond index.documents.list, research., citation., and source_control. active messages remain blocked",
+        "research.brief.create and research.notebooks.list are the only active research.* messages",
         "protocol citation and trusted-source namespace guard addendum",
         "citation.resolve plus trusted_source.approve, trusted_source.dismiss, trusted_source.list, and trusted_source.revoke are the only active citation/trusted_source messages",
         "RuntimeDevServer reserved source-anchor namespace rejection addendum",
@@ -37303,7 +38014,7 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
         "RuntimeDevServer retrieval.query request bounds no-device smoke addendum",
         "authenticated RuntimeDevServer relay smoke rejects retrieval.query query text longer than 1024 characters with invalid_payload",
         "RuntimeDevServer reserved RAG/research namespace rejection addendum",
-        "authenticated RuntimeDevServer relay smoke keeps approved semantic retrieval on retrieval.query and rejects embeddings.create, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
+        "authenticated RuntimeDevServer relay smoke accepts research.brief.create and research.notebooks.list under research.notebooks.v1",
         "RuntimeDevServer source-anchor resolver no-device smoke addendum",
         "authenticated RuntimeDevServer relay smoke accepts source_anchor.resolve for a seeded retrieval source_anchor_id",
         "RuntimeDevServer citation and device trusted-source lifecycle addendum",
@@ -37407,9 +38118,10 @@ def protocol_reserved_namespace_guard_failures() -> list[str]:
             )
 
     required_connection_overlay_snippets = (
-        "Future RAG/research action messages are intentionally reserved beyond the current lexical document-index reads",
-        "`embeddings.`, unsupported `retrieval.` beyond active lexical `retrieval.query`, unsupported `index.` beyond the active read-only `index.documents.list` catalog, `research.`, `citation.`, `source_anchor.`, `trusted_source.`, and `source_control.` message names must stay inactive",
-        "runtime-side embedding generation, semantic retrieval, indexing, research, source-anchor resolver or approval flows, citation, trusted-source controls, source-control context, permissions, redaction, and audit semantics",
+        "RAG/research action namespaces stay closed to the implemented contracts",
+        "`research.brief.create`, `research.notebooks.list`",
+        "unsupported retrieval/index/research messages including `research.web.query`",
+        "must not expose source text, paths, URLs, backend settings, tokens, vectors, or prompt internals in notebook summaries",
     )
     for snippet in required_connection_overlay_snippets:
         if snippet not in connection_overlay_text:
@@ -40350,6 +41062,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         "malformedLifecycleAckRollsBackDeleteTombstoneAndRequestsFreshFullList",
         "lifecycleWaitsForPendingListThenRequestsFreshReconciliation",
         "sameSessionMutationWaitsForPendingAcknowledgement",
+        "malformedArchiveAndRestoreTimestampsCloseExactMutationsAndKeepReceiveLoopAlive",
+        "evictedLifecycleErrorCannotRevokeAuthenticationButActiveChatErrorStillDoes",
         'put("backend_url", "http://127.0.0.1:11434")',
         'put("workspace_id", "workspace-canary")',
         "Leaky Runtime Title",
@@ -44913,7 +45627,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
     if len(manifest_lines) != 13:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_hash = hashlib.sha256(texts.get("manifest", "").encode("utf-8")).hexdigest()
-    expected_manifest_hash = "8741927642b8697e517dccee7dc639d279037f530b442f9ddf9873cbd2294a92"
+    expected_manifest_hash = "12aa3324e55bb442ed3ce4fd5f2e5724483c6e2408750a9550b0e45e2d8c368a"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -46714,6 +47428,92 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
             "testCompleteLinkClusterMinimumAndOutputOrderingAreDeterministic",
             "testCompleteLinkClusterCancellationAndResponseByteCapFailClosed",
         ),
+        "shared/evaluation/memory-semantic-duplicate-calibration-v1.json": (
+            '"corpus_id": "memory-semantic-duplicate-calibration-v1"',
+            '"review_threshold_basis_points": 9000',
+            '"offline_embedding"',
+            '"pair_labels"',
+            '"expected_review_clusters"',
+        ),
+        "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json": (
+            '"review_id": "memory_semantic_duplicate_acceptance_v1_recommended"',
+            '"status": "proposed_not_selected"',
+            '"evidence_status": "blocked_missing_representative_corpus"',
+            '"representative_batch_evaluator_required": true',
+            '"minimum_pair_precision_basis_points": 9500',
+            '"minimum_language_stratum_precision_basis_points": 9000',
+            '"minimum_hard_negative_specificity_basis_points": 9500',
+            '"aggregate_averaging_forbidden": true',
+            '"automatic_merge_authorized": false',
+            '"record_state": "closed"',
+        ),
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticCalibration.swift": (
+            "enum RuntimeMemorySemanticCalibrationEvaluator",
+            "RuntimeMemorySemanticCalibrationThresholdMetrics",
+            "bestF1ThresholdBasisPoints",
+            "reviewClustersExactMatch",
+            "minimumSimilarityThresholdBasisPoints",
+            "maximumSimilarityThresholdBasisPoints",
+            "RuntimeMemorySemanticDuplicateSuggester.clusters(",
+        ),
+        "apps/macos/CompanionCore/Tests/RuntimeMemorySemanticCalibrationTests.swift": (
+            "testSharedCorpusSweepsEveryBasisPointAndMatchesCompleteLinkReviewLabels",
+            "testCalibrationIsDeterministicAcrossCandidateAndLabelOrder",
+            "testCalibrationRejectsMalformedLabelsAndExpectedClusters",
+            "testByteExactContentRemainsIneligibleAndNoPredictionPrecisionIsNull",
+            "testCalibrationSweepHonorsCancellation",
+        ),
+        "script/run_memory_semantic_calibration.py": (
+            'MAXIMUM_ENTRY_COUNT = 64',
+            'if host != "127.0.0.1"',
+            '"truncate": False',
+            '"default_threshold_changed": False',
+            '"automatic_memory_mutation": False',
+            '"protocol_changed": False',
+            'report["model_id"] = f"ollama:{args.model}"',
+            'provider_model_changed_during_run',
+            'provider_deadline_exceeded',
+        ),
+        "script/test_memory_semantic_calibration.py": (
+            "test_canonical_offline_result_matches_swift_calibration",
+            "test_nonliteral_loopback_hosts_are_rejected_without_connection",
+            "test_mocked_live_ollama_uses_exact_model_and_one_embed_call",
+            "test_live_report_uses_provider_qualified_model_identity",
+            "test_live_model_digest_must_remain_stable_after_embedding",
+            "test_live_timeout_is_one_total_deadline_and_interrupts_slow_body",
+            "test_live_deadline_is_rechecked_after_provider_json_parsing",
+            "test_report_has_no_content_vector_endpoint_or_provider_payload_leakage",
+        ),
+        "script/check_memory_semantic_calibration_acceptance.py": (
+            'STATUS = "proposed_not_selected"',
+            '"blocked_missing_representative_corpus"',
+            '"representative_batch_evaluator_missing"',
+            '"minimum_language_stratum_precision_basis_points": 9_000',
+            '"minimum_hard_negative_specificity_basis_points": 9_500',
+            '"aggregate_averaging_forbidden": True',
+            '"automatic_merge_authorized"',
+            '"synthetic_fixture_hash_invalid"',
+            'MAXIMUM_SYNTHETIC_FIXTURE_BYTES = 8 * 1_024 * 1_024',
+            '"review_type_invalid"',
+            '"historical_report_hash_invalid"',
+        ),
+        "script/test_memory_semantic_calibration_acceptance.py": (
+            "test_duplicate_key_nonfinite_utf8_and_size_are_rejected",
+            "test_review_path_symlink_nonregular_and_empty_fail_closed",
+            "test_copy_hygiene_guard_rejects_symlink_fifo_empty_and_oversize",
+            "test_exact_integer_and_boolean_types_are_required",
+            "test_status_approval_and_authorization_gate_drift_are_rejected",
+            "test_actual_synthetic_fixture_hash_drift_is_rejected",
+            "test_synthetic_fixture_symlink_nonregular_and_size_fail_closed",
+            "test_matrix_row_provider_order_and_eligibility_drift_are_rejected",
+            "test_floor_reason_code_and_selected_threshold_drift_are_rejected",
+            "test_missing_historical_report_is_allowed_but_present_drift_is_rejected",
+            "test_summary_is_deterministic_content_free_and_has_closed_gates",
+        ),
+        "packages/protocol-schema/README.md": (
+            "threshold calibration foundation remains an offline or explicitly invoked loopback evaluation tool",
+            "adds no message or capability",
+        ),
         "apps/macos/CompanionCore/Tests/MemorySemanticDuplicateSuggestionsRouterTests.swift": (
             "testStrongFingerprintSplitsAtByteBudgetAndWeakFingerprintRejectsBeforeDispatch",
             "testStrongCacheCommitAcquiresLifecycleBeforeMemoryStoreAccess",
@@ -46792,8 +47592,15 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
             "memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel",
             "memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls",
             "RuntimeMemorySemanticDuplicateSuggestionsTests|MemorySemanticDuplicateSuggestionsRouterTests",
+            "RuntimeMemorySemanticCalibrationTests|RuntimeMemorySemanticDuplicateSuggestionsTests",
+            "python3 -m unittest script/test_memory_semantic_calibration.py",
+            "python3 -m unittest script/test_memory_semantic_calibration_acceptance.py",
+            "python3 script/check_memory_semantic_calibration_acceptance.py",
+            "memory-semantic-calibration-offline-v1.json",
             "Covered review-only semantic memory duplicate clusters addendum",
             "Covered review-only semantic memory duplicate clusters authenticated smoke addendum",
+            "Covered review-only semantic memory threshold calibration foundation addendum",
+            "Covered review-only semantic memory acceptance recommendation addendum",
         ),
         "script/runtime_authenticated_mock_smoke.swift": (
             '"memory.semantic_duplicate_clusters.v1"',
@@ -46809,12 +47616,31 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
         ),
         "docs/roadmap.md": (
             "Review-Only Semantic Memory Duplicate Clusters",
+            "Review-Only Semantic Memory Threshold Calibration Foundation",
+            "Semantic Memory Calibration Acceptance Review (Selection Pending)",
+            "memory_semantic_duplicate_acceptance_v1_recommended",
+            "blocked_missing_representative_corpus",
+            "representative batched evaluator",
+            "default or range change requires a separate versioned decision",
+            "check-no-device-quality-v03-semantic-memory-threshold-calibration-final-reviewed-20260714.log",
         ),
         "docs/progress.md": (
             "Review-Only Semantic Memory Duplicate Clusters No-Device Gate",
+            "Review-Only Semantic Memory Threshold Calibration Foundation",
+            "Semantic Memory Calibration Acceptance Review Foundation",
+            "memory_semantic_duplicate_acceptance_v1_recommended",
+            "measurement_status=not_started",
+            "best F1 is 4,444 at 8,073",
+            "45 selected Swift tests, 17 Python tests",
         ),
         "docs/qa-evidence.md": (
             "Review-Only Semantic Memory Duplicate Clusters No-Device Gate",
+            "Review-Only Semantic Memory Threshold Calibration Foundation",
+            "Semantic Memory Calibration Acceptance Review Foundation",
+            "missing_required_artifact_count=1",
+            "aggregate averaging fails closed",
+            "negative calibration signal rather than authorization to change behavior",
+            "the 859-encrypted-frame ciphertext boundary",
         ),
     }
     for relative, snippets in required_snippets.items():
@@ -46824,7 +47650,19 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
                 f"{relative}: missing review-only semantic memory duplicate cluster contract file."
             )
             continue
-        contents = path.read_text(encoding="utf-8", errors="replace")
+        maximum_bytes = CALIBRATION_GUARDED_FILES.get(relative)
+        if maximum_bytes is not None:
+            try:
+                contents = read_bounded_regular_file(path, maximum_bytes).decode(
+                    "utf-8", errors="replace"
+                )
+            except ValueError as error:
+                failures.append(
+                    f"{relative}: guarded calibration artifact is invalid ({error})."
+                )
+                continue
+        else:
+            contents = path.read_text(encoding="utf-8", errors="replace")
         for snippet in snippets:
             if snippet not in contents:
                 failures.append(
@@ -46840,6 +47678,92 @@ def review_only_memory_semantic_duplicate_clusters_guard_failures() -> list[str]
             if forbidden in helper_text:
                 failures.append(
                     f"{helper_path.relative_to(ROOT)}: semantic duplicate clustering must remain read-only; found {forbidden!r}."
+                )
+
+    calibration_fixture_path = ROOT / (
+        "shared/evaluation/memory-semantic-duplicate-calibration-v1.json"
+    )
+    if calibration_fixture_path.exists():
+        try:
+            calibration_fixture_bytes = read_bounded_regular_file(
+                calibration_fixture_path,
+                CALIBRATION_GUARDED_FILES[
+                    "shared/evaluation/memory-semantic-duplicate-calibration-v1.json"
+                ],
+            )
+        except ValueError as error:
+            failures.append(
+                "shared/evaluation/memory-semantic-duplicate-calibration-v1.json: "
+                f"guarded read failed ({error})."
+            )
+            calibration_fixture_bytes = None
+        actual_fixture_sha256 = (
+            hashlib.sha256(calibration_fixture_bytes).hexdigest()
+            if calibration_fixture_bytes is not None
+            else None
+        )
+        expected_fixture_sha256 = (
+            "d41a31045a5a4d35ad8ce4ee05af34fc0937326b114a1512fb1160be75b571ff"
+        )
+        if (
+            actual_fixture_sha256 is not None
+            and actual_fixture_sha256 != expected_fixture_sha256
+        ):
+            failures.append(
+                "shared/evaluation/memory-semantic-duplicate-calibration-v1.json: "
+                f"expected SHA-256 {expected_fixture_sha256}, got {actual_fixture_sha256}."
+            )
+
+    calibration_acceptance_review_path = ROOT / (
+        "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json"
+    )
+    if calibration_acceptance_review_path.exists():
+        try:
+            calibration_review_bytes = read_bounded_regular_file(
+                calibration_acceptance_review_path,
+                CALIBRATION_GUARDED_FILES[
+                    "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json"
+                ],
+            )
+        except ValueError as error:
+            failures.append(
+                "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json: "
+                f"guarded read failed ({error})."
+            )
+            calibration_review_bytes = None
+        actual_review_sha256 = (
+            hashlib.sha256(calibration_review_bytes).hexdigest()
+            if calibration_review_bytes is not None
+            else None
+        )
+        expected_review_sha256 = (
+            "d959de7ce19d3557c160aaab83b53b74341b2ef7003a6e61655313a90fca4e32"
+        )
+        if actual_review_sha256 is not None and actual_review_sha256 != expected_review_sha256:
+            failures.append(
+                "shared/evaluation/memory-semantic-duplicate-acceptance-review-v1.json: "
+                f"expected SHA-256 {expected_review_sha256}, got {actual_review_sha256}."
+            )
+
+    calibration_helper_path = ROOT / (
+        "apps/macos/CompanionCore/Sources/RuntimeMemorySemanticCalibration.swift"
+    )
+    if calibration_helper_path.exists():
+        calibration_helper_text = calibration_helper_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+        for forbidden in (
+            "memoryStore.upsert",
+            "memoryStore.delete",
+            ".upsert(",
+            ".delete(",
+            "URLSession",
+            "NWConnection",
+        ):
+            if forbidden in calibration_helper_text:
+                failures.append(
+                    f"{calibration_helper_path.relative_to(ROOT)}: semantic calibration must remain pure and read-only; found {forbidden!r}."
                 )
 
     for values_dir in (
@@ -47026,6 +47950,13 @@ def main() -> int:
     if suggested_questions_removed_failures:
         print("Suggested-question tombstone guard failed:", file=sys.stderr)
         for failure in suggested_questions_removed_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_research_notebook_failures = runtime_research_notebook_guard_failures()
+    if runtime_research_notebook_failures:
+        print("Runtime research notebook guard failed:", file=sys.stderr)
+        for failure in runtime_research_notebook_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

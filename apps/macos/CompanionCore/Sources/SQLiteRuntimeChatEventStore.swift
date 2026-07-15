@@ -100,6 +100,28 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
+    public func listSessionSummaries(
+        ownerDeviceID: String?,
+        sessionIDs: [String],
+        includeArchived: Bool
+    ) throws -> [RuntimeChatStoredSession] {
+        let validatedSessionIDs = try validatedTargetedSessionSummaryIDs(sessionIDs)
+        guard !validatedSessionIDs.isEmpty else { return [] }
+        return try lock.withLock {
+            try withDatabase { database in
+                try JSONLRuntimeChatEventStore.sessions(
+                    from: readEventsUnlocked(
+                        database,
+                        matchingOwnerDeviceID: ownerDeviceID.sqliteNormalizedOwnerDeviceID,
+                        sessionIDs: validatedSessionIDs
+                    ),
+                    limit: validatedSessionIDs.count,
+                    includeArchived: includeArchived
+                )
+            }
+        }
+    }
+
     public func listSessions(
         ownerDeviceID: String?,
         limit: Int,
@@ -672,6 +694,52 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
 
     private func readEventsUnlocked(
         _ database: OpaquePointer,
+        matchingOwnerDeviceID ownerDeviceID: String?,
+        sessionIDs: [String]
+    ) throws -> [RuntimeChatStoredEvent] {
+        let ownerParameterCount = ownerDeviceID == nil ? 0 : 1
+        let variableLimit = Int(sqlite3_limit(database, SQLITE_LIMIT_VARIABLE_NUMBER, -1))
+        let availableSessionIDParameters = variableLimit - ownerParameterCount
+        guard availableSessionIDParameters > 0 else {
+            throw SQLiteRuntimeChatEventStoreError(
+                "Runtime chat SQLite variable limit cannot support targeted session summary lookup."
+            )
+        }
+        let batchSize = min(500, availableSessionIDParameters)
+        let ownerPredicate = ownerDeviceID == nil ? "owner_device_id IS NULL" : "owner_device_id = ?"
+        var events: [RuntimeChatStoredEvent] = []
+        for batchStart in stride(from: 0, to: sessionIDs.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, sessionIDs.count)
+            let batch = sessionIDs[batchStart..<batchEnd]
+            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+            let batchEvents = try readEventsUnlocked(
+                database,
+                sql: """
+                SELECT event_json
+                FROM runtime_chat_events
+                WHERE \(ownerPredicate)
+                  AND session_id IN (\(placeholders))
+                ORDER BY sequence ASC
+                """,
+                bind: { statement in
+                    var bindIndex: Int32 = 1
+                    if let ownerDeviceID {
+                        try Self.bindText(ownerDeviceID, to: statement, at: bindIndex)
+                        bindIndex += 1
+                    }
+                    for sessionID in batch {
+                        try Self.bindText(sessionID, to: statement, at: bindIndex)
+                        bindIndex += 1
+                    }
+                }
+            )
+            events.append(contentsOf: batchEvents)
+        }
+        return events
+    }
+
+    private func readEventsUnlocked(
+        _ database: OpaquePointer,
         sql: String,
         bind: (OpaquePointer) throws -> Void
     ) throws -> [RuntimeChatStoredEvent] {
@@ -693,7 +761,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             }
             let data = Data(String(cString: text).utf8)
             do {
-                let event = try decoder.decode(RuntimeChatStoredEvent.self, from: data)
+                let decoded = try decoder.decode(RuntimeChatStoredEvent.self, from: data)
+                let event = JSONLRuntimeChatEventStore.projectingLegacyTitleForReplay(decoded)
                 try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: line)
                 events.append(event)
             } catch {
@@ -1396,7 +1465,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         let snapshot = try legacyJSONLSnapshot(from: legacyJSONLFileURL)
         if importedSignature != snapshot.signature {
             var importedAnyEvent = false
-            for record in snapshot.records.sorted(by: { $0.event.timestamp < $1.event.timestamp }) {
+            for record in snapshot.records {
                 let sanitized = record.event.sanitizedForStorage()
                 try JSONLRuntimeChatEventStore.validateStoredEvent(sanitized, line: record.line)
                 let inserted = try insertEventUnlocked(sanitized, database: database, skipExisting: true)
@@ -1550,7 +1619,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 }
                 let event: RuntimeChatStoredEvent
                 do {
-                    event = try decoder.decode(RuntimeChatStoredEvent.self, from: Data(rawLine))
+                    let decoded = try decoder.decode(RuntimeChatStoredEvent.self, from: Data(rawLine))
+                    event = JSONLRuntimeChatEventStore.projectingLegacyTitleForReplay(decoded)
                     try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: index + 1)
                 } catch {
                     if let storeError = error as? RuntimeChatEventStoreError {

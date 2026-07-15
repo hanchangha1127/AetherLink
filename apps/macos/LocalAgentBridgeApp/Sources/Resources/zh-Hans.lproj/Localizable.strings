@@ -223,6 +223,10 @@
 "%d models" = "%d 个模型";
 "Chat" = "聊天";
 "Embedding" = "记忆索引";
+"Vision" = "视觉";
+"Context: %@ tokens" = "上下文：%@ 个词元";
+"%@, %@" = "%@、%@";
+"%@. Capabilities: %@." = "%@。功能：%@。";
 "Running" = "运行中";
 "Not running" = "未运行";
 "Unnamed model" = "未命名模型";

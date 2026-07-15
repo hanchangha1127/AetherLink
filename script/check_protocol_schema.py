@@ -20,6 +20,72 @@ COMPACT_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "mac
 COMPACT_PRIVATE_OVERLAY_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-private-overlay-pairing-uri.txt"
 COMPACT_P2P_RENDEZVOUS_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-p2p-rendezvous-pairing-uri.txt"
 
+
+class DuplicateJSONNameError(ValueError):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"duplicate JSON object name {name!r}")
+        self.name = name
+
+
+def reject_duplicate_json_names(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for name, member in pairs:
+        if name in value:
+            raise DuplicateJSONNameError(name)
+        value[name] = member
+    return value
+
+
+def load_json_rejecting_duplicate_names(text: str) -> object:
+    return json.loads(text, object_pairs_hook=reject_duplicate_json_names)
+
+
+def json_values_equal(actual: object, expected: object) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            json_values_equal(actual[name], expected[name]) for name in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            json_values_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
+
+
+def check_json_contract_guard_regressions() -> list[str]:
+    failures: list[str] = []
+    duplicate_samples = [
+        '{"type":"runtime.health","type":"research.brief.create"}',
+        '{"payload":{"authority":{"grant_id":"first","grant_id":"second"}}}',
+    ]
+    for sample in duplicate_samples:
+        try:
+            load_json_rejecting_duplicate_names(sample)
+        except DuplicateJSONNameError:
+            pass
+        else:
+            failures.append("protocol schema JSON loader must reject duplicate object names at every depth")
+
+    for actual, expected in [
+        (True, 1),
+        (8.0, 8),
+        ({"maxItems": 8.0}, {"maxItems": 8}),
+        ({"uniqueItems": 1}, {"uniqueItems": True}),
+    ]:
+        if json_values_equal(actual, expected):
+            failures.append(
+                f"exact JSON contract comparison must distinguish {actual!r} from {expected!r}"
+            )
+    if not json_values_equal(
+        {"type": "array", "maxItems": 8, "uniqueItems": True},
+        {"type": "array", "maxItems": 8, "uniqueItems": True},
+    ):
+        failures.append("exact JSON contract comparison must accept identical concrete JSON values")
+    return failures
+
 RESERVED_PREFIXES = (
     "skills.",
     "mcp.",
@@ -89,6 +155,10 @@ ALLOWED_TRUSTED_SOURCE_TYPES = {
     "trusted_source.dismiss",
     "trusted_source.list",
     "trusted_source.revoke",
+}
+ALLOWED_RESEARCH_TYPES = {
+    "research.brief.create",
+    "research.notebooks.list",
 }
 SCHEMA_ONLY_MESSAGE_TYPES = (
     ALLOWED_CITATION_TYPES
@@ -303,6 +373,7 @@ def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) ->
         and message_type not in ALLOWED_CITATION_TYPES
         and message_type not in ALLOWED_SOURCE_ANCHOR_TYPES
         and message_type not in ALLOWED_TRUSTED_SOURCE_TYPES
+        and message_type not in ALLOWED_RESEARCH_TYPES
     ]
 
 
@@ -335,6 +406,8 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "embeddings.create",
         "index.build",
         "research.brief.create",
+        "research.notebooks.list",
+        "research.web.query",
         "citation.sources.list",
         "citation.resolve",
         "source_anchor.resolve",
@@ -383,7 +456,7 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
         "backend.configure",
         "embeddings.create",
         "index.build",
-        "research.brief.create",
+        "research.web.query",
         "citation.sources.list",
         "source_anchor.metadata.get",
         "trusted_source.metadata.get",
@@ -409,7 +482,7 @@ def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[s
             "python.*, projects.*, automation.*, permission.*, approval.*, audit.*, "
             "file.*, terminal.*, network.*, backend.*, embeddings.*, "
             "unsupported retrieval.* beyond retrieval.query, unsupported index.*, "
-            "research.*, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*, "
+            "unsupported research.* beyond research.brief.create/research.notebooks.list, unsupported citation.* beyond citation.resolve, unsupported source_anchor.* beyond source_anchor.resolve, unsupported trusted_source.* beyond approve/dismiss/list/revoke, source_control.*, p2p.*, rendezvous.*, "
             "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*, "
             "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names"
         )
@@ -3628,6 +3701,167 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
     return failures
 
 
+def check_research_notebook_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include research notebook schemas"]
+
+    def bounded_non_blank(maximum: int) -> dict[str, object]:
+        return {
+            "allOf": [
+                {"$ref": "#/$defs/nonBlankString"},
+                {"maxLength": maximum},
+            ]
+        }
+
+    expected_defs = {
+        "researchNotebookID": {
+            "type": "string",
+            "pattern": r"^research_notebook_[0-9a-f]{32}$",
+        },
+        "researchBriefCreatePayload": {
+            "type": "object",
+            "required": [
+                "notebook_id",
+                "session_id",
+                "topic",
+                "model",
+                "trusted_source_grant_ids",
+            ],
+            "properties": {
+                "notebook_id": {"$ref": "#/$defs/researchNotebookID"},
+                "session_id": bounded_non_blank(256),
+                "topic": bounded_non_blank(2048),
+                "model": bounded_non_blank(256),
+                "locale": bounded_non_blank(64),
+                "trusted_source_grant_ids": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/trustedSourceGrantID"},
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "uniqueItems": True,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "researchNotebook": {
+            "type": "object",
+            "required": [
+                "notebook_id",
+                "session_id",
+                "title",
+                "model",
+                "source_count",
+                "created_at",
+                "updated_at",
+            ],
+            "properties": {
+                "notebook_id": {"$ref": "#/$defs/researchNotebookID"},
+                "session_id": bounded_non_blank(256),
+                "title": bounded_non_blank(256),
+                "model": bounded_non_blank(256),
+                "source_count": {"type": "integer", "minimum": 1, "maximum": 8},
+                "created_at": {"$ref": "#/$defs/iso8601DateTime"},
+                "updated_at": {"$ref": "#/$defs/iso8601DateTime"},
+                "archived_at": {"$ref": "#/$defs/iso8601DateTime"},
+            },
+            "additionalProperties": False,
+        },
+        "researchNotebooksListPayload": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["include_archived", "limit"],
+                    "properties": {
+                        "include_archived": {"type": "boolean"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    },
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "required": ["cursor"],
+                    "properties": {
+                        "cursor": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9._-]+$",
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "required": ["notebooks"],
+                    "properties": {
+                        "notebooks": {
+                            "type": "array",
+                            "maxItems": 100,
+                            "uniqueItems": True,
+                            "items": {"$ref": "#/$defs/researchNotebook"},
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "required": ["notebooks", "snapshot_count"],
+                    "properties": {
+                        "notebooks": {
+                            "type": "array",
+                            "maxItems": 200,
+                            "uniqueItems": True,
+                            "items": {"$ref": "#/$defs/researchNotebook"},
+                        },
+                        "snapshot_count": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10000,
+                        },
+                        "next_cursor": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512,
+                            "pattern": "^[A-Za-z0-9._-]+$",
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+            ]
+        },
+    }
+
+    for name, expected in expected_defs.items():
+        if not json_values_equal(defs.get(name), expected):
+            failures.append(f"$defs.{name} must match the exact research contract and JSON types")
+
+    expected_payload_refs = {
+        "research.brief.create": "#/$defs/researchBriefCreatePayload",
+        "research.notebooks.list": "#/$defs/researchNotebooksListPayload",
+    }
+    actual_payload_refs: dict[str, list[object]] = {
+        message_type: [] for message_type in expected_payload_refs
+    }
+    for rule in schema.get("allOf", []):
+        if not isinstance(rule, dict):
+            continue
+        message_type = rule.get("if", {}).get("properties", {}).get("type", {}).get("const")
+        if message_type in expected_payload_refs:
+            actual_payload_refs[message_type].append(
+                rule.get("then", {}).get("properties", {}).get("payload", {}).get("$ref")
+            )
+    expected_payload_ref_lists = {
+        message_type: [payload_ref]
+        for message_type, payload_ref in expected_payload_refs.items()
+    }
+    if not json_values_equal(actual_payload_refs, expected_payload_ref_lists):
+        failures.append("research message payload mappings must match the exact active contract")
+
+    return failures
+
+
 def check_chat_title_request_payload_schema_contract(schema: dict[str, object]) -> list[str]:
     failures: list[str] = []
     defs = schema.get("$defs", {})
@@ -3758,6 +3992,8 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
                     failures.append("$defs.helloPayload client_capabilities must be an array")
                 if client_capabilities.get("items", {}).get("$ref") != "#/$defs/nonBlankString":
                     failures.append("$defs.helloPayload client_capabilities items must use nonBlankString")
+                if client_capabilities.get("maxItems") != 64:
+                    failures.append("$defs.helloPayload client_capabilities must allow at most 64 values")
                 if client_capabilities.get("uniqueItems") is not True:
                     failures.append("$defs.helloPayload client_capabilities must keep uniqueItems true")
             if properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
@@ -5713,21 +5949,29 @@ def check_relay_allocation_payload_schema_contract(schema: dict[str, object]) ->
 
 
 def main() -> int:
-    failures: list[str] = []
+    failures = check_json_contract_guard_regressions()
 
     try:
-        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
+        schema = load_json_rejecting_duplicate_names(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, DuplicateJSONNameError) as error:
         print(f"{SCHEMA_PATH.relative_to(ROOT)}: invalid JSON: {error}", file=sys.stderr)
+        return 1
+    if not isinstance(schema, dict):
+        print(f"{SCHEMA_PATH.relative_to(ROOT)}: root must be a JSON object", file=sys.stderr)
         return 1
 
     try:
-        pairing_qr_schema = json.loads(PAIRING_QR_SCHEMA_PATH.read_text(encoding="utf-8"))
+        pairing_qr_schema = load_json_rejecting_duplicate_names(
+            PAIRING_QR_SCHEMA_PATH.read_text(encoding="utf-8")
+        )
     except FileNotFoundError:
         print(f"{PAIRING_QR_SCHEMA_PATH.relative_to(ROOT)}: missing QR payload schema", file=sys.stderr)
         return 1
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, DuplicateJSONNameError) as error:
         print(f"{PAIRING_QR_SCHEMA_PATH.relative_to(ROOT)}: invalid JSON: {error}", file=sys.stderr)
+        return 1
+    if not isinstance(pairing_qr_schema, dict):
+        print(f"{PAIRING_QR_SCHEMA_PATH.relative_to(ROOT)}: root must be a JSON object", file=sys.stderr)
         return 1
 
     message_enum = (
@@ -5810,6 +6054,7 @@ def main() -> int:
         failures.extend(check_source_anchor_resolve_payload_schema_contract(schema))
         failures.extend(check_trusted_source_payload_schema_contract(schema))
         failures.extend(check_chat_send_payload_schema_contract(schema))
+        failures.extend(check_research_notebook_payload_schema_contract(schema))
         failures.extend(check_chat_title_request_payload_schema_contract(schema))
         failures.extend(check_chat_message_schema_contract(schema))
         failures.extend(check_chat_attachment_schema_contract(schema))
@@ -6640,6 +6885,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "trusted_source_review_expired",
         "trusted_source_review_stale",
         "trusted_source_not_found",
+        "research_notebook_store_unavailable",
         "memory_store_unavailable",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",
@@ -6800,7 +7046,7 @@ def expect_schema_equal(
     actual: object,
     expected: object,
 ) -> None:
-    if actual != expected:
+    if not json_values_equal(actual, expected):
         failures.append(f"{label} schema must be {expected!r}, got {actual!r}")
 
 

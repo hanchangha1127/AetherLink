@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "corpus_id": "memory-semantic-duplicate-calibration-v1",
+  "review_threshold_basis_points": 9000,
+  "entries": [
+    {
+      "id": "chain-a",
+      "language": "en",
+      "content": "Keep citations with each answer.",
+      "offline_embedding": [0, 0, 0, 0, 0, 0, 1, 0]
+    },
+    {
+      "id": "chain-b",
+      "language": "ko",
+      "content": "각 답변에 인용 출처를 유지한다.",
+      "offline_embedding": [0, 0, 0, 0, 0, 0, 0.9510565162951535, 0.30901699437494745]
+    },
+    {
+      "id": "chain-c",
+      "language": "fr",
+      "content": "Conserver les documents sources consultes.",
+      "offline_embedding": [0, 0, 0, 0, 0, 0, 0.8090169943749475, 0.5877852522924731]
+    },
+    {
+      "id": "concise-en",
+      "language": "en",
+      "content": "Keep responses concise.",
+      "offline_embedding": [1, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "concise-fr",
+      "language": "fr",
+      "content": "Repondre de maniere concise.",
+      "offline_embedding": [0.9659258262890683, 0.25881904510252074, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "concise-ko",
+      "language": "ko",
+      "content": "답변은 간결하게 유지한다.",
+      "offline_embedding": [0.984807753012208, 0.17364817766693033, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "source-en",
+      "language": "en",
+      "content": "Show the source used for an answer.",
+      "offline_embedding": [0, 0, 1, 0, 0, 0, 0, 0]
+    },
+    {
+      "id": "source-ja",
+      "language": "ja",
+      "content": "回答に使用した情報源を表示する。",
+      "offline_embedding": [0, 0, 0.98, 0.1989974874213242, 0, 0, 0, 0]
+    },
+    {
+      "id": "theme-en",
+      "language": "en",
+      "content": "Use the dark appearance.",
+      "offline_embedding": [0, 0, 0, 0, 1, 0, 0, 0]
+    },
+    {
+      "id": "theme-zh",
+      "language": "zh-Hans",
+      "content": "使用深色外观。",
+      "offline_embedding": [0, 0, 0, 0, 0.99, 0.14106735979665894, 0, 0]
+    }
+  ],
+  "pair_labels": [
+    {"first_entry_id": "chain-a", "second_entry_id": "chain-b", "is_duplicate": true},
+    {"first_entry_id": "chain-a", "second_entry_id": "chain-c", "is_duplicate": false},
+    {"first_entry_id": "chain-b", "second_entry_id": "chain-c", "is_duplicate": true},
+    {"first_entry_id": "concise-en", "second_entry_id": "concise-fr", "is_duplicate": true},
+    {"first_entry_id": "concise-en", "second_entry_id": "concise-ko", "is_duplicate": true},
+    {"first_entry_id": "concise-en", "second_entry_id": "source-en", "is_duplicate": false},
+    {"first_entry_id": "chain-b", "second_entry_id": "concise-fr", "is_duplicate": false},
+    {"first_entry_id": "concise-fr", "second_entry_id": "concise-ko", "is_duplicate": true},
+    {"first_entry_id": "concise-ko", "second_entry_id": "theme-en", "is_duplicate": false},
+    {"first_entry_id": "chain-c", "second_entry_id": "source-en", "is_duplicate": false},
+    {"first_entry_id": "source-en", "second_entry_id": "source-ja", "is_duplicate": true},
+    {"first_entry_id": "source-ja", "second_entry_id": "theme-zh", "is_duplicate": false},
+    {"first_entry_id": "chain-a", "second_entry_id": "theme-en", "is_duplicate": false},
+    {"first_entry_id": "theme-en", "second_entry_id": "theme-zh", "is_duplicate": true}
+  ],
+  "expected_review_clusters": [
+    ["chain-a", "chain-b"],
+    ["concise-en", "concise-fr", "concise-ko"],
+    ["source-en", "source-ja"],
+    ["theme-en", "theme-zh"]
+  ]
+}

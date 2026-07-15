@@ -37,6 +37,8 @@ public enum MessageType {
     public static let trustedSourceDismiss = "trusted_source.dismiss"
     public static let trustedSourceList = "trusted_source.list"
     public static let trustedSourceRevoke = "trusted_source.revoke"
+    public static let researchBriefCreate = "research.brief.create"
+    public static let researchNotebooksList = "research.notebooks.list"
     public static let memoryList = "memory.list"
     public static let memoryDuplicateSuggestionsList = "memory.duplicate_suggestions.list"
     public static let memorySemanticDuplicateSuggestionsList = "memory.semantic_duplicate_suggestions.list"

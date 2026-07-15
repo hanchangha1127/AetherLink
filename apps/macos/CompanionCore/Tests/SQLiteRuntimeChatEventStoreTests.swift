@@ -4,6 +4,197 @@ import SQLite3
 import XCTest
 
 final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
+    func testTargetedSessionSummariesMatchJSONLAndSQLiteAcrossBatchesArchiveAndOwnerScope() throws {
+        let jsonlStore = JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
+        let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let stores: [any RuntimeChatEventStore] = [jsonlStore, sqliteStore]
+        let events = [
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "target-active-request",
+                sessionID: "target-active",
+                model: "owner-a-active",
+                messages: [ChatMessage(role: "user", content: "active")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 101),
+                kind: .done,
+                requestID: "target-active-request",
+                sessionID: "target-active",
+                model: "owner-a-active",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 200),
+                kind: .request,
+                requestID: "target-archived-request",
+                sessionID: "target-archived",
+                model: "owner-a-archived",
+                messages: [ChatMessage(role: "user", content: "archived")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 201),
+                kind: .done,
+                requestID: "target-archived-request",
+                sessionID: "target-archived",
+                model: "owner-a-archived",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 202),
+                kind: .archived,
+                requestID: "target-archived-mutation",
+                sessionID: "target-archived",
+                model: "owner-a-archived",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 10_000),
+                kind: .request,
+                requestID: "unrelated-request",
+                sessionID: "unrelated-newer",
+                model: "unrelated",
+                messages: [ChatMessage(role: "user", content: "unrelated")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                timestamp: Date(timeIntervalSince1970: 20_000),
+                kind: .request,
+                requestID: "other-owner-request",
+                sessionID: "target-active",
+                model: "owner-b-active",
+                messages: [ChatMessage(role: "user", content: "other owner")],
+                ownerDeviceID: "device-b"
+            ),
+        ]
+        for store in stores {
+            for event in events {
+                try store.append(event)
+            }
+        }
+
+        let requestedIDs = ["target-active", "target-archived"]
+            + (0..<999).map { "missing-target-\($0)" }
+        let jsonlIncludingArchived = try jsonlStore.listSessionSummaries(
+            ownerDeviceID: "device-a",
+            sessionIDs: requestedIDs,
+            includeArchived: true
+        )
+        let sqliteIncludingArchived = try sqliteStore.listSessionSummaries(
+            ownerDeviceID: "device-a",
+            sessionIDs: requestedIDs,
+            includeArchived: true
+        )
+        XCTAssertEqual(sqliteIncludingArchived, jsonlIncludingArchived)
+        XCTAssertEqual(jsonlIncludingArchived.map(\.sessionID), ["target-archived", "target-active"])
+        XCTAssertFalse(jsonlIncludingArchived.map(\.sessionID).contains("unrelated-newer"))
+
+        for store in stores {
+            XCTAssertEqual(
+                try store.listSessionSummaries(
+                    ownerDeviceID: "device-a",
+                    sessionIDs: requestedIDs,
+                    includeArchived: false
+                ).map(\.sessionID),
+                ["target-active"]
+            )
+            let otherOwner = try store.listSessionSummaries(
+                ownerDeviceID: "device-b",
+                sessionIDs: ["target-active"],
+                includeArchived: true
+            )
+            XCTAssertEqual(otherOwner.map(\.sessionID), ["target-active"])
+            XCTAssertEqual(otherOwner.map(\.model), ["owner-b-active"])
+        }
+    }
+
+    func testTargetedSessionSummaryInputBoundsFailClosedForJSONLAndSQLite() throws {
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()),
+            SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+        ]
+        let maximum = RuntimeChatEventStoreLimits.maximumTargetedSessionSummaryCount
+        let maximumIDs = (0..<maximum).map { "bounded-target-\($0)" }
+        let overboundIDs = maximumIDs + ["bounded-target-overflow"]
+        let maximumBackingSessionIDCharacters = RuntimeResearchNotebook.maximumBackingSessionIDCharacters
+        let maximumBackingSessionIDUTF8Bytes = RuntimeResearchNotebook.maximumBackingSessionIDUTF8Bytes
+        let maximumWidthScalar = "\u{1F600}"
+        let exactUTF8BoundaryID = String(
+            repeating: maximumWidthScalar,
+            count: maximumBackingSessionIDCharacters
+        )
+        XCTAssertEqual(exactUTF8BoundaryID.unicodeScalars.count, maximumBackingSessionIDCharacters)
+        XCTAssertEqual(exactUTF8BoundaryID.utf8.count, maximumBackingSessionIDUTF8Bytes)
+        let invalidSessionIDs: [(label: String, sessionID: String)] = [
+            ("blank", " \n\t"),
+            ("leading whitespace mutation", " target-session"),
+            ("trailing whitespace mutation", "target-session "),
+            ("control character", "target\u{0000}session"),
+            ("non-NFC", "cafe\u{0301}-session"),
+            (
+                "character bound",
+                String(repeating: "a", count: maximumBackingSessionIDCharacters + 1)
+            ),
+            (
+                "UTF-8 byte bound",
+                String(repeating: maximumWidthScalar, count: maximumBackingSessionIDCharacters + 1)
+            ),
+        ]
+
+        for store in stores {
+            XCTAssertTrue(try store.listSessionSummaries(
+                ownerDeviceID: "device-a",
+                sessionIDs: [],
+                includeArchived: true
+            ).isEmpty)
+            XCTAssertTrue(try store.listSessionSummaries(
+                ownerDeviceID: "device-a",
+                sessionIDs: maximumIDs,
+                includeArchived: true
+            ).isEmpty)
+            XCTAssertTrue(try store.listSessionSummaries(
+                ownerDeviceID: "device-a",
+                sessionIDs: ["caf\u{00E9}-session", exactUTF8BoundaryID],
+                includeArchived: true
+            ).isEmpty)
+            XCTAssertThrowsError(try store.listSessionSummaries(
+                ownerDeviceID: "device-a",
+                sessionIDs: overboundIDs,
+                includeArchived: true
+            )) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .targetedSessionSummaryLimitExceeded(maximum: maximum)
+                )
+            }
+            XCTAssertThrowsError(try store.listSessionSummaries(
+                ownerDeviceID: "device-a",
+                sessionIDs: ["duplicate", "duplicate"],
+                includeArchived: true
+            )) { error in
+                XCTAssertEqual(error as? RuntimeChatEventStoreError, .duplicateTargetedSessionSummarySessionID)
+            }
+            for invalidSessionID in invalidSessionIDs {
+                XCTAssertThrowsError(try store.listSessionSummaries(
+                    ownerDeviceID: "device-a",
+                    sessionIDs: [invalidSessionID.sessionID],
+                    includeArchived: true
+                ), invalidSessionID.label) { error in
+                    XCTAssertEqual(
+                        error as? RuntimeChatEventStoreError,
+                        .invalidTargetedSessionSummarySessionID,
+                        invalidSessionID.label
+                    )
+                }
+            }
+        }
+    }
+
     func testSQLiteSemanticEmbeddingCachePersistsAcrossReopenAndMatchesFullOwnerScopedKey() throws {
         let databaseURL = try temporaryDatabaseURL()
         let key = semanticEmbeddingKey(owner: "device-a", session: "session-a", document: "document-a")
@@ -2427,8 +2618,387 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         }
     }
 
+    func testChatEventStoresRejectInvalidTitleEventsAndAcceptCanonicalBoundedTitles() throws {
+        let stores: [(name: String, store: any RuntimeChatEventStore)] = [
+            (
+                "JSONL",
+                JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
+            ),
+            (
+                "SQLite",
+                SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+            ),
+        ]
+        let invalidTitles: [(name: String, value: String)] = [
+            ("control", "Control\u{0000}Title"),
+            ("non-NFC", "Cafe\u{0301}"),
+            ("noncanonical whitespace", " Leading whitespace"),
+            (
+                "oversized",
+                String(repeating: "a", count: RuntimeResearchNotebook.maximumTitleCharacters + 1)
+            ),
+        ]
+
+        for storeFixture in stores {
+            for (index, invalidTitle) in invalidTitles.enumerated() {
+                XCTAssertThrowsError(try storeFixture.store.append(RuntimeChatStoredEvent(
+                    id: "\(storeFixture.name)-invalid-title-\(index)",
+                    timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
+                    kind: .title,
+                    requestID: "invalid-title-\(index)",
+                    sessionID: "title-validation-session",
+                    model: "ollama:llama3.1:8b",
+                    title: invalidTitle.value,
+                    ownerDeviceID: "device-a"
+                )), "\(storeFixture.name): \(invalidTitle.name)")
+            }
+
+            let boundedCanonicalTitle = String(
+                repeating: "a",
+                count: RuntimeResearchNotebook.maximumTitleCharacters
+            )
+            try storeFixture.store.append(RuntimeChatStoredEvent(
+                id: "\(storeFixture.name)-canonical-bounded-title",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .title,
+                requestID: "canonical-bounded-title",
+                sessionID: "title-validation-session",
+                model: "ollama:llama3.1:8b",
+                title: boundedCanonicalTitle,
+                ownerDeviceID: "device-a"
+            ))
+            XCTAssertEqual(
+                try storeFixture.store.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true
+                ).first?.title,
+                boundedCanonicalTitle,
+                storeFixture.name
+            )
+        }
+    }
+
+    func testLegacyInvalidTitlesProjectCanonicallyWithoutBlockingJSONLOrSQLiteReplay() throws {
+        let fixtures: [(sessionID: String, invalidTitle: String, expectedTitle: String)] = [
+            ("legacy-non-nfc-title", "Cafe\u{0301}", "Caf\u{00E9}"),
+            ("legacy-control-title", "Safe\u{0000}\nTitle", "SafeTitle"),
+            (
+                "legacy-oversized-title",
+                String(repeating: "x", count: RuntimeResearchNotebook.maximumTitleCharacters + 17),
+                String(repeating: "x", count: RuntimeResearchNotebook.maximumTitleCharacters)
+            ),
+        ]
+        var legacyEvents: [RuntimeChatStoredEvent] = []
+        for (index, fixture) in fixtures.enumerated() {
+            let timestamp = TimeInterval(100 + index * 10)
+            legacyEvents.append(RuntimeChatStoredEvent(
+                id: "\(fixture.sessionID)-request-event",
+                timestamp: Date(timeIntervalSince1970: timestamp),
+                kind: .request,
+                requestID: "\(fixture.sessionID)-turn",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Replay the full legacy session.")],
+                ownerDeviceID: "device-a"
+            ))
+            legacyEvents.append(RuntimeChatStoredEvent(
+                id: "\(fixture.sessionID)-title-event",
+                timestamp: Date(timeIntervalSince1970: timestamp + 1),
+                kind: .title,
+                requestID: "\(fixture.sessionID)-title",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                title: fixture.invalidTitle,
+                ownerDeviceID: "device-a"
+            ))
+            legacyEvents.append(RuntimeChatStoredEvent(
+                id: "\(fixture.sessionID)-done-event",
+                timestamp: Date(timeIntervalSince1970: timestamp + 2),
+                kind: .done,
+                requestID: "\(fixture.sessionID)-turn",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ))
+        }
+
+        let legacyURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents(legacyEvents, to: legacyURL)
+        let jsonlSessions = try JSONLRuntimeChatEventStore(fileURL: legacyURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 20,
+            includeArchived: true
+        )
+        let jsonlSessionsByID = Dictionary(uniqueKeysWithValues: jsonlSessions.map { ($0.sessionID, $0) })
+        XCTAssertEqual(jsonlSessions.count, fixtures.count)
+        for fixture in fixtures {
+            XCTAssertEqual(jsonlSessionsByID[fixture.sessionID]?.title, fixture.expectedTitle)
+            XCTAssertEqual(jsonlSessionsByID[fixture.sessionID]?.messageCount, 1)
+        }
+
+        let importedDatabaseURL = try temporaryDatabaseURL()
+        let importedStore = SQLiteRuntimeChatEventStore(
+            databaseURL: importedDatabaseURL,
+            legacyJSONLFileURL: legacyURL
+        )
+        let importedSessions = try importedStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 20,
+            includeArchived: true
+        )
+        XCTAssertEqual(importedSessions, jsonlSessions)
+        XCTAssertEqual(
+            try SQLiteRuntimeChatEventStore(databaseURL: importedDatabaseURL).listSessions(
+                ownerDeviceID: "device-a",
+                limit: 20,
+                includeArchived: true
+            ),
+            jsonlSessions
+        )
+
+        let existingDatabaseURL = try temporaryDatabaseURL()
+        let existingStore = SQLiteRuntimeChatEventStore(databaseURL: existingDatabaseURL)
+        for (index, fixture) in fixtures.enumerated() {
+            let timestamp = TimeInterval(200 + index * 10)
+            try existingStore.append(RuntimeChatStoredEvent(
+                id: "sqlite-\(fixture.sessionID)-request-event",
+                timestamp: Date(timeIntervalSince1970: timestamp),
+                kind: .request,
+                requestID: "sqlite-\(fixture.sessionID)-turn",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Replay existing SQLite state.")],
+                ownerDeviceID: "device-a"
+            ))
+            let titleEvent = RuntimeChatStoredEvent(
+                id: "sqlite-\(fixture.sessionID)-title-event",
+                timestamp: Date(timeIntervalSince1970: timestamp + 1),
+                kind: .title,
+                requestID: "sqlite-\(fixture.sessionID)-title",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                title: "Temporary canonical title",
+                ownerDeviceID: "device-a"
+            )
+            try existingStore.append(titleEvent)
+            var invalidStoredTitleEvent = titleEvent
+            invalidStoredTitleEvent.title = fixture.invalidTitle
+            try replaceRawSQLiteEventJSON(invalidStoredTitleEvent, at: existingDatabaseURL)
+            try existingStore.append(RuntimeChatStoredEvent(
+                id: "sqlite-\(fixture.sessionID)-done-event",
+                timestamp: Date(timeIntervalSince1970: timestamp + 2),
+                kind: .done,
+                requestID: "sqlite-\(fixture.sessionID)-turn",
+                sessionID: fixture.sessionID,
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop",
+                ownerDeviceID: "device-a"
+            ))
+        }
+        let existingSessions = try SQLiteRuntimeChatEventStore(databaseURL: existingDatabaseURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 20,
+            includeArchived: true
+        )
+        let existingSessionsByID = Dictionary(uniqueKeysWithValues: existingSessions.map { ($0.sessionID, $0) })
+        XCTAssertEqual(existingSessions.count, fixtures.count)
+        for fixture in fixtures {
+            XCTAssertEqual(existingSessionsByID[fixture.sessionID]?.title, fixture.expectedTitle)
+            XCTAssertEqual(existingSessionsByID[fixture.sessionID]?.messageCount, 1)
+        }
+    }
+
+    func testJSONLAndSQLitePreserveSameTimestampTitleAppendOrderAfterReopen() throws {
+        let jsonlURL = try temporaryJSONLURL()
+        let databaseURL = try temporaryDatabaseURL()
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+        let timestamp = Date(timeIntervalSince1970: 250)
+        let events = [
+            RuntimeChatStoredEvent(
+                id: "same-time-request",
+                timestamp: timestamp,
+                kind: .request,
+                requestID: "same-time-turn",
+                sessionID: "same-time-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Name this chat.")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "same-time-generated-title",
+                timestamp: timestamp,
+                kind: .title,
+                requestID: "same-time-generated-title",
+                sessionID: "same-time-session",
+                model: "ollama:llama3.1:8b",
+                title: "Generated title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "same-time-manual-title",
+                timestamp: timestamp,
+                kind: .title,
+                requestID: "same-time-manual-title",
+                sessionID: "same-time-session",
+                model: "ollama:llama3.1:8b",
+                title: "Manual title",
+                ownerDeviceID: "device-a"
+            ),
+        ]
+        for store in stores {
+            for event in events { try store.append(event) }
+        }
+
+        let reopenedStores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+        let reopenedSessions = try reopenedStores.map { store in
+            try XCTUnwrap(store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).first)
+        }
+        XCTAssertEqual(reopenedSessions.map(\.title), ["Manual title", "Manual title"])
+        XCTAssertEqual(reopenedSessions.map(\.titleUpdatedAt), [timestamp, timestamp])
+        XCTAssertEqual(reopenedSessions.map(\.titleRevision), [2, 2])
+        XCTAssertEqual(reopenedSessions[0], reopenedSessions[1])
+    }
+
+    func testJSONLAndSQLitePreserveReverseTimestampTitleAppendOrderAfterReopen() throws {
+        let jsonlURL = try temporaryJSONLURL()
+        let databaseURL = try temporaryDatabaseURL()
+        let stores: [any RuntimeChatEventStore] = [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL),
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL),
+        ]
+        let latestTimestamp = Date(timeIntervalSince1970: 300)
+        let reverseTimestamp = Date(timeIntervalSince1970: 200)
+        let events = [
+            RuntimeChatStoredEvent(
+                id: "reverse-time-request",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "reverse-time-turn",
+                sessionID: "reverse-time-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Name this chat.")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "reverse-time-first-title",
+                timestamp: latestTimestamp,
+                kind: .title,
+                requestID: "reverse-time-first-title",
+                sessionID: "reverse-time-session",
+                model: "ollama:llama3.1:8b",
+                title: "First appended title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "reverse-time-second-title",
+                timestamp: reverseTimestamp,
+                kind: .title,
+                requestID: "reverse-time-second-title",
+                sessionID: "reverse-time-session",
+                model: "ollama:llama3.1:8b",
+                title: "Second appended title",
+                ownerDeviceID: "device-a"
+            ),
+        ]
+        for store in stores {
+            for event in events { try store.append(event) }
+        }
+
+        let reopenedSessions = try [
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL) as any RuntimeChatEventStore,
+            SQLiteRuntimeChatEventStore(databaseURL: databaseURL) as any RuntimeChatEventStore,
+        ].map { store in
+            try XCTUnwrap(store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).first)
+        }
+        XCTAssertEqual(reopenedSessions.map(\.title), ["Second appended title", "Second appended title"])
+        XCTAssertEqual(reopenedSessions.map(\.titleUpdatedAt), [reverseTimestamp, reverseTimestamp])
+        XCTAssertEqual(reopenedSessions.map(\.titleRevision), [2, 2])
+        XCTAssertEqual(reopenedSessions[0], reopenedSessions[1])
+    }
+
+    func testSQLiteLegacyImportPreservesReverseTimestampTitleAppendOrder() throws {
+        let legacyURL = try temporaryJSONLURL()
+        let databaseURL = try temporaryDatabaseURL()
+        let reverseTimestamp = Date(timeIntervalSince1970: 200)
+        try writeRawLegacyEvents([
+            RuntimeChatStoredEvent(
+                id: "legacy-reverse-request",
+                timestamp: Date(timeIntervalSince1970: 100),
+                kind: .request,
+                requestID: "legacy-reverse-turn",
+                sessionID: "legacy-reverse-session",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(role: "user", content: "Preserve legacy append order.")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "legacy-reverse-first-title",
+                timestamp: Date(timeIntervalSince1970: 300),
+                kind: .title,
+                requestID: "legacy-reverse-first-title",
+                sessionID: "legacy-reverse-session",
+                model: "ollama:llama3.1:8b",
+                title: "Legacy first title",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "legacy-reverse-second-title",
+                timestamp: reverseTimestamp,
+                kind: .title,
+                requestID: "legacy-reverse-second-title",
+                sessionID: "legacy-reverse-session",
+                model: "ollama:llama3.1:8b",
+                title: "Legacy second title",
+                ownerDeviceID: "device-a"
+            ),
+        ], to: legacyURL)
+
+        let jsonlSession = try XCTUnwrap(JSONLRuntimeChatEventStore(fileURL: legacyURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true
+        ).first)
+        let importedStore = SQLiteRuntimeChatEventStore(
+            databaseURL: databaseURL,
+            legacyJSONLFileURL: legacyURL
+        )
+        let importedSession = try XCTUnwrap(importedStore.listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true
+        ).first)
+        let reopenedSession = try XCTUnwrap(SQLiteRuntimeChatEventStore(databaseURL: databaseURL).listSessions(
+            ownerDeviceID: "device-a",
+            limit: 10,
+            includeArchived: true
+        ).first)
+
+        XCTAssertEqual(jsonlSession.title, "Legacy second title")
+        XCTAssertEqual(jsonlSession.titleUpdatedAt, reverseTimestamp)
+        XCTAssertEqual(jsonlSession.titleRevision, 2)
+        XCTAssertEqual(importedSession, jsonlSession)
+        XCTAssertEqual(reopenedSession, jsonlSession)
+    }
+
     func testSQLiteStorePreservesAppendOrderForSameTimestampTitles() throws {
-        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
         let timestamp = Date(timeIntervalSince1970: 250)
 
         try store.append(RuntimeChatStoredEvent(
@@ -2462,10 +3032,23 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             ownerDeviceID: "device-a"
         ))
 
-        XCTAssertEqual(
-            try store.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).first?.title,
-            "Manual title"
+        let session = try XCTUnwrap(
+            store.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).first
         )
+        XCTAssertEqual(session.title, "Manual title")
+        XCTAssertEqual(session.titleUpdatedAt, timestamp)
+
+        let reopenedStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let reopenedSession = try XCTUnwrap(
+            reopenedStore.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true
+            ).first
+        )
+        XCTAssertEqual(reopenedSession.title, "Manual title")
+        XCTAssertEqual(reopenedSession.titleUpdatedAt, timestamp)
+        XCTAssertEqual(reopenedSession, session)
     }
 
     func testJSONLStoreUsesSessionIDTieBreakForEqualActivityAndLexicalScores() throws {

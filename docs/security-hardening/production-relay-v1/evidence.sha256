@@ -14,4 +14,4 @@ a959c98b419db75e863745322983ae6088f8166def01973d8119a52ad9ae8aec  apps/android/c
 cea05e8b5fdf8c57fc9e2140b00e485123033215c1c8ae34f0ca45fc776f4ce7  apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RelaySessionCrypto.kt
 ee05c835741e161f6c804726cfeb95b5fa5fc9012ad91bc62b304b1ee3d4e9b0  apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt
 293f2ca4e2c4e8d63195fbc64cfa056a605b0d03526c926e9bd9801a4613d4de  apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairedRelayAllocationAuthorization.kt
-a7a3b0bb75fd8693cfb7aa9273495cf97d25f1fb39407501472be87f08ad5dc3  packages/protocol-schema/protocol.schema.json
+70d54177581727f20b3abeb5cd2ca4c67a9de8069f8000b9b3f045d43c78b7b6  packages/protocol-schema/protocol.schema.json

@@ -408,3 +408,12 @@ func localizedCompanionByteCountString(
             .locale(Locale(identifier: language.localeIdentifier))
     )
 }
+
+func localizedCompanionIntegerString(
+    _ value: Int,
+    language: AetherLinkAppLanguage = .selected
+) -> String {
+    value.formatted(
+        .number.locale(Locale(identifier: language.localeIdentifier))
+    )
+}

@@ -1,0 +1,105 @@
+{
+  "document_type": "aetherlink.research-notebooks-authoritative-sync-wire-smoke",
+  "schema_version": 1,
+  "capability": "research.notebooks.authoritative_sync.v1",
+  "base_capability": "research.notebooks.v1",
+  "wire_transcript": {
+    "initial_request": {
+      "include_archived": true,
+      "limit": 1
+    },
+    "pages": [
+      {
+        "notebooks": [
+          {
+            "notebook_id": "research_notebook_00000000000000000000000000000001",
+            "session_id": "wire-research-session-001",
+            "title": "Wire research 1",
+            "model": "ollama:llama3.1:8b",
+            "source_count": 2,
+            "created_at": "2026-07-13T00:00:00Z",
+            "updated_at": "2026-07-14T00:00:01Z"
+          }
+        ],
+        "snapshot_count": 2,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000002.1.1783987200.2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+        "notebooks": [
+          {
+            "notebook_id": "research_notebook_00000000000000000000000000000000",
+            "session_id": "wire-research-session-000",
+            "title": "Wire research 0",
+            "model": "ollama:llama3.1:8b",
+            "source_count": 2,
+            "created_at": "2026-07-13T00:00:00Z",
+            "updated_at": "2026-07-14T00:00:00Z"
+          }
+        ],
+        "snapshot_count": 2
+      }
+    ],
+    "continuation_request": {
+      "cursor": "v1.00000000-0000-4000-8000-000000000002.1.1783987200.2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "legacy_response": {
+      "notebooks": [
+        {
+          "notebook_id": "research_notebook_00000000000000000000000000000000",
+          "session_id": "wire-research-session-000",
+          "title": "Wire research 0",
+          "model": "ollama:llama3.1:8b",
+          "source_count": 2,
+          "created_at": "2026-07-13T00:00:00Z",
+          "updated_at": "2026-07-14T00:00:00Z"
+        }
+      ]
+    }
+  },
+  "notebook_series": {
+    "count": 201,
+    "notebook_id_prefix": "research_notebook_",
+    "notebook_id_hex_width": 32,
+    "session_id_prefix": "wire-research-session-",
+    "session_id_width": 3,
+    "title_prefix": "Wire research ",
+    "model": "ollama:llama3.1:8b",
+    "source_count": 2,
+    "created_at": "2026-07-13T00:00:00Z",
+    "base_updated_at": "2026-07-14T00:00:00Z",
+    "updated_at_step_seconds": 1,
+    "canonical_order": [
+      "updated_at_desc",
+      "notebook_id_unsigned_utf8_asc"
+    ]
+  },
+  "pagination": {
+    "initial_request": {
+      "include_archived": true,
+      "limit": 100
+    },
+    "continuation_request_keys": [
+      "cursor"
+    ],
+    "pages": [
+      {
+        "offset": 0,
+        "count": 100,
+        "snapshot_count": 201,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000001.100.1783987200.0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "offset": 100,
+        "count": 100,
+        "snapshot_count": 201,
+        "next_cursor": "v1.00000000-0000-4000-8000-000000000001.200.1783987200.1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "offset": 200,
+        "count": 1,
+        "snapshot_count": 201
+      }
+    ]
+  },
+  "proof_scope": "no-device/no-network wire-contract fixture only"
+}

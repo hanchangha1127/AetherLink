@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -600,6 +601,138 @@ class RuntimeClientChatSessionMutationFailureTest {
     }
 
     @Test
+    fun malformedArchiveAndRestoreTimestampsCloseExactMutationsAndKeepReceiveLoopAlive() = runTest {
+        withMainDispatcher {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(
+                    activeSessionId = "runtime-active",
+                    sessions = listOf(
+                        PersistedChatSession(
+                            id = "runtime-active",
+                            title = "Active runtime",
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                            runtimeOwned = true,
+                        ),
+                        PersistedChatSession(
+                            id = "runtime-archived",
+                            title = "Archived runtime",
+                            createdAtMillis = 110L,
+                            updatedAtMillis = 210L,
+                            archivedAtMillis = 300L,
+                            runtimeOwned = true,
+                        ),
+                    ),
+                ),
+            )
+            try {
+                val initialSessionListCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionsList
+                }
+                fixture.viewModel.archiveChatSession("runtime-active")
+                fixture.viewModel.unarchiveChatSession("runtime-archived")
+                runCurrent()
+                val archiveRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionArchive
+                }
+                val restoreRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionRestore
+                }
+
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionArchive,
+                        requestId = archiveRequest.requestId,
+                        payload = buildJsonObject {
+                            put("session_id", "runtime-active")
+                            put("status", "archived")
+                            put("archived_at", "not-an-archive-timestamp")
+                        },
+                    ),
+                )
+                runCurrent()
+
+                assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+                assertTrue(
+                    fixture.viewModel.state.value.error?.technicalDetail.orEmpty()
+                        .contains("archived_at"),
+                )
+                assertEquals(
+                    setOf("runtime-active", "runtime-archived"),
+                    fixture.viewModel.state.value.chatSessions.mapTo(mutableSetOf()) { it.id },
+                )
+                assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+
+                fixture.channel.enqueue(
+                    ProtocolEnvelope(
+                        type = MessageType.ChatSessionRestore,
+                        requestId = restoreRequest.requestId,
+                        payload = buildJsonObject {
+                            put("session_id", "runtime-archived")
+                            put("status", "restored")
+                            put("restored_at", "not-a-restore-timestamp")
+                        },
+                    ),
+                )
+                runCurrent()
+
+                assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+                assertTrue(
+                    fixture.viewModel.state.value.error?.technicalDetail.orEmpty()
+                        .contains("restored_at"),
+                )
+                assertEquals(
+                    listOf("runtime-active"),
+                    fixture.viewModel.state.value.chatSessions.map { it.id },
+                )
+                assertEquals(
+                    listOf("runtime-archived"),
+                    fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+                )
+                assertEquals(
+                    initialSessionListCount + 2,
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+                )
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionArchive,
+                        serializer = ChatSessionLifecyclePayload.serializer(),
+                        payload = ChatSessionLifecyclePayload(
+                            sessionId = "runtime-active",
+                            status = "archived",
+                            archivedAt = "2026-06-23T09:03:00Z",
+                        ),
+                        requestId = archiveRequest.requestId,
+                    ),
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionRestore,
+                        serializer = ChatSessionLifecyclePayload.serializer(),
+                        payload = ChatSessionLifecyclePayload(
+                            sessionId = "runtime-archived",
+                            status = "restored",
+                            restoredAt = "2026-06-23T09:04:00Z",
+                        ),
+                        requestId = restoreRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                assertEquals(listOf("runtime-active"), fixture.viewModel.state.value.chatSessions.map { it.id })
+                assertEquals(
+                    listOf("runtime-archived"),
+                    fixture.viewModel.state.value.archivedChatSessions.map { it.id },
+                )
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
     fun lifecycleWaitsForPendingListThenRequestsFreshReconciliation() = runTest {
         withMainDispatcher {
             val fixture = createAuthenticatedRuntimeClientFixture(
@@ -720,6 +853,239 @@ class RuntimeClientChatSessionMutationFailureTest {
         }
     }
 
+    @Test
+    fun completedRenameIgnoresDelayedAuthenticationError() = runTest {
+        withMainDispatcher {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(
+                    sessions = listOf(
+                        PersistedChatSession(
+                            id = "runtime-session",
+                            title = "Runtime title",
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                            runtimeOwned = true,
+                        ),
+                    ),
+                ),
+            )
+            try {
+                fixture.viewModel.renameChatSession("runtime-session", "Accepted title")
+                runCurrent()
+                val renameRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionRename
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionRename,
+                        serializer = ChatSessionRenamePayload.serializer(),
+                        payload = ChatSessionRenamePayload(
+                            sessionId = "runtime-session",
+                            title = "Accepted title",
+                        ),
+                        requestId = renameRequest.requestId,
+                    ),
+                )
+                runCurrent()
+                fixture.viewModel.setPrivateField("runtimeSessionAuthorityGeneration", 1L)
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "authentication_required",
+                            message = "Delayed completed rename error",
+                            retryable = false,
+                        ),
+                        requestId = renameRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                assertEquals("Accepted title", fixture.viewModel.state.value.chatSessions.single().title)
+                assertEquals("authenticated", fixture.viewModel.state.value.runtimeStatus)
+                assertEquals(null, fixture.viewModel.state.value.error)
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
+    fun evictedLifecycleErrorCannotRevokeAuthenticationButActiveChatErrorStillDoes() = runTest {
+        withMainDispatcher {
+            val sessions = (0..128).map { index ->
+                PersistedChatSession(
+                    id = "runtime-$index",
+                    title = "Runtime $index",
+                    createdAtMillis = index.toLong(),
+                    updatedAtMillis = 1_000L + index,
+                    runtimeOwned = true,
+                )
+            }
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(sessions = sessions),
+            )
+            try {
+                sessions.forEach { session ->
+                    fixture.viewModel.archiveChatSession(session.id)
+                }
+                runCurrent()
+                val archiveRequests = fixture.channel.sentEnvelopes.filter {
+                    it.type == MessageType.ChatSessionArchive
+                }
+                assertEquals(129, archiveRequests.size)
+
+                archiveRequests.forEachIndexed { index, request ->
+                    fixture.channel.enqueue(
+                        envelope(
+                            type = MessageType.ChatSessionArchive,
+                            serializer = ChatSessionLifecyclePayload.serializer(),
+                            payload = ChatSessionLifecyclePayload(
+                                sessionId = "runtime-$index",
+                                status = "archived",
+                            ),
+                            requestId = request.requestId,
+                        ),
+                    )
+                }
+                runCurrent()
+
+                assertEquals(
+                    128,
+                    fixture.viewModel.privateField<List<*>>(
+                        "closedChatSessionLifecycleRequests",
+                    ).size,
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "pairing_required",
+                            message = "Delayed error after lifecycle tombstone eviction",
+                            retryable = false,
+                        ),
+                        requestId = archiveRequests.first().requestId,
+                    ),
+                )
+                runCurrent()
+
+                assertTrue(fixture.viewModel.privateField("isSessionAuthenticated"))
+                assertEquals("authenticated", fixture.viewModel.state.value.runtimeStatus)
+                assertTrue(fixture.viewModel.state.value.isConnected)
+
+                fixture.viewModel.updateMutableState { current ->
+                    current.copy(
+                        isStreaming = true,
+                        activeRequestId = "current-active-chat-request",
+                        error = null,
+                    )
+                }
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "authentication_required",
+                            message = "Current active chat authentication expired",
+                            retryable = false,
+                        ),
+                        requestId = "current-active-chat-request",
+                    ),
+                )
+                runCurrent()
+
+                assertTrue(!fixture.viewModel.privateField<Boolean>("isSessionAuthenticated"))
+                assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+                assertEquals(null, fixture.viewModel.state.value.activeRequestId)
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
+    fun renameTimeoutRollsBackAndRejectsLateAckAndError() = runTest {
+        withMainDispatcher {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                initialData = PersistedRuntimeData(
+                    sessions = listOf(
+                        PersistedChatSession(
+                            id = "runtime-session",
+                            title = "Runtime title",
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                            runtimeOwned = true,
+                        ),
+                    ),
+                ),
+            )
+            try {
+                val chatRefreshCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ChatSessionsList
+                }
+                val notebookRefreshCount = fixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.ResearchNotebooksList
+                }
+                fixture.viewModel.renameChatSession("runtime-session", "Timed out title")
+                runCurrent()
+                val renameRequest = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionRename
+                }
+
+                advanceTimeBy(CHAT_SESSION_RENAME_REQUEST_TIMEOUT_MS)
+                runCurrent()
+
+                assertEquals("Runtime title", fixture.viewModel.state.value.chatSessions.single().title)
+                assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+                assertTrue(
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList } >
+                        chatRefreshCount,
+                )
+                assertTrue(
+                    fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList } >
+                        notebookRefreshCount,
+                )
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.ChatSessionRename,
+                        serializer = ChatSessionRenamePayload.serializer(),
+                        payload = ChatSessionRenamePayload(
+                            sessionId = "runtime-session",
+                            title = "Late accepted title",
+                        ),
+                        requestId = renameRequest.requestId,
+                    ),
+                )
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.Error,
+                        serializer = ErrorPayload.serializer(),
+                        payload = ErrorPayload(
+                            code = "authentication_required",
+                            message = "Late timeout error",
+                            retryable = false,
+                        ),
+                        requestId = renameRequest.requestId,
+                    ),
+                )
+                runCurrent()
+
+                assertEquals("Runtime title", fixture.viewModel.state.value.chatSessions.single().title)
+                assertEquals("authenticated", fixture.viewModel.state.value.runtimeStatus)
+                assertEquals("chat_session_sync_failed", fixture.viewModel.state.value.error?.code)
+            } finally {
+                fixture.viewModel.disconnect()
+                runCurrent()
+            }
+        }
+    }
+
     private suspend fun TestScope.withMainDispatcher(block: suspend TestScope.() -> Unit) {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -772,6 +1138,13 @@ class RuntimeClientChatSessionMutationFailureTest {
         val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
         field.isAccessible = true
         field.set(this, value)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> RuntimeClientViewModel.privateField(name: String): T {
+        val field = RuntimeClientViewModel::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(this) as T
     }
 
     private fun RuntimeClientViewModel.callPrivateNoArgs(name: String) {

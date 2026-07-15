@@ -269,6 +269,47 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertThrowsError(try codec.decodeEnvelope(Data(json.utf8)))
     }
 
+    func testProtocolEnvelopeDecodeRejectsDuplicateObjectKeysAtEveryDepth() throws {
+        let codec = ProtocolCodec()
+        let samples: [(label: String, key: String, json: String)] = [
+            (
+                "top-level type",
+                "type",
+                #"{"version":1,"type":"runtime.health","type":"research.brief.create","request_id":"duplicate-type","timestamp":"2026-07-14T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "research authority grants",
+                "trusted_source_grant_ids",
+                #"{"version":1,"type":"research.brief.create","request_id":"duplicate-grants","timestamp":"2026-07-14T00:00:00Z","payload":{"notebook_id":"research_notebook_0123456789abcdef0123456789abcdef","session_id":"session-1","topic":"Topic","model":"model-1","trusted_source_grant_ids":["trusted_source_0123456789abcdef0123456789abcdef"],"trusted_source_grant_ids":["trusted_source_abcdef0123456789abcdef0123456789"]}}"#
+            ),
+            (
+                "nested authority field",
+                "grant_id",
+                #"{"version":1,"type":"research.brief.create","request_id":"duplicate-authority","timestamp":"2026-07-14T00:00:00Z","payload":{"authority":{"grant_id":"first","grant_\u0069d":"second"}}}"#
+            ),
+        ]
+
+        for sample in samples {
+            XCTAssertThrowsError(try codec.decodeEnvelope(Data(sample.json.utf8)), sample.label) { error in
+                XCTAssertEqual(error as? ProtocolCodecError, .duplicateJSONObjectKey(sample.key))
+            }
+        }
+    }
+
+    func testProtocolEnvelopeDecodeAcceptsNormalResearchEnvelope() throws {
+        let codec = ProtocolCodec()
+        let json = #"{"version":1,"type":"research.brief.create","request_id":"research-create","timestamp":"2026-07-14T00:00:00Z","payload":{"notebook_id":"research_notebook_0123456789abcdef0123456789abcdef","session_id":"session-1","topic":"Topic","model":"model-1","trusted_source_grant_ids":["trusted_source_0123456789abcdef0123456789abcdef"]}}"#
+
+        let envelope = try codec.decodeEnvelope(Data(json.utf8))
+
+        XCTAssertEqual(envelope.type, MessageType.researchBriefCreate)
+        XCTAssertEqual(envelope.payload["session_id"], .string("session-1"))
+        XCTAssertEqual(
+            envelope.payload["trusted_source_grant_ids"],
+            .array([.string("trusted_source_0123456789abcdef0123456789abcdef")])
+        )
+    }
+
     func testModelInfoCodablePreservesProviderAndEmbeddingMetadata() throws {
         let modifiedAt = Date(timeIntervalSince1970: 1_720_000_000)
         let model = ModelInfo(
