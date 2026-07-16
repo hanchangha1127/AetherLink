@@ -334,6 +334,7 @@
     <string name="selected_model">Modèle sélectionné</string>
     <string name="drawer_runtime_summary_accessibility">Runtime %1$s. État : %2$s. Modèle sélectionné : %3$s.</string>
     <string name="drawer_runtime_summary_accessibility_with_detail">Runtime %1$s. État : %2$s. Modèle sélectionné : %3$s. %4$s</string>
+    <string name="drawer_runtime_summary_accessibility_with_model_summary">Runtime %1$s. État : %2$s. %3$s</string>
     <string name="selection_state_selected">Sélectionné</string>
     <string name="model_unavailable">Modèle indisponible</string>
     <string name="selected_model_unavailable">Le modèle sélectionné manque dans la liste du runtime. Actualisez ou choisissez-en un autre.</string>
@@ -369,6 +370,7 @@
     <string name="model_source_value">Source : %1$s</string>
     <string name="model_size_value">Taille : %1$s</string>
     <string name="install_model">Installer le modèle</string>
+    <string name="model_install_host_approval_required">Approbation du runtime requise</string>
     <string name="installing_model">Installation...</string>
     <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">Aucun modèle chargé</string>
@@ -784,6 +786,7 @@
     <string name="error_invalid_payload">AetherLink Runtime a envoyé des données non valides.</string>
     <string name="error_install_model_first">Installez ce modèle avant de discuter.</string>
     <string name="error_model_install_failed">AetherLink Runtime n’a pas pu installer le modèle.</string>
+    <string name="error_model_install_host_approval_required">Le téléchargement de modèles nécessite l’approbation de l’hôte du runtime et n’est pas disponible depuis ce client.</string>
     <string name="error_attachment_too_large">Cette pièce jointe est trop volumineuse.</string>
     <string name="error_attachment_read_failed">Impossible de lire cette pièce jointe.</string>
     <string name="error_attachment_limit_reached">Vous pouvez joindre jusqu’à 4 fichiers à la fois.</string>

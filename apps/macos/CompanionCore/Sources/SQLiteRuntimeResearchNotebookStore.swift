@@ -28,7 +28,7 @@ private enum SQLiteResearchNotebookLockRegistry {
 }
 
 public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookStoring, @unchecked Sendable {
-    private static let schemaVersion = 3
+    private static let schemaVersion = 4
     private static let migratedV2CoordinatorID = "00000000000000000000000000000002"
     private static let notebooksTable = "runtime_research_notebooks"
     private static let grantsTable = "runtime_research_notebook_grants"
@@ -94,6 +94,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String]
     ) throws -> RuntimeResearchNotebook {
         try runtimeResearchNotebookValidateCreateFields(
@@ -102,6 +103,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: trustedSourceGrantIDs
         )
 
@@ -129,6 +131,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
                         backingSessionID: backingSessionID,
                         title: title,
                         model: model,
+                        promptSkillBinding: promptSkillBinding,
                         trustedSourceGrantIDs: trustedSourceGrantIDs,
                         lifecycle: .active,
                         createdAt: timestamp,
@@ -148,6 +151,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String],
         coordinatorID: String,
         operationID: String,
@@ -159,6 +163,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: trustedSourceGrantIDs
         )
         try runtimeResearchNotebookValidateLifecycleIdentity(
@@ -191,6 +196,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
                         backingSessionID: backingSessionID,
                         title: title,
                         model: model,
+                        promptSkillBinding: promptSkillBinding,
                         trustedSourceGrantIDs: trustedSourceGrantIDs,
                         lifecycle: .active,
                         createdAt: timestamp,
@@ -693,6 +699,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
                         backingSessionID: current.backingSessionID,
                         title: current.title,
                         model: current.model,
+                        promptSkillBinding: current.promptSkillBinding,
                         trustedSourceGrantIDs: current.trustedSourceGrantIDs,
                         lifecycle: lifecycle,
                         createdAt: current.createdAt,
@@ -750,7 +757,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
 
     private static let selectColumns = """
         SELECT notebook_id, owner_device_id, backing_session_id, title, model,
-               lifecycle, created_at, updated_at
+               prompt_skill_id, prompt_skill_revision, lifecycle, created_at, updated_at
         FROM runtime_research_notebooks
         """
 
@@ -788,10 +795,16 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
               let backingSessionID = validText(statement, at: 2),
               let title = validText(statement, at: 3),
               let model = validText(statement, at: 4),
-              let lifecycleValue = validText(statement, at: 5),
+              let promptSkillID = validText(statement, at: 5),
+              let promptSkillRevision = validText(statement, at: 6),
+              let promptSkillBinding = try? RuntimePromptSkillBinding(
+                identifier: promptSkillID,
+                revision: promptSkillRevision
+              ),
+              let lifecycleValue = validText(statement, at: 7),
               let lifecycle = RuntimeResearchNotebookLifecycle(rawValue: lifecycleValue),
-              let createdAtValue = validDouble(statement, at: 6),
-              let updatedAtValue = validDouble(statement, at: 7) else {
+              let createdAtValue = validDouble(statement, at: 8),
+              let updatedAtValue = validDouble(statement, at: 9) else {
             throw RuntimeResearchNotebookStoreError.corruptPersistence
         }
         let grants = try trustedSourceGrantIDs(notebookID: notebookID, database: database)
@@ -801,6 +814,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: grants,
             lifecycle: lifecycle,
             createdAt: Date(timeIntervalSince1970: createdAtValue),
@@ -856,8 +870,8 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
             """
             INSERT INTO \(notebooksTable)(
                 notebook_id, owner_device_id, backing_session_id, title, model,
-                lifecycle, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                prompt_skill_id, prompt_skill_revision, lifecycle, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         )
         defer { sqlite3_finalize(notebookStatement) }
@@ -866,9 +880,11 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         try bindText(notebook.backingSessionID, to: notebookStatement, at: 3)
         try bindText(notebook.title, to: notebookStatement, at: 4)
         try bindText(notebook.model, to: notebookStatement, at: 5)
-        try bindText(notebook.lifecycle.rawValue, to: notebookStatement, at: 6)
-        try bindDouble(notebook.createdAt.timeIntervalSince1970, to: notebookStatement, at: 7)
-        try bindDouble(notebook.updatedAt.timeIntervalSince1970, to: notebookStatement, at: 8)
+        try bindText(notebook.promptSkillBinding.identifier, to: notebookStatement, at: 6)
+        try bindText(notebook.promptSkillBinding.revision, to: notebookStatement, at: 7)
+        try bindText(notebook.lifecycle.rawValue, to: notebookStatement, at: 8)
+        try bindDouble(notebook.createdAt.timeIntervalSince1970, to: notebookStatement, at: 9)
+        try bindDouble(notebook.updatedAt.timeIntervalSince1970, to: notebookStatement, at: 10)
         try stepDone(notebookStatement, database: database)
 
         let grantStatement = try prepare(
@@ -1080,11 +1096,18 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
                 case 1:
                     try execute(database, "DROP TABLE IF EXISTS \(lifecycleIntentsTable)")
                     try execute(database, "DROP TABLE IF EXISTS \(metadataTable)")
-                    try createMetadataSchema(database)
                     try createLifecycleIntentsSchema(database)
+                    try migrateV3NotebookSchema(database)
+                    try resetMetadataSchema(database)
                     try execute(database, "PRAGMA user_version = \(schemaVersion)")
                 case 2:
                     try migrateV2Schema(database)
+                    try migrateV3NotebookSchema(database)
+                    try resetMetadataSchema(database)
+                    try execute(database, "PRAGMA user_version = \(schemaVersion)")
+                case 3:
+                    try migrateV3NotebookSchema(database)
+                    try resetMetadataSchema(database)
                     try execute(database, "PRAGMA user_version = \(schemaVersion)")
                 case schemaVersion:
                     break
@@ -1110,6 +1133,12 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
                 backing_session_id TEXT NOT NULL,
                 title TEXT NOT NULL,
                 model TEXT NOT NULL,
+                prompt_skill_id TEXT NOT NULL CHECK(
+                    length(prompt_skill_id) BETWEEN 1 AND 64
+                ),
+                prompt_skill_revision TEXT NOT NULL CHECK(
+                    length(prompt_skill_revision) = 64
+                ),
                 lifecycle TEXT NOT NULL CHECK(lifecycle IN ('active', 'archived')),
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL CHECK(updated_at >= created_at),
@@ -1179,7 +1208,6 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         ]
         let existingColumns = try tableColumns(lifecycleIntentsTable, database: database)
         if existingColumns == v3Columns {
-            try verifySchema(database)
             return
         }
         guard existingColumns == v2Columns else {
@@ -1222,7 +1250,6 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         try execute(database, "DROP TABLE IF EXISTS \(metadataTable)")
         try execute(database, "DROP TABLE \(lifecycleIntentsTable)")
         try execute(database, "ALTER TABLE \(migratedTable) RENAME TO \(lifecycleIntentsTable)")
-        try createMetadataSchema(database)
         try execute(
             database,
             """
@@ -1232,26 +1259,177 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         )
     }
 
+    private static func migrateV3NotebookSchema(_ database: OpaquePointer) throws {
+        let v3NotebookColumns: Set<String> = [
+            "notebook_id", "owner_device_id", "backing_session_id", "title", "model",
+            "lifecycle", "created_at", "updated_at"
+        ]
+        let v4NotebookColumns = v3NotebookColumns.union([
+            "prompt_skill_id", "prompt_skill_revision"
+        ])
+        let existingNotebookColumns = try tableColumns(notebooksTable, database: database)
+        if existingNotebookColumns == v4NotebookColumns {
+            try validateMigratedRows(database)
+            return
+        }
+        guard existingNotebookColumns == v3NotebookColumns,
+              try tableColumns(grantsTable, database: database) == [
+                "notebook_id", "position", "grant_id"
+              ],
+              try tableColumns(lifecycleIntentsTable, database: database) == [
+                "notebook_id", "owner_device_id", "backing_session_id", "mutation",
+                "coordinator_id", "operation_id", "lease_expires_at"
+              ] else {
+            throw RuntimeResearchNotebookStoreError.corruptPersistence
+        }
+
+        let notebookMigration = "runtime_research_notebooks_v4_migration"
+        let grantMigration = "runtime_research_notebook_grants_v4_migration"
+        let intentMigration = "runtime_research_notebook_intents_v4_migration"
+        try execute(database, "DROP TABLE IF EXISTS temp.\(notebookMigration)")
+        try execute(database, "DROP TABLE IF EXISTS temp.\(grantMigration)")
+        try execute(database, "DROP TABLE IF EXISTS temp.\(intentMigration)")
+        try execute(
+            database,
+            """
+            CREATE TEMP TABLE \(notebookMigration) AS
+            SELECT notebook_id, owner_device_id, backing_session_id, title, model,
+                   lifecycle, created_at, updated_at
+            FROM \(notebooksTable)
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE TEMP TABLE \(grantMigration) AS
+            SELECT notebook_id, position, grant_id FROM \(grantsTable)
+            """
+        )
+        try execute(
+            database,
+            """
+            CREATE TEMP TABLE \(intentMigration) AS
+            SELECT notebook_id, owner_device_id, backing_session_id, mutation,
+                   coordinator_id, operation_id, lease_expires_at
+            FROM \(lifecycleIntentsTable)
+            """
+        )
+
+        try execute(database, "DROP TABLE \(grantsTable)")
+        try execute(database, "DROP TABLE \(lifecycleIntentsTable)")
+        try execute(database, "DROP TABLE \(notebooksTable)")
+        try execute(database, "DROP TABLE IF EXISTS \(metadataTable)")
+        try createSchema(database)
+        try execute(
+            database,
+            """
+            INSERT INTO \(notebooksTable)(
+                notebook_id, owner_device_id, backing_session_id, title, model,
+                prompt_skill_id, prompt_skill_revision, lifecycle, created_at, updated_at
+            )
+            SELECT notebook_id, owner_device_id, backing_session_id, title, model,
+                   '\(RuntimePromptSkillRegistry.researchBriefSkillID)',
+                   '\(RuntimePromptSkillRegistry.researchBriefRevision)',
+                   lifecycle, created_at, updated_at
+            FROM temp.\(notebookMigration)
+            """
+        )
+        try execute(
+            database,
+            """
+            INSERT INTO \(grantsTable)(notebook_id, position, grant_id)
+            SELECT notebook_id, position, grant_id FROM temp.\(grantMigration)
+            """
+        )
+        try execute(
+            database,
+            """
+            INSERT INTO \(lifecycleIntentsTable)(
+                notebook_id, owner_device_id, backing_session_id, mutation,
+                coordinator_id, operation_id, lease_expires_at
+            )
+            SELECT notebook_id, owner_device_id, backing_session_id, mutation,
+                   coordinator_id, operation_id, lease_expires_at
+            FROM temp.\(intentMigration)
+            """
+        )
+        try execute(database, "DROP TABLE temp.\(intentMigration)")
+        try execute(database, "DROP TABLE temp.\(grantMigration)")
+        try execute(database, "DROP TABLE temp.\(notebookMigration)")
+        try validateMigratedRows(database)
+    }
+
+    private static func validateMigratedRows(_ database: OpaquePointer) throws {
+        let notebookStatement = try prepare(
+            database,
+            "SELECT notebook_id FROM \(notebooksTable) ORDER BY notebook_id"
+        )
+        defer { sqlite3_finalize(notebookStatement) }
+        while true {
+            let result = sqlite3_step(notebookStatement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW,
+                  let notebookID = validText(notebookStatement, at: 0),
+                  try readOne(
+                    whereClause: "notebook_id = ?",
+                    bindings: [notebookID],
+                    database: database
+                  ) != nil else {
+                throw RuntimeResearchNotebookStoreError.corruptPersistence
+            }
+        }
+
+        let intentStatement = try prepare(
+            database,
+            """
+            SELECT notebook_id, owner_device_id, backing_session_id, mutation,
+                   coordinator_id, operation_id, lease_expires_at
+            FROM \(lifecycleIntentsTable)
+            ORDER BY notebook_id
+            """
+        )
+        defer { sqlite3_finalize(intentStatement) }
+        while true {
+            let result = sqlite3_step(intentStatement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw RuntimeResearchNotebookStoreError.corruptPersistence
+            }
+            _ = try lifecycleIntent(from: intentStatement)
+        }
+
+        let foreignKeyStatement = try prepare(database, "PRAGMA foreign_key_check")
+        defer { sqlite3_finalize(foreignKeyStatement) }
+        guard sqlite3_step(foreignKeyStatement) == SQLITE_DONE else {
+            throw RuntimeResearchNotebookStoreError.corruptPersistence
+        }
+    }
+
+    private static func resetMetadataSchema(_ database: OpaquePointer) throws {
+        try execute(database, "DROP TABLE IF EXISTS \(metadataTable)")
+        try createMetadataSchema(database)
+    }
+
     private static func createMetadataSchema(_ database: OpaquePointer) throws {
         try execute(
             database,
             """
             CREATE TABLE IF NOT EXISTS \(metadataTable)(
                 singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton = 1),
-                schema_version INTEGER NOT NULL CHECK(schema_version = 3)
+                schema_version INTEGER NOT NULL CHECK(schema_version = 4)
             )
             """
         )
         try execute(
             database,
-            "INSERT OR IGNORE INTO \(metadataTable)(singleton, schema_version) VALUES (1, 3)"
+            "INSERT OR IGNORE INTO \(metadataTable)(singleton, schema_version) VALUES (1, 4)"
         )
     }
 
     private static func verifySchema(_ database: OpaquePointer) throws {
         let requiredNotebookColumns: Set<String> = [
             "notebook_id", "owner_device_id", "backing_session_id", "title", "model",
-            "lifecycle", "created_at", "updated_at"
+            "prompt_skill_id", "prompt_skill_revision", "lifecycle", "created_at", "updated_at"
         ]
         let requiredGrantColumns: Set<String> = ["notebook_id", "position", "grant_id"]
         let requiredLifecycleIntentColumns: Set<String> = [
@@ -1273,7 +1451,7 @@ public final class SQLiteRuntimeResearchNotebookStore: RuntimeResearchNotebookSt
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW,
               validInt(statement, at: 0) == 1,
-              validInt(statement, at: 1) == 3,
+              validInt(statement, at: 1) == 4,
               sqlite3_step(statement) == SQLITE_DONE else {
             throw RuntimeResearchNotebookStoreError.corruptPersistence
         }

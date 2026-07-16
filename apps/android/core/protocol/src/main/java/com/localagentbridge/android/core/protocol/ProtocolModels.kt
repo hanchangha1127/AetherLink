@@ -151,6 +151,7 @@ private val ERROR_CODES = setOf(
     "no_models",
     "model_not_found",
     "model_not_installed",
+    "model_pull_approval_required",
     "generation_not_found",
     "generation_cancelled",
     "route_refresh_unavailable",
@@ -171,6 +172,7 @@ private val ERROR_CODES = setOf(
     "trusted_source_review_stale",
     "trusted_source_not_found",
     "research_notebook_store_unavailable",
+    "runtime_prompt_skill_unavailable",
     "memory_store_unavailable",
     "memory_summary_draft_unavailable",
     "memory_summary_draft_stale",
@@ -179,7 +181,6 @@ private val ERROR_CODES = setOf(
     "internal_error",
 )
 private const val MEMORY_ENTRY_SOURCE_KIND = "long_inactivity_summary_draft"
-private const val MEMORY_ENTRY_SOURCE_SUMMARY_METHOD = "deterministic_preview"
 private val MEMORY_SUMMARY_DRAFT_METHODS = setOf("deterministic_preview", "llm_summary_v1")
 private val MEMORY_SUMMARY_SOURCE_POINTER_ROLES = setOf("user", "assistant")
 
@@ -1061,8 +1062,13 @@ data class ModelPullPayload(
     val model: String,
 ) {
     init {
-        require(model.isNotBlank()) {
-            "models.pull request model must be nonblank"
+        require(
+            model.length in 1..256 &&
+                model.first() != ' ' &&
+                model.last() != ' ' &&
+                model.all { it in '\u0020'..'\u007e' }
+        ) {
+            "models.pull request model must be 1..256 printable ASCII characters without edge spaces"
         }
     }
 }
@@ -3748,8 +3754,8 @@ data class MemoryEntrySourcePayload(
         require(draftId.isNotEmpty()) {
             "memory entry source draft_id must be nonempty"
         }
-        require(summaryMethod == MEMORY_ENTRY_SOURCE_SUMMARY_METHOD) {
-            "memory entry source summary_method must be deterministic_preview"
+        require(summaryMethod in MEMORY_SUMMARY_DRAFT_METHODS) {
+            "memory entry source summary_method must be deterministic_preview or llm_summary_v1"
         }
         require(sourceMessageCount > 0) {
             "memory entry source source_message_count must be positive"

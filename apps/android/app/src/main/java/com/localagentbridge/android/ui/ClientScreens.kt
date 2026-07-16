@@ -11494,6 +11494,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "invalid_payload" -> stringResource(R.string.error_invalid_payload)
         "install_model_first" -> stringResource(R.string.error_install_model_first)
         "model_install_failed" -> stringResource(R.string.error_model_install_failed)
+        "model_install_host_approval_required" ->
+            stringResource(R.string.error_model_install_host_approval_required)
         "attachment_too_large" -> stringResource(R.string.error_attachment_too_large)
         "attachment_read_failed" -> stringResource(R.string.error_attachment_read_failed)
         "attachment_limit_reached" -> stringResource(R.string.error_attachment_limit_reached)

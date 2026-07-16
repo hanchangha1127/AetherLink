@@ -711,6 +711,12 @@ public protocol RuntimeChatEventStore: Sendable {
         timestamp: Date,
         beforeCommit: @Sendable ([String]) throws -> Void
     ) throws -> RuntimeChatSessionBulkMutationResult
+    func performIfLongInactivityMemorySummarySourceCurrent(
+        ownerDeviceID: String?,
+        expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
+        policy: RuntimeLongInactivityMemorySummarizationPolicy,
+        operation: @Sendable () throws -> Void
+    ) throws -> Bool
 }
 
 public struct RuntimeChatRetentionPolicy: Equatable, Sendable {
@@ -808,6 +814,24 @@ public enum RuntimeChatEventStoreDefaults {
 }
 
 public extension RuntimeChatEventStore {
+    func performIfLongInactivityMemorySummarySourceCurrent(
+        ownerDeviceID: String?,
+        expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
+        policy: RuntimeLongInactivityMemorySummarizationPolicy,
+        operation: @Sendable () throws -> Void
+    ) throws -> Bool {
+        let drafts = try listLongInactivityMemorySummarizationDrafts(
+            ownerDeviceID: ownerDeviceID,
+            policy: policy
+        )
+        guard let currentDraft = drafts.first(where: { $0.id == expectedDraft.id }),
+              currentDraft.hasSameMemorySummarySource(as: expectedDraft) else {
+            return false
+        }
+        try operation()
+        return true
+    }
+
     func resolveSourceAttribution(
         ownerDeviceID: String?,
         sessionID: String,
@@ -1166,6 +1190,46 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         guard limit > 0 else { return [] }
         return try lock.withLock {
             try Self.messages(from: readEvents(), sessionID: sessionID, limit: limit)
+        }
+    }
+
+    public func performIfLongInactivityMemorySummarySourceCurrent(
+        ownerDeviceID: String?,
+        expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
+        policy: RuntimeLongInactivityMemorySummarizationPolicy,
+        operation: @Sendable () throws -> Void
+    ) throws -> Bool {
+        try lock.withLock {
+            try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                let indexedEvents = try Self.decodedEventsInAppendOrder(from: fileURL)
+                try Self.validateCompactionResolutionBindings(indexedEvents)
+                let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+                let events = indexedEvents.map(\.event).filter {
+                    $0.ownerDeviceID == scopedOwnerDeviceID
+                }
+                let sessions = try Self.sessions(
+                    from: events,
+                    limit: Int.max,
+                    includeArchived: false
+                )
+                guard let candidate = policy.candidates(from: sessions, now: Date())
+                        .first(where: {
+                            $0.sessionID == expectedDraft.candidate.sessionID
+                        }),
+                      let currentDraft = policy.draft(
+                        for: candidate,
+                        messages: Self.messages(
+                            from: events,
+                            sessionID: candidate.sessionID,
+                            limit: Int.max
+                        )
+                      ),
+                      currentDraft.hasSameMemorySummarySource(as: expectedDraft) else {
+                    return false
+                }
+                try operation()
+                return true
+            }
         }
     }
 

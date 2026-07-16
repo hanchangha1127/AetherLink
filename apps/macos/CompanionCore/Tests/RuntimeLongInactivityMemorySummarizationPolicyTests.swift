@@ -249,6 +249,7 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
             sourceMessageCount: draft.sourceMessageCount,
             content: "Generated summary content",
             modelID: "GPT-5.6 Sol",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
             generatedAt: generatedAt
         )
 
@@ -288,6 +289,7 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
             sourceMessageCount: 1,
             content: "Stale generated content",
             modelID: "GPT-5.6 Sol",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
             generatedAt: Date(timeIntervalSince1970: 5_100_000)
         )
 

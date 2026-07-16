@@ -605,12 +605,18 @@
       "additionalProperties": false
     },
     "modelsPullPayload": {
+      "description": "Legacy models.pull wire shapes. Runtime hosts validate requests and must fail closed unless a host-local approval and durable audit broker is active.",
       "oneOf": [
         {
           "type": "object",
           "required": ["model"],
           "properties": {
-            "model": { "$ref": "#/$defs/nonBlankString" },
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^(?!\\s)(?!.*\\s$)[\\u0020-\\u007E]+$"
+            },
             "backend": { "enum": ["ollama"] }
           },
           "additionalProperties": false
@@ -1470,7 +1476,7 @@
       "properties": {
         "kind": { "const": "long_inactivity_summary_draft" },
         "draft_id": { "$ref": "#/$defs/nonEmptyString" },
-        "summary_method": { "const": "deterministic_preview" },
+        "summary_method": { "enum": ["deterministic_preview", "llm_summary_v1"] },
         "session": { "$ref": "#/$defs/memorySummaryDraftSession" },
         "source_message_count": { "type": "integer", "minimum": 1 },
         "source_range": { "$ref": "#/$defs/nonEmptyString" },
@@ -2284,6 +2290,7 @@
             "no_models",
             "model_not_found",
             "model_not_installed",
+            "model_pull_approval_required",
             "generation_not_found",
             "generation_cancelled",
             "route_refresh_unavailable",
@@ -2304,6 +2311,7 @@
             "trusted_source_review_stale",
             "trusted_source_not_found",
             "research_notebook_store_unavailable",
+            "runtime_prompt_skill_unavailable",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",

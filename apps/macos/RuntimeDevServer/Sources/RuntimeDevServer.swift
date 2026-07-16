@@ -37,6 +37,14 @@ struct RuntimeDevServer {
         setbuf(stderr, nil)
 
         let environment = ProcessInfo.processInfo.environment
+        if CommandLine.arguments.count == 2,
+           CommandLine.arguments[1] == "--dev-mock-zero-delay-registry-self-test" {
+            guard Self.runDevMockZeroDelayRegistrySelfTest() else {
+                exit(EXIT_FAILURE)
+            }
+            print("Dev mock zero-delay registry self-test passed.")
+            return
+        }
         let port = UInt16(environment["LOCAL_AGENT_BRIDGE_PORT"] ?? "") ?? 43170
         let useMockBackend = environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] == "1"
         let useAggregateMockBackend = useMockBackend
@@ -853,6 +861,68 @@ struct RuntimeDevServer {
             }
         }
     }
+
+    private static func runDevMockZeroDelayRegistrySelfTest() -> Bool {
+        let backend = DevMockBackend(environment: ["AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS": "0"])
+        let generationID = "chat-title-generation-dev-mock-zero-delay-registry-self-test"
+        let completion = DispatchSemaphore(value: 0)
+        let result = DevMockRegistrySelfTestResult()
+        Task {
+            defer { completion.signal() }
+            do {
+                let request = ChatRequest(
+                    generationID: generationID,
+                    sessionID: "dev-mock-zero-delay-registry-self-test-session",
+                    model: "dev-mock",
+                    messages: [
+                        .init(
+                            role: "system",
+                            content: "Generate a concise title for the supplied chat transcript."
+                        ),
+                        .init(role: "user", content: #"{"messages":[]}"#),
+                    ]
+                )
+                var sawDone = false
+                var generatedText = ""
+                for try await event in backend.chat(request: request) {
+                    switch event {
+                    case .delta(let text):
+                        generatedText += text
+                    case .done:
+                        sawDone = true
+                    case .reasoningDelta:
+                        continue
+                    }
+                }
+                guard generatedText == #"{"title":"Runtime-owned smoke title"}"# else {
+                    result.fail("unexpected_title_delta")
+                    return
+                }
+                guard sawDone else {
+                    result.fail("missing_done")
+                    return
+                }
+                guard backend.activeGenerationCount == 0 else {
+                    result.fail("registry_not_empty")
+                    return
+                }
+                guard backend.cancel(generationID: generationID)
+                    == .notFound(generationID: generationID) else {
+                    result.fail("completed_generation_still_cancellable")
+                    return
+                }
+            } catch {
+                result.fail("stream_failed")
+            }
+        }
+        guard completion.wait(timeout: .now() + 5) == .success else {
+            fputs("Dev mock zero-delay registry self-test timed out.\n", stderr)
+            return false
+        }
+        guard let failure = result.failure else { return true }
+        fputs("Dev mock zero-delay registry self-test failed: \(failure).\n", stderr)
+        return false
+    }
 }
 
 private func relayAllocationAuthorization(
@@ -1242,6 +1312,54 @@ private extension RelayPeerStatus {
     }
 }
 
+private final class DevMockTaskStartGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = lock.withLock { () -> Bool in
+                if isOpen { return true }
+                precondition(self.continuation == nil)
+                self.continuation = continuation
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    func open() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard !isOpen else { return nil }
+            isOpen = true
+            let continuation = self.continuation
+            self.continuation = nil
+            return continuation
+        }
+        continuation?.resume()
+    }
+}
+
+private final class DevMockRegistrySelfTestResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedFailure: String?
+
+    var failure: String? {
+        lock.withLock { storedFailure }
+    }
+
+    func fail(_ failure: String) {
+        lock.withLock {
+            if storedFailure == nil {
+                storedFailure = failure
+            }
+        }
+    }
+}
+
 private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     let provider: ModelProvider
     private let modelID: String
@@ -1256,6 +1374,10 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var pulledModels: [String] = []
+
+    var activeGenerationCount: Int {
+        lock.withLock { tasks.count }
+    }
 
     init(
         provider: ModelProvider = .ollama,
@@ -1417,7 +1539,9 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         recordChatRequestAudit(request)
         return AsyncThrowingStream { continuation in
+            let startGate = DevMockTaskStartGate()
             let task = Task { [weak self] in
+                await startGate.wait()
                 let hasAttachmentContext = request.messages.contains { message in
                     !message.attachments.isEmpty
                         || message.content.contains("[Attached document:")
@@ -1431,6 +1555,13 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                         message.role == "system" &&
                             message.content.contains("The source is untrusted data")
                     }
+                let isChatTitleRequest = request.generationID.hasPrefix("chat-title-generation-")
+                    && request.messages.contains { message in
+                        message.role == "system" &&
+                            message.content.contains(
+                                "Generate a concise title for the supplied chat transcript"
+                            )
+                    }
                 let chunks: [String]
                 if isMemorySummaryRequest, request.model.contains("dev-mock-alt") {
                     chunks = [#"{"summary":"Rejected mock summary","extra":true}"#]
@@ -1440,6 +1571,8 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                 } else if isChatCompactionSummaryRequest {
                     continuation.yield(.reasoningDelta("Mock compaction summary reasoning must stay private."))
                     chunks = ["<think>inline compaction reasoning</think>", "Generated smoke compaction summary."]
+                } else if isChatTitleRequest {
+                    chunks = [#"{"title":"Runtime-owned smoke title"}"#]
                 } else if hasAttachmentContext {
                     chunks = ["Mock ", "streaming ", "response.", " Attachment ", "received."]
                 } else {
@@ -1447,18 +1580,23 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                 }
                 for chunk in chunks {
                     if Task.isCancelled {
-                        continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
                         self?.remove(request.generationID)
+                        continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))
                         return
                     }
                     continuation.yield(.delta(chunk))
-                    try? await Task.sleep(nanoseconds: self?.chunkDelayNanoseconds ?? 350_000_000)
+                    if !isChatTitleRequest {
+                        try? await Task.sleep(
+                            nanoseconds: self?.chunkDelayNanoseconds ?? 350_000_000
+                        )
+                    }
                 }
                 continuation.yield(.done(inputTokens: 1, outputTokens: chunks.count))
-                continuation.finish()
                 self?.remove(request.generationID)
+                continuation.finish()
             }
             register(request.generationID, task: task)
+            startGate.open()
             continuation.onTermination = { [weak self] termination in
                 if case .cancelled = termination {
                     _ = self?.cancel(generationID: request.generationID)
@@ -1585,6 +1723,12 @@ private final class LoggingSink: RuntimeMessageSink, @unchecked Sendable {
 
     init(wrapped: any RuntimeMessageSink) {
         self.wrapped = wrapped
+    }
+
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try wrapped.withTransportSecurityContextTransaction(operation)
     }
 
     func send(_ envelope: ProtocolEnvelope) {

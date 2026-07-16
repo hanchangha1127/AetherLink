@@ -334,6 +334,7 @@
     <string name="selected_model">선택된 모델</string>
     <string name="drawer_runtime_summary_accessibility">런타임 %1$s. 상태: %2$s. 선택된 모델: %3$s.</string>
     <string name="drawer_runtime_summary_accessibility_with_detail">런타임 %1$s. 상태: %2$s. 선택된 모델: %3$s. %4$s</string>
+    <string name="drawer_runtime_summary_accessibility_with_model_summary">런타임 %1$s. 상태: %2$s. %3$s</string>
     <string name="selection_state_selected">선택됨</string>
     <string name="model_unavailable">모델 사용 불가</string>
     <string name="selected_model_unavailable">선택한 모델이 런타임 목록에 없습니다. 새로고침하거나 다른 모델을 선택하세요.</string>
@@ -369,6 +370,7 @@
     <string name="model_source_value">소스: %1$s</string>
     <string name="model_size_value">크기: %1$s</string>
     <string name="install_model">모델 설치</string>
+    <string name="model_install_host_approval_required">런타임 승인 필요</string>
     <string name="installing_model">설치 중...</string>
     <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">불러온 모델 없음</string>
@@ -784,6 +786,7 @@
     <string name="error_invalid_payload">AetherLink Runtime이 올바르지 않은 데이터를 보냈습니다.</string>
     <string name="error_install_model_first">채팅하기 전에 이 모델을 설치하세요.</string>
     <string name="error_model_install_failed">AetherLink Runtime이 모델을 설치할 수 없습니다.</string>
+    <string name="error_model_install_host_approval_required">모델 다운로드는 런타임 호스트의 승인이 필요하며 이 클라이언트에서는 사용할 수 없습니다.</string>
     <string name="error_attachment_too_large">첨부 파일이 너무 큽니다.</string>
     <string name="error_attachment_read_failed">이 첨부 파일을 읽을 수 없습니다.</string>
     <string name="error_attachment_limit_reached">한 번에 최대 4개 파일만 첨부할 수 있습니다.</string>

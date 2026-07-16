@@ -1,4 +1,6 @@
 import Foundation
+import BridgeProtocol
+import OllamaBackend
 
 public struct RuntimeMemoryEntry: Equatable, Sendable {
     public var id: String
@@ -216,6 +218,8 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
     public var sourceMessageCount: Int
     public var content: String
     public var modelID: String
+    public var providerQualifiedModelID: String?
+    public var promptSkillBinding: RuntimePromptSkillBinding
     public var generatedAt: Date
 
     public init(
@@ -224,6 +228,8 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
         sourceMessageCount: Int,
         content: String,
         modelID: String,
+        providerQualifiedModelID: String? = nil,
+        promptSkillBinding: RuntimePromptSkillBinding,
         generatedAt: Date
     ) {
         self.draftID = draftID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -234,6 +240,8 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
                 .prefix(Self.maxContentCharacters)
         )
         self.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.providerQualifiedModelID = providerQualifiedModelID
+        self.promptSkillBinding = promptSkillBinding
         self.generatedAt = generatedAt
     }
 
@@ -302,6 +310,12 @@ public protocol RuntimeMemoryStore: Sendable {
         ownerDeviceID: String?,
         draft: RuntimeGeneratedMemorySummaryDraft
     ) throws -> RuntimeGeneratedMemorySummaryDraft
+    @discardableResult
+    func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        if shouldCommit: @Sendable () -> Bool
+    ) throws -> RuntimeGeneratedMemorySummaryDraft?
 }
 
 public extension RuntimeMemoryStore {
@@ -421,6 +435,20 @@ public extension RuntimeMemoryStore {
         draft: RuntimeGeneratedMemorySummaryDraft
     ) throws -> RuntimeGeneratedMemorySummaryDraft {
         draft
+    }
+
+    @discardableResult
+    func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        if shouldCommit: @Sendable () -> Bool
+    ) throws -> RuntimeGeneratedMemorySummaryDraft? {
+        guard shouldCommit() else { return nil }
+        let cachedDraft = try cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: ownerDeviceID,
+            draft: draft
+        )
+        return shouldCommit() ? cachedDraft : nil
     }
 }
 
@@ -694,8 +722,22 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         ownerDeviceID: String?,
         draft: RuntimeGeneratedMemorySummaryDraft
     ) throws -> RuntimeGeneratedMemorySummaryDraft {
+        try cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: ownerDeviceID,
+            draft: draft,
+            if: { true }
+        ) ?? draft
+    }
+
+    @discardableResult
+    public func cacheGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        if shouldCommit: @Sendable () -> Bool
+    ) throws -> RuntimeGeneratedMemorySummaryDraft? {
         try lock.withLock {
             try Self.validateGeneratedMemorySummaryDraft(draft)
+            guard shouldCommit() else { return nil }
             try appendUnlocked(RuntimeMemoryStoredEvent(
                 kind: .generatedMemorySummaryDraft,
                 id: draft.draftID,
@@ -706,6 +748,9 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 sourceMessageCount: draft.sourceMessageCount,
                 summaryMethod: draft.summaryMethod,
                 modelID: draft.modelID,
+                providerQualifiedModelID: draft.providerQualifiedModelID,
+                promptSkillID: draft.promptSkillBinding.identifier,
+                promptSkillRevision: draft.promptSkillBinding.revision,
                 generatedAt: draft.generatedAt
             ))
             return draft
@@ -767,7 +812,22 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 continue
             }
             do {
-                let event = try decoder.decode(RuntimeMemoryStoredEvent.self, from: Data(line.utf8))
+                let lineData = Data(line.utf8)
+                try StrictJSONDocumentValidator.validate(lineData)
+                let event = try decoder.decode(RuntimeMemoryStoredEvent.self, from: lineData)
+                if event.kind == .generatedMemorySummaryDraft {
+                    let promptBindingFields = try decoder.decode(
+                        RuntimeMemoryPromptSkillBindingFieldPresence.self,
+                        from: lineData
+                    )
+                    guard promptBindingFields.hasPromptSkillID
+                            == promptBindingFields.hasPromptSkillRevision else {
+                        throw RuntimeMemoryStoreError.corruptEventLog(
+                            line: index + 1,
+                            reason: "generated memory summary draft is invalid"
+                        )
+                    }
+                }
                 try Self.validateStoredEvent(event, line: index + 1)
                 events.append(event)
             } catch {
@@ -858,8 +918,19 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         }
         guard !draft.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               draft.sourceMessageCount > 0,
-              !draft.modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              !draft.modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              draft.promptSkillBinding.identifier
+                == RuntimePromptSkillRegistry.memorySummaryDraftSkillID else {
             throw RuntimeMemoryStoreError.missingID
+        }
+        if let providerQualifiedModelID = draft.providerQualifiedModelID {
+            guard let resolved = ModelProvider.splitQualifiedModelID(providerQualifiedModelID),
+                  !resolved.modelID.isEmpty,
+                  ModelProvider.splitQualifiedModelID(resolved.modelID) == nil,
+                  resolved.provider.qualifiedModelID(resolved.modelID)
+                    == providerQualifiedModelID else {
+                throw RuntimeMemoryStoreError.missingID
+            }
         }
         let cleanContent = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanContent.isEmpty else {
@@ -977,6 +1048,28 @@ private enum RuntimeMemoryStoredEventKind: String, Codable {
     case generatedMemorySummaryDraft = "generated_memory_summary_draft"
 }
 
+private struct RuntimeMemoryPromptSkillBindingFieldPresence: Decodable {
+    let hasPromptSkillID: Bool
+    let hasPromptSkillRevision: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case promptSkillID = "prompt_skill_id"
+        case promptSkillRevision = "prompt_skill_revision"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hasPromptSkillID = container.contains(.promptSkillID)
+        hasPromptSkillRevision = container.contains(.promptSkillRevision)
+        if hasPromptSkillID {
+            _ = try container.decode(String.self, forKey: .promptSkillID)
+        }
+        if hasPromptSkillRevision {
+            _ = try container.decode(String.self, forKey: .promptSkillRevision)
+        }
+    }
+}
+
 private struct RuntimeMemoryStoredEvent: Codable {
     var kind: RuntimeMemoryStoredEventKind
     var id: String
@@ -990,6 +1083,9 @@ private struct RuntimeMemoryStoredEvent: Codable {
     var sourceMessageCount: Int?
     var summaryMethod: String?
     var modelID: String?
+    var providerQualifiedModelID: String?
+    var promptSkillID: String?
+    var promptSkillRevision: String?
     var generatedAt: Date?
 
     var generatedMemorySummaryDraft: RuntimeGeneratedMemorySummaryDraft? {
@@ -1002,12 +1098,30 @@ private struct RuntimeMemoryStoredEvent: Codable {
               let generatedAt else {
             return nil
         }
+        let promptSkillBinding: RuntimePromptSkillBinding
+        switch (promptSkillID, promptSkillRevision) {
+        case (nil, nil):
+            promptSkillBinding = RuntimePromptSkillRegistry.originalMemorySummaryDraftBinding
+        case (.some(let identifier), .some(let revision)):
+            guard identifier == RuntimePromptSkillRegistry.memorySummaryDraftSkillID,
+                  let binding = try? RuntimePromptSkillBinding(
+                    identifier: identifier,
+                    revision: revision
+                  ) else {
+                return nil
+            }
+            promptSkillBinding = binding
+        case (.some, nil), (nil, .some):
+            return nil
+        }
         return RuntimeGeneratedMemorySummaryDraft(
             draftID: id,
             sessionID: sessionID,
             sourceMessageCount: sourceMessageCount,
             content: content,
             modelID: modelID,
+            providerQualifiedModelID: providerQualifiedModelID,
+            promptSkillBinding: promptSkillBinding,
             generatedAt: generatedAt
         )
     }
@@ -1025,6 +1139,9 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case sourceMessageCount = "source_message_count"
         case summaryMethod = "summary_method"
         case modelID = "model_id"
+        case providerQualifiedModelID = "provider_qualified_model_id"
+        case promptSkillID = "prompt_skill_id"
+        case promptSkillRevision = "prompt_skill_revision"
         case generatedAt = "generated_at"
     }
 }

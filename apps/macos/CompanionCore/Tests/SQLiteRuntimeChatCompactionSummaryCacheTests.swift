@@ -131,6 +131,47 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
         )?.summary, "matching")
     }
 
+    func testExactAndStrictPrefixScopesIsolatePromptSkillRevision() throws {
+        let cache = SQLiteRuntimeChatCompactionSummaryCache(databaseURL: temporaryDatabaseURL())
+        let currentMessages = messages("one", "two", "three")
+        let historicalPrompt = "Historical chat compaction summary prompt."
+        let historicalBinding = try RuntimePromptSkillBinding(
+            identifier: RuntimePromptSkillRegistry.chatCompactionSummarySkillID,
+            revision: RuntimePromptSkillRegistry.computedRevision(
+                identifier: RuntimePromptSkillRegistry.chatCompactionSummarySkillID,
+                effect: .promptOnly,
+                prompt: historicalPrompt
+            )
+        )
+        let historicalExact = key(
+            source: "current",
+            messages: currentMessages,
+            promptSkillBinding: historicalBinding
+        )
+        let historicalPrefix = key(
+            source: "historical prefix",
+            messages: currentMessages,
+            count: 2,
+            promptSkillBinding: historicalBinding
+        )
+        try cache.upsert(.init(key: historicalExact, summary: "historical exact"), if: { true })
+        try cache.upsert(.init(key: historicalPrefix, summary: "historical prefix"), if: { true })
+
+        let current = key(source: "current", messages: currentMessages)
+        XCTAssertNil(try cache.cachedSummary(for: current))
+        XCTAssertNil(try cache.newestStrictPrefixRecord(
+            for: current,
+            currentPrefixFingerprints: prefixes(currentMessages)
+        ))
+
+        let currentPrefix = key(source: "current prefix", messages: currentMessages, count: 2)
+        try cache.upsert(.init(key: currentPrefix, summary: "current prefix"), if: { true })
+        XCTAssertEqual(try cache.newestStrictPrefixRecord(
+            for: current,
+            currentPrefixFingerprints: prefixes(currentMessages)
+        )?.summary, "current prefix")
+    }
+
     func testOldSchemaMigrationDropsRowsAndCreatesLineageColumns() throws {
         let databaseURL = temporaryDatabaseURL()
         try executeRaw(databaseURL, Self.oldSchemaSQL)
@@ -142,6 +183,19 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
         let columns = try queryStrings(databaseURL, "PRAGMA table_info(runtime_chat_compaction_summaries)", column: 1)
         XCTAssertTrue(columns.contains("lineage_fingerprint_digest"))
         XCTAssertTrue(columns.contains("compacted_turn_count"))
+    }
+
+    func testPrePromptSchemaMigrationDropsRowsAndCreatesPromptBindingColumns() throws {
+        let databaseURL = temporaryDatabaseURL()
+        try executeRaw(databaseURL, Self.prePromptSchemaSQL)
+        let cache = SQLiteRuntimeChatCompactionSummaryCache(databaseURL: databaseURL)
+        let current = key(source: "legacy source", messages: messages("one"))
+
+        XCTAssertNil(try cache.cachedSummary(for: current))
+        XCTAssertEqual(try queryInt(databaseURL, "SELECT COUNT(*) FROM runtime_chat_compaction_summaries"), 0)
+        let columns = try queryStrings(databaseURL, "PRAGMA table_info(runtime_chat_compaction_summaries)", column: 1)
+        XCTAssertTrue(columns.contains("prompt_skill_id"))
+        XCTAssertTrue(columns.contains("prompt_skill_revision"))
     }
 
     func testSummaryPersistsAcrossReopenWithOwnerOnlyPermissions() throws {
@@ -222,6 +276,9 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
         var invalidCount = valid
         invalidCount.compactedTurnCount = 0
         XCTAssertThrowsError(try cache.cachedSummary(for: invalidCount))
+        var wrongSkill = valid
+        wrongSkill.promptSkillBinding = RuntimePromptSkillRegistry.researchBriefBinding
+        XCTAssertThrowsError(try cache.cachedSummary(for: wrongSkill))
         XCTAssertThrowsError(try cache.upsert(.init(key: valid, summary: "   "), if: { true }))
         XCTAssertThrowsError(try cache.upsert(
             .init(key: valid, summary: String(repeating: "x", count: 16_385)),
@@ -264,7 +321,8 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
         messages: [ChatMessage],
         count: Int? = nil,
         model: String = "ollama:model-a",
-        policy: String = "policy-v1"
+        policy: String = "policy-v1",
+        promptSkillBinding: RuntimePromptSkillBinding = RuntimePromptSkillRegistry.chatCompactionSummaryBinding
     ) -> RuntimeChatCompactionSummaryCacheKey {
         let compactedCount = count ?? messages.count
         return RuntimeChatCompactionSummaryCacheKey(
@@ -275,7 +333,8 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
                 for: Array(messages.prefix(compactedCount))
             ),
             providerQualifiedModelID: model,
-            summaryPolicy: policy
+            summaryPolicy: policy,
+            promptSkillBinding: promptSkillBinding
         )
     }
 
@@ -348,6 +407,29 @@ final class SQLiteRuntimeChatCompactionSummaryCacheTests: XCTestCase {
         '', 'session-a', 'sha256-length-framed-chat-compaction-summary-source-v1',
         'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 13,
         'ollama:model-a', 'policy-v1', 'must be dropped', 1
+    );
+    """
+
+    private static let prePromptSchemaSQL = """
+    CREATE TABLE runtime_chat_compaction_summaries(
+        owner_key TEXT NOT NULL, session_id TEXT NOT NULL,
+        source_fingerprint_algorithm TEXT NOT NULL, source_fingerprint_digest TEXT NOT NULL,
+        source_utf8_byte_count INTEGER NOT NULL,
+        lineage_fingerprint_algorithm TEXT NOT NULL, lineage_fingerprint_digest TEXT NOT NULL,
+        lineage_canonical_byte_count INTEGER NOT NULL, compacted_turn_count INTEGER NOT NULL,
+        provider_qualified_model_id TEXT NOT NULL, summary_policy TEXT NOT NULL,
+        summary TEXT NOT NULL, write_order INTEGER NOT NULL,
+        PRIMARY KEY(owner_key, session_id, source_fingerprint_algorithm, source_fingerprint_digest,
+                    source_utf8_byte_count, lineage_fingerprint_algorithm,
+                    lineage_fingerprint_digest, lineage_canonical_byte_count, compacted_turn_count,
+                    provider_qualified_model_id, summary_policy)
+    );
+    INSERT INTO runtime_chat_compaction_summaries VALUES(
+        '', 'session-a', 'sha256-length-framed-chat-compaction-summary-source-v1',
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 13,
+        'sha256-length-framed-chat-compaction-summary-lineage-v1',
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        128, 1, 'ollama:model-a', 'policy-v1', 'must be dropped', 1
     );
     """
 }

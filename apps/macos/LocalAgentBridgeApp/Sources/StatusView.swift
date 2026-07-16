@@ -59,6 +59,13 @@ struct StatusView: View {
                         tone: modelResidencyTone
                     )
                     StatusCard(
+                        title: NSLocalizedString("Model Downloads", comment: ""),
+                        value: modelPullApprovalValue,
+                        detail: modelPullApprovalDetail,
+                        systemImage: "arrow.down.square",
+                        tone: model.pendingModelPullReviews.isEmpty ? .neutral : .warning
+                    )
+                    StatusCard(
                         title: NSLocalizedString("Runtime History", comment: ""),
                         value: runtimeHistoryValue,
                         detail: runtimeHistoryDetail,
@@ -143,6 +150,13 @@ struct StatusView: View {
                     }
                 }
 
+                CompanionPanel(
+                    title: NSLocalizedString("Model Download Approval", comment: ""),
+                    systemImage: "checkmark.shield"
+                ) {
+                    ModelPullApprovalPanel(model: model)
+                }
+
                 CompanionPanel(title: NSLocalizedString("Models", comment: ""), systemImage: "shippingbox") {
                     if model.models.isEmpty {
                         let emptyModelsTitle = NSLocalizedString("No models loaded", comment: "")
@@ -212,6 +226,7 @@ struct StatusView: View {
         }
         .task {
             await model.refreshRuntimeDocumentSources()
+            await model.refreshModelPullApprovals()
         }
     }
 
@@ -350,6 +365,22 @@ struct StatusView: View {
             return .inactive
         }
         return model.modelResidency.activeModelID == nil ? .neutral : .ready
+    }
+
+    private var modelPullApprovalValue: String {
+        let count = model.pendingModelPullReviews.count
+        return count == 0
+            ? NSLocalizedString("None", comment: "")
+            : String(
+                format: NSLocalizedString("%lld pending", comment: ""),
+                Int64(count)
+            )
+    }
+
+    private var modelPullApprovalDetail: String {
+        model.pendingModelPullReviews.isEmpty
+            ? NSLocalizedString("No model downloads are waiting for runtime-host approval.", comment: "")
+            : NSLocalizedString("Review each trusted-device request before any provider call.", comment: "")
     }
 
     private var runtimeHistoryValue: String {

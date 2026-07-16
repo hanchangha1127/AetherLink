@@ -5461,12 +5461,19 @@ func mockChatRequestAuditEntries(fileURL: URL) throws -> [[String: Any]] {
 func mockChatRequestAuditEntry(
     fileURL: URL,
     sessionID: String,
+    generationID: String? = nil,
     context: String
 ) throws -> [String: Any] {
     let entries = try mockChatRequestAuditEntries(fileURL: fileURL)
-    let matchingEntries = entries.filter { $0["session_id"] as? String == sessionID }
+    let matchingEntries = entries.filter { entry in
+        guard entry["session_id"] as? String == sessionID else { return false }
+        return generationID == nil || entry["generation_id"] as? String == generationID
+    }
     guard let entry = matchingEntries.last else {
-        throw SmokeFailure.message("\(context) did not record a mock backend request for \(sessionID): \(entries)")
+        let expectedGeneration = generationID.map { " generation \($0)" } ?? ""
+        throw SmokeFailure.message(
+            "\(context) did not record a mock backend request for \(sessionID)\(expectedGeneration): \(entries)"
+        )
     }
     return entry
 }
@@ -5485,16 +5492,25 @@ func requiredAuditEntry(
 func mockChatRequestAuditMessages(
     fileURL: URL,
     sessionID: String,
+    generationID: String? = nil,
     context: String
 ) throws -> [[String: Any]] {
-    let entry = try mockChatRequestAuditEntry(fileURL: fileURL, sessionID: sessionID, context: context)
+    let entry = try mockChatRequestAuditEntry(
+        fileURL: fileURL,
+        sessionID: sessionID,
+        generationID: generationID,
+        context: context
+    )
     guard let messages = entry["messages"] as? [[String: Any]] else {
         throw SmokeFailure.message("\(context) mock backend request audit entry had no messages array: \(entry)")
     }
     return messages
 }
 
-func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
+func runAuthenticatedTitleAndSessionLifecycleChecks(
+    client: TCPClient,
+    chatRequestAuditFile: URL
+) throws {
     print("Checking authenticated chat title and session lifecycle...")
     try client.send(envelope(
         "chat.send",
@@ -5669,8 +5685,27 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
     try requireType(titleResponse, "chat.title.result", context: "chat.title.request")
     try requireRequestID(titleResponse, "smoke-title", context: "chat.title.request")
     let titlePayload = try payload(titleResponse, context: "chat.title.request")
-    guard titlePayload["title"] as? String == "Mock streaming response." else {
+    guard titlePayload["title"] as? String == "Runtime-owned smoke title" else {
         throw SmokeFailure.message("chat.title.request returned an unexpected title: \(titleResponse)")
+    }
+    let titleAuditEntries = try mockChatRequestAuditEntries(fileURL: chatRequestAuditFile)
+    guard let titleAuditEntry = titleAuditEntries.last(where: { entry in
+        guard entry["session_id"] as? String == smokeLifecycleSessionID,
+              let generationID = entry["generation_id"] as? String else {
+            return false
+        }
+        return generationID.hasPrefix("chat-title-generation-")
+    }),
+          let titleAuditMessages = titleAuditEntry["messages"] as? [[String: Any]],
+          titleAuditMessages.contains(where: { message in
+              message["role"] as? String == "system"
+                  && (message["content"] as? String)?.contains(
+                      "Generate a concise title for the supplied chat transcript"
+                  ) == true
+          }) else {
+        throw SmokeFailure.message(
+            "chat.title.request did not record a private title generation with the pinned prompt: \(titleAuditEntries)"
+        )
     }
 
     let invalidRenameTitleResponse = try sendAndRead(
@@ -7379,6 +7414,7 @@ func runAuthenticatedHistoryAndMemoryChecks(
     let summaryAuditMessages = try mockChatRequestAuditMessages(
         fileURL: chatRequestAuditFile,
         sessionID: smokeSessionID,
+        generationID: "smoke-memory-summary-generate-memory-summary",
         context: "memory.summary.draft.generate source isolation"
     )
     let summaryAuditContents = summaryAuditMessages.compactMap { $0["content"] as? String }
@@ -9675,6 +9711,7 @@ func runMockBackendChecks(
     let trustedSourceBackendMessages = try mockChatRequestAuditMessages(
         fileURL: chatRequestAuditFile,
         sessionID: trustedSourceChatSessionID,
+        generationID: "smoke-trusted-source-chat-context",
         context: "trusted-source chat context"
     )
     let trustedSourceBackendDescription = String(describing: trustedSourceBackendMessages)
@@ -9772,6 +9809,7 @@ func runMockBackendChecks(
     let researchBackendMessages = try mockChatRequestAuditMessages(
         fileURL: chatRequestAuditFile,
         sessionID: researchSessionID,
+        generationID: researchCreateRequestID,
         context: "research brief backend request"
     )
     let researchBackendDescription = String(describing: researchBackendMessages)
@@ -10282,48 +10320,20 @@ func runMockBackendChecks(
         requestID: "smoke-pull",
         payload: ["model": pulledModel]
     )
-    try assertNoBackendLeak(pull, context: "models.pull")
-    try requireType(pull, "models.pull", context: "models.pull")
-    let pullPayload = try payload(pull, context: "models.pull")
-    guard pullPayload["model"] as? String == pulledModel,
-          pullPayload["installed"] as? Bool == true
-    else {
-        throw SmokeFailure.message("models.pull did not report installed model: \(pull)")
-    }
+    try requireErrorCode(
+        pull,
+        "model_pull_approval_required",
+        requestID: "smoke-pull",
+        context: "models.pull host approval barrier"
+    )
+    try assertNoBackendLeak(pull, context: "models.pull host approval barrier")
 
     let modelsAfterPull = try sendAndRead(client, type: "models.list", requestID: "smoke-models-after-pull")
     try requireType(modelsAfterPull, "models.list", context: "models.list after pull")
     let modelListAfterPull = try requireModelList(modelsAfterPull, context: "models.list after pull")
     try requireAuthenticatedModelListBoundary(modelListAfterPull, context: "authenticated models.list after pull")
-    guard modelListAfterPull.contains(where: {
-        $0["id"] as? String == pulledModel
-            && $0["installed"] as? Bool == true
-            && $0["source"] as? String == "local"
-    }) else {
-        throw SmokeFailure.message("models.list did not include pulled model: \(modelsAfterPull)")
-    }
-
-    print("Checking chat.send with pulled model...")
-    try client.send(envelope(
-        "chat.send",
-        requestID: "smoke-chat-pulled-model",
-        payload: [
-            "session_id": smokeSessionID,
-            "model": smokePulledModelID,
-            "messages": [
-                ["role": "user", "content": smokePulledModelPrompt]
-            ]
-        ]
-    ))
-    let pulledModelStreamedText = try readStoppedChatStream(
-        client: client,
-        requestID: "smoke-chat-pulled-model",
-        context: "smoke-chat-pulled-model"
-    )
-    guard pulledModelStreamedText.contains("Mock streaming response.") else {
-        throw SmokeFailure.message(
-            "pulled model chat stream did not contain mock response: \(pulledModelStreamedText)"
-        )
+    guard !modelListAfterPull.contains(where: { $0["id"] as? String == pulledModel }) else {
+        throw SmokeFailure.message("models.pull approval barrier mutated the model catalog: \(modelsAfterPull)")
     }
 
     let chatBlankSessionIDResponse = try sendAndRead(
@@ -10385,6 +10395,18 @@ func runMockBackendChecks(
     )
 
     let invalidChatSendAllowedFieldPayloads: [(requestID: String, payload: [String: Any], context: String)] = [
+        (
+            "smoke-chat-prompt-skill-id-reserved",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "prompt_skill_id": "research_brief_v1",
+                "messages": [
+                    ["role": "user", "content": "Reserved prompt skill field must fail closed."]
+                ] as [[String: Any]]
+            ],
+            "chat.send reserved prompt_skill_id"
+        ),
         (
             "smoke-chat-invalid-role-value",
             [
@@ -10694,7 +10716,10 @@ func runMockBackendChecks(
         chatRequestAuditFile: chatRequestAuditFile,
         embeddingRequestAuditFile: embeddingRequestAuditFile
     )
-    try runAuthenticatedTitleAndSessionLifecycleChecks(client: client)
+    try runAuthenticatedTitleAndSessionLifecycleChecks(
+        client: client,
+        chatRequestAuditFile: chatRequestAuditFile
+    )
 
     print("OK: authenticated mock E2E smoke passed on local diagnostic port \(port).")
 }
@@ -11096,6 +11121,20 @@ func main() throws {
 
     print("Building RuntimeDevServer for \(options.backendMode.name) smoke over \(options.transportMode.name)...")
     _ = try runAndCapture(["swift", "build", "--product", "RuntimeDevServer"])
+    if case .mock = options.backendMode {
+        print("Checking RuntimeDevServer zero-delay mock task registry...")
+        let runtimeBinary = "\(try runAndCapture(["swift", "build", "--show-bin-path"]))/RuntimeDevServer"
+        let selfTestOutput = try runAndCapture([
+            runtimeBinary,
+            "--dev-mock-zero-delay-registry-self-test",
+        ])
+        guard selfTestOutput == "Dev mock zero-delay registry self-test passed." else {
+            throw SmokeFailure.message(
+                "RuntimeDevServer zero-delay mock task registry returned unexpected output: \(selfTestOutput)"
+            )
+        }
+        print(selfTestOutput)
+    }
 
     let port = try freePort()
     var relayConfiguration: RelayConfiguration?

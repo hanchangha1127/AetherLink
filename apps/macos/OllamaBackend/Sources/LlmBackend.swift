@@ -349,11 +349,10 @@ public struct EmbeddingResult: Equatable, Sendable {
     }
 }
 
-public protocol LlmBackend: Sendable {
+public protocol RuntimeModelServingBackend: Sendable {
     var provider: ModelProvider { get }
     func healthCheck() async -> BackendStatus
     func listModels() async throws -> [ModelInfo]
-    func pullModel(name: String) async throws -> ModelPullResult
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error>
     func embed(request: EmbeddingRequest) async throws -> EmbeddingResult
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult
@@ -361,16 +360,13 @@ public protocol LlmBackend: Sendable {
     func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource?
 }
 
-public extension LlmBackend {
-    func pullModel(name: String) async throws -> ModelPullResult {
-        throw BackendError(
-            provider: provider,
-            code: "unsupported_operation",
-            message: "\(provider.displayName) does not support runtime-managed model downloads.",
-            retryable: false
-        )
-    }
+public protocol ModelPullDispatching: Sendable {
+    func pullModel(name: String) async throws -> ModelPullResult
+}
 
+public protocol LlmBackend: RuntimeModelServingBackend, ModelPullDispatching {}
+
+public extension RuntimeModelServingBackend {
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
         .unsupported(provider: provider, modelID: providerModelID)
     }
@@ -387,4 +383,16 @@ public extension LlmBackend {
     func takeProviderUsageSource(generationID: String) -> ChatProviderUsageSource? {
         nil
     }
+}
+
+public extension LlmBackend {
+    func pullModel(name: String) async throws -> ModelPullResult {
+        throw BackendError(
+            provider: provider,
+            code: "unsupported_operation",
+            message: "\(provider.displayName) does not support runtime-managed model downloads.",
+            retryable: false
+        )
+    }
+
 }

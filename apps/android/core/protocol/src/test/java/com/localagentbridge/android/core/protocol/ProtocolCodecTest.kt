@@ -375,6 +375,7 @@ class ProtocolCodecTest {
             "no_models",
             "model_not_found",
             "model_not_installed",
+            "model_pull_approval_required",
             "generation_not_found",
             "generation_cancelled",
             "route_refresh_unavailable",
@@ -394,6 +395,8 @@ class ProtocolCodecTest {
             "trusted_source_review_expired",
             "trusted_source_review_stale",
             "trusted_source_not_found",
+            "research_notebook_store_unavailable",
+            "runtime_prompt_skill_unavailable",
             "memory_store_unavailable",
             "memory_summary_draft_unavailable",
             "memory_summary_draft_stale",
@@ -3778,6 +3781,11 @@ class ProtocolCodecTest {
         val invalidModelPullRequests = listOf(
             """{"model":""}""" to "model",
             """{"model":"   "}""" to "model",
+            """{"model":" gemma3"}""" to "model",
+            """{"model":"gemma3 "}""" to "model",
+            """{"model":"gemma\n3"}""" to "model",
+            """{"model":"ollama:모델"}""" to "model",
+            """{"model":"${"a".repeat(257)}"}""" to "model",
         )
         val invalidChatCancelRequests = listOf(
             """{"target_request_id":""}""" to "target_request_id",
@@ -3794,6 +3802,12 @@ class ProtocolCodecTest {
                 error.message.orEmpty().contains(expectedField),
             )
         }
+        assertEquals(
+            "a".repeat(256),
+            Json.decodeFromString<ModelPullPayload>(
+                """{"model":"${"a".repeat(256)}"}""",
+            ).model,
+        )
         invalidChatCancelRequests.forEach { (json, expectedField) ->
             val error = assertThrows(Exception::class.java) {
                 Json.decodeFromString<ChatCancelPayload>(json)
@@ -4981,7 +4995,7 @@ class ProtocolCodecTest {
     }
 
     @Test
-    fun memorySummaryDraftApprovePayloadUsesProtocolFieldNames() {
+    fun memorySummaryDraftApprovePayloadUsesProtocolFieldNamesAndAcceptsGeneratedSource() {
         val protocolJson = Json { encodeDefaults = true }
         val request = MemorySummaryDraftApprovePayload(
             draftId = "long-inactivity:session-1:1000:6",
@@ -5002,7 +5016,7 @@ class ProtocolCodecTest {
                 source = MemoryEntrySourcePayload(
                     kind = "long_inactivity_summary_draft",
                     draftId = "long-inactivity:session-1:1000:6",
-                    summaryMethod = "deterministic_preview",
+                    summaryMethod = "llm_summary_v1",
                     session = MemorySummaryDraftSessionPayload(
                         sessionId = "session-1",
                         title = "Runtime notes",
@@ -5051,6 +5065,7 @@ class ProtocolCodecTest {
             "visible messages 1-6 of 6",
             decoded.entry.source?.sourceRange,
         )
+        assertEquals("llm_summary_v1", decoded.entry.source?.summaryMethod)
         assertEquals("memory-summary:long-inactivity:session-1:1000:6", decoded.entry.id)
     }
 

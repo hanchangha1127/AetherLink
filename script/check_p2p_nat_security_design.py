@@ -50,7 +50,7 @@ PHASE_A_STATIC_EVIDENCE_SHA256 = {
     COMPILE_ONLY_VALIDATOR_PATH: "2fd88bf6aa418920cb13f244215ce91a97f135a94c6a9c79d3658b62e3d570eb",
     ROOT / "script/test_p2p_nat_libjuice_compile_only.py": "df9dfd78cd2b35274d5fe5d08c4114d091fd27db75f5856794e3cf215b134c13",
 }
-EVIDENCE_COLLECTION_SHA256 = "12aa3324e55bb442ed3ce4fd5f2e5724483c6e2408750a9550b0e45e2d8c368a"
+EVIDENCE_COLLECTION_SHA256 = "4409296330b9182128927c1c05116590fe5556e453fbacc4df6f6a9a0e25b74a"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",

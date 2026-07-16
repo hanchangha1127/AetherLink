@@ -58,6 +58,82 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testModelPullApprovalPanelRendersPendingReviewAcrossLanguagesAndAppearances() throws {
+        let requestedAt = Date(timeIntervalSince1970: 1_782_000_000)
+        let review = CompanionPendingModelPullReview(
+            operationID: "00000000-0000-0000-0000-000000000001",
+            model: "ollama:very-long-runtime-host-model-name-with-context-and-quantization:latest",
+            provider: .ollama,
+            requestingDeviceName: "جهاز-" + String(repeating: "장치👨‍👩‍👧‍👦", count: 16),
+            requestingDeviceKeyFingerprint: "D4:14:AF:87:F9:9D",
+            requestedAt: requestedAt,
+            expiresAt: requestedAt.addingTimeInterval(300)
+        )
+        XCTAssertGreaterThan(review.requestingDeviceName.utf8.count, 500)
+        XCTAssertLessThanOrEqual(review.requestingDeviceName.utf8.count, 512)
+        let events = [
+            RuntimeModelPullAuditSummary(
+                id: "audit-1",
+                operationID: review.operationID,
+                event: "dispatch_reserved",
+                provider: .ollama,
+                occurredAt: requestedAt
+            ),
+            RuntimeModelPullAuditSummary(
+                id: "audit-2",
+                operationID: review.operationID,
+                event: "result_suppressed",
+                provider: .ollama,
+                occurredAt: requestedAt.addingTimeInterval(1)
+            ),
+        ]
+
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try withStoredPreferences(language: language, appearance: appearance) {
+                    let longestErrorKey = try XCTUnwrap(
+                        RuntimeModelPullApprovalBrokerError.allCases
+                            .map(\.localizationKey)
+                            .max {
+                                localizedModelPullApprovalError($0).count
+                                    < localizedModelPullApprovalError($1).count
+                            }
+                    )
+                    let panel = ModelPullApprovalPanel(
+                        model: renderSmokeModel(),
+                        previewReviews: [review],
+                        previewAuditEvents: events,
+                        previewErrorLocalizationKey: longestErrorKey
+                    )
+                    .padding(16)
+                    .frame(width: compactDetailSize.width, alignment: .topLeading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                    .environment(\.dynamicTypeSize, .accessibility3)
+                    .preferredColorScheme(appearance.preferredColorScheme)
+                    let idealSize = fittingSize(panel)
+                    XCTAssertLessThanOrEqual(
+                        idealSize.height,
+                        compactDetailSize.height,
+                        "ModelPullApprovalPanel height \(language.rawValue) \(appearance.rawValue)"
+                    )
+                    let bitmap = try render(
+                        panel.frame(
+                            width: compactDetailSize.width,
+                            height: compactDetailSize.height,
+                            alignment: .topLeading
+                        ),
+                        size: compactDetailSize
+                    )
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "ModelPullApprovalPanel \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
     func testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances() throws {
         for language in AetherLinkAppLanguage.allCases {
             for appearance in AetherLinkAppAppearance.pickerOptions {
@@ -576,6 +652,12 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         return bitmap
     }
 
+    private func fittingSize<Content: View>(_ view: Content) -> CGSize {
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.layoutSubtreeIfNeeded()
+        return hostingView.fittingSize
+    }
+
     private func assertMeaningfulRender(
         _ bitmap: NSBitmapImageRep,
         label: String,
@@ -676,6 +758,7 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
             userDefaults: isolatedDefaults(),
             trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),
             runtimeDocumentIndexStore: runtimeDocumentIndexStore ?? isolatedRuntimeDocumentIndexStore(),
+            runtimeModelPullApprovalPersistence: isolatedRuntimeModelPullApprovalStore(),
             runtimeRouteHostProvider: { "127.0.0.1" }
         )
     }
@@ -691,6 +774,14 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
             .appendingPathComponent("aetherlink-render-document-index-\(UUID().uuidString)", isDirectory: true)
         return SQLiteRuntimeDocumentIndexStore(
             databaseURL: directoryURL.appendingPathComponent("runtime-document-index.sqlite")
+        )
+    }
+
+    private func isolatedRuntimeModelPullApprovalStore() -> SQLiteRuntimeModelPullApprovalStore {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-render-model-pull-\(UUID().uuidString)", isDirectory: true)
+        return SQLiteRuntimeModelPullApprovalStore(
+            databaseURL: directoryURL.appendingPathComponent("runtime-model-pull-approvals.sqlite")
         )
     }
 

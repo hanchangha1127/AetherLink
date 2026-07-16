@@ -334,6 +334,7 @@
     <string name="selected_model">選択中のモデル</string>
     <string name="drawer_runtime_summary_accessibility">ランタイム %1$s。状態: %2$s。選択中のモデル: %3$s。</string>
     <string name="drawer_runtime_summary_accessibility_with_detail">ランタイム %1$s。状態: %2$s。選択中のモデル: %3$s。%4$s</string>
+    <string name="drawer_runtime_summary_accessibility_with_model_summary">ランタイム %1$s。状態: %2$s。%3$s</string>
     <string name="selection_state_selected">選択済み</string>
     <string name="model_unavailable">モデルは利用できません</string>
     <string name="selected_model_unavailable">選択中のモデルはランタイム一覧にありません。更新するか別のモデルを選択してください。</string>
@@ -369,6 +370,7 @@
     <string name="model_source_value">ソース: %1$s</string>
     <string name="model_size_value">サイズ: %1$s</string>
     <string name="install_model">モデルをインストール</string>
+    <string name="model_install_host_approval_required">ランタイムの承認が必要</string>
     <string name="installing_model">インストール中...</string>
     <string name="model_picker_empty_state_summary">%1$s。%2$s</string>
     <string name="no_models_connected_title">読み込まれたモデルはありません</string>
@@ -784,6 +786,7 @@
     <string name="error_invalid_payload">AetherLink Runtime が無効なデータを送信しました。</string>
     <string name="error_install_model_first">チャットする前にこのモデルをインストールしてください。</string>
     <string name="error_model_install_failed">AetherLink Runtime はモデルをインストールできませんでした。</string>
+    <string name="error_model_install_host_approval_required">モデルのダウンロードにはランタイムホストでの承認が必要で、このクライアントからは利用できません。</string>
     <string name="error_attachment_too_large">この添付ファイルは大きすぎます。</string>
     <string name="error_attachment_read_failed">この添付ファイルを読み取れませんでした。</string>
     <string name="error_attachment_limit_reached">一度に添付できるファイルは最大 4 個です。</string>

@@ -703,6 +703,10 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var pairingSession: PairingSession?
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
+    @Published public private(set) var pendingModelPullReviews: [CompanionPendingModelPullReview] = []
+    @Published public private(set) var modelPullAuditEvents: [RuntimeModelPullAuditSummary] = []
+    @Published public private(set) var modelPullApprovalErrorLocalizationKey: String?
+    @Published public private(set) var isModelPullDecisionInFlight = false
     @Published public private(set) var modelResidency: CompanionModelResidencyStatus = .inactive
     @Published public private(set) var runtimeDataSummary = CompanionRuntimeDataSummary()
     @Published public private(set) var runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus()
@@ -721,6 +725,7 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var logs: [String] = []
 
     private let backend: any LlmBackend
+    private var runtimeModelPullApprovalBroker: RuntimeModelPullApprovalBroker!
     private var runtimeRouter: LocalRuntimeMessageRouter!
     private let runtimeChatEventStore: any RuntimeChatEventStore
     private let runtimeMemoryStore: any RuntimeMemoryStore
@@ -829,6 +834,9 @@ public final class CompanionAppModel: ObservableObject {
         runtimeChatCompactionSummaryCache: any RuntimeChatCompactionSummaryCaching = SQLiteRuntimeChatCompactionSummaryCache(),
         runtimeMemoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
         runtimeDocumentIndexStore: SQLiteRuntimeDocumentIndexStore = SQLiteRuntimeDocumentIndexStore(),
+        runtimePromptSkillRegistry: RuntimePromptSkillRegistry = .bundled,
+        runtimePermissionPolicyRegistry: RuntimePermissionPolicyRegistry = .bundled,
+        runtimeModelPullApprovalPersistence: any RuntimeModelPullBrokerPersistence = SQLiteRuntimeModelPullApprovalStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil,
         allowsAuthenticatedRouteRefresh: Bool = false
     ) {
@@ -891,6 +899,17 @@ public final class CompanionAppModel: ObservableObject {
             status: .stopped,
             endpoint: relaySettings.endpointLabel
         )
+        self.runtimeModelPullApprovalBroker = RuntimeModelPullApprovalBroker(
+            dispatcher: backend,
+            persistence: runtimeModelPullApprovalPersistence,
+            permissionPolicyRegistry: runtimePermissionPolicyRegistry,
+            onStateChange: { [weak self] in
+                Task { @MainActor in
+                    await self?.refreshModelPullApprovals()
+                }
+            }
+        )
+        let runtimeModelPullApprovalBroker = self.runtimeModelPullApprovalBroker!
         self.runtimeRouter = LocalRuntimeMessageRouter(
             backend: backend,
             pairingCoordinator: pairingCoordinator,
@@ -899,6 +918,9 @@ public final class CompanionAppModel: ObservableObject {
             chatCompactionSummaryCache: runtimeChatCompactionSummaryCache,
             memoryStore: runtimeMemoryStore,
             documentIndexStore: runtimeDocumentIndexStore,
+            promptSkillRegistry: runtimePromptSkillRegistry,
+            permissionPolicyRegistry: runtimePermissionPolicyRegistry,
+            modelPullApprovalBroker: runtimeModelPullApprovalBroker,
             routeRefresher: allowsAuthenticatedRouteRefresh ? self : nil,
             runtimeChallengeSigner: runtimeIdentity.signer,
             onPairingAccepted: { [weak self] device in
@@ -925,6 +947,22 @@ public final class CompanionAppModel: ObservableObject {
             log(runtimeIdentityWarning)
         }
         refreshRuntimeDataSummary()
+        Task { [weak self] in
+            var recoveryErrorLocalizationKey: String?
+            do {
+                try await runtimeModelPullApprovalBroker.recoverUnfinished()
+            } catch {
+                recoveryErrorLocalizationKey = RuntimeModelPullApprovalBrokerError
+                    .storageUnavailable
+                    .localizationKey
+            }
+            await self?.refreshModelPullApprovals()
+            if let recoveryErrorLocalizationKey {
+                await MainActor.run {
+                    self?.modelPullApprovalErrorLocalizationKey = recoveryErrorLocalizationKey
+                }
+            }
+        }
     }
 
     deinit {
@@ -1373,6 +1411,56 @@ public final class CompanionAppModel: ObservableObject {
         } catch {
             log("Model list failed: \(error.localizedDescription)")
         }
+    }
+
+    public func refreshModelPullApprovals() async {
+        pendingModelPullReviews = await runtimeModelPullApprovalBroker.pendingReviews()
+        do {
+            modelPullAuditEvents = try await runtimeModelPullApprovalBroker.recentAuditEvents()
+            modelPullApprovalErrorLocalizationKey = nil
+        } catch {
+            modelPullApprovalErrorLocalizationKey = modelPullApprovalLocalizationKey(for: error)
+        }
+    }
+
+    public func approveModelPull(operationID: String) async {
+        guard !isModelPullDecisionInFlight else { return }
+        isModelPullDecisionInFlight = true
+        modelPullApprovalErrorLocalizationKey = nil
+        defer { isModelPullDecisionInFlight = false }
+        var decisionErrorLocalizationKey: String?
+        do {
+            try await runtimeModelPullApprovalBroker.approve(operationID: operationID)
+            await loadModels()
+        } catch {
+            decisionErrorLocalizationKey = modelPullApprovalLocalizationKey(for: error)
+        }
+        await refreshModelPullApprovals()
+        if let decisionErrorLocalizationKey {
+            modelPullApprovalErrorLocalizationKey = decisionErrorLocalizationKey
+        }
+    }
+
+    public func dismissModelPull(operationID: String) async {
+        guard !isModelPullDecisionInFlight else { return }
+        isModelPullDecisionInFlight = true
+        modelPullApprovalErrorLocalizationKey = nil
+        defer { isModelPullDecisionInFlight = false }
+        var decisionErrorLocalizationKey: String?
+        do {
+            try await runtimeModelPullApprovalBroker.dismiss(operationID: operationID)
+        } catch {
+            decisionErrorLocalizationKey = modelPullApprovalLocalizationKey(for: error)
+        }
+        await refreshModelPullApprovals()
+        if let decisionErrorLocalizationKey {
+            modelPullApprovalErrorLocalizationKey = decisionErrorLocalizationKey
+        }
+    }
+
+    private func modelPullApprovalLocalizationKey(for error: Error) -> String {
+        (error as? RuntimeModelPullApprovalBrokerError)?.localizationKey
+            ?? RuntimeModelPullApprovalBrokerError.storageUnavailable.localizationKey
     }
 
     public func refreshModelResidencyStatus() {

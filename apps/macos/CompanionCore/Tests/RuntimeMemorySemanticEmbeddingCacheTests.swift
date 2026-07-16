@@ -156,6 +156,7 @@ final class RuntimeMemorySemanticEmbeddingCacheTests: XCTestCase {
                 sourceMessageCount: 2,
                 content: "This still requires review.",
                 modelID: "ollama:test",
+                promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
                 generatedAt: Date(timeIntervalSince1970: 10)
             )
         )

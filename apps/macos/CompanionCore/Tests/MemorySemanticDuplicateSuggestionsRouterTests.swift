@@ -1329,6 +1329,12 @@ private final class SemanticDuplicateRecordingSink: RuntimeMessageSink, @uncheck
     private let lock = NSLock()
     private var recordedMessages: [ProtocolEnvelope] = []
 
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
+
     func send(_ envelope: ProtocolEnvelope) {
         lock.withLock { recordedMessages.append(envelope) }
     }

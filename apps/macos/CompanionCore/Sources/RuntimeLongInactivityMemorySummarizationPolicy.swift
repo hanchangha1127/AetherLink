@@ -247,6 +247,21 @@ public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable
         composedDraft.generatedModelID = generatedDraft.modelID
         return composedDraft
     }
+
+    public func hasSameMemorySummarySource(
+        as other: RuntimeLongInactivityMemorySummarizationDraft
+    ) -> Bool {
+        id == other.id &&
+            candidate.sessionID == other.candidate.sessionID &&
+            candidate.title == other.candidate.title &&
+            candidate.model == other.candidate.model &&
+            candidate.lastActivityAt == other.candidate.lastActivityAt &&
+            candidate.messageCount == other.candidate.messageCount &&
+            sourceMessageCount == other.sourceMessageCount &&
+            sourceRangeDescription == other.sourceRangeDescription &&
+            sourcePointers == other.sourcePointers &&
+            summaryPreview == other.summaryPreview
+    }
 }
 
 public extension RuntimeLongInactivityMemorySummarizationPolicy {

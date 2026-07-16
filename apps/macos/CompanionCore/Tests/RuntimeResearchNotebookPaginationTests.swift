@@ -280,6 +280,7 @@ private func makeItem(_ index: Int) -> RuntimeResearchNotebookSnapshotItem {
             backingSessionID: "session-\(index)",
             title: "Notebook \(index)",
             model: "llama3.1:8b",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [],
             lifecycle: .active,
             createdAt: timestamp,

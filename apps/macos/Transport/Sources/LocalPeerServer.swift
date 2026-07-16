@@ -12,6 +12,10 @@ public protocol RuntimeMessageSink: Sendable {
     var connectionID: UUID { get }
     var transportSecurityContext: TransportSecurityContext? { get }
 
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result
+
     func send(_ envelope: ProtocolEnvelope)
     func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool
     func close()
@@ -185,6 +189,12 @@ public final class LocalPeerConnection: RuntimeMessageSink, @unchecked Sendable 
     public let id = UUID()
     public var connectionID: UUID { id }
     public var transportSecurityContext: TransportSecurityContext? { nil }
+
+    public func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
 
     private let connection: NWConnection
     private let codec: ProtocolCodec

@@ -1116,6 +1116,12 @@ private final class DisconnectRecorder: @unchecked Sendable {
 private final class RecordingMessageSink: RuntimeMessageSink, @unchecked Sendable {
     let connectionID = UUID()
 
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
+
     func send(_ envelope: ProtocolEnvelope) {}
     func close() {}
 }

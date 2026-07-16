@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
 EVIDENCE_COLLECTION_SHA256 = (
-    "f9f0a1573bd091abf4ff1afe6141daeacdb8abdbf3dfc89cbf149fb06de76dec"
+    "5f930713405d195a18cc5239cbe9ff505a671866864ca45d52a62f330c1e19ce"
 )
 EXPECTED_EVIDENCE_PATHS = {
     "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",

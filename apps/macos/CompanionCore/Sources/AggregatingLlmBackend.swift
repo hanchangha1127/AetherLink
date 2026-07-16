@@ -306,9 +306,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private func resolveChatRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
         let models = try await listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(model) {
-            if let match = Self.matchingInstalledModel(
-                requestedModel: resolved.modelID,
-                requestedProvider: resolved.provider,
+            if let match = Self.matchingInstalledProviderModelID(
+                resolved.modelID,
+                provider: resolved.provider,
                 models: models
             ) {
                 return (match.provider, match.providerModelID)
@@ -326,9 +326,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private func resolveEmbeddingRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
         let models = try await listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(model),
-           let match = Self.matchingInstalledModel(
-               requestedModel: resolved.modelID,
-               requestedProvider: resolved.provider,
+           let match = Self.matchingInstalledProviderModelID(
+               resolved.modelID,
+               provider: resolved.provider,
                requiredKind: .embedding,
                models: models
            ) {
@@ -550,6 +550,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             guard candidate.installed else { return false }
             guard candidate.source == .local else { return false }
             guard candidate.kind == requiredKind else { return false }
+            guard isValidProviderModelID(candidate.providerModelID) else { return false }
             if let requestedProvider, candidate.provider != requestedProvider {
                 return false
             }
@@ -569,6 +570,28 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                 || canonicalModelName(candidate.name) == requestedCanonical
                 || canonicalModelName(providerModelID) == requestedCanonical
         }
+    }
+
+    private static func matchingInstalledProviderModelID(
+        _ providerModelID: String,
+        provider: ModelProvider,
+        requiredKind: ModelKind = .chat,
+        models: [ModelInfo]
+    ) -> ModelInfo? {
+        models.first { candidate in
+            candidate.installed &&
+                candidate.source == .local &&
+                candidate.kind == requiredKind &&
+                candidate.provider == provider &&
+                isValidProviderModelID(candidate.providerModelID) &&
+                candidate.providerModelID == providerModelID
+        }
+    }
+
+    private static func isValidProviderModelID(_ providerModelID: String) -> Bool {
+        !providerModelID.isEmpty &&
+            providerModelID == providerModelID.trimmingCharacters(in: .whitespacesAndNewlines) &&
+            ModelProvider.splitQualifiedModelID(providerModelID) == nil
     }
 
     private static func modelNotInstalledError(_ model: String, provider: ModelProvider) -> BackendError {

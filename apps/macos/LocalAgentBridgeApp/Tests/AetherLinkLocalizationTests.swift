@@ -5,6 +5,152 @@ import OllamaBackend
 import TrustedDevices
 
 final class AetherLinkLocalizationTests: XCTestCase {
+    func testModelPullApprovalCopyLocalizesAcrossSupportedLanguages() {
+        let expectations: [(String, String, String, String, String)] = [
+            ("en", "Download completed", "Download request cancelled after authentication changed", "Download request cancelled after permission policy changed", "This model download review is no longer available."),
+            ("ko", "다운로드 완료", "인증 변경 후 다운로드 요청 취소됨", "권한 정책 변경 후 다운로드 요청 취소됨", "이 모델 다운로드 검토는 더 이상 사용할 수 없습니다."),
+            ("ja", "ダウンロード完了", "認証変更後にダウンロードのリクエストをキャンセルしました", "権限ポリシー変更後にダウンロードのリクエストをキャンセルしました", "このモデルダウンロード審査は利用できなくなりました。"),
+            ("zh-Hans", "下载完成", "身份验证变更后已取消下载请求", "权限策略变更后已取消下载请求", "此模型下载审核已不可用。"),
+            ("fr", "Téléchargement terminé", "Demande de téléchargement annulée après modification de l’authentification", "Demande de téléchargement annulée après modification de la politique d’autorisation", "Cet examen de téléchargement de modèle n’est plus disponible."),
+        ]
+        let errorExpectations: [String: [String]] = [
+            "en": [
+                "Model download approval is unavailable on this runtime host.",
+                "The runtime host model download review queue is full.",
+                "This model download review is no longer available.",
+                "Another model download decision is already in progress.",
+                "The runtime host could not record the model download decision.",
+                "The requesting device authentication changed before approval.",
+                "The runtime host permission policy changed before approval.",
+            ],
+            "ko": [
+                "이 런타임 호스트에서는 모델 다운로드 승인을 사용할 수 없습니다.",
+                "런타임 호스트의 모델 다운로드 검토 대기열이 가득 찼습니다.",
+                "이 모델 다운로드 검토는 더 이상 사용할 수 없습니다.",
+                "다른 모델 다운로드 결정이 이미 진행 중입니다.",
+                "런타임 호스트에서 모델 다운로드 결정을 기록하지 못했습니다.",
+                "승인 전에 요청 기기의 인증이 변경되었습니다.",
+                "승인 전에 런타임 호스트 권한 정책이 변경되었습니다.",
+            ],
+            "ja": [
+                "このランタイムホストではモデルのダウンロードを承認できません。",
+                "ランタイムホストのモデルダウンロード審査キューがいっぱいです。",
+                "このモデルダウンロード審査は利用できなくなりました。",
+                "別のモデルダウンロードの判断が進行中です。",
+                "ランタイムホストはモデルダウンロードの判断を記録できませんでした。",
+                "承認前にリクエスト元デバイスの認証が変更されました。",
+                "承認前にランタイムホストの権限ポリシーが変更されました。",
+            ],
+            "zh-Hans": [
+                "此运行时主机无法批准模型下载。",
+                "运行时主机的模型下载审核队列已满。",
+                "此模型下载审核已不可用。",
+                "另一个模型下载决定正在处理中。",
+                "运行时主机无法记录模型下载决定。",
+                "请求设备的身份验证在批准前已发生变化。",
+                "运行时主机的权限策略在批准前已发生变化。",
+            ],
+            "fr": [
+                "L’approbation du téléchargement de modèles n’est pas disponible sur cet hôte d’exécution.",
+                "La file d’examen des téléchargements de modèles de l’hôte d’exécution est pleine.",
+                "Cet examen de téléchargement de modèle n’est plus disponible.",
+                "Une autre décision de téléchargement de modèle est déjà en cours.",
+                "L’hôte d’exécution n’a pas pu enregistrer la décision de téléchargement du modèle.",
+                "L’authentification de l’appareil demandeur a changé avant l’approbation.",
+                "La politique d’autorisation de l’hôte d’exécution a changé avant l’approbation.",
+            ],
+        ]
+        XCTAssertEqual(expectations.map(\.0), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        XCTAssertEqual(Set(errorExpectations.keys), Set(AetherLinkAppLanguage.allCases.map(\.rawValue)))
+
+        for (languageTag, success, authenticationChanged, permissionChanged, reviewNotFound) in expectations {
+            withStoredAppLanguage(languageTag) {
+                XCTAssertEqual(localizedModelPullAuditEvent("success"), success, languageTag)
+                XCTAssertEqual(
+                    localizedModelPullAuditEvent("authentication_changed"),
+                    authenticationChanged,
+                    languageTag
+                )
+                XCTAssertEqual(
+                    localizedModelPullAuditEvent("permission_changed"),
+                    permissionChanged,
+                    languageTag
+                )
+                XCTAssertNotEqual(
+                    NSLocalizedString("Approve Download", comment: ""),
+                    "",
+                    languageTag
+                )
+                XCTAssertNotEqual(
+                    NSLocalizedString("I approve this runtime-host model download.", comment: ""),
+                    "",
+                    languageTag
+                )
+                XCTAssertEqual(
+                    localizedModelPullApprovalError(
+                        RuntimeModelPullApprovalBrokerError.reviewNotFound.localizationKey
+                    ),
+                    reviewNotFound,
+                    languageTag
+                )
+                XCTAssertEqual(
+                    RuntimeModelPullApprovalBrokerError.allCases.map {
+                        localizedModelPullApprovalError($0.localizationKey)
+                    },
+                    errorExpectations[languageTag],
+                    languageTag
+                )
+            }
+        }
+    }
+
+    func testModelPullApprovalRequiresExactExplicitConfirmation() {
+        let operationID = "00000000-0000-0000-0000-000000000001"
+
+        XCTAssertFalse(modelPullApprovalIsEnabled(
+            operationID: operationID,
+            confirmedOperationIDs: [],
+            reviewIsDispatching: false,
+            decisionIsInFlight: false
+        ))
+        XCTAssertFalse(modelPullApprovalIsEnabled(
+            operationID: operationID,
+            confirmedOperationIDs: ["00000000-0000-0000-0000-000000000002"],
+            reviewIsDispatching: false,
+            decisionIsInFlight: false
+        ))
+        XCTAssertTrue(modelPullApprovalIsEnabled(
+            operationID: operationID,
+            confirmedOperationIDs: [operationID],
+            reviewIsDispatching: false,
+            decisionIsInFlight: false
+        ))
+        XCTAssertFalse(modelPullApprovalIsEnabled(
+            operationID: operationID,
+            confirmedOperationIDs: [operationID],
+            reviewIsDispatching: true,
+            decisionIsInFlight: false
+        ))
+        XCTAssertFalse(modelPullApprovalIsEnabled(
+            operationID: operationID,
+            confirmedOperationIDs: [operationID],
+            reviewIsDispatching: false,
+            decisionIsInFlight: true
+        ))
+    }
+
+    func testModelPullRequesterUsesHostOwnedBidiIsolationAcrossSupportedLanguages() {
+        let requester = "جهاز Android"
+        for language in AetherLinkAppLanguage.allCases {
+            withStoredAppLanguage(language.rawValue) {
+                let localized = localizedModelPullRequester(requester)
+                XCTAssertTrue(localized.contains("\u{2068}\(requester)\u{2069}"))
+                XCTAssertEqual(localized.unicodeScalars.filter { $0.value == 0x2068 }.count, 1)
+                XCTAssertEqual(localized.unicodeScalars.filter { $0.value == 0x2069 }.count, 1)
+            }
+        }
+    }
+
     func testAppLanguageListStaysLimitedToInitialFiveLanguages() {
         XCTAssertEqual(
             AetherLinkAppLanguage.allCases.map(\.rawValue),

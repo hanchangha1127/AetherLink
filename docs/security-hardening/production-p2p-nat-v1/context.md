@@ -32,7 +32,7 @@ traversal-related namespace.
 - Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `12aa3324e55bb442ed3ce4fd5f2e5724483c6e2408750a9550b0e45e2d8c368a`
+  `4409296330b9182128927c1c05116590fe5556e453fbacc4df6f6a9a0e25b74a`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.

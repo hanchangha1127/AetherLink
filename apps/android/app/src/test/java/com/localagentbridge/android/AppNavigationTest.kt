@@ -1234,7 +1234,7 @@ class AppNavigationTest {
     }
 
     @Test
-    fun chatModelMenuEnablesLocalChatModelsSoUninstalledModelsCanRequestInstall() {
+    fun chatModelMenuEnablesOnlyInstalledLocalChatModels() {
         val installedModel = RuntimeModel(
             id = "chat-1",
             name = "Local Chat",
@@ -1264,7 +1264,7 @@ class AppNavigationTest {
 
         assertEquals(true, chatModelMenuItemEnabled(installedModel, installing = false))
         assertEquals(false, chatModelMenuItemEnabled(installedModel, installing = true))
-        assertEquals(true, chatModelMenuItemEnabled(notInstalledModel, installing = false))
+        assertEquals(false, chatModelMenuItemEnabled(notInstalledModel, installing = false))
         assertEquals(false, chatModelMenuItemEnabled(notInstalledModel, installing = true))
         assertEquals(false, chatModelMenuItemEnabled(providerManagedModel, installing = false))
         assertEquals(false, chatModelMenuItemEnabled(unknownSourceModel, installing = false))

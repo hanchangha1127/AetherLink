@@ -13,6 +13,12 @@ public enum RelayFrameCipherError: Error, Equatable {
     case counterExhausted
 }
 
+public enum StrictJSONDocumentValidator {
+    public static func validate(_ data: Data) throws {
+        try JSONDuplicateKeyValidator.validate(data)
+    }
+}
+
 public struct ProtocolCodec: Sendable {
     public static let maxFrameBytes = 1024 * 1024
 
@@ -43,7 +49,7 @@ public struct ProtocolCodec: Sendable {
     }
 
     public func decodeEnvelope(_ data: Data) throws -> ProtocolEnvelope {
-        try JSONDuplicateKeyValidator.validate(data)
+        try StrictJSONDocumentValidator.validate(data)
         var envelope = try decoder.decode(ProtocolEnvelope.self, from: data)
         if [
             MessageType.memorySemanticDuplicateSuggestionsList,

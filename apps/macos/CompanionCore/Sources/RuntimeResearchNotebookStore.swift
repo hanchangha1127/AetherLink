@@ -68,6 +68,7 @@ public struct RuntimeResearchNotebook: Equatable, Sendable {
     public let backingSessionID: String
     public let title: String
     public let model: String
+    public let promptSkillBinding: RuntimePromptSkillBinding
     public let trustedSourceGrantIDs: [String]
     public let lifecycle: RuntimeResearchNotebookLifecycle
     public let createdAt: Date
@@ -91,6 +92,7 @@ public struct RuntimeResearchNotebook: Equatable, Sendable {
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String],
         lifecycle: RuntimeResearchNotebookLifecycle,
         createdAt: Date,
@@ -101,6 +103,7 @@ public struct RuntimeResearchNotebook: Equatable, Sendable {
         self.backingSessionID = backingSessionID
         self.title = title
         self.model = model
+        self.promptSkillBinding = promptSkillBinding
         self.trustedSourceGrantIDs = trustedSourceGrantIDs
         self.lifecycle = lifecycle
         self.createdAt = createdAt
@@ -146,6 +149,7 @@ public protocol RuntimeResearchNotebookStoring: AnyObject, Sendable {
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String]
     ) throws -> RuntimeResearchNotebook
 
@@ -155,6 +159,7 @@ public protocol RuntimeResearchNotebookStoring: AnyObject, Sendable {
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String],
         coordinatorID: String,
         operationID: String,
@@ -287,6 +292,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String]
     ) throws -> RuntimeResearchNotebook {
         try runtimeResearchNotebookValidateCreateFields(
@@ -295,6 +301,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: trustedSourceGrantIDs
         )
 
@@ -305,6 +312,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
                 backingSessionID: backingSessionID,
                 title: title,
                 model: model,
+                promptSkillBinding: promptSkillBinding,
                 trustedSourceGrantIDs: trustedSourceGrantIDs
             )
         }
@@ -316,6 +324,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String],
         coordinatorID: String,
         operationID: String,
@@ -327,6 +336,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: trustedSourceGrantIDs
         )
         try runtimeResearchNotebookValidateLifecycleIdentity(
@@ -341,6 +351,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
                 backingSessionID: backingSessionID,
                 title: title,
                 model: model,
+                promptSkillBinding: promptSkillBinding,
                 trustedSourceGrantIDs: trustedSourceGrantIDs
             )
             let intent = RuntimeResearchNotebookLifecycleIntent(
@@ -639,6 +650,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
         backingSessionID: String,
         title: String,
         model: String,
+        promptSkillBinding: RuntimePromptSkillBinding,
         trustedSourceGrantIDs: [String]
     ) throws -> RuntimeResearchNotebook {
         guard notebooksByID[notebookID] == nil else {
@@ -662,6 +674,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
             backingSessionID: backingSessionID,
             title: title,
             model: model,
+            promptSkillBinding: promptSkillBinding,
             trustedSourceGrantIDs: trustedSourceGrantIDs,
             lifecycle: .active,
             createdAt: timestamp,
@@ -694,6 +707,7 @@ public final class RuntimeResearchNotebookStore: RuntimeResearchNotebookStoring,
             backingSessionID: current.backingSessionID,
             title: current.title,
             model: current.model,
+            promptSkillBinding: current.promptSkillBinding,
             trustedSourceGrantIDs: current.trustedSourceGrantIDs,
             lifecycle: lifecycle,
             createdAt: current.createdAt,
@@ -772,6 +786,7 @@ func runtimeResearchNotebookValidate(_ notebook: RuntimeResearchNotebook) throws
         backingSessionID: notebook.backingSessionID,
         title: notebook.title,
         model: notebook.model,
+        promptSkillBinding: notebook.promptSkillBinding,
         trustedSourceGrantIDs: notebook.trustedSourceGrantIDs
     )
     guard notebook.createdAt.timeIntervalSince1970.isFinite,
@@ -787,6 +802,7 @@ func runtimeResearchNotebookValidateCreateFields(
     backingSessionID: String,
     title: String,
     model: String,
+    promptSkillBinding: RuntimePromptSkillBinding,
     trustedSourceGrantIDs: [String]
 ) throws {
     try runtimeResearchNotebookValidateID(notebookID)
@@ -804,6 +820,12 @@ func runtimeResearchNotebookValidateCreateFields(
         maximumCharacters: RuntimeResearchNotebook.maximumModelCharacters,
         field: "model"
     )
+    guard (try? RuntimePromptSkillBinding(
+        identifier: promptSkillBinding.identifier,
+        revision: promptSkillBinding.revision
+    )) == promptSkillBinding else {
+        throw RuntimeResearchNotebookStoreError.invalidField("prompt_skill_binding")
+    }
     guard (1...RuntimeResearchNotebook.maximumTrustedSourceGrantCount)
         .contains(trustedSourceGrantIDs.count),
         Set(trustedSourceGrantIDs).count == trustedSourceGrantIDs.count,

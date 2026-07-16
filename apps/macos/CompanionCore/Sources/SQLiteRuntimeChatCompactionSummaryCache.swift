@@ -155,6 +155,7 @@ public struct RuntimeChatCompactionSummaryCacheKey: Equatable, Hashable, Sendabl
     public var compactedTurnCount: Int
     public var providerQualifiedModelID: String
     public var summaryPolicy: String
+    public var promptSkillBinding: RuntimePromptSkillBinding
 
     public init(
         ownerDeviceID: String?,
@@ -167,7 +168,8 @@ public struct RuntimeChatCompactionSummaryCacheKey: Equatable, Hashable, Sendabl
         lineageCanonicalByteCount: Int,
         compactedTurnCount: Int,
         providerQualifiedModelID: String,
-        summaryPolicy: String
+        summaryPolicy: String,
+        promptSkillBinding: RuntimePromptSkillBinding
     ) {
         self.ownerDeviceID = Self.normalizedOwnerDeviceID(ownerDeviceID)
         self.sessionID = sessionID
@@ -180,6 +182,7 @@ public struct RuntimeChatCompactionSummaryCacheKey: Equatable, Hashable, Sendabl
         self.compactedTurnCount = compactedTurnCount
         self.providerQualifiedModelID = providerQualifiedModelID
         self.summaryPolicy = summaryPolicy
+        self.promptSkillBinding = promptSkillBinding
     }
 
     public init(
@@ -188,7 +191,8 @@ public struct RuntimeChatCompactionSummaryCacheKey: Equatable, Hashable, Sendabl
         sourceFingerprint: RuntimeChatCompactionSummarySourceFingerprint,
         lineageFingerprint: RuntimeChatCompactionSummaryLineageFingerprint,
         providerQualifiedModelID: String,
-        summaryPolicy: String
+        summaryPolicy: String,
+        promptSkillBinding: RuntimePromptSkillBinding
     ) {
         self.init(
             ownerDeviceID: ownerDeviceID,
@@ -201,7 +205,8 @@ public struct RuntimeChatCompactionSummaryCacheKey: Equatable, Hashable, Sendabl
             lineageCanonicalByteCount: lineageFingerprint.canonicalByteCount,
             compactedTurnCount: lineageFingerprint.compactedTurnCount,
             providerQualifiedModelID: providerQualifiedModelID,
-            summaryPolicy: summaryPolicy
+            summaryPolicy: summaryPolicy,
+            promptSkillBinding: promptSkillBinding
         )
     }
 
@@ -273,7 +278,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
         "source_fingerprint_digest", "source_utf8_byte_count",
         "lineage_fingerprint_algorithm", "lineage_fingerprint_digest",
         "lineage_canonical_byte_count", "compacted_turn_count",
-        "provider_qualified_model_id", "summary_policy", "summary", "write_order",
+        "provider_qualified_model_id", "summary_policy", "prompt_skill_id",
+        "prompt_skill_revision", "summary", "write_order",
     ]
 
     private let databaseURL: URL
@@ -309,6 +315,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                       AND compacted_turn_count = ?
                       AND provider_qualified_model_id = ?
                       AND summary_policy = ?
+                      AND prompt_skill_id = ?
+                      AND prompt_skill_revision = ?
                     LIMIT 1
                     """
                 )
@@ -353,6 +361,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                       AND session_id = ?
                       AND provider_qualified_model_id = ?
                       AND summary_policy = ?
+                      AND prompt_skill_id = ?
+                      AND prompt_skill_revision = ?
                       AND compacted_turn_count < ?
                     ORDER BY compacted_turn_count DESC, write_order DESC
                     LIMIT ?
@@ -363,8 +373,10 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                 try Self.bindText(key.sessionID, to: statement, at: 2)
                 try Self.bindText(key.providerQualifiedModelID, to: statement, at: 3)
                 try Self.bindText(key.summaryPolicy, to: statement, at: 4)
-                try Self.bindInt(key.compactedTurnCount, to: statement, at: 5)
-                try Self.bindInt(rowLimitPerOwnerSession, to: statement, at: 6)
+                try Self.bindText(key.promptSkillBinding.identifier, to: statement, at: 5)
+                try Self.bindText(key.promptSkillBinding.revision, to: statement, at: 6)
+                try Self.bindInt(key.compactedTurnCount, to: statement, at: 7)
+                try Self.bindInt(rowLimitPerOwnerSession, to: statement, at: 8)
 
                 while true {
                     let result = sqlite3_step(statement)
@@ -397,7 +409,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                         lineageCanonicalByteCount: lineageByteCount,
                         compactedTurnCount: compactedTurnCount,
                         providerQualifiedModelID: key.providerQualifiedModelID,
-                        summaryPolicy: key.summaryPolicy
+                        summaryPolicy: key.summaryPolicy,
+                        promptSkillBinding: key.promptSkillBinding
                     )
                     let candidate = RuntimeChatCompactionSummaryCacheRecord(
                         key: candidateKey,
@@ -479,8 +492,9 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                 source_fingerprint_digest, source_utf8_byte_count,
                 lineage_fingerprint_algorithm, lineage_fingerprint_digest,
                 lineage_canonical_byte_count, compacted_turn_count,
-                provider_qualified_model_id, summary_policy, summary, write_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (
+                provider_qualified_model_id, summary_policy, prompt_skill_id,
+                prompt_skill_revision, summary, write_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (
                 SELECT COALESCE(MAX(write_order), 0) + 1
                 FROM runtime_chat_compaction_summaries
             ))
@@ -489,7 +503,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                 source_fingerprint_digest, source_utf8_byte_count,
                 lineage_fingerprint_algorithm, lineage_fingerprint_digest,
                 lineage_canonical_byte_count, compacted_turn_count,
-                provider_qualified_model_id, summary_policy
+                provider_qualified_model_id, summary_policy, prompt_skill_id,
+                prompt_skill_revision
             ) DO UPDATE SET
                 summary = excluded.summary,
                 write_order = excluded.write_order
@@ -497,7 +512,7 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
         )
         defer { sqlite3_finalize(statement) }
         try Self.bind(record.key, to: statement)
-        try Self.bindText(record.summary, to: statement, at: 12)
+        try Self.bindText(record.summary, to: statement, at: 14)
         try Self.stepDone(statement, database: database)
     }
 
@@ -585,6 +600,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                 compacted_turn_count INTEGER NOT NULL CHECK(compacted_turn_count > 0),
                 provider_qualified_model_id TEXT NOT NULL,
                 summary_policy TEXT NOT NULL,
+                prompt_skill_id TEXT NOT NULL,
+                prompt_skill_revision TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 write_order INTEGER NOT NULL,
                 PRIMARY KEY(
@@ -592,7 +609,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
                     source_fingerprint_digest, source_utf8_byte_count,
                     lineage_fingerprint_algorithm, lineage_fingerprint_digest,
                     lineage_canonical_byte_count, compacted_turn_count,
-                    provider_qualified_model_id, summary_policy
+                    provider_qualified_model_id, summary_policy, prompt_skill_id,
+                    prompt_skill_revision
                 )
             )
             """
@@ -603,7 +621,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
             CREATE INDEX IF NOT EXISTS idx_runtime_chat_compaction_summary_lineage_scope_order
             ON runtime_chat_compaction_summaries(
                 owner_key, session_id, provider_qualified_model_id, summary_policy,
-                compacted_turn_count DESC, write_order DESC
+                prompt_skill_id, prompt_skill_revision, compacted_turn_count DESC,
+                write_order DESC
             )
             """
         )
@@ -668,6 +687,9 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
             maximumUTF8Bytes: maximumSummaryPolicyUTF8Bytes,
             field: "summary policy"
         )
+        guard key.promptSkillBinding.identifier == RuntimePromptSkillRegistry.chatCompactionSummarySkillID else {
+            throw invalid("prompt skill binding")
+        }
     }
 
     private static func validate(
@@ -780,6 +802,8 @@ public final class SQLiteRuntimeChatCompactionSummaryCache: RuntimeChatCompactio
         try bindInt(key.compactedTurnCount, to: statement, at: 9)
         try bindText(key.providerQualifiedModelID, to: statement, at: 10)
         try bindText(key.summaryPolicy, to: statement, at: 11)
+        try bindText(key.promptSkillBinding.identifier, to: statement, at: 12)
+        try bindText(key.promptSkillBinding.revision, to: statement, at: 13)
     }
 
     private static func validText(_ statement: OpaquePointer, at index: Int32) -> String? {

@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "document_type": "aetherlink.runtime-python-sandbox-review",
+  "review_id": "runtime_python_sandbox_v1_recommended",
+  "status": "proposed_not_selected",
+  "evidence_status": "static_review_complete",
+  "execution_status": "not_started",
+  "source_evidence": {
+    "manifest_path": "docs/security-hardening/runtime-python-sandbox-v1/evidence.sha256",
+    "manifest_sha256": "d8e5f9de86d68aa17e6a6959d5c2b7d0b7e7e89e5b287c51e9aa49b40a2dc6aa",
+    "artifact_count": 6,
+    "source_drift": "absent"
+  },
+  "approval_required": {
+    "decision_id": null,
+    "approval_source": null,
+    "selected_recommendation_count": 0,
+    "explicit_user_approval_required": true,
+    "decision_boundary": "separate_versioned_decision_before_any_executable_or_protocol_change",
+    "unresolved_inputs": [
+      "adversarial_escape_test_harness",
+      "approval_execution_lane_and_fairness_contract",
+      "approval_preview_and_audit_contract",
+      "bundled_cpython_supply_chain",
+      "resource_limit_portability",
+      "restricted_language_contract",
+      "sandbox_entitlement_profile",
+      "termination_and_cancellation_contract",
+      "xpc_packaging_and_codesigning"
+    ],
+    "required_before": [
+      "acquire_or_bundle_python_artifact",
+      "activate_python_protocol_namespace",
+      "add_python_permission_action",
+      "create_python_runner_target",
+      "execute_python_source",
+      "grant_child_process_access",
+      "grant_file_access",
+      "grant_network_access",
+      "physical_or_live_validation"
+    ]
+  },
+  "current_behavior": {
+    "python_protocol_namespace_active": false,
+    "python_action_registered": false,
+    "python_runner_target_exists": false,
+    "bundled_python_runtime_exists": false,
+    "source_acquisition_authorized": false,
+    "subprocess_execution_authorized": false,
+    "xpc_service_execution_authorized": false,
+    "filesystem_read_authorized": false,
+    "filesystem_write_authorized": false,
+    "network_authorized": false,
+    "child_process_authorized": false,
+    "dynamic_native_extension_authorized": false,
+    "protocol_change_authorized": false
+  },
+  "isolation_recommendation": {
+    "status": "proposed_not_selected",
+    "recommended_option_id": "app_sandbox_xpc_bundled_python",
+    "options": [
+      {
+        "option_id": "in_process_subinterpreter",
+        "disposition": "rejected",
+        "reason_codes": [
+          "shared_process_memory_and_file_descriptors",
+          "interpreter_failure_can_terminate_runtime_host",
+          "no_os_privilege_separation"
+        ]
+      },
+      {
+        "option_id": "plain_process_system_python",
+        "disposition": "rejected",
+        "reason_codes": [
+          "host_interpreter_identity_not_pinned",
+          "process_boundary_does_not_create_app_sandbox",
+          "ambient_environment_and_filesystem_authority"
+        ]
+      },
+      {
+        "option_id": "app_sandbox_xpc_bundled_python",
+        "disposition": "recommended",
+        "reason_codes": [
+          "independent_minimum_privilege_sandbox",
+          "pinned_signed_interpreter_artifact",
+          "one_shot_failure_and_state_isolation"
+        ]
+      }
+    ],
+    "mandatory_properties": [
+      "xpc_service_has_its_own_app_sandbox_and_no_network_entitlements",
+      "xpc_service_has_no_app_group_keychain_user_selected_file_or_automation_entitlements",
+      "one_shot_xpc_worker_contains_a_pinned_signed_embedded_cpython_artifact_loaded_before_untrusted_source",
+      "xpc_worker_accepts_exactly_one_approved_operation_and_exits_without_launching_an_interpreter_process",
+      "untrusted_worker_and_python_have_zero_child_process_authority",
+      "app_sandbox_is_not_claimed_to_enforce_executable_identity_after_native_compromise",
+      "all_inherited_file_descriptors_except_bounded_ipc_are_closed",
+      "environment_is_rebuilt_from_an_exact_allowlist",
+      "worker_stdin_is_closed_and_request_data_arrives_only_as_bounded_ipc",
+      "writable_helper_state_is_untrusted_and_reset_before_each_operation",
+      "sandbox_or_reset_verification_failure_blocks_execution",
+      "interpreter_starts_with_pinned_equivalent_of_python_I_S_B_before_untrusted_source",
+      "python_audit_hooks_are_observability_only_not_the_security_boundary"
+    ]
+  },
+  "language_profile_recommendation": {
+    "status": "proposed_not_selected",
+    "profile_id": "deterministic_calculation_v1",
+    "recommended_option_id": "restricted_profile_inside_os_sandbox",
+    "options": [
+      {
+        "option_id": "unrestricted_python",
+        "disposition": "rejected"
+      },
+      {
+        "option_id": "static_ast_only_without_os_sandbox",
+        "disposition": "rejected"
+      },
+      {
+        "option_id": "restricted_profile_inside_os_sandbox",
+        "disposition": "recommended"
+      }
+    ],
+    "required_contract": [
+      "source_is_utf8_nfc_and_bound_to_the_approval_digest",
+      "source_rejects_bidi_controls_default_ignorables_and_non_ascii_line_separators_before_digest_and_display",
+      "no_import_exec_eval_compile_dunder_or_dynamic_attribute_surface",
+      "only_versioned_allowlisted_syntax_builtins_and_value_types",
+      "no_clock_random_environment_locale_filesystem_network_process_or_clipboard_input",
+      "locale_timezone_and_hash_seed_are_fixed_by_the_versioned_profile",
+      "input_and_output_are_closed_versioned_json_values",
+      "json_rejects_duplicate_keys_nonfinite_numbers_excess_depth_excess_items_and_bool_number_confusion",
+      "all_worker_output_is_untrusted_data_and_never_log_control_text",
+      "profile_validation_is_defense_in_depth_inside_the_os_sandbox"
+    ]
+  },
+  "resource_recommendation": {
+    "status": "proposed_not_selected",
+    "maximum_source_utf8_bytes": 16384,
+    "maximum_input_json_bytes": 65536,
+    "maximum_result_json_bytes": 65536,
+    "maximum_stdout_bytes": 65536,
+    "maximum_stderr_bytes": 8192,
+    "wall_timeout_milliseconds": 3000,
+    "termination_cleanup_timeout_milliseconds": 1000,
+    "cpu_time_seconds": 2,
+    "maximum_address_space_bytes": 268435456,
+    "maximum_file_size_bytes": 0,
+    "maximum_open_file_descriptors": 32,
+    "maximum_child_processes": 0,
+    "maximum_concurrent_executions": 1,
+    "core_dump_bytes": 0,
+    "hard_kill_grace_milliseconds": 250,
+    "enforcement_requirements": [
+      "hard_limits_are_installed_before_untrusted_source_is_parsed_or_executed",
+      "approval_expiry_execution_deadline_and_cleanup_deadline_are_separate_authorities",
+      "one_host_monotonic_execution_deadline_covers_xpc_handoff_startup_execution_and_result_parse_for_normal_completion",
+      "a_separate_host_monotonic_termination_cleanup_deadline_covers_grace_hard_kill_pipe_drain_xpc_invalidation_reap_and_scratch_cleanup",
+      "stdout_and_stderr_are_drained_under_independent_byte_ceilings",
+      "timeout_cancel_output_overflow_or_limit_failure_invalidates_xpc_terminates_the_exact_audit_token_bound_worker_and_suppresses_output",
+      "every_terminal_audit_except_cleanup_failed_waits_for_pipe_drain_xpc_invalidation_process_reap_and_scratch_cleanup",
+      "unsupported_or_ineffective_platform_limit_blocks_execution",
+      "termination_cleanup_deadline_breach_records_cleanup_failed_blocks_the_python_lane_and_never_publishes",
+      "resource_measurements_never_authorize_a_larger_limit_automatically"
+    ]
+  },
+  "permission_and_audit_recommendation": {
+    "status": "proposed_not_selected",
+    "proposed_action_id": "python_deterministic_calculation_v1",
+    "proposed_protocol_message_id": "python.run",
+    "proposed_effect": "isolated_code_execution",
+    "proposed_decision": "host_explicit_approval_each_run",
+    "proposed_audit": "durable_redacted_required",
+    "standing_grants_authorized": false,
+    "remote_self_approval_authorized": false,
+    "approval_binding_fields": [
+      "action_and_policy_revision",
+      "authenticated_connection_request_and_generation",
+      "trusted_device_key_and_transport_binding",
+      "language_profile_revision",
+      "execution_closure_digest",
+      "xpc_worker_executable_digest",
+      "xpc_worker_designated_requirement_digest",
+      "xpc_worker_entitlement_digest",
+      "interpreter_artifact_digest",
+      "exact_source_digest",
+      "exact_input_digest",
+      "exact_resource_limits"
+    ],
+    "approval_display_requirements": [
+      "exact_source_text_is_visible_only_in_the_ephemeral_host_review",
+      "input_is_presented_as_a_bounded_safe_summary_with_an_exact_digest",
+      "interpreter_worker_identity_profile_and_resource_limits_are_visible_before_confirmation",
+      "source_viewer_uses_line_numbers_visible_whitespace_and_token_aware_unicode_escapes_bound_to_the_exact_source_digest",
+      "approval_display_content_is_never_written_to_the_durable_audit"
+    ],
+    "durable_audit_fields": [
+      "operation_id",
+      "action_id",
+      "policy_revision",
+      "profile_revision",
+      "execution_closure_digest",
+      "worker_identity_digest",
+      "interpreter_artifact_digest",
+      "source_digest",
+      "input_digest",
+      "resource_limit_digest",
+      "result_schema_revision",
+      "canonical_result_digest",
+      "publication_envelope_digest",
+      "event_code",
+      "occurred_at"
+    ],
+    "durable_audit_forbidden_fields": [
+      "source_text",
+      "input_values",
+      "stdout",
+      "stderr",
+      "result_values",
+      "environment_values",
+      "filesystem_paths",
+      "credentials"
+    ],
+    "terminal_event_codes": [
+      "succeeded",
+      "cancelled",
+      "timed_out",
+      "cpu_limit",
+      "memory_limit",
+      "output_limit",
+      "sandbox_violation",
+      "worker_crashed",
+      "invalid_result",
+      "internal_failure",
+      "cleanup_failed",
+      "result_suppressed"
+    ],
+    "lifecycle_requirements": [
+      "durable_reservation_precedes_worker_start",
+      "terminal_audit_precedes_result_publication",
+      "restart_never_retries_reserved_or_outcome_unknown_work",
+      "cancellation_that_wins_before_spawn_prevents_worker_creation",
+      "cancellation_invalidates_xpc_terminates_the_exact_audit_token_bound_worker_instance_and_suppresses_late_results",
+      "authority_or_policy_drift_before_reservation_prevents_execution",
+      "authority_policy_execution_closure_or_worker_identity_drift_after_reservation_terminates_the_exact_worker_and_suppresses_publication",
+      "xpc_audit_token_and_exact_worker_code_identity_are_verified_after_reservation_before_untrusted_request_handoff_and_rechecked_before_result_acceptance",
+      "python_uses_a_separate_single_execution_lane_with_bounded_fairness_and_does_not_reuse_the_model_pull_global_slot_implicitly",
+      "termination_cleanup_deadline_breach_records_cleanup_failed_blocks_the_python_lane_and_never_publishes",
+      "storage_degradation_blocks_new_intake_until_recovery"
+    ]
+  },
+  "validation_recommendation": {
+    "status": "proposed_not_selected",
+    "required_pre_execution_evidence": [
+      "codesign_and_entitlement_identity_is_exact_for_host_service_and_worker",
+      "filesystem_read_write_network_dns_keychain_clipboard_automation_and_process_escape_attempts_fail",
+      "environment_file_descriptor_and_writable_state_inheritance_are_absent",
+      "cpu_memory_wall_output_file_descriptor_process_and_core_limits_fail_closed",
+      "crash_hang_cancel_restart_and_result_race_tests_preserve_exactly_once_audit_semantics",
+      "python_lane_fairness_and_model_pull_non_starvation_are_proven_under_long_running_work",
+      "interpreter_bundle_sbom_signature_digest_and_update_rollback_policy_are_pinned",
+      "embedded_cpython_load_path_and_absence_of_an_interpreter_child_process_are_proven",
+      "post_compromise_exec_attempts_retain_sandbox_resource_and_bounded_untrusted_result_channel_authority_without_claiming_exec_allowlisting",
+      "xpc_audit_token_exact_code_identity_and_worker_instance_drift_cancel_before_result_acceptance",
+      "adversarial_language_profile_mutations_fail_before_worker_start",
+      "reserved_python_protocol_messages_remain_rejected_until_a_separate_protocol_decision"
+    ],
+    "no_device_static_review_is_execution_proof": false,
+    "live_sandbox_escape_matrix_complete": false,
+    "implementation_ready": false
+  },
+  "current_assessment": {
+    "recommended_design_available": true,
+    "design_selection_eligible": true,
+    "implementation_authorized": false,
+    "execution_authorized": false,
+    "protocol_activation_authorized": false,
+    "reason_codes": [
+      "explicit_design_selection_missing",
+      "execution_lane_and_cancellation_not_frozen",
+      "interpreter_supply_chain_unselected",
+      "language_profile_not_frozen",
+      "sandbox_packaging_not_proven",
+      "escape_and_resource_matrix_not_run"
+    ]
+  },
+  "immutability": {
+    "record_state": "closed",
+    "amendment_policy": "supersede_with_new_versioned_review"
+  }
+}

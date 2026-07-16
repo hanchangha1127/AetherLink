@@ -727,12 +727,16 @@ public final class RelayPeerClient: RelayPeerTransport, RuntimeDisconnectReporti
 public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable {
     public let id = UUID()
     public var connectionID: UUID { id }
-    public private(set) var transportSecurityContext: TransportSecurityContext?
+    public var transportSecurityContext: TransportSecurityContext? {
+        transportSecurityContextLock.withLock { storedTransportSecurityContext }
+    }
     var requiresStrictCrypto: Bool { relaySecret != nil }
 
     private let connection: NWConnection
     private let codec: ProtocolCodec
     private let sendQueue: DispatchQueue
+    private let transportSecurityContextLock = NSLock()
+    private var storedTransportSecurityContext: TransportSecurityContext?
     private let relaySecret: String?
     private let relayNonce: String?
     private let runtimeSessionNonce: String?
@@ -744,7 +748,7 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
         self.connection = connection
         self.codec = codec
         self.sendQueue = DispatchQueue(label: "dev.aetherlink.relay-peer-send-\(id.uuidString)")
-        self.transportSecurityContext = nil
+        self.storedTransportSecurityContext = nil
         self.relaySecret = relaySecret?.isEmpty == false ? relaySecret : nil
         self.relayNonce = relayNonce
         self.runtimeSessionNonce = relaySecret?.isEmpty == false ? RelaySessionNonce.generate() : nil
@@ -856,7 +860,19 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
         }
         sendCipher = RelayFrameCipher(sessionKeys: sessionKeys)
         receiveCipher = RelayFrameCipher(sessionKeys: sessionKeys)
-        transportSecurityContext = TransportSecurityContext(bindingID: sessionKeys.bindingID)
+        transportSecurityContextLock.withLock {
+            storedTransportSecurityContext = TransportSecurityContext(
+                bindingID: sessionKeys.bindingID
+            )
+        }
+    }
+
+    public func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try transportSecurityContextLock.withLock {
+            try operation(storedTransportSecurityContext)
+        }
     }
 
     public func send(_ envelope: ProtocolEnvelope) {

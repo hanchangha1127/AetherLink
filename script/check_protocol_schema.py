@@ -3659,6 +3659,7 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
                 "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, messages, and trusted_source_grant_ids"
             )
         forbidden_keys = {
+            "prompt_skill_id",
             "project_id",
             "workspace_id",
             "retrieval_context",
@@ -4273,8 +4274,26 @@ def check_models_pull_payload_schema_contract(schema: dict[str, object]) -> list
                 "$defs.modelsPullPayload request properties includes future backend/route/workspace metadata "
                 f"{leaked_keys}"
             )
-        if properties.get("model", {}).get("$ref") != "#/$defs/nonBlankString":
-            failures.append("$defs.modelsPullPayload request model must use nonBlankString")
+        expected_model_schema = {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": r"^(?!\s)(?!.*\s$)[\u0020-\u007E]+$",
+        }
+        if properties.get("model") != expected_model_schema:
+            failures.append(
+                "$defs.modelsPullPayload request model must stay bounded, untrimmed, and printable ASCII"
+            )
+        else:
+            model_pattern = re.compile(expected_model_schema["pattern"])
+            accepted_models = ("gemma3", "ollama:gemma3", "a" * 256)
+            rejected_models = ("", " gemma3", "gemma3 ", "gemma\n3", "ollama:모델")
+            if any(model_pattern.fullmatch(value) is None for value in accepted_models):
+                failures.append("$defs.modelsPullPayload request model must accept canonical ASCII fixtures")
+            if any(model_pattern.fullmatch(value) is not None for value in rejected_models):
+                failures.append(
+                    "$defs.modelsPullPayload request model must reject whitespace, controls, and multibyte fixtures"
+                )
         if properties.get("backend", {}).get("enum") != ["ollama"]:
             failures.append("$defs.modelsPullPayload request backend must stay limited to ollama")
     if request_option.get("additionalProperties") is not False:
@@ -6773,7 +6792,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         failures,
         "memoryEntrySource summary_method",
         source_properties.get("summary_method"),
-        {"const": "deterministic_preview"},
+        {"enum": ["deterministic_preview", "llm_summary_v1"]},
     )
     expect_schema_equal(
         failures,
@@ -6866,6 +6885,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "no_models",
         "model_not_found",
         "model_not_installed",
+        "model_pull_approval_required",
         "generation_not_found",
         "generation_cancelled",
         "route_refresh_unavailable",
@@ -6886,6 +6906,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         "trusted_source_review_stale",
         "trusted_source_not_found",
         "research_notebook_store_unavailable",
+        "runtime_prompt_skill_unavailable",
         "memory_store_unavailable",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",

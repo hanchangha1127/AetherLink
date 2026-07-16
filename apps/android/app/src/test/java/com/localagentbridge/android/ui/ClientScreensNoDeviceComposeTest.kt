@@ -3558,16 +3558,83 @@ class ClientScreensNoDeviceComposeTest {
     fun navigationDrawerRuntimeSummaryStaysBoundedAtLargeFontAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
+        val selectedModel = RuntimeModel(
+            id = "lmstudio:drawer-selected-vision-chat-model-with-long-context-window",
+            name = "AetherLink LM Studio Vision Chat Model With An Extremely Long Selected Model Name",
+            provider = "lm_studio",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "vision", "raw_future_capability"),
+            installed = true,
+            running = true,
+            source = "local",
+            contextWindowTokens = 131_072,
+        )
+        val currentContextWindowTokens = mutableStateOf(selectedModel.contextWindowTokens)
+        val runtimeName = "AetherLink Runtime With A Very Long Studio Name For Drawer Summary"
         val state = RuntimeUiState(
             isConnected = true,
             runtimeStatus = "authenticated",
             trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "runtime-summary-compact",
-                name = "AetherLink Runtime With A Very Long Studio Name For Drawer Summary",
+                name = runtimeName,
             ),
-            selectedModelId = "ollama:very-long-saved-chat-model-name-with-context-window-and-route-notes",
-            models = emptyList(),
+            selectedModelId = selectedModel.id,
         )
+
+        fun statusLine(context: Context): String = context.getString(
+            R.string.model_status_value,
+            context.getString(R.string.provider_lm_studio),
+            context.getString(R.string.model_running),
+        )
+
+        fun capabilityLine(context: Context, pairRes: Int, contextWindowTokens: Int?): String {
+            val labels = buildList {
+                add(context.getString(R.string.model_capability_chat))
+                add(context.getString(R.string.model_capability_vision))
+                contextWindowTokens?.takeIf { it > 0 }?.let { tokens ->
+                    add(context.getString(R.string.model_capability_context_window, tokens))
+                }
+            }
+            return labels.drop(1).fold(labels.first()) { line, label ->
+                context.getString(pairRes, line, label)
+            }
+        }
+
+        fun expectedSummaryProjection(
+            context: Context,
+            contextWindowTokens: Int?,
+        ): Pair<String, String> {
+            val status = statusLine(context)
+            val modelDetail = context.getString(
+                R.string.model_status_capabilities_value,
+                status,
+                capabilityLine(
+                    context,
+                    R.string.model_capability_visual_pair,
+                    contextWindowTokens,
+                ),
+            )
+            val selectedModelSummary = context.getString(
+                R.string.chat_model_row_summary_selected,
+                selectedModel.name,
+                status,
+                context.getString(
+                    R.string.model_capabilities_accessibility,
+                    capabilityLine(
+                        context,
+                        R.string.model_capability_accessibility_pair,
+                        contextWindowTokens,
+                    ),
+                ),
+            )
+            val runtimeSummary = context.getString(
+                R.string.drawer_runtime_summary_accessibility_with_model_summary,
+                runtimeName,
+                context.getString(R.string.status_connected),
+                selectedModelSummary,
+            )
+            return modelDetail to runtimeSummary
+        }
 
         compose.setContent {
             MaterialTheme {
@@ -3579,7 +3646,13 @@ class ClientScreensNoDeviceComposeTest {
                             .testTag(drawerRuntimeSummaryNarrowRootTestTag),
                     ) {
                         AetherLinkNavigationDrawerContent(
-                            state = state,
+                            state = state.copy(
+                                models = listOf(
+                                    selectedModel.copy(
+                                        contextWindowTokens = currentContextWindowTokens.value,
+                                    ),
+                                ),
+                            ),
                             effectiveDestination = AppDestination.Chat,
                             chatSearchQuery = "",
                             hasAnyChatSessions = false,
@@ -3605,6 +3678,13 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
 
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = 1.5f)
+            val (expectedModelDetail, expectedRuntimeSummary) = expectedSummaryProjection(
+                localizedContext,
+                131_072,
+            )
             val rootBounds = compose
                 .onNodeWithTag(drawerRuntimeSummaryNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
@@ -3628,10 +3708,27 @@ class ClientScreensNoDeviceComposeTest {
                 .getUnclippedBoundsInRoot()
             val modelNameBounds = compose
                 .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_MODEL_NAME_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(selectedModel.name, substring = false)
                 .getUnclippedBoundsInRoot()
             val modelDetailBounds = compose
                 .onNodeWithTag(DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(expectedModelDetail, substring = false)
                 .getUnclippedBoundsInRoot()
+
+            compose.onNode(
+                hasContentDescription(expectedRuntimeSummary),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onAllNodesWithText(
+                "raw_future_capability",
+                substring = true,
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+            compose.onAllNodesWithContentDescription(
+                "raw_future_capability",
+                substring = true,
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
 
             assertBoundsInside("$nextLanguageTag drawer runtime summary", summaryBounds, rootBounds)
             assertBoundsInside("$nextLanguageTag drawer runtime summary header", headerBounds, summaryBounds)
@@ -3645,7 +3742,47 @@ class ClientScreensNoDeviceComposeTest {
                 "$nextLanguageTag drawer runtime header labels should not overlap.",
                 boundsOverlap(runtimeLabelBounds, statusBounds),
             )
+            assertFalse(
+                "$nextLanguageTag drawer selected model name and detail should not overlap.",
+                boundsOverlap(modelNameBounds, modelDetailBounds),
+            )
         }
+
+        compose.runOnUiThread {
+            currentLanguage.value = "en"
+            currentContextWindowTokens.value = 0
+        }
+        compose.waitForIdle()
+
+        val localizedContext = ApplicationProvider
+            .getApplicationContext<Context>()
+            .localizedContext("en", fontScale = 1.5f)
+        val (expectedModelDetail, expectedRuntimeSummary) = expectedSummaryProjection(
+            localizedContext,
+            0,
+        )
+        compose.onNodeWithTag(
+            DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertTextContains(expectedModelDetail, substring = false)
+        compose.onNode(
+            hasContentDescription(expectedRuntimeSummary),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        val nonpositiveContext = localizedContext.getString(
+            R.string.model_capability_context_window,
+            0,
+        )
+        compose.onAllNodesWithText(
+            nonpositiveContext,
+            substring = true,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription(
+            nonpositiveContext,
+            substring = true,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
     }
 
     @Test
@@ -3899,6 +4036,7 @@ class ClientScreensNoDeviceComposeTest {
     fun navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
+        val isLoadingModels = mutableStateOf(false)
         val sessions = listOf(
             RuntimeChatSession(
                 id = "session-1",
@@ -3931,6 +4069,7 @@ class ClientScreensNoDeviceComposeTest {
                                 ),
                                 selectedModelId = "ollama:missing-chat",
                                 models = listOf(availableChatModel),
+                                isLoadingModels = isLoadingModels.value,
                                 chatSessions = sessions,
                                 activeChatSessionId = "session-1",
                             ),
@@ -3975,7 +4114,43 @@ class ClientScreensNoDeviceComposeTest {
                 useUnmergedTree = true,
             )
                 .assertIsDisplayed()
+            compose.onNodeWithTag(
+                DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG,
+                useUnmergedTree = true,
+            ).assertTextContains(unavailableDetail, substring = false)
             assertNoVisibleText(localizedContext.getString(R.string.model_none))
+
+            compose.runOnUiThread {
+                isLoadingModels.value = true
+            }
+            compose.waitForIdle()
+
+            val restoringDetail = localizedContext.getString(R.string.selected_model_restoring)
+            val expectedRestoringRuntimeSummary = localizedContext.getString(
+                R.string.drawer_runtime_summary_accessibility_with_detail,
+                "AetherLink Runtime",
+                localizedContext.getString(R.string.status_connected),
+                "missing-chat",
+                restoringDetail,
+            )
+            compose.onNode(
+                hasContentDescription(expectedRestoringRuntimeSummary),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+            compose.onNodeWithTag(
+                DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG,
+                useUnmergedTree = true,
+            ).assertTextContains(restoringDetail, substring = false)
+            compose.onAllNodesWithText(
+                unavailableDetail,
+                useUnmergedTree = true,
+            ).assertCountEquals(0)
+
+            compose.runOnUiThread {
+                isLoadingModels.value = false
+            }
+            compose.waitForIdle()
         }
     }
 
@@ -26730,7 +26905,7 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
-    fun chatTopBarModelPickerExposesInstallActionForUninstalledLocalChatModel() {
+    fun chatTopBarModelPickerDisablesUninstalledLocalChatModelPendingRuntimeHostApproval() {
         val selectedChatModelIds = mutableListOf<String>()
         val installedChatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
@@ -26770,17 +26945,13 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Gemma 4 26B") and
-                hasStateDescription("Install model") and
-                hasClickAction(),
+                hasStateDescription("Runtime approval required"),
         )
             .assertIsDisplayed()
-            .assertIsEnabled()
-        compose.onNodeWithText("Install model").assertIsDisplayed()
+            .assertIsNotEnabled()
+        compose.onNodeWithText("Runtime approval required").assertIsDisplayed()
 
-        compose.onNodeWithText("Gemma 4 26B").performClick()
-        compose.waitForIdle()
-
-        assertEquals(listOf("ollama:gemma4:26b"), selectedChatModelIds)
+        assertTrue(selectedChatModelIds.isEmpty())
     }
 
     @Test
@@ -26914,11 +27085,10 @@ class ClientScreensNoDeviceComposeTest {
                 hasContentDescription(
                     "Chat model Gemma 4 26B. Ollama - Not installed. Capabilities: Chat."
                 ) and
-                hasStateDescription("Install model") and
-                hasClickActionLabel("Install model") and
-                    hasClickAction()
+                hasStateDescription("Runtime approval required")
             )
             .assertIsDisplayed()
+            .assertIsNotEnabled()
         assertNoVisibleText("raw_future_capability")
     }
 
@@ -27058,7 +27228,9 @@ class ClientScreensNoDeviceComposeTest {
             )
 
             if (!model.installed) {
-                val installLabel = localizedContext.getString(R.string.install_model)
+                val installLabel = localizedContext.getString(
+                    R.string.model_install_host_approval_required,
+                )
                 val installBounds = compose.onNode(
                     hasText(installLabel) and hasAnyAncestor(hasTestTag(rowTag)),
                     useUnmergedTree = true,

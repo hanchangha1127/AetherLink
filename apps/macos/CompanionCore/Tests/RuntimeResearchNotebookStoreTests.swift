@@ -17,20 +17,22 @@ final class RuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: String(repeating: "s", count: RuntimeResearchNotebook.maximumBackingSessionIDCharacters),
             title: String(repeating: "t", count: RuntimeResearchNotebook.maximumTitleCharacters),
             model: String(repeating: "m", count: RuntimeResearchNotebook.maximumModelCharacters),
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: (0..<8).map { grantID(String(format: "%x", $0)) }
         )
         XCTAssertEqual(maximum.trustedSourceGrantIDs.count, 8)
+        XCTAssertEqual(maximum.promptSkillBinding, RuntimePromptSkillRegistry.researchBriefBinding)
         let existentialStore: any RuntimeResearchNotebookStoring = store
         XCTAssertEqual(try existentialStore.list(ownerDeviceID: maximum.ownerDeviceID), [maximum])
 
         let invalidCreates: [() throws -> Void] = [
-            { _ = try store.create(ownerDeviceID: " owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", trustedSourceGrantIDs: [self.grantID("1")]) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session\ninternal", title: "title", model: "model", trustedSourceGrantIDs: [self.grantID("1")]) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "e\u{301}", model: "model", trustedSourceGrantIDs: [self.grantID("1")]) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: String(repeating: "x", count: RuntimeResearchNotebook.maximumTitleCharacters + 1), model: "model", trustedSourceGrantIDs: [self.grantID("1")]) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", trustedSourceGrantIDs: []) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", trustedSourceGrantIDs: [self.grantID("1"), self.grantID("1")]) },
-            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", trustedSourceGrantIDs: (0..<9).map { self.grantID(String(format: "%x", $0)) }) },
+            { _ = try store.create(ownerDeviceID: " owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: [self.grantID("1")]) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session\ninternal", title: "title", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: [self.grantID("1")]) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "e\u{301}", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: [self.grantID("1")]) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: String(repeating: "x", count: RuntimeResearchNotebook.maximumTitleCharacters + 1), model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: [self.grantID("1")]) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: []) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: [self.grantID("1"), self.grantID("1")]) },
+            { _ = try store.create(ownerDeviceID: "owner", notebookID: self.notebookID("2"), backingSessionID: "session", title: "title", model: "model", promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding, trustedSourceGrantIDs: (0..<9).map { self.grantID(String(format: "%x", $0)) }) },
         ]
         for (index, create) in invalidCreates.enumerated() {
             XCTAssertThrowsError(try create(), "Invalid create case \(index) was accepted") { error in
@@ -82,9 +84,11 @@ final class RuntimeResearchNotebookStoreTests: XCTestCase {
         XCTAssertEqual(created.createdAt, Date(timeIntervalSince1970: 100))
         XCTAssertEqual(created.updatedAt, created.createdAt)
         XCTAssertEqual(archived.lifecycle, .archived)
+        XCTAssertEqual(archived.promptSkillBinding, created.promptSkillBinding)
         XCTAssertEqual(archived.updatedAt, Date(timeIntervalSince1970: 200))
         XCTAssertEqual(archivedAgain, archived)
         XCTAssertEqual(restored.lifecycle, .active)
+        XCTAssertEqual(restored.promptSkillBinding, created.promptSkillBinding)
         XCTAssertEqual(restored.updatedAt, Date(timeIntervalSince1970: 300))
         XCTAssertEqual(restoredAgain, restored)
         XCTAssertEqual(clock.readCount, 3)
@@ -165,6 +169,7 @@ final class RuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: session,
             title: "Research title \(notebook)",
             model: "ollama:model-\(notebook)",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [grantID(notebook)]
         )
     }

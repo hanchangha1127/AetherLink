@@ -306,6 +306,52 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         }
     }
 
+    public func performIfLongInactivityMemorySummarySourceCurrent(
+        ownerDeviceID: String?,
+        expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
+        policy: RuntimeLongInactivityMemorySummarizationPolicy,
+        operation: @Sendable () throws -> Void
+    ) throws -> Bool {
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN IMMEDIATE")
+                do {
+                    let events = try readEventsUnlocked(
+                        database,
+                        matchingOwnerDeviceID: ownerDeviceID.sqliteNormalizedOwnerDeviceID
+                    )
+                    let sessions = try JSONLRuntimeChatEventStore.sessions(
+                        from: events,
+                        limit: Int.max,
+                        includeArchived: false
+                    )
+                    guard let candidate = policy.candidates(from: sessions, now: Date())
+                            .first(where: {
+                                $0.sessionID == expectedDraft.candidate.sessionID
+                            }),
+                          let currentDraft = policy.draft(
+                            for: candidate,
+                            messages: JSONLRuntimeChatEventStore.messages(
+                                from: events,
+                                sessionID: candidate.sessionID,
+                                limit: Int.max
+                            )
+                          ),
+                          currentDraft.hasSameMemorySummarySource(as: expectedDraft) else {
+                        try Self.execute(database, "ROLLBACK")
+                        return false
+                    }
+                    try operation()
+                    try Self.execute(database, "COMMIT")
+                    return true
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
     public func listSemanticSearchSources(
         ownerDeviceID: String?,
         sessionLimit: Int,

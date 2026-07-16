@@ -66,7 +66,7 @@ script/           Project-local build/run and QA entrypoints
 - Local models are the main path.
 - The normal chat picker shows installed runtime-host-local chat models. Ollama cloud/source metadata can remain in protocol data for compatibility, but it is not presented as a default, recommendation, or normal chat selection path.
 - If backend model lists are empty, the runtime returns an empty model list and does not invent recommended/default local or cloud model cards.
-- Pulling a model is requested through AetherLink Runtime with `models.pull`, which calls Ollama `/api/pull` on the runtime host for the requested Ollama model name.
+- Legacy `models.pull` requests enter a macOS-host-local approval queue. A current trusted-device authority check and durable redacted one-time dispatch reservation must succeed before the host can call Ollama `/api/pull`; Android does not currently advertise or send this command.
 - The device app never calls Ollama or LM Studio URLs directly, including `/api/tags`, `/api/ps`, `/api/pull`, or chat endpoints.
 
 ## Non-Goals
@@ -423,8 +423,8 @@ Use this checklist when deciding whether a change belongs in v0.1:
 - AetherLink Runtime presents pairing state and a QR code for the device app.
 - The device app stores a trusted runtime record after accepted pairing.
 - The device app connects to AetherLink Runtime, not to Ollama or LM Studio.
-- The device app can request runtime health, list installed local models, request runtime-mediated Ollama model pulls, send chat with an installed model, render streamed answer deltas, show preserved reasoning/think deltas as muted collapsible UI, and cancel an active generation.
-- If no local backend models are available, the device app shows an empty model list until the user pulls an Ollama model through AetherLink Runtime or Ollama/LM Studio reports an installed model.
+- The device app can request runtime health, list installed local models, send chat with an installed model, render streamed answer deltas, show preserved reasoning/think deltas as muted collapsible UI, and cancel an active generation. Android does not advertise or send `models.pull`.
+- If no local backend models are available, the device app shows an empty model list until a model is approved and downloaded on the AetherLink Runtime host or Ollama/LM Studio reports an installed model.
 - Untrusted or unauthenticated clients cannot run `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.cancel`, `route.refresh`, chat history/title/session mutation commands, or memory list/upsert/delete commands.
 - Docs and UI do not imply MCP, skills, web search, advanced memory, direct client-backend access, or future client/runtime OS targets are part of the local chat backend path.
 

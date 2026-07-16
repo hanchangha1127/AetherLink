@@ -334,6 +334,7 @@
     <string name="selected_model">Selected model</string>
     <string name="drawer_runtime_summary_accessibility">Runtime %1$s. Status: %2$s. Selected model: %3$s.</string>
     <string name="drawer_runtime_summary_accessibility_with_detail">Runtime %1$s. Status: %2$s. Selected model: %3$s. %4$s</string>
+    <string name="drawer_runtime_summary_accessibility_with_model_summary">Runtime %1$s. Status: %2$s. %3$s</string>
     <string name="selection_state_selected">Selected</string>
     <string name="model_unavailable">Model unavailable</string>
     <string name="selected_model_unavailable">Selected model is missing from the runtime list. Refresh or choose another.</string>
@@ -369,6 +370,7 @@
     <string name="model_source_value">Source: %1$s</string>
     <string name="model_size_value">Size: %1$s</string>
     <string name="install_model">Install model</string>
+    <string name="model_install_host_approval_required">Runtime approval required</string>
     <string name="installing_model">Installing...</string>
     <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">No models loaded</string>
@@ -784,6 +786,7 @@
     <string name="error_invalid_payload">AetherLink Runtime sent invalid data.</string>
     <string name="error_install_model_first">Install this model before chatting.</string>
     <string name="error_model_install_failed">AetherLink Runtime could not install the model.</string>
+    <string name="error_model_install_host_approval_required">Model downloads require approval on the runtime host and are unavailable from this client.</string>
     <string name="error_attachment_too_large">This attachment is too large.</string>
     <string name="error_attachment_read_failed">Could not read this attachment.</string>
     <string name="error_attachment_limit_reached">You can attach up to 4 files at once.</string>

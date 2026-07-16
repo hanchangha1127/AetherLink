@@ -334,6 +334,7 @@
     <string name="selected_model">已选模型</string>
     <string name="drawer_runtime_summary_accessibility">运行时 %1$s。状态：%2$s。已选模型：%3$s。</string>
     <string name="drawer_runtime_summary_accessibility_with_detail">运行时 %1$s。状态：%2$s。已选模型：%3$s。%4$s</string>
+    <string name="drawer_runtime_summary_accessibility_with_model_summary">运行时 %1$s。状态：%2$s。%3$s</string>
     <string name="selection_state_selected">已选择</string>
     <string name="model_unavailable">模型不可用</string>
     <string name="selected_model_unavailable">所选模型不在运行时列表中。请刷新或选择其他模型。</string>
@@ -369,6 +370,7 @@
     <string name="model_source_value">来源：%1$s</string>
     <string name="model_size_value">大小：%1$s</string>
     <string name="install_model">安装模型</string>
+    <string name="model_install_host_approval_required">需要运行时批准</string>
     <string name="installing_model">正在安装...</string>
     <string name="model_picker_empty_state_summary">%1$s。%2$s</string>
     <string name="no_models_connected_title">未加载模型</string>
@@ -784,6 +786,7 @@
     <string name="error_invalid_payload">AetherLink Runtime 发送了无效数据。</string>
     <string name="error_install_model_first">聊天前请先安装此模型。</string>
     <string name="error_model_install_failed">AetherLink Runtime 无法安装该模型。</string>
+    <string name="error_model_install_host_approval_required">模型下载需要运行时主机批准，且无法从此客户端使用。</string>
     <string name="error_attachment_too_large">此附件太大。</string>
     <string name="error_attachment_read_failed">无法读取此附件。</string>
     <string name="error_attachment_limit_reached">一次最多可附加 4 个文件。</string>

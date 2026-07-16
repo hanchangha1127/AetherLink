@@ -17,6 +17,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: "runtime-session-a",
             title: "Research title",
             model: "ollama:model-a",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: grants
         )
 
@@ -27,10 +28,14 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             created
         )
         XCTAssertEqual(try rawGrantIDs(databaseURL), grants)
-        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 3)
+        XCTAssertEqual(created.promptSkillBinding, RuntimePromptSkillRegistry.researchBriefBinding)
+        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 4)
         XCTAssertEqual(
             try tableColumns(databaseURL, table: "runtime_research_notebooks"),
-            ["notebook_id", "owner_device_id", "backing_session_id", "title", "model", "lifecycle", "created_at", "updated_at"]
+            [
+                "notebook_id", "owner_device_id", "backing_session_id", "title", "model",
+                "prompt_skill_id", "prompt_skill_revision", "lifecycle", "created_at", "updated_at",
+            ]
         )
         XCTAssertEqual(
             try tableColumns(databaseURL, table: "runtime_research_notebook_grants"),
@@ -50,9 +55,13 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             databaseURL,
             "SELECT sql FROM sqlite_master WHERE type = 'table' ORDER BY name"
         ).joined(separator: " ").lowercased()
-        for forbidden in ["prompt", "brief", "result_body", "snippet", "path", "url", "endpoint", "token", "source_text"] {
+        for forbidden in ["prompt_body", "prompt_text", "skill_prompt", "brief", "result_body", "snippet", "path", "url", "endpoint", "token", "source_text"] {
             XCTAssertFalse(schema.contains(forbidden), "Unexpected persisted field: \(forbidden)")
         }
+        XCTAssertNil(
+            try Data(contentsOf: databaseURL).range(of: Data(RuntimePromptSkillRegistry.researchBriefPrompt.utf8)),
+            "The prompt body must remain registry-owned and absent from notebook persistence."
+        )
     }
 
     func testOwnerIsolationStrictCollisionsLifecycleDeleteAndReopen() throws {
@@ -137,6 +146,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: "session-a",
             title: "Pending create",
             model: "ollama:model",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [grantID("a")],
             coordinatorID: String(repeating: "1", count: 32),
             operationID: String(repeating: "2", count: 32),
@@ -172,6 +182,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: "session-b",
             title: "Cancelled create",
             model: "ollama:model",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [grantID("b")],
             coordinatorID: String(repeating: "1", count: 32),
             operationID: String(repeating: "4", count: 32),
@@ -229,6 +240,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
                 backingSessionID: "smoke-session-research-\(UUID().uuidString.lowercased())",
                 title: "Build a brief from the approved seeded runtime source.",
                 model: "dev-mock",
+                promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
                 trustedSourceGrantIDs: [grantID("c")],
                 coordinatorID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
                 operationID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
@@ -280,6 +292,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: "session-e",
             title: "Direct pending create",
             model: "dev-mock",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [grantID("e")],
             coordinatorID: String(repeating: "a", count: 32),
             operationID: String(repeating: "b", count: 32),
@@ -374,11 +387,12 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
         XCTAssertTrue(isCanonicalLifecycleID(intent.operationID))
         XCTAssertEqual(intent.operationID, String(notebookID.suffix(32)))
         XCTAssertEqual(intent.leaseExpiresAt, Date(timeIntervalSince1970: 0))
-        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 3)
+        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 4)
         XCTAssertEqual(
-            try store.get(ownerDeviceID: "owner-v2", notebookID: notebookID)?.trustedSourceGrantIDs,
-            [grantID]
+            try store.get(ownerDeviceID: "owner-v2", notebookID: notebookID)?.promptSkillBinding,
+            RuntimePromptSkillRegistry.researchBriefBinding
         )
+        XCTAssertEqual(try store.get(ownerDeviceID: "owner-v2", notebookID: notebookID)?.trustedSourceGrantIDs, [grantID])
     }
 
     func testV1MigrationDoesNotTrustAmbiguousPendingIntentRows() throws {
@@ -394,7 +408,58 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
         let store = SQLiteRuntimeResearchNotebookStore(databaseURL: databaseURL)
         XCTAssertTrue(try store.pendingLifecycleMutations(ownerDeviceID: "owner-v1").isEmpty)
         XCTAssertNotNil(try store.get(ownerDeviceID: "owner-v1", notebookID: notebookID))
+        XCTAssertEqual(
+            try store.get(ownerDeviceID: "owner-v1", notebookID: notebookID)?.promptSkillBinding,
+            RuntimePromptSkillRegistry.researchBriefBinding
+        )
+        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 4)
+    }
+
+    func testV3MigrationPinsCurrentPromptSkillBindingAndPreservesRows() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let notebookID = notebookID("3")
+        let grantID = grantID("3")
+        try seedV3Fixture(databaseURL, notebookID: notebookID, grantID: grantID)
+
+        let store = SQLiteRuntimeResearchNotebookStore(databaseURL: databaseURL)
+        let notebook = try XCTUnwrap(try store.get(ownerDeviceID: "owner-v3", notebookID: notebookID))
+        XCTAssertEqual(notebook.promptSkillBinding, RuntimePromptSkillRegistry.researchBriefBinding)
+        XCTAssertEqual(notebook.trustedSourceGrantIDs, [grantID])
+        XCTAssertEqual(try store.pendingLifecycleMutations(ownerDeviceID: "owner-v3").count, 1)
+        XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 4)
+        XCTAssertEqual(
+            try tableColumns(databaseURL, table: "runtime_research_notebooks"),
+            [
+                "notebook_id", "owner_device_id", "backing_session_id", "title", "model",
+                "prompt_skill_id", "prompt_skill_revision", "lifecycle", "created_at", "updated_at",
+            ]
+        )
+        XCTAssertNil(
+            try Data(contentsOf: databaseURL).range(of: Data(RuntimePromptSkillRegistry.researchBriefPrompt.utf8))
+        )
+    }
+
+    func testCorruptV3MigrationRollsBackWithoutPartialBindingColumns() throws {
+        let databaseURL = temporaryDatabaseURL()
+        try seedV3Fixture(databaseURL, notebookID: notebookID("4"), grantID: grantID("4"))
+        try executeRaw(
+            databaseURL,
+            "UPDATE runtime_research_notebooks SET title = CAST(X'01' AS BLOB)"
+        )
+
+        XCTAssertThrowsError(
+            try SQLiteRuntimeResearchNotebookStore(databaseURL: databaseURL).list(ownerDeviceID: "owner-v3")
+        ) { error in
+            XCTAssertEqual(error as? RuntimeResearchNotebookStoreError, .corruptPersistence)
+        }
         XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 3)
+        XCTAssertEqual(
+            try tableColumns(databaseURL, table: "runtime_research_notebooks"),
+            [
+                "notebook_id", "owner_device_id", "backing_session_id", "title", "model",
+                "lifecycle", "created_at", "updated_at",
+            ]
+        )
     }
 
     func testMalformedNotebookAndGrantRowsFailClosed() throws {
@@ -442,6 +507,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
                         backingSessionID: "session-\(offset)",
                         title: "Concurrent title",
                         model: "ollama:model",
+                        promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
                         trustedSourceGrantIDs: [self.grantID("f")]
                     )
                     results.append(.success(notebook))
@@ -511,7 +577,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             XCTAssertEqual(pending.first?.mutation, .archive)
             XCTAssertEqual(pending.first?.coordinatorID, coordinatorID)
             XCTAssertEqual(pending.first?.operationID, operationID)
-            XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 3)
+            XCTAssertEqual(try queryInt(databaseURL, "PRAGMA user_version"), 4)
         }
     }
 
@@ -527,6 +593,7 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             backingSessionID: session,
             title: "Research title \(notebook)",
             model: "ollama:model-\(notebook)",
+            promptSkillBinding: RuntimePromptSkillRegistry.researchBriefBinding,
             trustedSourceGrantIDs: [grantID(notebook)]
         )
     }
@@ -683,6 +750,75 @@ final class SQLiteRuntimeResearchNotebookStoreTests: XCTestCase {
             );
             INSERT INTO runtime_research_notebook_store_metadata VALUES(1, \(version));
             PRAGMA user_version = \(version);
+            """
+        )
+    }
+
+    private func seedV3Fixture(
+        _ databaseURL: URL,
+        notebookID: String,
+        grantID: String
+    ) throws {
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try executeRaw(
+            databaseURL,
+            """
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE runtime_research_notebooks(
+                notebook_id TEXT PRIMARY KEY NOT NULL,
+                owner_device_id TEXT NOT NULL,
+                backing_session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                model TEXT NOT NULL,
+                lifecycle TEXT NOT NULL CHECK(lifecycle IN ('active', 'archived')),
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL CHECK(updated_at >= created_at),
+                UNIQUE(owner_device_id, backing_session_id)
+            );
+            CREATE TABLE runtime_research_notebook_grants(
+                notebook_id TEXT NOT NULL,
+                position INTEGER NOT NULL CHECK(position >= 0 AND position < 8),
+                grant_id TEXT NOT NULL,
+                PRIMARY KEY(notebook_id, position),
+                UNIQUE(notebook_id, grant_id),
+                FOREIGN KEY(notebook_id) REFERENCES runtime_research_notebooks(notebook_id)
+                    ON DELETE CASCADE
+            );
+            CREATE TABLE runtime_research_notebook_lifecycle_intents(
+                notebook_id TEXT PRIMARY KEY NOT NULL,
+                owner_device_id TEXT NOT NULL,
+                backing_session_id TEXT NOT NULL,
+                mutation TEXT NOT NULL CHECK(mutation IN ('create', 'archive', 'restore', 'delete')),
+                coordinator_id TEXT NOT NULL,
+                operation_id TEXT NOT NULL,
+                lease_expires_at REAL NOT NULL,
+                FOREIGN KEY(notebook_id) REFERENCES runtime_research_notebooks(notebook_id)
+                    ON DELETE CASCADE,
+                FOREIGN KEY(owner_device_id, backing_session_id)
+                    REFERENCES runtime_research_notebooks(owner_device_id, backing_session_id)
+                    ON DELETE CASCADE
+            );
+            CREATE TABLE runtime_research_notebook_store_metadata(
+                singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton = 1),
+                schema_version INTEGER NOT NULL CHECK(schema_version = 3)
+            );
+            INSERT INTO runtime_research_notebooks VALUES(
+                '\(notebookID)', 'owner-v3', 'session-v3',
+                'Legacy v3 notebook', 'ollama:model', 'active', 10, 10
+            );
+            INSERT INTO runtime_research_notebook_grants VALUES(
+                '\(notebookID)', 0, '\(grantID)'
+            );
+            INSERT INTO runtime_research_notebook_lifecycle_intents VALUES(
+                '\(notebookID)', 'owner-v3', 'session-v3', 'archive',
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 1000
+            );
+            INSERT INTO runtime_research_notebook_store_metadata VALUES(1, 3);
+            PRAGMA user_version = 3;
             """
         )
     }

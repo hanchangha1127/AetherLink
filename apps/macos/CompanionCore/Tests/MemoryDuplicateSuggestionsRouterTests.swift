@@ -459,6 +459,12 @@ private final class DuplicateSuggestionRecordingSink: RuntimeMessageSink, @unche
     private let lock = NSLock()
     private var messages: [ProtocolEnvelope] = []
 
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
+
     func send(_ envelope: ProtocolEnvelope) {
         lock.withLock {
             messages.append(envelope)

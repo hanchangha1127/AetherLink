@@ -416,6 +416,85 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testQualifiedModelMatchesOnlyExactProviderModelID() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "retired-provider-id",
+                name: "retired-provider-id",
+                provider: .ollama,
+                providerModelID: "different-provider-model"
+            )]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(
+                model: "ollama:retired-provider-id"
+            )))
+            XCTFail("A qualified provider route must not rebind through model id or name")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertFalse(error.retryable)
+            XCTAssertTrue(ollama.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testChatRejectsProviderModelIDWithReservedQualifiedPrefix() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "safe-chat-alias",
+                name: "safe-chat-alias",
+                provider: .ollama,
+                providerModelID: "ollama:provider-native-collision"
+            )]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "safe-chat-alias")))
+            XCTFail("Aggregate chat must reject reserved provider model prefixes")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .aggregate)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertTrue(ollama.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testEmbeddingRejectsProviderModelIDWithReservedQualifiedPrefix() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(
+                id: "safe-embedding-alias",
+                name: "safe-embedding-alias",
+                provider: .ollama,
+                kind: .embedding,
+                providerModelID: "ollama:provider-native-collision"
+            )]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await backend.embed(request: EmbeddingRequest(
+                model: "ollama:ollama:provider-native-collision",
+                texts: ["text"]
+            ))
+            XCTFail("Aggregate embedding must reject reserved provider model prefixes")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertTrue(ollama.embeddingRequests.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testInstalledEmbeddingModelIsNotRoutedAsChat() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,

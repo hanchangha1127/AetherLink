@@ -1589,7 +1589,7 @@ private fun ChatModelMenuItem(
         if (visionRecoveryMode && !model.supportsImageInput()) {
             R.string.model_not_recommended_for_images
         } else if (!model.installed && !installing) {
-            R.string.install_model
+            R.string.model_install_host_approval_required
         } else {
             R.string.choose_model
         }
@@ -1635,7 +1635,7 @@ private fun ChatModelMenuItem(
                 )
             } else if (!model.installed && !installing) {
                 Text(
-                    text = stringResource(R.string.install_model),
+                    text = stringResource(R.string.model_install_host_approval_required),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
@@ -1695,7 +1695,7 @@ private fun chatModelMenuItemSemanticsModifier(
         !actionsEnabled -> R.string.model_picker_state_wait_for_stream
         visionRecoveryMode && !model.supportsImageInput() -> R.string.model_picker_vision_model_required_state
         selected -> R.string.selection_state_selected
-        !model.installed && !installing -> R.string.install_model
+        !model.installed && !installing -> R.string.model_install_host_approval_required
         else -> null
     }
     val selectedStateDescription = stateDescriptionRes?.let { stringResource(it) }
@@ -1743,6 +1743,7 @@ internal fun chatModelMenuItemEnabled(
 ): Boolean {
     return model.isChatModel() &&
         model.isRuntimeHostLocalModel() &&
+        model.installed &&
         !installing &&
         (!visionRecoveryMode || model.supportsImageInput())
 }
@@ -2931,10 +2932,21 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
             ?.let(::savedModelDisplayName)
         ?: chatModelPickerFallbackDisplayName(state)
         ?: stringResource(R.string.model_none)
+    val selectedModelStatusLine = selectedModel?.let { model ->
+        modelMenuStatusLine(model = model, installing = false)
+    }
+    val selectedModelCapabilities = selectedModel?.let { model ->
+        modelMenuCapabilityDisplay(model)
+    }
     val modelDetail = when {
-        !selectedModelUnavailable -> null
-        state.isLoadingModels -> stringResource(R.string.selected_model_restoring)
-        else -> stringResource(R.string.selected_model_unavailable)
+        selectedModelUnavailable && state.isLoadingModels -> stringResource(R.string.selected_model_restoring)
+        selectedModelUnavailable -> stringResource(R.string.selected_model_unavailable)
+        selectedModelStatusLine != null && selectedModelCapabilities != null -> stringResource(
+            R.string.model_status_capabilities_value,
+            selectedModelStatusLine,
+            selectedModelCapabilities.visualLine,
+        )
+        else -> null
     }
     val connectionLabel = when {
         state.isConnected -> stringResource(R.string.status_connected)
@@ -2947,20 +2959,41 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
         state.isConnecting -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val runtimeSummaryAccessibility = modelDetail?.let { detail ->
-        stringResource(
+    val selectedModelAccessibilitySummary = if (
+        selectedModel != null &&
+        selectedModelStatusLine != null &&
+        selectedModelCapabilities != null
+    ) {
+        chatModelMenuItemContentDescription(
+            model = selectedModel,
+            selected = true,
+            statusLine = selectedModelStatusLine,
+            capabilityAccessibilityLine = selectedModelCapabilities.accessibilityLine,
+        )
+    } else {
+        null
+    }
+    val runtimeSummaryAccessibility = when {
+        selectedModelUnavailable && modelDetail != null -> stringResource(
             R.string.drawer_runtime_summary_accessibility_with_detail,
             runtimeName,
             connectionLabel,
             modelName,
-            detail,
+            modelDetail,
         )
-    } ?: stringResource(
-        R.string.drawer_runtime_summary_accessibility,
-        runtimeName,
-        connectionLabel,
-        modelName,
-    )
+        selectedModelAccessibilitySummary != null -> stringResource(
+            R.string.drawer_runtime_summary_accessibility_with_model_summary,
+            runtimeName,
+            connectionLabel,
+            selectedModelAccessibilitySummary,
+        )
+        else -> stringResource(
+            R.string.drawer_runtime_summary_accessibility,
+            runtimeName,
+            connectionLabel,
+            modelName,
+        )
+    }
 
     Box(
         modifier = Modifier
