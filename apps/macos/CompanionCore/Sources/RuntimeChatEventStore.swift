@@ -638,6 +638,32 @@ public enum RuntimeChatEventStoreLimits {
     public static let maximumTargetedSessionSummaryCount = 10_000
 }
 
+struct RuntimeChatCompactionCalibrationStoreLimits: Equatable, Sendable {
+    static let production = RuntimeChatCompactionCalibrationStoreLimits(
+        jsonlByteCeiling: 64 * 1_024 * 1_024,
+        jsonlLineCeiling: 50_000,
+        jsonlLineByteCeiling: 4 * 1_024 * 1_024,
+        sqliteTerminalScanCeiling: 50_000
+    )
+
+    var jsonlByteCeiling: Int
+    var jsonlLineCeiling: Int
+    var jsonlLineByteCeiling: Int
+    var sqliteTerminalScanCeiling: Int
+
+    init(
+        jsonlByteCeiling: Int,
+        jsonlLineCeiling: Int,
+        jsonlLineByteCeiling: Int,
+        sqliteTerminalScanCeiling: Int
+    ) {
+        self.jsonlByteCeiling = max(1, jsonlByteCeiling)
+        self.jsonlLineCeiling = max(1, jsonlLineCeiling)
+        self.jsonlLineByteCeiling = max(1, jsonlLineByteCeiling)
+        self.sqliteTerminalScanCeiling = max(1, sqliteTerminalScanCeiling)
+    }
+}
+
 func validatedTargetedSessionSummaryIDs(_ sessionIDs: [String]) throws -> [String] {
     guard sessionIDs.count <= RuntimeChatEventStoreLimits.maximumTargetedSessionSummaryCount else {
         throw RuntimeChatEventStoreError.targetedSessionSummaryLimitExceeded(
@@ -661,6 +687,7 @@ func validatedTargetedSessionSummaryIDs(_ sessionIDs: [String]) throws -> [Strin
 
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
+    func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listSessionSummaries(
         ownerDeviceID: String?,
@@ -814,6 +841,10 @@ public enum RuntimeChatEventStoreDefaults {
 }
 
 public extension RuntimeChatEventStore {
+    func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport {
+        RuntimeChatCompactionCalibrationReport()
+    }
+
     func performIfLongInactivityMemorySummarySourceCurrent(
         ownerDeviceID: String?,
         expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
@@ -1064,25 +1095,111 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
     }
 }
 
-private struct RuntimeChatCompactionResolutionBindingKey: Hashable {
+struct RuntimeChatCompactionResolutionBindingKey: Hashable {
     var ownerDeviceID: String?
     var sessionID: String
     var requestID: String
 
     init(event: RuntimeChatStoredEvent) {
-        ownerDeviceID = event.ownerDeviceID.normalizedOwnerDeviceID
-        sessionID = event.sessionID
-        requestID = event.requestID
+        self.init(
+            ownerDeviceID: event.ownerDeviceID,
+            sessionID: event.sessionID,
+            requestID: event.requestID
+        )
     }
+
+    init(ownerDeviceID: String?, sessionID: String, requestID: String) {
+        self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        self.sessionID = sessionID
+        self.requestID = requestID
+    }
+}
+
+private struct RuntimeChatCompactionCalibrationScanEnvelope: Decodable {
+    enum CalibrationPayloadShape: Equatable {
+        case absent
+        case object
+        case malformed
+    }
+
+    var kind: RuntimeChatStoredEventKind
+    var requestID: String
+    var sessionID: String
+    var ownerDeviceID: String?
+    var hasCompactionResolution: Bool
+    var calibrationPayloadShape: CalibrationPayloadShape
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case requestID = "request_id"
+        case sessionID = "session_id"
+        case ownerDeviceID = "owner_device_id"
+        case compactionResolution = "compaction_resolution"
+    }
+
+    private enum ResolutionCodingKeys: String, CodingKey {
+        case providerUsageCalibration = "provider_usage_calibration"
+    }
+
+    private enum CalibrationCodingKeys: CodingKey {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(RuntimeChatStoredEventKind.self, forKey: .kind)
+        requestID = try container.decode(String.self, forKey: .requestID)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        ownerDeviceID = try container.decodeIfPresent(String.self, forKey: .ownerDeviceID)
+        guard container.contains(.compactionResolution),
+              (try? container.decodeNil(forKey: .compactionResolution)) == false else {
+            hasCompactionResolution = false
+            calibrationPayloadShape = .absent
+            return
+        }
+        hasCompactionResolution = true
+        guard let resolution = try? container.nestedContainer(
+            keyedBy: ResolutionCodingKeys.self,
+            forKey: .compactionResolution
+        ) else {
+            calibrationPayloadShape = .malformed
+            return
+        }
+        guard resolution.contains(.providerUsageCalibration) else {
+            calibrationPayloadShape = .absent
+            return
+        }
+        calibrationPayloadShape = (try? resolution.nestedContainer(
+            keyedBy: CalibrationCodingKeys.self,
+            forKey: .providerUsageCalibration
+        )) == nil ? .malformed : .object
+    }
+}
+
+func isFullyEligibleRuntimeChatCompactionCalibrationEvent(
+    _ event: RuntimeChatStoredEvent
+) -> Bool {
+    RuntimeChatCompactionCalibrationReport.build(from: [event]).sampledEligibleCount == 1
 }
 
 public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked Sendable {
     private let fileURL: URL
     private let encoder: JSONEncoder
+    private let calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits
     private let lock = NSLock()
 
     public init(fileURL: URL = JSONLRuntimeChatEventStore.defaultFileURL()) {
         self.fileURL = fileURL
+        self.calibrationReportStoreLimits = .production
+        self.encoder = JSONEncoder()
+        self.encoder.dateEncodingStrategy = .iso8601
+        self.encoder.outputFormatting = [.sortedKeys]
+    }
+
+    init(
+        fileURL: URL,
+        calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits
+    ) {
+        self.fileURL = fileURL
+        self.calibrationReportStoreLimits = calibrationReportStoreLimits
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -1092,6 +1209,19 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         try lock.withLock {
             try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
                 try appendUnlocked(event)
+            }
+        }
+    }
+
+    public func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport {
+        try lock.withLock {
+            try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                RuntimeChatCompactionCalibrationReport.build(
+                    from: try Self.calibrationReportEvents(
+                        from: fileURL,
+                        limits: calibrationReportStoreLimits
+                    )
+                )
             }
         }
     }
@@ -1427,6 +1557,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         _ indexedEvents: [(line: Int, event: RuntimeChatStoredEvent)]
     ) throws {
         var latestRequests: [RuntimeChatCompactionResolutionBindingKey: RuntimeChatStoredEvent] = [:]
+        var terminalBindings: Set<RuntimeChatCompactionResolutionBindingKey> = []
         for indexedEvent in indexedEvents {
             let event = indexedEvent.event
             let key = RuntimeChatCompactionResolutionBindingKey(event: event)
@@ -1435,6 +1566,12 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 continue
             }
             guard let resolution = event.compactionResolution else { continue }
+            guard terminalBindings.insert(key).inserted else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: indexedEvent.line,
+                    reason: "chat compaction binding has duplicate terminal resolution"
+                )
+            }
             guard let request = latestRequests[key],
                   let metadata = request.compactionMetadata,
                   metadata.strategy == "adaptive_backend_only_summary_v3" else {
@@ -1450,7 +1587,211 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                     reason: "chat compaction resolution does not match request accounting"
                 )
             }
+            if resolution.summaryMethod == "deterministic_preview_v1",
+               metadata.estimatedInputTokensAfter != resolution.estimatedInputTokensAfter {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: indexedEvent.line,
+                    reason: "deterministic chat compaction resolution does not match request estimate"
+                )
+            }
         }
+    }
+
+    private static let calibrationReportJSONLReadChunkSize = 64 * 1_024
+
+    private static func calibrationReportEvents(
+        from fileURL: URL,
+        limits: RuntimeChatCompactionCalibrationStoreLimits
+    ) throws -> [RuntimeChatStoredEvent] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer { try? handle.close() }
+
+        var position = try handle.seekToEnd()
+        guard position > 0 else { return [] }
+
+        typealias ScannedEvent = (reverseOrdinal: Int, event: RuntimeChatStoredEvent)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var carriedPrefix = Data()
+        var scannedBytes = 0
+        var scannedLines = 0
+        var reverseOrdinal = 0
+        var selectedTerminals: [ScannedEvent] = []
+        var selectedRequests: [RuntimeChatCompactionResolutionBindingKey: ScannedEvent] = [:]
+        var unresolvedRequestKeys: Set<RuntimeChatCompactionResolutionBindingKey> = []
+        var terminalBindings: Set<RuntimeChatCompactionResolutionBindingKey> = []
+
+        func decodeStoredEvent(_ data: Data, validating: Bool) throws -> RuntimeChatStoredEvent {
+            do {
+                let decoded = try decoder.decode(RuntimeChatStoredEvent.self, from: data)
+                let event = projectingLegacyTitleForReplay(decoded)
+                if validating {
+                    try validateStoredEvent(event, line: 0)
+                }
+                return event
+            } catch {
+                if let storeError = error as? RuntimeChatEventStoreError {
+                    throw storeError
+                }
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: decodeFailureReason(error)
+                )
+            }
+        }
+
+        func processLine(_ data: Data) throws {
+            guard !String(decoding: data, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty else {
+                return
+            }
+            guard scannedLines < limits.jsonlLineCeiling else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: "chat compaction calibration JSONL tail exceeds the line ceiling"
+                )
+            }
+            guard data.count <= limits.jsonlLineByteCeiling else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: "chat compaction calibration JSONL record exceeds the byte ceiling"
+                )
+            }
+            scannedLines += 1
+            reverseOrdinal += 1
+
+            let envelope: RuntimeChatCompactionCalibrationScanEnvelope
+            do {
+                envelope = try decoder.decode(
+                    RuntimeChatCompactionCalibrationScanEnvelope.self,
+                    from: data
+                )
+            } catch {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: decodeFailureReason(error)
+                )
+            }
+            let key = RuntimeChatCompactionResolutionBindingKey(
+                ownerDeviceID: envelope.ownerDeviceID,
+                sessionID: envelope.sessionID,
+                requestID: envelope.requestID
+            )
+
+            if envelope.calibrationPayloadShape == .malformed {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: "chat provider usage calibration payload is not an object"
+                )
+            }
+
+            if envelope.hasCompactionResolution {
+                switch envelope.kind {
+                case .done, .cancelled, .error:
+                    guard terminalBindings.insert(key).inserted else {
+                        throw RuntimeChatEventStoreError.corruptEventLog(
+                            line: 0,
+                            reason: "chat compaction binding has duplicate terminal resolution"
+                        )
+                    }
+                default:
+                    throw RuntimeChatEventStoreError.corruptEventLog(
+                        line: 0,
+                        reason: "chat compaction resolution is only valid on terminal events"
+                    )
+                }
+            }
+
+            if envelope.kind == .request, unresolvedRequestKeys.contains(key) {
+                let request = try decodeStoredEvent(data, validating: true)
+                selectedRequests[key] = (reverseOrdinal, request)
+                unresolvedRequestKeys.remove(key)
+            }
+
+            guard envelope.kind == .done,
+                  envelope.calibrationPayloadShape == .object,
+                  selectedTerminals.count
+                    < RuntimeChatCompactionCalibrationReport.recentEligibleSampleCap else {
+                return
+            }
+            let candidate = try decodeStoredEvent(data, validating: false)
+            guard isFullyEligibleRuntimeChatCompactionCalibrationEvent(candidate) else { return }
+            try validateStoredEvent(candidate, line: 0)
+            selectedTerminals.append((reverseOrdinal, candidate))
+            unresolvedRequestKeys.insert(key)
+        }
+
+        func hasCompleteTail() -> Bool {
+            selectedTerminals.count
+                == RuntimeChatCompactionCalibrationReport.recentEligibleSampleCap
+                && unresolvedRequestKeys.isEmpty
+        }
+
+        var stoppedAtResourceCeiling = false
+        scanLoop: while position > 0 {
+            if hasCompleteTail() { break }
+            let remainingByteBudget = limits.jsonlByteCeiling - scannedBytes
+            guard remainingByteBudget > 0 else {
+                stoppedAtResourceCeiling = true
+                break
+            }
+            let chunkSize = min(
+                calibrationReportJSONLReadChunkSize,
+                remainingByteBudget,
+                Int(position)
+            )
+            position -= UInt64(chunkSize)
+            try handle.seek(toOffset: position)
+            guard let chunk = try handle.read(upToCount: chunkSize), chunk.count == chunkSize else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: "chat compaction calibration JSONL tail changed while reading"
+                )
+            }
+            scannedBytes += chunk.count
+            var buffer = chunk
+            buffer.append(carriedPrefix)
+            var lineEnd = buffer.endIndex
+            while let newline = buffer[..<lineEnd].lastIndex(of: 0x0A) {
+                let lineStart = buffer.index(after: newline)
+                try processLine(Data(buffer[lineStart..<lineEnd]))
+                if hasCompleteTail() { break scanLoop }
+                lineEnd = newline
+            }
+            carriedPrefix = Data(buffer[..<lineEnd])
+            if carriedPrefix.count > limits.jsonlLineByteCeiling {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: 0,
+                    reason: "chat compaction calibration JSONL record exceeds the byte ceiling"
+                )
+            }
+        }
+
+        if position == 0, !hasCompleteTail(), !carriedPrefix.isEmpty {
+            try processLine(carriedPrefix)
+        }
+        if stoppedAtResourceCeiling || (position > 0 && !hasCompleteTail()) {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: 0,
+                reason: "chat compaction calibration JSONL tail exceeds the scan ceiling"
+            )
+        }
+        guard unresolvedRequestKeys.isEmpty else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: 0,
+                reason: "chat compaction calibration request binding is outside the bounded JSONL tail"
+            )
+        }
+
+        let validationEvents = (Array(selectedRequests.values) + selectedTerminals)
+            .sorted { $0.reverseOrdinal > $1.reverseOrdinal }
+            .map { (line: 0, event: $0.event) }
+        try validateCompactionResolutionBindings(validationEvents)
+        return selectedTerminals
+            .sorted { $0.reverseOrdinal > $1.reverseOrdinal }
+            .map(\.event)
     }
 
     private static func decodeFailureReason(_ error: Error) -> String {

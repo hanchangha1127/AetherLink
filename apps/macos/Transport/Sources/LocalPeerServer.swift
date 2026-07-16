@@ -17,6 +17,10 @@ public protocol RuntimeMessageSink: Sendable {
     ) rethrows -> Result
 
     func send(_ envelope: ProtocolEnvelope)
+    func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    )
     func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool
     func close()
 }
@@ -24,9 +28,20 @@ public protocol RuntimeMessageSink: Sendable {
 public extension RuntimeMessageSink {
     var transportSecurityContext: TransportSecurityContext? { nil }
 
-    func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
+    func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
         send(envelope)
-        return true
+        completion(true)
+    }
+
+    func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
+        await withCheckedContinuation { continuation in
+            send(envelope) { succeeded in
+                continuation.resume(returning: succeeded)
+            }
+        }
     }
 }
 
@@ -207,28 +222,30 @@ public final class LocalPeerConnection: RuntimeMessageSink, @unchecked Sendable 
     }
 
     public func send(_ envelope: ProtocolEnvelope) {
+        send(envelope) { _ in }
+    }
+
+    public func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
         sendQueue.async { [connection, codec] in
             do {
                 let frame = try codec.encodeFrame(envelope)
-                connection.send(content: frame, completion: .contentProcessed { _ in })
+                connection.send(content: frame, completion: .contentProcessed { error in
+                    completion(error == nil)
+                })
             } catch {
                 connection.cancel()
+                completion(false)
             }
         }
     }
 
     public func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
         await withCheckedContinuation { continuation in
-            sendQueue.async { [connection, codec] in
-                do {
-                    let frame = try codec.encodeFrame(envelope)
-                    connection.send(content: frame, completion: .contentProcessed { error in
-                        continuation.resume(returning: error == nil)
-                    })
-                } catch {
-                    connection.cancel()
-                    continuation.resume(returning: false)
-                }
+            send(envelope) { succeeded in
+                continuation.resume(returning: succeeded)
             }
         }
     }

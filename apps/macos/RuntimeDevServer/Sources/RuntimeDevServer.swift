@@ -1736,6 +1736,14 @@ private final class LoggingSink: RuntimeMessageSink, @unchecked Sendable {
         wrapped.send(envelope)
     }
 
+    func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        print("[runtime] sending type=\(envelope.type) request_id=\(envelope.requestID)")
+        wrapped.send(envelope, completion: completion)
+    }
+
     func close() {
         wrapped.close()
     }

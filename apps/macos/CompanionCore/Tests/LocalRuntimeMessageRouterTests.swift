@@ -250,6 +250,114 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(String(describing: failure).contains("unload denied"))
     }
 
+    @MainActor
+    func testCompanionAppModelPublishesResidencyInFlightTransitionsWithoutManualRefresh() async throws {
+        let modelInfo = ModelInfo(
+            id: "qwen-local",
+            name: "qwen-local",
+            provider: .ollama
+        )
+        let provider = MockBackend(
+            provider: .ollama,
+            models: [modelInfo],
+            finishChatStream: false
+        )
+        let aggregate = AggregatingLlmBackend(
+            [provider],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let model = CompanionAppModel(
+            backend: aggregate,
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: try isolatedDefaults()
+        )
+        let logsBeforeResidency = model.logs
+
+        let firstStream = aggregate.chat(request: chatRequest(
+            model: "ollama:qwen-local",
+            sessionID: "residency-state-first"
+        ))
+        let firstCollector = Task.detached {
+            for try await _ in firstStream {}
+        }
+        await waitForPublishedResidencyInFlightCount(1, model: model)
+        XCTAssertEqual(model.modelResidency.activeModelID, "qwen-local")
+
+        provider.finishChat(with: [.done(inputTokens: 1, outputTokens: 1)])
+        try await firstCollector.value
+        await waitForPublishedResidencyInFlightCount(0, model: model)
+        let firstActiveEvent = model.modelResidency.lastEvent
+        XCTAssertEqual(firstActiveEvent, "Model residency active: Ollama qwen-local")
+        let logsAfterFirstCompletion = model.logs
+        XCTAssertEqual(logsAfterFirstCompletion.count, logsBeforeResidency.count + 1)
+        XCTAssertEqual(logsAfterFirstCompletion.last, firstActiveEvent)
+
+        let secondStream = aggregate.chat(request: chatRequest(
+            model: "ollama:qwen-local",
+            sessionID: "residency-state-second"
+        ))
+        let secondCollector = Task.detached {
+            for try await _ in secondStream {}
+        }
+        await waitForPublishedResidencyInFlightCount(1, model: model)
+        XCTAssertEqual(model.modelResidency.lastEvent, firstActiveEvent)
+        XCTAssertEqual(model.logs, logsAfterFirstCompletion)
+
+        provider.finishChat(with: [.done(inputTokens: 1, outputTokens: 1)])
+        try await secondCollector.value
+        await waitForPublishedResidencyInFlightCount(0, model: model)
+        XCTAssertEqual(model.modelResidency.lastEvent, firstActiveEvent)
+        XCTAssertEqual(model.logs, logsAfterFirstCompletion)
+    }
+
+    @MainActor
+    func testCompanionAppModelRejectsRapidIdleUnloadPolicyIntentWhileUpdateIsPending() async throws {
+        let defaults = try isolatedDefaults()
+        let aggregate = AggregatingLlmBackend([], modelIdleUnloadDelayNanoseconds: 1)
+        let model = CompanionAppModel(
+            backend: aggregate,
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: defaults
+        )
+
+        XCTAssertTrue(model.requestModelIdleUnloadPolicy(.fiveMinutes))
+        XCTAssertTrue(model.isModelIdleUnloadPolicyUpdateInFlight)
+        XCTAssertFalse(model.requestModelIdleUnloadPolicy(.thirtyMinutes))
+        XCTAssertEqual(model.modelIdleUnloadPolicy, .fiveMinutes)
+        XCTAssertEqual(
+            defaults.string(forKey: RuntimeModelIdleUnloadPolicyStore.defaultsKey),
+            RuntimeModelIdleUnloadPolicy.fiveMinutes.rawValue
+        )
+
+        for _ in 0..<100 where model.isModelIdleUnloadPolicyUpdateInFlight {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(model.isModelIdleUnloadPolicyUpdateInFlight)
+        XCTAssertEqual(aggregate.modelResidencySnapshot().idleUnloadDelaySeconds, 300)
+    }
+
+    @MainActor
+    private func waitForPublishedResidencyInFlightCount(
+        _ expected: Int,
+        model: CompanionAppModel,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<100 {
+            if model.modelResidency.inFlightGenerations == expected {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail(
+            "Timed out waiting for published residency in-flight count \(expected); got \(model.modelResidency.inFlightGenerations)",
+            file: file,
+            line: line
+        )
+    }
+
     private func chatRequest(model: String, sessionID: String) -> ChatRequest {
         ChatRequest(
             sessionID: sessionID,
@@ -7501,6 +7609,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             visiblePrefix: "Model bound"
         )
         let requestedModels = LockedBox<[String]>([])
+        let persistenceCompleted = DispatchSemaphore(value: 0)
         let router = makeRouter(
             backend: MockBackend(
                 models: [
@@ -7518,7 +7627,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 }
             ),
             chatEventStore: chatStore,
-            memoryStore: memoryStore
+            memoryStore: memoryStore,
+            memorySummaryPersistenceRequestCompletionCheckpoint: {
+                persistenceCompleted.signal()
+            }
         )
         let sink = RecordingSink()
 
@@ -7556,6 +7668,15 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 return
             }
             XCTAssertEqual(generatedDraft["generated_model_id"], .string(model))
+            let didCompletePersistence = await waitForSemaphore(
+                persistenceCompleted,
+                timeout: 1
+            )
+            XCTAssertTrue(didCompletePersistence)
+            XCTAssertEqual(
+                try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).first?.modelID,
+                model
+            )
         }
 
         XCTAssertEqual(
@@ -7570,6 +7691,17 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             cachedDraft.promptSkillBinding,
             RuntimePromptSkillRegistry.memorySummaryDraftBinding
         )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "model-bound-summary-list-after-retry"
+        ), sink: sink)
+        let reviewResponse = try await sink.waitForMessages(count: 5).last
+        guard case .array(let reviewDrafts)? = reviewResponse?.payload["drafts"],
+              case .object(let reviewDraft)? = reviewDrafts.first else {
+            return XCTFail("Expected current published summary draft")
+        }
+        XCTAssertEqual(reviewDraft["generated_model_id"], .string("model-a:latest"))
     }
 
     func testMemorySummaryDraftGenerateDoesNotCoalesceConcurrentDifferentModels() async throws {
@@ -9730,6 +9862,1144 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(persistenceCompleted)
     }
 
+    func testMemorySummaryDraftGeneratePersistsOnlyAfterTransportSuccessAndRetriesMaterializedCandidate()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        let sessionID = "transport-confirmed-summary-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Transport confirmed"
+        )
+        let chatCallCount = LockedBox(0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "transport-confirmed-summary-model",
+                    name: "transport-confirmed-summary-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Persist only after transport success."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ],
+                onChatRequest: { _ in
+                    chatCallCount.mutate { $0 += 1 }
+                }
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "transport-confirmed-summary-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+
+        let failedSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "transport-confirmed-summary-failed-send",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("transport-confirmed-summary-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: failedSink)
+        let didEnqueue = await waitForSemaphore(failedSink.publicationEntered, timeout: 1)
+        XCTAssertTrue(didEnqueue)
+        let failedResponse = try await failedSink.waitForMessages(count: 1).last
+        XCTAssertEqual(failedResponse?.type, MessageType.memorySummaryDraftGenerate)
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+
+        failedSink.complete(succeeded: false)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+
+        let retrySink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "transport-confirmed-summary-retry",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("transport-confirmed-summary-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: retrySink)
+        let retryResponse = try await retrySink.waitForMessages(count: 1).last
+        XCTAssertEqual(retryResponse?.type, MessageType.memorySummaryDraftGenerate)
+        let persisted = await waitForCondition {
+            (try? memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count) == 1
+        }
+        XCTAssertTrue(persisted)
+        XCTAssertEqual(chatCallCount.value, 1)
+    }
+
+    func testMemorySummaryDraftApproveRejectsUndeliveredGeneratedContentAndFallsBackToVisiblePreview()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        let sessionID = "undelivered-approval-summary-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Undelivered approval"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "undelivered-approval-summary-model",
+                    name: "undelivered-approval-summary-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Undelivered generated summary."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let initialListSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "undelivered-approval-summary-list"
+        ), sink: initialListSink)
+        let initialListResponse = try await initialListSink.waitForMessages(count: 1).last
+        guard case .array(let initialDrafts)? = initialListResponse?.payload["drafts"],
+              case .object(let initialDraft)? = initialDrafts.first,
+              case .string(let draftID)? = initialDraft["id"],
+              case .string(let deterministicPreview)? = initialDraft["summary_preview"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+
+        let failedSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "undelivered-approval-summary-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("undelivered-approval-summary-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: failedSink)
+        let failedPublicationEntered = await waitForSemaphore(
+            failedSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(failedPublicationEntered)
+        let generationResponse = try await failedSink.waitForMessages(count: 1).last
+        guard case .object(let generatedDraft)? = generationResponse?.payload["draft"],
+              case .string(let generatedContent)? = generatedDraft["summary_preview"] else {
+            return XCTFail("Expected generated summary draft")
+        }
+        XCTAssertEqual(generatedContent, "Undelivered generated summary.")
+        failedSink.complete(succeeded: false)
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+
+        let reviewSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "undelivered-approval-summary-list-after-failure"
+        ), sink: reviewSink)
+        let reviewResponse = try await reviewSink.waitForMessages(count: 1).last
+        guard case .array(let reviewDrafts)? = reviewResponse?.payload["drafts"],
+              case .object(let reviewDraft)? = reviewDrafts.first else {
+            return XCTFail("Expected visible deterministic summary draft")
+        }
+        XCTAssertEqual(reviewDraft["summary_preview"], .string(deterministicPreview))
+        XCTAssertEqual(reviewDraft["summary_method"], .string("deterministic_preview"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "undelivered-approval-summary-reject-content",
+            payload: [
+                "draft_id": .string(draftID),
+                "content": .string(generatedContent),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+                "expected_summary_method": .string("llm_summary_v1"),
+            ]
+        ), sink: reviewSink)
+        let rejectedResponse = try await reviewSink.waitForMessages(count: 2).last
+        XCTAssertEqual(rejectedResponse?.type, MessageType.error)
+        XCTAssertEqual(
+            rejectedResponse?.payload["code"],
+            .string("memory_summary_draft_stale")
+        )
+        XCTAssertTrue(try memoryStore.list(ownerDeviceID: nil).isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "undelivered-approval-summary-compatible-approve",
+            payload: [
+                "draft_id": .string(draftID),
+                "content": .string(deterministicPreview),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+                "expected_summary_method": .string("deterministic_preview"),
+            ]
+        ), sink: reviewSink)
+        let approvedResponse = try await reviewSink.waitForMessages(count: 3).last
+        guard case .object(let approvedEntry)? = approvedResponse?.payload["entry"],
+              case .object(let approvedSource)? = approvedEntry["source"] else {
+            return XCTFail("Expected approved deterministic summary")
+        }
+        XCTAssertEqual(approvedEntry["content"], .string(deterministicPreview))
+        XCTAssertEqual(approvedSource["summary_method"], .string("deterministic_preview"))
+    }
+
+    func testMemorySummaryDraftApproveAcceptsExactPublishedContentWhilePersistenceIsPending()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = BlockingGeneratedDraftPersistenceStore()
+        var persistenceReleased = false
+        defer {
+            if !persistenceReleased {
+                memoryStore.releasePersistence.signal()
+            }
+        }
+        let sessionID = "published-pending-approval-summary-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Published pending approval"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "published-pending-approval-summary-model",
+                    name: "published-pending-approval-summary-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Published summary pending persistence."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let initialListSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "published-pending-approval-summary-list"
+        ), sink: initialListSink)
+        let initialListResponse = try await initialListSink.waitForMessages(count: 1).last
+        guard case .array(let initialDrafts)? = initialListResponse?.payload["drafts"],
+              case .object(let initialDraft)? = initialDrafts.first,
+              case .string(let draftID)? = initialDraft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+
+        let generationSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "published-pending-approval-summary-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("published-pending-approval-summary-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: generationSink)
+        let generationResponse = try await generationSink.waitForMessages(count: 1).last
+        guard case .object(let generatedDraft)? = generationResponse?.payload["draft"],
+              case .string(let generatedContent)? = generatedDraft["summary_preview"] else {
+            return XCTFail("Expected generated summary draft")
+        }
+        let persistenceEntered = await waitForSemaphore(
+            memoryStore.persistenceEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(persistenceEntered)
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+
+        let reviewSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "published-pending-approval-summary-review"
+        ), sink: reviewSink)
+        let reviewResponse = try await reviewSink.waitForMessages(count: 1).last
+        guard case .array(let reviewDrafts)? = reviewResponse?.payload["drafts"],
+              case .object(let reviewDraft)? = reviewDrafts.first else {
+            return XCTFail("Expected published summary draft")
+        }
+        XCTAssertEqual(reviewDraft["summary_preview"], .string(generatedContent))
+        XCTAssertEqual(reviewDraft["summary_method"], .string("llm_summary_v1"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "published-pending-approval-summary-approve",
+            payload: [
+                "draft_id": .string(draftID),
+                "content": .string(generatedContent),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+                "expected_summary_method": .string("llm_summary_v1"),
+            ]
+        ), sink: reviewSink)
+        let approvedResponse = try await reviewSink.waitForMessages(count: 2).last
+        guard case .object(let approvedEntry)? = approvedResponse?.payload["entry"],
+              case .object(let approvedSource)? = approvedEntry["source"] else {
+            return XCTFail("Expected approved generated summary")
+        }
+        XCTAssertEqual(approvedEntry["content"], .string(generatedContent))
+        XCTAssertEqual(approvedSource["summary_method"], .string("llm_summary_v1"))
+
+        persistenceReleased = true
+        memoryStore.releasePersistence.signal()
+        let persisted = await waitForCondition {
+            (try? memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count) == 1
+        }
+        XCTAssertTrue(persisted)
+    }
+
+    func testMemorySummaryDraftApproveBindsIdenticalContentToExpectedSummaryMethod() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        let sessionID = "method-bound-approval-summary-session"
+        let deterministicPreview = [
+            "User: Method bound question 0",
+            "Assistant: Method bound answer 0",
+            "User: Method bound question 1",
+            "Assistant: Method bound answer 1",
+            "User: Method bound question 2",
+            "Assistant: Method bound answer 2",
+        ].joined(separator: "\n")
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Method bound"
+        )
+        let encodedSummary = try JSONEncoder().encode(["summary": deterministicPreview])
+        let summaryJSON = try XCTUnwrap(String(data: encodedSummary, encoding: .utf8))
+        let persistenceCompleted = DispatchSemaphore(value: 0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "method-bound-approval-summary-model",
+                    name: "method-bound-approval-summary-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(summaryJSON),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            memorySummaryPersistenceRequestCompletionCheckpoint: {
+                persistenceCompleted.signal()
+            }
+        )
+        let sink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "method-bound-approval-summary-list"
+        ), sink: sink)
+        let listResponse = try await sink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let listedDraft)? = drafts.first,
+              case .string(let draftID)? = listedDraft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+        XCTAssertEqual(listedDraft["summary_preview"], .string(deterministicPreview))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "method-bound-approval-summary-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("method-bound-approval-summary-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: sink)
+        let generateResponse = try await sink.waitForMessages(count: 2).last
+        guard case .object(let generatedDraft)? = generateResponse?.payload["draft"] else {
+            return XCTFail("Expected generated summary draft")
+        }
+        XCTAssertEqual(generatedDraft["summary_preview"], .string(deterministicPreview))
+        XCTAssertEqual(generatedDraft["summary_method"], .string("llm_summary_v1"))
+        XCTAssertNil(generatedDraft["persistence_operation_id"])
+        let didCompletePersistence = await waitForSemaphore(persistenceCompleted, timeout: 1)
+        XCTAssertTrue(didCompletePersistence)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "method-bound-approval-summary-ambiguous",
+            payload: [
+                "draft_id": .string(draftID),
+                "content": .string(deterministicPreview),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: sink)
+        let ambiguousResponse = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(ambiguousResponse?.type, MessageType.error)
+        XCTAssertEqual(
+            ambiguousResponse?.payload["code"],
+            .string("memory_summary_draft_stale")
+        )
+        XCTAssertTrue(try memoryStore.list(ownerDeviceID: nil).isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "method-bound-approval-summary-llm",
+            payload: [
+                "draft_id": .string(draftID),
+                "content": .string(deterministicPreview),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+                "expected_summary_method": .string("llm_summary_v1"),
+            ]
+        ), sink: sink)
+        let approvedResponse = try await sink.waitForMessages(count: 4).last
+        guard case .object(let approvedEntry)? = approvedResponse?.payload["entry"],
+              case .object(let approvedSource)? = approvedEntry["source"] else {
+            return XCTFail("Expected method-bound generated summary approval")
+        }
+        XCTAssertEqual(approvedEntry["content"], .string(deterministicPreview))
+        XCTAssertEqual(approvedSource["summary_method"], .string("llm_summary_v1"))
+    }
+
+    func testMemorySummaryDraftConcurrentSuccessfulRetriesPersistMaterializedCandidateOnce()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = BlockingGeneratedDraftPersistenceStore()
+        let sessionID = "concurrent-transport-retry-summary-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Concurrent transport retry"
+        )
+        let chatCallCount = LockedBox(0)
+        let persistenceRequestCompleted = DispatchSemaphore(value: 0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "concurrent-transport-retry-summary-model",
+                    name: "concurrent-transport-retry-summary-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Persist one concurrent retry."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ],
+                onChatRequest: { _ in
+                    chatCallCount.mutate { $0 += 1 }
+                }
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            memorySummaryPersistenceRequestCompletionCheckpoint: {
+                persistenceRequestCompleted.signal()
+            }
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "concurrent-transport-retry-summary-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+        let payload: [String: JSONValue] = [
+            "draft_id": .string(draftID),
+            "model": .string("concurrent-transport-retry-summary-model"),
+            "expected_session_id": .string(sessionID),
+            "expected_source_message_count": .number(6),
+        ]
+
+        let failedSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "concurrent-transport-retry-summary-failed-send",
+            payload: payload
+        ), sink: failedSink)
+        let failedPublicationEntered = await waitForSemaphore(
+            failedSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(failedPublicationEntered)
+        failedSink.complete(succeeded: false)
+
+        let firstRetrySink = DeferredPublicationSink()
+        let secondRetrySink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "concurrent-transport-retry-summary-first",
+            payload: payload
+        ), sink: firstRetrySink)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "concurrent-transport-retry-summary-second",
+            payload: payload
+        ), sink: secondRetrySink)
+        let firstRetryPublicationEntered = await waitForSemaphore(
+            firstRetrySink.publicationEntered,
+            timeout: 1
+        )
+        let secondRetryPublicationEntered = await waitForSemaphore(
+            secondRetrySink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(firstRetryPublicationEntered)
+        XCTAssertTrue(secondRetryPublicationEntered)
+
+        firstRetrySink.complete(succeeded: true)
+        let persistenceEntered = await waitForSemaphore(
+            memoryStore.persistenceEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(persistenceEntered)
+        secondRetrySink.complete(succeeded: true)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(memoryStore.persistenceAttemptCount, 1)
+        XCTAssertTrue(try memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).isEmpty)
+
+        memoryStore.releasePersistence.signal()
+        let persistenceCompleted = await waitForSemaphore(
+            persistenceRequestCompleted,
+            timeout: 1
+        )
+        XCTAssertTrue(persistenceCompleted)
+        let persisted = await waitForCondition {
+            (try? memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count) == 1
+        }
+        XCTAssertTrue(persisted)
+        XCTAssertEqual(memoryStore.persistenceAttemptCount, 1)
+        XCTAssertEqual(chatCallCount.value, 1)
+    }
+
+    func testMemorySummaryDraftMaterializedCacheKeepsTokensBoundAcrossReplacement() throws {
+        let cache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 2)
+        let original = RuntimeGeneratedMemorySummaryDraft(
+            draftID: "replacement-bound-draft",
+            sessionID: "replacement-bound-session",
+            sourceMessageCount: 2,
+            content: "Original delivered summary.",
+            modelID: "original-model",
+            providerQualifiedModelID: "ollama:original-model",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+            generatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let replacement = RuntimeGeneratedMemorySummaryDraft(
+            draftID: original.draftID,
+            sessionID: original.sessionID,
+            sourceMessageCount: original.sourceMessageCount,
+            content: "Replacement delivered summary.",
+            modelID: "replacement-model",
+            providerQualifiedModelID: "ollama:replacement-model",
+            promptSkillBinding: original.promptSkillBinding,
+            generatedAt: Date(timeIntervalSince1970: 101)
+        )
+
+        let originalPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: original
+        ))
+        let replacementPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: replacement
+        ))
+
+        XCTAssertEqual(
+            cache.completePublication(originalPublication.token, succeeded: true),
+            original
+        )
+        let secondReplacementToken = try XCTUnwrap(cache.reservePublication(
+            ownerDeviceID: nil,
+            draft: replacement
+        ))
+        XCTAssertNil(cache.completePublication(
+            replacementPublication.token,
+            succeeded: false
+        ))
+        XCTAssertNil(cache.completePublication(
+            replacementPublication.token,
+            succeeded: false
+        ))
+        XCTAssertEqual(
+            cache.completePublication(secondReplacementToken, succeeded: true),
+            replacement
+        )
+        _ = cache.completePersistence(
+            originalPublication.token,
+            succeeded: true,
+            retryAllowed: true
+        )
+        _ = cache.completePersistence(
+            secondReplacementToken,
+            succeeded: true,
+            retryAllowed: true
+        )
+    }
+
+    func testMemorySummaryDraftMaterializedCacheRejectsReplacedWorkerSnapshot() throws {
+        let cache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 2)
+        let original = RuntimeGeneratedMemorySummaryDraft(
+            draftID: "worker-snapshot-draft",
+            sessionID: "worker-snapshot-session",
+            sourceMessageCount: 2,
+            content: "Worker snapshot A.",
+            modelID: "worker-snapshot-model-a",
+            providerQualifiedModelID: "ollama:worker-snapshot-model-a",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+            generatedAt: Date(timeIntervalSince1970: 150)
+        )
+        let originalPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: original
+        ))
+        XCTAssertNil(cache.completePublication(originalPublication.token, succeeded: false))
+        let workerSnapshot = try XCTUnwrap(cache.draft(
+            ownerDeviceID: nil,
+            draftID: original.draftID
+        ))
+        let replacement = RuntimeGeneratedMemorySummaryDraft(
+            draftID: original.draftID,
+            sessionID: original.sessionID,
+            sourceMessageCount: original.sourceMessageCount,
+            content: "Worker snapshot B.",
+            modelID: "worker-snapshot-model-b",
+            providerQualifiedModelID: "ollama:worker-snapshot-model-b",
+            promptSkillBinding: original.promptSkillBinding,
+            generatedAt: Date(timeIntervalSince1970: 151)
+        )
+        let replacementPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: replacement
+        ))
+
+        XCTAssertNil(cache.reservePublication(ownerDeviceID: nil, draft: workerSnapshot))
+        XCTAssertNil(cache.completePublication(
+            replacementPublication.token,
+            succeeded: false
+        ))
+    }
+
+    func testMemorySummaryDraftMaterializedCachePinsPublicationAcrossCapacityEviction() throws {
+        let cache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 2)
+        let pinnedDraft = RuntimeGeneratedMemorySummaryDraft(
+            draftID: "capacity-pinned-draft",
+            sessionID: "capacity-pinned-session",
+            sourceMessageCount: 2,
+            content: "Pinned until transport completion.",
+            modelID: "pinned-model",
+            providerQualifiedModelID: "ollama:pinned-model",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+            generatedAt: Date(timeIntervalSince1970: 200)
+        )
+        let pinnedPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: pinnedDraft
+        ))
+
+        for index in 0..<3 {
+            let evictablePublication = try XCTUnwrap(cache.storeAndReservePublication(
+                ownerDeviceID: nil,
+                draft: RuntimeGeneratedMemorySummaryDraft(
+                    draftID: "capacity-evictable-\(index)",
+                    sessionID: "capacity-evictable-session-\(index)",
+                    sourceMessageCount: 2,
+                    content: "Evictable summary \(index).",
+                    modelID: "evictable-model",
+                    providerQualifiedModelID: "ollama:evictable-model",
+                    promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+                    generatedAt: Date(timeIntervalSince1970: 201 + Double(index))
+                )
+            ))
+            XCTAssertNil(
+                cache.completePublication(evictablePublication.token, succeeded: false)
+            )
+        }
+
+        XCTAssertEqual(
+            cache.completePublication(pinnedPublication.token, succeeded: true),
+            pinnedDraft
+        )
+        _ = cache.completePersistence(
+            pinnedPublication.token,
+            succeeded: true,
+            retryAllowed: true
+        )
+
+        let saturatedCache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 1)
+        _ = try XCTUnwrap(saturatedCache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: pinnedDraft
+        ))
+        XCTAssertNil(saturatedCache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: RuntimeGeneratedMemorySummaryDraft(
+                draftID: "capacity-rejected-draft",
+                sessionID: "capacity-rejected-session",
+                sourceMessageCount: 2,
+                content: "Rejected while every entry is pinned.",
+                modelID: "capacity-rejected-model",
+                providerQualifiedModelID: "ollama:capacity-rejected-model",
+                promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+                generatedAt: Date(timeIntervalSince1970: 210)
+            )
+        ))
+    }
+
+    func testMemorySummaryDraftMaterializedCacheRetriesOnlyIdempotentPersistenceFailure() throws {
+        let cache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 1)
+        let draft = RuntimeGeneratedMemorySummaryDraft(
+            draftID: "ambiguous-persistence-draft",
+            sessionID: "ambiguous-persistence-session",
+            sourceMessageCount: 2,
+            content: "Do not retry an ambiguous append.",
+            modelID: "ambiguous-model",
+            providerQualifiedModelID: "ollama:ambiguous-model",
+            promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+            generatedAt: Date(timeIntervalSince1970: 300)
+        )
+        let firstPublication = try XCTUnwrap(cache.storeAndReservePublication(
+            ownerDeviceID: nil,
+            draft: draft
+        ))
+        let secondToken = try XCTUnwrap(cache.reservePublication(
+            ownerDeviceID: nil,
+            draft: draft
+        ))
+
+        XCTAssertEqual(
+            cache.completePublication(firstPublication.token, succeeded: true),
+            draft
+        )
+        XCTAssertNil(cache.completePublication(secondToken, succeeded: true))
+        XCTAssertTrue(cache.completePersistence(
+            firstPublication.token,
+            succeeded: false,
+            retryAllowed: true
+        ))
+        let duringRetryToken = try XCTUnwrap(cache.reservePublication(
+            ownerDeviceID: nil,
+            draft: draft
+        ))
+        XCTAssertNil(cache.completePublication(duringRetryToken, succeeded: true))
+        XCTAssertFalse(cache.completePersistence(
+            firstPublication.token,
+            succeeded: false,
+            retryAllowed: true
+        ))
+
+        let laterToken = try XCTUnwrap(cache.reservePublication(
+            ownerDeviceID: nil,
+            draft: draft
+        ))
+        XCTAssertNil(cache.completePublication(laterToken, succeeded: true))
+
+        let nonIdempotentCache = RuntimeMemorySummaryMaterializedCache(maximumEntryCount: 1)
+        let nonIdempotentPublication = try XCTUnwrap(
+            nonIdempotentCache.storeAndReservePublication(ownerDeviceID: nil, draft: draft)
+        )
+        XCTAssertEqual(
+            nonIdempotentCache.completePublication(
+                nonIdempotentPublication.token,
+                succeeded: true
+            ),
+            draft
+        )
+        XCTAssertFalse(nonIdempotentCache.completePersistence(
+            nonIdempotentPublication.token,
+            succeeded: false,
+            retryAllowed: false
+        ))
+        let nonIdempotentRetry = try XCTUnwrap(nonIdempotentCache.reservePublication(
+            ownerDeviceID: nil,
+            draft: draft
+        ))
+        XCTAssertNil(nonIdempotentCache.completePublication(
+            nonIdempotentRetry,
+            succeeded: true
+        ))
+    }
+
+    func testMemorySummaryDraftPersistenceDispatcherBoundsIdempotentRetryToTwoAttempts()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = BlockingGeneratedDraftPersistenceStore(
+            failureMode: .alwaysBeforeAppend
+        )
+        let sessionID = "bounded-idempotent-persistence-retry"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Bound idempotent persistence retry"
+        )
+        let persistenceRequestCompleted = DispatchSemaphore(value: 0)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "bounded-idempotent-persistence-model",
+                    name: "bounded-idempotent-persistence-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"Bound persistence to one retry."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            memorySummaryPersistenceRequestCompletionCheckpoint: {
+                persistenceRequestCompleted.signal()
+            }
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "bounded-idempotent-persistence-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+        let payload: [String: JSONValue] = [
+            "draft_id": .string(draftID),
+            "model": .string("bounded-idempotent-persistence-model"),
+            "expected_session_id": .string(sessionID),
+            "expected_source_message_count": .number(6),
+        ]
+
+        let firstSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "bounded-idempotent-persistence-first",
+            payload: payload
+        ), sink: firstSink)
+        let firstPublicationEntered = await waitForSemaphore(
+            firstSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(firstPublicationEntered)
+        firstSink.complete(succeeded: true)
+        let firstPersistenceEntered = await waitForSemaphore(
+            memoryStore.persistenceEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(firstPersistenceEntered)
+
+        let secondSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "bounded-idempotent-persistence-second",
+            payload: payload
+        ), sink: secondSink)
+        let secondPublicationEntered = await waitForSemaphore(
+            secondSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(secondPublicationEntered)
+        secondSink.complete(succeeded: true)
+        memoryStore.releasePersistence.signal()
+        let secondPersistenceEntered = await waitForSemaphore(
+            memoryStore.persistenceEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(secondPersistenceEntered)
+
+        let thirdSink = DeferredPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "bounded-idempotent-persistence-third",
+            payload: payload
+        ), sink: thirdSink)
+        let thirdPublicationEntered = await waitForSemaphore(
+            thirdSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(thirdPublicationEntered)
+        thirdSink.complete(succeeded: true)
+        memoryStore.releasePersistence.signal()
+
+        let persistenceCompleted = await waitForSemaphore(
+            persistenceRequestCompleted,
+            timeout: 1
+        )
+        XCTAssertTrue(persistenceCompleted)
+        XCTAssertEqual(memoryStore.persistenceAttemptCount, 2)
+        XCTAssertEqual(memoryStore.rawEventLineCount, 0)
+
+        let laterSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "bounded-idempotent-persistence-later",
+            payload: payload
+        ), sink: laterSink)
+        let laterResponse = try await laterSink.waitForMessages(count: 1).last
+        XCTAssertEqual(laterResponse?.type, MessageType.memorySummaryDraftGenerate)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(memoryStore.persistenceAttemptCount, 2)
+    }
+
+    func testMemorySummaryDraftAmbiguousPersistenceFailureRetriesIdempotentlyAfterConcurrentSuccess()
+        async throws
+    {
+        for failureMode in [
+            BlockingGeneratedDraftPersistenceStore.FailureMode.beforeAppend,
+            .afterAppend,
+        ] {
+            let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+            let memoryStore = BlockingGeneratedDraftPersistenceStore(
+                failureMode: failureMode
+            )
+            let sessionID = "ambiguous-persistence-\(failureMode)"
+            try appendMemorySummaryDraftTranscript(
+                to: chatStore,
+                sessionID: sessionID,
+                ownerDeviceID: nil,
+                firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+                visiblePrefix: "Ambiguous persistence \(failureMode)"
+            )
+            let persistenceRequestCompleted = DispatchSemaphore(value: 0)
+            let router = makeRouter(
+                backend: MockBackend(
+                    models: [ModelInfo(
+                        id: "ambiguous-persistence-model",
+                        name: "ambiguous-persistence-model",
+                        installed: true
+                    )],
+                    chatEvents: [
+                        .delta(#"{"summary":"Persist at most once after an ambiguous error."}"#),
+                        .done(inputTokens: 2, outputTokens: 3),
+                    ]
+                ),
+                chatEventStore: chatStore,
+                memoryStore: memoryStore,
+                memorySummaryPersistenceRequestCompletionCheckpoint: {
+                    persistenceRequestCompleted.signal()
+                }
+            )
+            let listSink = RecordingSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftsList,
+                requestID: "ambiguous-persistence-list-\(failureMode)"
+            ), sink: listSink)
+            let listResponse = try await listSink.waitForMessages(count: 1).last
+            guard case .array(let drafts)? = listResponse?.payload["drafts"],
+                  case .object(let draft)? = drafts.first,
+                  case .string(let draftID)? = draft["id"] else {
+                return XCTFail("Expected deterministic summary draft")
+            }
+            let payload: [String: JSONValue] = [
+                "draft_id": .string(draftID),
+                "model": .string("ambiguous-persistence-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+
+            let failedSink = DeferredPublicationSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftGenerate,
+                requestID: "ambiguous-persistence-initial-\(failureMode)",
+                payload: payload
+            ), sink: failedSink)
+            let initialPublicationEntered = await waitForSemaphore(
+                failedSink.publicationEntered,
+                timeout: 1
+            )
+            XCTAssertTrue(initialPublicationEntered)
+            failedSink.complete(succeeded: false)
+
+            let firstSuccessSink = DeferredPublicationSink()
+            let secondSuccessSink = DeferredPublicationSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftGenerate,
+                requestID: "ambiguous-persistence-first-\(failureMode)",
+                payload: payload
+            ), sink: firstSuccessSink)
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftGenerate,
+                requestID: "ambiguous-persistence-second-\(failureMode)",
+                payload: payload
+            ), sink: secondSuccessSink)
+            let firstPublicationEntered = await waitForSemaphore(
+                firstSuccessSink.publicationEntered,
+                timeout: 1
+            )
+            let secondPublicationEntered = await waitForSemaphore(
+                secondSuccessSink.publicationEntered,
+                timeout: 1
+            )
+            XCTAssertTrue(firstPublicationEntered)
+            XCTAssertTrue(secondPublicationEntered)
+
+            firstSuccessSink.complete(succeeded: true)
+            let persistenceEntered = await waitForSemaphore(
+                memoryStore.persistenceEntered,
+                timeout: 1
+            )
+            XCTAssertTrue(persistenceEntered)
+            secondSuccessSink.complete(succeeded: true)
+            memoryStore.releasePersistence.signal()
+            let persistenceCompleted = await waitForSemaphore(
+                persistenceRequestCompleted,
+                timeout: 1
+            )
+            XCTAssertTrue(persistenceCompleted)
+            XCTAssertEqual(memoryStore.persistenceAttemptCount, 2)
+            XCTAssertEqual(memoryStore.rawEventLineCount, 1)
+
+            let laterRetrySink = RecordingSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftGenerate,
+                requestID: "ambiguous-persistence-later-\(failureMode)",
+                payload: payload
+            ), sink: laterRetrySink)
+            let laterResponse = try await laterRetrySink.waitForMessages(count: 1).last
+            XCTAssertEqual(laterResponse?.type, MessageType.memorySummaryDraftGenerate)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertEqual(memoryStore.persistenceAttemptCount, 2)
+            XCTAssertEqual(memoryStore.rawEventLineCount, 1)
+        }
+    }
+
+    func testMemorySummaryDraftGenerateJSONLSourceLockCoversTransportEnqueue()
+        async throws
+    {
+        let chatStoreURL = temporaryRuntimeChatJSONLURL()
+        let chatStore = JSONLRuntimeChatEventStore(fileURL: chatStoreURL)
+        let competingStore = JSONLRuntimeChatEventStore(fileURL: chatStoreURL)
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl"))
+        let sessionID = "jsonl-publication-source-session"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "JSONL publication source"
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(
+                    id: "jsonl-publication-source-model",
+                    name: "jsonl-publication-source-model",
+                    installed: true
+                )],
+                chatEvents: [
+                    .delta(#"{"summary":"JSONL source lock covers enqueue."}"#),
+                    .done(inputTokens: 2, outputTokens: 3),
+                ]
+            ),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "jsonl-publication-source-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let drafts)? = listResponse?.payload["drafts"],
+              case .object(let draft)? = drafts.first,
+              case .string(let draftID)? = draft["id"] else {
+            return XCTFail("Expected deterministic summary draft")
+        }
+
+        let generationSink = BlockingPublicationSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "jsonl-publication-source-generate",
+            payload: [
+                "draft_id": .string(draftID),
+                "model": .string("jsonl-publication-source-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(6),
+            ]
+        ), sink: generationSink)
+        let didEnterPublication = await waitForSemaphore(
+            generationSink.publicationEntered,
+            timeout: 1
+        )
+        XCTAssertTrue(didEnterPublication)
+
+        let mutationStarted = DispatchSemaphore(value: 0)
+        let mutationCompleted = DispatchSemaphore(value: 0)
+        let mutationError = LockedBox<Error?>(nil)
+        DispatchQueue.global().async {
+            mutationStarted.signal()
+            do {
+                try competingStore.append(RuntimeChatStoredEvent(
+                    id: "jsonl-publication-source-new-request",
+                    timestamp: Date(timeIntervalSince1970: 2_000_000),
+                    kind: .request,
+                    requestID: "jsonl-publication-source-new-turn",
+                    sessionID: sessionID,
+                    model: "ollama:llama3.1:8b",
+                    messages: [ChatMessage(role: "user", content: "Queued after publication")],
+                    ownerDeviceID: nil
+                ))
+            } catch {
+                mutationError.value = error
+            }
+            mutationCompleted.signal()
+        }
+        let didStartMutation = await waitForSemaphore(mutationStarted, timeout: 1)
+        XCTAssertTrue(didStartMutation)
+        let didMutateBeforePublication = await waitForSemaphore(
+            mutationCompleted,
+            timeout: 0.05
+        )
+        XCTAssertFalse(didMutateBeforePublication)
+
+        generationSink.releasePublication.signal()
+        let didCompleteMutation = await waitForSemaphore(mutationCompleted, timeout: 1)
+        XCTAssertTrue(didCompleteMutation)
+        XCTAssertNil(mutationError.value)
+        let generationResponse = try await generationSink.waitForMessages(count: 1).last
+        XCTAssertEqual(generationResponse?.type, MessageType.memorySummaryDraftGenerate)
+        let persisted = await waitForCondition {
+            (try? memoryStore.generatedMemorySummaryDrafts(ownerDeviceID: nil).count) == 1
+        }
+        XCTAssertTrue(persisted)
+    }
+
     func testMemorySummaryDraftApproveRequiresAuthentication() async throws {
         let sink = RecordingSink()
         let router = LocalRuntimeMessageRouter(backend: MockBackend(status: .available))
@@ -9883,15 +11153,34 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(firstSourcePointerPayload["role"], .string("user"))
         XCTAssertEqual(firstSourcePointerPayload["excerpt"], .string("Approval question 0"))
 
+        _ = try memoryStore.upsert(
+            ownerDeviceID: "device-a",
+            id: memoryID,
+            content: "User edited approved memory",
+            enabled: false,
+            source: nil,
+            timestamp: Date().addingTimeInterval(60)
+        )
+
         router.handle(ProtocolEnvelope(
             type: MessageType.memorySummaryDraftApprove,
             requestID: "summary-draft-approve-retry",
             payload: ["draft_id": .string(draftID)]
         ), sink: sinkA)
 
-        _ = try await sinkA.waitForMessages(count: 6).last
+        let retryResponse = try await sinkA.waitForMessages(count: 6).last
+        XCTAssertEqual(retryResponse?.type, MessageType.memorySummaryDraftApprove)
+        XCTAssertEqual(retryResponse?.payload["status"], .string("approved"))
+        guard case .object(let retryEntry)? = retryResponse?.payload["entry"] else {
+            XCTFail("Expected approved memory entry on retry")
+            return
+        }
+        XCTAssertEqual(retryEntry["content"], .string("User edited approved memory"))
+        XCTAssertEqual(retryEntry["enabled"], .bool(false))
         let entries = try memoryStore.list(ownerDeviceID: "device-a")
         XCTAssertEqual(entries.map(\.id), ["memory-summary:\(draftID)"])
+        XCTAssertEqual(entries.first?.content, "User edited approved memory")
+        XCTAssertEqual(entries.first?.enabled, false)
         XCTAssertEqual(entries.first?.source?.draftID, draftID)
         XCTAssertEqual(entries.first?.source?.sourceRange, "visible messages 1-6 of 6")
         XCTAssertEqual(entries.first?.source?.sourcePointers.first?.excerpt, "Approval question 0")
@@ -9933,6 +11222,630 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let afterListResponse = try await sinkA.waitForMessages(count: 8).last
         XCTAssertEqual(afterListResponse?.type, MessageType.memorySummaryDraftsList)
         XCTAssertEqual(afterListResponse?.payload["drafts"], .array([]))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftDismiss,
+            requestID: "summary-draft-dismiss-after-approval",
+            payload: ["draft_id": .string(draftID)]
+        ), sink: sinkA)
+
+        let oppositeDecisionResponse = try await sinkA.waitForMessages(count: 9).last
+        XCTAssertEqual(oppositeDecisionResponse?.type, MessageType.error)
+        XCTAssertEqual(
+            oppositeDecisionResponse?.payload["code"],
+            .string("memory_summary_draft_unavailable")
+        )
+    }
+
+    func testMemorySummaryDraftApproveRejectsRenamedSameCountSourceBeforeMemoryMutation() async throws {
+        let deviceKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "device-source-bound-approval",
+            name: "Source Bound Approval Device",
+            publicKeyBase64: deviceKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let sessionID = "renamed-source-bound-draft"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: "device-source-bound-approval",
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Source bound"
+        )
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: trustedStore,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: "device-source-bound-approval",
+            privateKey: deviceKey
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "source-bound-draft-before-rename",
+            payload: ["limit": .number(10)]
+        ), sink: sink)
+        let initialListResponse = try await sink.waitForMessages(count: 3).last
+        guard case .array(let initialDrafts)? = initialListResponse?.payload["drafts"],
+              case .object(let initialDraft)? = initialDrafts.first,
+              case .string(let initialDraftID)? = initialDraft["id"],
+              case .object(let initialSession)? = initialDraft["session"],
+              case .number(let sourceMessageCount)? = initialDraft["source_message_count"] else {
+            XCTFail("Expected source-bound memory summary draft before rename")
+            return
+        }
+        XCTAssertEqual(initialSession["title"], .string("New chat"))
+
+        try chatStore.append(RuntimeChatStoredEvent(
+            id: "source-bound-title-event",
+            timestamp: Date(timeIntervalSince1970: 2_000_000),
+            kind: .title,
+            requestID: "source-bound-title-event",
+            sessionID: sessionID,
+            model: "ollama:llama3.1:8b",
+            title: "Renamed after review",
+            ownerDeviceID: "device-source-bound-approval"
+        ))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "source-bound-stale-approval",
+            payload: [
+                "draft_id": .string(initialDraftID),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(sourceMessageCount),
+            ]
+        ), sink: sink)
+        let staleApproval = try await sink.waitForMessages(count: 4).last
+        XCTAssertEqual(staleApproval?.type, MessageType.error)
+        XCTAssertEqual(staleApproval?.requestID, "source-bound-stale-approval")
+        XCTAssertEqual(staleApproval?.payload["code"], .string("memory_summary_draft_unavailable"))
+        XCTAssertTrue(try memoryStore.list(ownerDeviceID: "device-source-bound-approval").isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "source-bound-draft-after-rename",
+            payload: ["limit": .number(10)]
+        ), sink: sink)
+        let renamedListResponse = try await sink.waitForMessages(count: 5).last
+        guard case .array(let renamedDrafts)? = renamedListResponse?.payload["drafts"],
+              case .object(let renamedDraft)? = renamedDrafts.first,
+              case .string(let renamedDraftID)? = renamedDraft["id"],
+              case .object(let renamedSession)? = renamedDraft["session"] else {
+            XCTFail("Expected a replacement source-bound draft after rename")
+            return
+        }
+        XCTAssertNotEqual(renamedDraftID, initialDraftID)
+        XCTAssertEqual(renamedSession["title"], .string("Renamed after review"))
+        XCTAssertTrue(try memoryStore.list(ownerDeviceID: "device-source-bound-approval").isEmpty)
+    }
+
+    func testMemorySummaryDraftApproveRevalidatesSourceAtMutationCommit() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let sessionID = "approval-commit-race-draft"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Approval commit race"
+        )
+        let draft = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        checkpoint.arm()
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            memorySummaryDecisionCommitCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        DispatchQueue.global().async {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftApprove,
+                requestID: "approval-commit-race",
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "expected_session_id": .string(sessionID),
+                    "expected_source_message_count": .number(Double(draft.sourceMessageCount)),
+                ]
+            ), sink: sink)
+        }
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+
+        try chatStore.append(RuntimeChatStoredEvent(
+            id: "approval-commit-race-title",
+            timestamp: Date(timeIntervalSince1970: 2_000_000),
+            kind: .title,
+            requestID: "approval-commit-race-title",
+            sessionID: sessionID,
+            model: draft.candidate.model,
+            title: "Changed before approval commit",
+            ownerDeviceID: nil
+        ))
+        checkpoint.release()
+
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("memory_summary_draft_stale"))
+        XCTAssertTrue(try memoryStore.list(ownerDeviceID: nil).isEmpty)
+        let replacement = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        XCTAssertNotEqual(replacement.id, draft.id)
+        XCTAssertEqual(replacement.candidate.title, "Changed before approval commit")
+    }
+
+    func testMemorySummaryDraftDismissRevalidatesSourceAtMutationCommit() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let sessionID = "dismiss-commit-race-draft"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Dismiss commit race"
+        )
+        let draft = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        let checkpoint = BlockingLifecycleAuthorizationCheckpoint()
+        checkpoint.arm()
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore,
+            memorySummaryDecisionCommitCheckpoint: { checkpoint.checkpoint() }
+        )
+        let sink = RecordingSink()
+        DispatchQueue.global().async {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftDismiss,
+                requestID: "dismiss-commit-race",
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "expected_session_id": .string(sessionID),
+                    "expected_source_message_count": .number(Double(draft.sourceMessageCount)),
+                ]
+            ), sink: sink)
+        }
+        let didEnterCheckpoint = await checkpoint.waitUntilEntered()
+        XCTAssertTrue(didEnterCheckpoint)
+
+        try chatStore.append(RuntimeChatStoredEvent(
+            id: "dismiss-commit-race-title",
+            timestamp: Date(timeIntervalSince1970: 2_000_000),
+            kind: .title,
+            requestID: "dismiss-commit-race-title",
+            sessionID: sessionID,
+            model: draft.candidate.model,
+            title: "Changed before dismiss commit",
+            ownerDeviceID: nil
+        ))
+        checkpoint.release()
+
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.payload["code"], .string("memory_summary_draft_stale"))
+        XCTAssertTrue(try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: nil).isEmpty)
+        let replacement = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        XCTAssertNotEqual(replacement.id, draft.id)
+        XCTAssertEqual(replacement.candidate.title, "Changed before dismiss commit")
+    }
+
+    func testMemorySummaryDraftApproveHoldsSQLiteSourceLockThroughMemoryMutation() async throws {
+        try await assertMemorySummaryDecisionHoldsSQLiteSourceLock(.approve)
+    }
+
+    func testMemorySummaryDraftDismissHoldsSQLiteSourceLockThroughMemoryMutation() async throws {
+        try await assertMemorySummaryDecisionHoldsSQLiteSourceLock(.dismiss)
+    }
+
+    private func assertMemorySummaryDecisionHoldsSQLiteSourceLock(
+        _ operation: BlockingMemorySummaryDecisionStore.Operation
+    ) async throws {
+        let databaseURL = temporarySQLiteURL()
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let contendingChatStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let memoryStore = BlockingMemorySummaryDecisionStore(operation: operation)
+        let sessionID = "\(operation.rawValue)-source-lock-draft"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "\(operation.rawValue) source lock"
+        )
+        let draft = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        _ = try contendingChatStore.listSessions(ownerDeviceID: nil, limit: 1)
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let sink = RecordingSink()
+        let messageType = operation == .approve
+            ? MessageType.memorySummaryDraftApprove
+            : MessageType.memorySummaryDraftDismiss
+        DispatchQueue.global().async {
+            router.handle(ProtocolEnvelope(
+                type: messageType,
+                requestID: "\(operation.rawValue)-source-lock-decision",
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "expected_session_id": .string(sessionID),
+                    "expected_source_message_count": .number(Double(draft.sourceMessageCount)),
+                ]
+            ), sink: sink)
+        }
+
+        XCTAssertEqual(memoryStore.mutationEntered.wait(timeout: .now() + 2), .success)
+        let titleEvent = RuntimeChatStoredEvent(
+            id: "\(operation.rawValue)-source-lock-title",
+            timestamp: Date(timeIntervalSince1970: 2_000_000),
+            kind: .title,
+            requestID: "\(operation.rawValue)-source-lock-title",
+            sessionID: sessionID,
+            model: draft.candidate.model,
+            title: "Changed after \(operation.rawValue) mutation",
+            ownerDeviceID: nil
+        )
+        XCTAssertThrowsError(try contendingChatStore.append(titleEvent)) { error in
+            let message = error.localizedDescription.lowercased()
+            XCTAssertTrue(message.contains("locked") || message.contains("busy"))
+        }
+
+        memoryStore.releaseMutation.signal()
+        let response = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.type, messageType)
+        try contendingChatStore.append(titleEvent)
+        let replacement = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        XCTAssertNotEqual(replacement.id, draft.id)
+        XCTAssertEqual(replacement.candidate.title, "Changed after \(operation.rawValue) mutation")
+    }
+
+    func testMemorySummaryDecisionMutationErrorsRemainMemoryStoreErrors() async throws {
+        for operation in BlockingMemorySummaryDecisionStore.Operation.allCases {
+            let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+            let sessionID = "\(operation.rawValue)-decision-store-error"
+            try appendMemorySummaryDraftTranscript(
+                to: chatStore,
+                sessionID: sessionID,
+                ownerDeviceID: nil,
+                firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+                visiblePrefix: "\(operation.rawValue) decision error"
+            )
+            let draft = try XCTUnwrap(
+                chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+            )
+            let router = makeRouter(
+                backend: MockBackend(),
+                chatEventStore: chatStore,
+                memoryStore: FailingMemorySummaryDecisionStore()
+            )
+            let sink = RecordingSink()
+            let messageType = operation == .approve
+                ? MessageType.memorySummaryDraftApprove
+                : MessageType.memorySummaryDraftDismiss
+            router.handle(ProtocolEnvelope(
+                type: messageType,
+                requestID: "\(operation.rawValue)-decision-store-error",
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "expected_session_id": .string(sessionID),
+                    "expected_source_message_count": .number(Double(draft.sourceMessageCount)),
+                ]
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).last
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.payload["code"], .string("memory_store_unavailable"))
+            XCTAssertNotEqual(response?.payload["code"], .string("memory_summary_draft_stale"))
+            XCTAssertNotEqual(response?.payload["code"], .string("chat_store_unavailable"))
+            guard case .string(let message)? = response?.payload["message"] else {
+                XCTFail("Expected memory-store error text")
+                continue
+            }
+            XCTAssertTrue(message.contains("Memory summary decision persistence failed."))
+            XCTAssertFalse(message.contains("\(operation.rawValue) memory mutation failed"))
+        }
+    }
+
+    func testMemorySummaryDraftGenerateRejectsStaleGuardsBeforeModelLookup() async throws {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let sessionID = "generate-pre-model-stale-guard"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: sessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Generate pre-model stale guard"
+        )
+        let draft = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        let backendDispatchCount = LockedBox(0)
+        let backend = MockBackend(
+            modelListError: NSError(
+                domain: "AetherLinkTests.PreModelStaleGuard",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "model list must not run for stale draft guards"]
+            ),
+            onChatRequest: { _ in backendDispatchCount.value += 1 }
+        )
+        let router = makeRouter(backend: backend, chatEventStore: chatStore)
+        let staleGuards: [(requestID: String, sessionID: String, sourceCount: Int)] = [
+            ("generate-stale-session-before-model", "wrong-session", draft.sourceMessageCount),
+            ("generate-stale-count-before-model", sessionID, draft.sourceMessageCount + 1),
+        ]
+
+        for staleGuard in staleGuards {
+            let sink = RecordingSink()
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftGenerate,
+                requestID: staleGuard.requestID,
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "model": .string("not-installed-model"),
+                    "expected_session_id": .string(staleGuard.sessionID),
+                    "expected_source_message_count": .number(Double(staleGuard.sourceCount)),
+                ]
+            ), sink: sink)
+            let response = try await sink.waitForMessages(count: 1).last
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.payload["code"], .string("memory_summary_draft_stale"))
+        }
+
+        try chatStore.append(RuntimeChatStoredEvent(
+            id: "generate-pre-model-title-change",
+            timestamp: Date(timeIntervalSince1970: 2_000_000),
+            kind: .title,
+            requestID: "generate-pre-model-title-change",
+            sessionID: sessionID,
+            model: draft.candidate.model,
+            title: "Title changed after memory-summary review",
+            ownerDeviceID: nil
+        ))
+        let titleChangedSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "generate-title-changed-before-model",
+            payload: [
+                "draft_id": .string(draft.id),
+                "model": .string("not-installed-model"),
+                "expected_session_id": .string(sessionID),
+                "expected_source_message_count": .number(Double(draft.sourceMessageCount)),
+            ]
+        ), sink: titleChangedSink)
+        let titleChangedResponse = try await titleChangedSink.waitForMessages(count: 1).last
+        XCTAssertEqual(titleChangedResponse?.type, MessageType.error)
+        XCTAssertEqual(
+            titleChangedResponse?.payload["code"],
+            .string("memory_summary_draft_unavailable")
+        )
+        let replacementDraft = try XCTUnwrap(
+            chatStore.listLongInactivityMemorySummarizationDrafts(ownerDeviceID: nil).first
+        )
+        XCTAssertNotEqual(replacementDraft.id, draft.id)
+        XCTAssertEqual(replacementDraft.candidate.title, "Title changed after memory-summary review")
+
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+        XCTAssertEqual(backendDispatchCount.value, 0)
+    }
+
+    func testMemorySummaryDraftsListRequiresV2ReviewForLegacyRecordsAndRejectsLegacyRequestAuthority()
+        async throws
+    {
+        let chatStore = SQLiteRuntimeChatEventStore(databaseURL: temporarySQLiteURL())
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        let approvedSessionID = "legacy-approved-source-bound-draft"
+        let dismissedSessionID = "legacy-dismissed-source-bound-draft"
+        let generatedSessionID = "legacy-generated-source-bound-draft"
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: approvedSessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_000_000),
+            visiblePrefix: "Legacy approved"
+        )
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: dismissedSessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_100_000),
+            visiblePrefix: "Legacy dismissed"
+        )
+        try appendMemorySummaryDraftTranscript(
+            to: chatStore,
+            sessionID: generatedSessionID,
+            ownerDeviceID: nil,
+            firstTurnAt: Date(timeIntervalSince1970: 1_200_000),
+            visiblePrefix: "Legacy generated"
+        )
+        let currentDrafts = try chatStore.listLongInactivityMemorySummarizationDrafts(
+            ownerDeviceID: nil,
+            policy: RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: 50)
+        )
+        let approvedDraft = try XCTUnwrap(
+            currentDrafts.first { $0.candidate.sessionID == approvedSessionID }
+        )
+        let dismissedDraft = try XCTUnwrap(
+            currentDrafts.first { $0.candidate.sessionID == dismissedSessionID }
+        )
+        let generatedDraft = try XCTUnwrap(
+            currentDrafts.first { $0.candidate.sessionID == generatedSessionID }
+        )
+        func legacyDraftID(_ draft: RuntimeLongInactivityMemorySummarizationDraft) -> String {
+            let lastActivityMillis = Int(draft.candidate.lastActivityAt.timeIntervalSince1970 * 1_000)
+            let visibleMessageCount = draft.sourcePointers.last?.messageIndex ?? draft.sourceMessageCount
+            return [
+                "long-inactivity",
+                draft.candidate.sessionID,
+                String(lastActivityMillis),
+                String(visibleMessageCount),
+            ].joined(separator: ":")
+        }
+        let approvedLegacyID = legacyDraftID(approvedDraft)
+        let dismissedLegacyID = legacyDraftID(dismissedDraft)
+        let generatedLegacyID = legacyDraftID(generatedDraft)
+        XCTAssertNotEqual(approvedDraft.id, approvedLegacyID)
+        XCTAssertNotEqual(dismissedDraft.id, dismissedLegacyID)
+        XCTAssertNotEqual(generatedDraft.id, generatedLegacyID)
+
+        _ = try memoryStore.upsert(
+            ownerDeviceID: nil,
+            id: "memory-summary:\(approvedLegacyID)",
+            content: "Previously approved memory summary.",
+            enabled: true,
+            source: nil,
+            timestamp: Date(timeIntervalSince1970: 2_000_000)
+        )
+        _ = try memoryStore.dismissMemorySummaryDraft(
+            ownerDeviceID: nil,
+            draftID: dismissedLegacyID,
+            timestamp: Date(timeIntervalSince1970: 2_000_001)
+        )
+        _ = try memoryStore.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: nil,
+            draft: RuntimeGeneratedMemorySummaryDraft(
+                draftID: generatedLegacyID,
+                sessionID: generatedSessionID,
+                sourceMessageCount: generatedDraft.sourceMessageCount,
+                content: "Legacy generated content must require v2 regeneration.",
+                modelID: "legacy-generation-model",
+                promptSkillBinding: RuntimePromptSkillRegistry.memorySummaryDraftBinding,
+                generatedAt: Date(timeIntervalSince1970: 2_000_002)
+            )
+        )
+
+        let backendDispatchCount = LockedBox(0)
+        let backend = MockBackend(
+            modelListError: NSError(
+                domain: "AetherLinkTests.LegacyDraftModelLookup",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "model list must not run for a v1 draft id"]
+            ),
+            onChatRequest: { _ in backendDispatchCount.value += 1 }
+        )
+        let router = makeRouter(
+            backend: backend,
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+        let listSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftsList,
+            requestID: "legacy-terminal-decision-list"
+        ), sink: listSink)
+        let listResponse = try await listSink.waitForMessages(count: 1).last
+        guard case .array(let listedDrafts)? = listResponse?.payload["drafts"] else {
+            XCTFail("Expected every legacy record to require explicit v2 review")
+            return
+        }
+        XCTAssertEqual(listedDrafts.count, 3)
+        var listedBySessionID: [String: [String: JSONValue]] = [:]
+        for value in listedDrafts {
+            guard case .object(let listedDraft) = value,
+                  case .object(let session)? = listedDraft["session"],
+                  case .string(let sessionID)? = session["session_id"] else {
+                XCTFail("Expected canonical v2 draft payload")
+                continue
+            }
+            listedBySessionID[sessionID] = listedDraft
+        }
+        for draft in [approvedDraft, dismissedDraft, generatedDraft] {
+            let listedDraft = try XCTUnwrap(listedBySessionID[draft.candidate.sessionID])
+            XCTAssertEqual(listedDraft["id"], .string(draft.id))
+            XCTAssertEqual(listedDraft["summary_method"], .string("deterministic_preview"))
+        }
+        XCTAssertNotEqual(
+            listedBySessionID[generatedSessionID]?["summary_preview"],
+            .string("Legacy generated content must require v2 regeneration.")
+        )
+
+        let generateSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftGenerate,
+            requestID: "legacy-generated-request",
+            payload: [
+                "draft_id": .string(generatedLegacyID),
+                "model": .string("not-installed-model"),
+                "expected_session_id": .string(generatedSessionID),
+                "expected_source_message_count": .number(Double(generatedDraft.sourceMessageCount)),
+            ]
+        ), sink: generateSink)
+        let generateResponse = try await generateSink.waitForMessages(count: 1).last
+        XCTAssertEqual(generateResponse?.payload["code"], .string("memory_summary_draft_unavailable"))
+
+        let approveSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "legacy-approved-request",
+            payload: [
+                "draft_id": .string(approvedLegacyID),
+                "expected_session_id": .string(approvedSessionID),
+                "expected_source_message_count": .number(Double(approvedDraft.sourceMessageCount)),
+            ]
+        ), sink: approveSink)
+        let approveResponse = try await approveSink.waitForMessages(count: 1).last
+        XCTAssertEqual(approveResponse?.payload["code"], .string("memory_summary_draft_unavailable"))
+
+        let dismissSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftDismiss,
+            requestID: "legacy-dismissed-request",
+            payload: [
+                "draft_id": .string(dismissedLegacyID),
+                "expected_session_id": .string(dismissedSessionID),
+                "expected_source_message_count": .number(Double(dismissedDraft.sourceMessageCount)),
+            ]
+        ), sink: dismissSink)
+        let dismissResponse = try await dismissSink.waitForMessages(count: 1).last
+        XCTAssertEqual(dismissResponse?.payload["code"], .string("memory_summary_draft_unavailable"))
+
+        XCTAssertEqual(backendDispatchCount.value, 0)
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+        XCTAssertEqual(try memoryStore.list(ownerDeviceID: nil).count, 1)
+        XCTAssertEqual(
+            try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: nil),
+            [dismissedLegacyID]
+        )
     }
 
     func testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation() async throws {
@@ -10035,6 +11948,22 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     "expected_source_message_count": .number(6.5)
                 ],
                 "expected_source_message_count"
+            ),
+            (
+                "summary-draft-approve-invalid-expected-method-type",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_summary_method": .number(1)
+                ],
+                "expected_summary_method"
+            ),
+            (
+                "summary-draft-approve-invalid-expected-method-value",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_summary_method": .string("manual")
+                ],
+                "expected_summary_method"
             )
         ]
 
@@ -10242,6 +12171,19 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(retryResponse?.payload["status"], .string("dismissed"))
         XCTAssertEqual(try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: "device-a"), Set([draftID]))
         XCTAssertTrue(try memoryStore.list(ownerDeviceID: "device-a").isEmpty)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "summary-draft-approve-after-dismiss",
+            payload: ["draft_id": .string(draftID)]
+        ), sink: sinkA)
+
+        let oppositeDecisionResponse = try await sinkA.waitForMessages(count: 8).last
+        XCTAssertEqual(oppositeDecisionResponse?.type, MessageType.error)
+        XCTAssertEqual(
+            oppositeDecisionResponse?.payload["code"],
+            .string("memory_summary_draft_unavailable")
+        )
     }
 
     func testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation() async throws {
@@ -24420,6 +26362,51 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(challenge?.requestID, "hello-valid-after-unknown-metadata")
     }
 
+    func testHelloNegotiatesRuntimeCapabilitiesWithoutChangingLegacyChallengeShape() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-runtime-capability-negotiation",
+            name: "Runtime Capability Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store
+        )
+        let legacySink = RecordingSink()
+        let capableSink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-legacy-runtime-capability-shape",
+            payload: [
+                "device_id": .string("android-runtime-capability-negotiation"),
+                "client_capabilities": .array([.string("chat")])
+            ]
+        ), sink: legacySink)
+        let legacyChallenge = try await legacySink.waitForMessages(count: 1).last
+        XCTAssertEqual(legacyChallenge?.type, MessageType.authChallenge)
+        XCTAssertNil(legacyChallenge?.payload["runtime_capabilities"])
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-runtime-capability-negotiation",
+            payload: [
+                "device_id": .string("android-runtime-capability-negotiation"),
+                "client_capabilities": .array([
+                    .string("auth.challenge.runtime_capabilities.v1")
+                ])
+            ]
+        ), sink: capableSink)
+        let capableChallenge = try await capableSink.waitForMessages(count: 1).last
+        XCTAssertEqual(capableChallenge?.type, MessageType.authChallenge)
+        XCTAssertEqual(
+            capableChallenge?.payload["runtime_capabilities"],
+            .array([.string("memory.summary.approval_method.v1")])
+        )
+    }
+
     func testHelloRejectsInvalidAllowedPayloadTypesBeforeChallengeCreation() async throws {
         let privateKey = P256.Signing.PrivateKey()
         let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
@@ -25678,6 +27665,57 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(model.runtimeMemoryEntriesError)
         XCTAssertNotNil(model.runtimeDataSummary.lastRefreshedAt)
         XCTAssertNil(model.runtimeDataSummary.errorMessage)
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesCompactionCalibrationReportOnExplicitRefresh() async {
+        let group = RuntimeChatCompactionCalibrationGroup(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+            sampleCount: 20,
+            withinConservativeEstimateCount: 18,
+            exceededConservativeEstimateWithinBudgetCount: 2,
+            exceededInputBudgetCount: 0,
+            status: .readyForReview
+        )
+        var expectedReport = RuntimeChatCompactionCalibrationReport()
+        expectedReport.sampledEligibleCount = 20
+        expectedReport.reportedSampleCount = 20
+        expectedReport.groups = [group]
+        let chatStore = RecordingRuntimeChatEventStore(
+            compactionCalibrationReport: expectedReport
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: NullRuntimeMemoryStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        XCTAssertTrue(model.runtimeChatCompactionCalibrationReport.groups.isEmpty)
+
+        await model.refreshRuntimeChatCompactionCalibrationReport()
+
+        XCTAssertEqual(model.runtimeChatCompactionCalibrationReport, expectedReport)
+        XCTAssertNil(model.runtimeChatCompactionCalibrationReportError)
+        XCTAssertFalse(model.isRuntimeChatCompactionCalibrationReportRefreshing)
+        XCTAssertFalse(chatStore.compactionCalibrationReportReadWasOnMainThread)
+
+        chatStore.setCompactionCalibrationReportFailure(
+            CompactionCalibrationStoreTestError.unavailable
+        )
+        await model.refreshRuntimeChatCompactionCalibrationReport()
+
+        XCTAssertTrue(model.runtimeChatCompactionCalibrationReport.groups.isEmpty)
+        XCTAssertEqual(
+            model.runtimeChatCompactionCalibrationReportError,
+            CompactionCalibrationStoreTestError.unavailable.localizedDescription
+        )
+        XCTAssertFalse(model.isRuntimeChatCompactionCalibrationReportRefreshing)
     }
 
     @MainActor
@@ -29093,6 +31131,8 @@ private func makeRouter(
     ) -> (@Sendable () -> Void))? = nil,
     memorySummaryGenerationWorkerCompletionCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryCancellationCompletionCheckpoint: (@Sendable () -> Void)? = nil,
+    memorySummaryPersistenceRequestCompletionCheckpoint: (@Sendable () -> Void)? = nil,
+    memorySummaryDecisionCommitCheckpoint: (@Sendable () -> Void)? = nil,
     modelPullOutcomePublicationCheckpoint: (@Sendable () -> Void)? = nil,
     chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil,
     researchNotebookLifecycleCompletionCheckpoint: (@Sendable () throws -> Void)? = nil,
@@ -29150,6 +31190,9 @@ private func makeRouter(
             memorySummaryGenerationWorkerCompletionCheckpoint,
         memorySummaryCancellationCompletionCheckpoint:
             memorySummaryCancellationCompletionCheckpoint,
+        memorySummaryPersistenceRequestCompletionCheckpoint:
+            memorySummaryPersistenceRequestCompletionCheckpoint,
+        memorySummaryDecisionCommitCheckpoint: memorySummaryDecisionCommitCheckpoint,
         modelPullOutcomePublicationCheckpoint: modelPullOutcomePublicationCheckpoint,
         chatSessionLifecycleAuthorizationCheckpoint: chatSessionLifecycleAuthorizationCheckpoint,
         researchNotebookLifecycleCompletionCheckpoint:
@@ -30565,6 +32608,25 @@ private final class RecordingRuntimeMemoryStore: RuntimeMemoryStore, @unchecked 
         return entry
     }
 
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        try upsert(
+            ownerDeviceID: ownerDeviceID,
+            id: id,
+            content: content,
+            enabled: enabled,
+            source: source,
+            timestamp: timestamp
+        )
+    }
+
     func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
         lock.withLock {
             recordedDeleteRequests.append(RecordingRuntimeMemoryDeleteRequest(
@@ -30592,6 +32654,152 @@ private final class RecordingRuntimeMemoryStore: RuntimeMemoryStore, @unchecked 
             ))
         }
         return RuntimeMemorySummaryDraftDismissResult(draftID: draftID, dismissedAt: timestamp)
+    }
+}
+
+private final class BlockingMemorySummaryDecisionStore: RuntimeMemoryStore, @unchecked Sendable {
+    enum Operation: String, CaseIterable, Sendable {
+        case approve
+        case dismiss
+    }
+
+    let mutationEntered = DispatchSemaphore(value: 0)
+    let releaseMutation = DispatchSemaphore(value: 0)
+    private let operation: Operation
+
+    init(operation: Operation) {
+        self.operation = operation
+    }
+
+    func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] { [] }
+
+    func listAll() throws -> [RuntimeMemoryEntry] { [] }
+
+    func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        source: RuntimeMemoryEntrySource?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        guard operation == .approve else {
+            throw NSError(domain: "AetherLinkTests.UnexpectedDecision", code: 1)
+        }
+        mutationEntered.signal()
+        releaseMutation.wait()
+        return RuntimeMemoryEntry(
+            id: id ?? UUID().uuidString,
+            content: content,
+            enabled: enabled ?? true,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            source: source
+        )
+    }
+
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        try upsert(
+            ownerDeviceID: ownerDeviceID,
+            id: id,
+            content: content,
+            enabled: enabled,
+            source: source,
+            timestamp: timestamp
+        )
+    }
+
+    func delete(
+        ownerDeviceID: String?,
+        id: String,
+        timestamp: Date
+    ) throws -> RuntimeMemoryDeleteResult {
+        throw NSError(domain: "AetherLinkTests.UnexpectedDecision", code: 2)
+    }
+
+    func dismissedMemorySummaryDraftIDs(ownerDeviceID: String?) throws -> Set<String> { [] }
+
+    func dismissMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        timestamp: Date
+    ) throws -> RuntimeMemorySummaryDraftDismissResult {
+        guard operation == .dismiss else {
+            throw NSError(domain: "AetherLinkTests.UnexpectedDecision", code: 3)
+        }
+        mutationEntered.signal()
+        releaseMutation.wait()
+        return RuntimeMemorySummaryDraftDismissResult(draftID: draftID, dismissedAt: timestamp)
+    }
+}
+
+private struct FailingMemorySummaryDecisionStore: RuntimeMemoryStore {
+    func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] { [] }
+
+    func listAll() throws -> [RuntimeMemoryEntry] { [] }
+
+    func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        source: RuntimeMemoryEntrySource?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        throw NSError(
+            domain: "AetherLinkTests.MemorySummaryDecision",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "approve memory mutation failed"]
+        )
+    }
+
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        try upsert(
+            ownerDeviceID: ownerDeviceID,
+            id: id,
+            content: content,
+            enabled: enabled,
+            source: source,
+            timestamp: timestamp
+        )
+    }
+
+    func delete(
+        ownerDeviceID: String?,
+        id: String,
+        timestamp: Date
+    ) throws -> RuntimeMemoryDeleteResult {
+        throw NSError(domain: "AetherLinkTests.MemorySummaryDecision", code: 2)
+    }
+
+    func dismissedMemorySummaryDraftIDs(ownerDeviceID: String?) throws -> Set<String> { [] }
+
+    func dismissMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        timestamp: Date
+    ) throws -> RuntimeMemorySummaryDraftDismissResult {
+        throw NSError(
+            domain: "AetherLinkTests.MemorySummaryDecision",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "dismiss memory mutation failed"]
+        )
     }
 }
 
@@ -30653,13 +32861,39 @@ private struct FailingRuntimeMemoryStore: RuntimeMemoryStore {
 }
 
 private final class BlockingGeneratedDraftPersistenceStore: RuntimeMemoryStore, @unchecked Sendable {
+    enum FailureMode: Equatable, CustomStringConvertible {
+        case none
+        case beforeAppend
+        case afterAppend
+        case alwaysBeforeAppend
+
+        var description: String {
+            switch self {
+            case .none: return "none"
+            case .beforeAppend: return "before-append"
+            case .afterAppend: return "after-append"
+            case .alwaysBeforeAppend: return "always-before-append"
+            }
+        }
+    }
+
     let persistenceEntered = DispatchSemaphore(value: 0)
     let releasePersistence = DispatchSemaphore(value: 0)
-    private let store = JSONLRuntimeMemoryStore(
-        fileURL: FileManager.default.temporaryDirectory
+    private let persistenceLock = NSLock()
+    private var persistenceAttempts = 0
+    private let failureMode: FailureMode
+    private let fileURL: URL
+    private let store: JSONLRuntimeMemoryStore
+
+    var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { true }
+
+    init(failureMode: FailureMode = .none) {
+        self.failureMode = failureMode
+        self.fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("runtime-memory-events.jsonl")
-    )
+        self.store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+    }
 
     func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
         try store.list(ownerDeviceID: ownerDeviceID)
@@ -30679,6 +32913,26 @@ private final class BlockingGeneratedDraftPersistenceStore: RuntimeMemoryStore, 
     ) throws -> RuntimeMemoryEntry {
         try store.upsert(
             ownerDeviceID: ownerDeviceID,
+            id: id,
+            content: content,
+            enabled: enabled,
+            source: source,
+            timestamp: timestamp
+        )
+    }
+
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        try store.approveMemorySummaryDraft(
+            ownerDeviceID: ownerDeviceID,
+            draftID: draftID,
             id: id,
             content: content,
             enabled: enabled,
@@ -30731,13 +32985,59 @@ private final class BlockingGeneratedDraftPersistenceStore: RuntimeMemoryStore, 
         draft: RuntimeGeneratedMemorySummaryDraft,
         if shouldCommit: @Sendable () -> Bool
     ) throws -> RuntimeGeneratedMemorySummaryDraft? {
-        persistenceEntered.signal()
-        releasePersistence.wait()
-        return try store.cacheGeneratedMemorySummaryDraft(
-            ownerDeviceID: ownerDeviceID,
-            draft: draft,
-            if: shouldCommit
-        )
+        let attempt = persistenceLock.withLock { () -> Int in
+            persistenceAttempts += 1
+            return persistenceAttempts
+        }
+        if attempt == 1 || (failureMode == .alwaysBeforeAppend && attempt == 2) {
+            persistenceEntered.signal()
+            releasePersistence.wait()
+        }
+        switch (failureMode, attempt) {
+        case (.none, _):
+            return try store.cacheGeneratedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draft: draft,
+                if: shouldCommit
+            )
+        case (.beforeAppend, 1):
+            throw NSError(
+                domain: "AetherLinkTests.AmbiguousPersistence",
+                code: 1
+            )
+        case (.afterAppend, 1):
+            _ = try store.cacheGeneratedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draft: draft,
+                if: shouldCommit
+            )
+            throw NSError(
+                domain: "AetherLinkTests.AmbiguousPersistence",
+                code: 2
+            )
+        case (.alwaysBeforeAppend, _):
+            throw NSError(
+                domain: "AetherLinkTests.AmbiguousPersistence",
+                code: 3
+            )
+        case (.beforeAppend, _), (.afterAppend, _):
+            return try store.cacheGeneratedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draft: draft,
+                if: shouldCommit
+            )
+        }
+    }
+
+    var persistenceAttemptCount: Int {
+        persistenceLock.withLock { persistenceAttempts }
+    }
+
+    var rawEventLineCount: Int {
+        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return 0
+        }
+        return content.split(whereSeparator: { $0.isNewline }).count
     }
 }
 
@@ -31082,7 +33382,7 @@ private func temporarySQLiteURL() -> URL {
 }
 
 private func appendMemorySummaryDraftTranscript(
-    to store: SQLiteRuntimeChatEventStore,
+    to store: any RuntimeChatEventStore,
     sessionID: String,
     ownerDeviceID: String?,
     firstTurnAt: Date,
@@ -31757,6 +34057,14 @@ private final class LockedBox<Value>: @unchecked Sendable {
     }
 }
 
+private enum CompactionCalibrationStoreTestError: LocalizedError, Sendable {
+    case unavailable
+
+    var errorDescription: String? {
+        "Compaction calibration store unavailable"
+    }
+}
+
 private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unchecked Sendable {
     private let lock = NSLock()
     private var storedEvents: [RuntimeChatStoredEvent] = []
@@ -31769,19 +34077,25 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
     private let onAppend: ((RuntimeChatStoredEvent) throws -> Void)?
     private let onMutation: (@Sendable () -> Void)?
     private let sourceAttributionResolution: RuntimeChatResolvedSourceAttribution?
+    private var compactionCalibrationReport: RuntimeChatCompactionCalibrationReport
+    private var compactionCalibrationReportFailure: (any Error)?
+    private var didReadCompactionCalibrationReportOnMainThread = false
 
     init(
         sessions: [RuntimeChatStoredSession] = [],
         messages: [String: [RuntimeChatStoredMessage]] = [:],
         onAppend: ((RuntimeChatStoredEvent) throws -> Void)? = nil,
         onMutation: (@Sendable () -> Void)? = nil,
-        sourceAttributionResolution: RuntimeChatResolvedSourceAttribution? = nil
+        sourceAttributionResolution: RuntimeChatResolvedSourceAttribution? = nil,
+        compactionCalibrationReport: RuntimeChatCompactionCalibrationReport =
+            RuntimeChatCompactionCalibrationReport()
     ) {
         self.storedSessions = sessions
         self.storedMessages = messages
         self.onAppend = onAppend
         self.onMutation = onMutation
         self.sourceAttributionResolution = sourceAttributionResolution
+        self.compactionCalibrationReport = compactionCalibrationReport
     }
 
     var events: [RuntimeChatStoredEvent] {
@@ -31825,6 +34139,16 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
         lock.withLock { recordedAllSessionListRequestCount }
     }
 
+    var compactionCalibrationReportReadWasOnMainThread: Bool {
+        lock.withLock { didReadCompactionCalibrationReportOnMainThread }
+    }
+
+    func setCompactionCalibrationReportFailure(_ error: (any Error)?) {
+        lock.withLock {
+            compactionCalibrationReportFailure = error
+        }
+    }
+
     func append(_ event: RuntimeChatStoredEvent) throws {
         try onAppend?(event)
         lock.withLock {
@@ -31836,6 +34160,16 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
                 storedSessions[index].titleUpdatedAt = event.timestamp
                 storedSessions[index].titleRevision += 1
             }
+        }
+    }
+
+    func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport {
+        try lock.withLock {
+            didReadCompactionCalibrationReportOnMainThread = Thread.isMainThread
+            if let compactionCalibrationReportFailure {
+                throw compactionCalibrationReportFailure
+            }
+            return compactionCalibrationReport
         }
     }
 
@@ -32475,6 +34809,101 @@ private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
             if snapshot.count >= count {
                 return snapshot
             }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return lock.withLock { messages }
+    }
+}
+
+private final class DeferredPublicationSink: RuntimeMessageSink, @unchecked Sendable {
+    let connectionID = UUID()
+    let publicationEntered = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var messages: [ProtocolEnvelope] = []
+    private var publicationCompletion: (@Sendable (Bool) -> Void)?
+
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
+
+    func send(_ envelope: ProtocolEnvelope) {
+        lock.withLock { messages.append(envelope) }
+    }
+
+    func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        lock.withLock {
+            messages.append(envelope)
+            precondition(publicationCompletion == nil)
+            publicationCompletion = completion
+        }
+        publicationEntered.signal()
+    }
+
+    func complete(succeeded: Bool) {
+        let completion = lock.withLock { () -> (@Sendable (Bool) -> Void)? in
+            let completion = publicationCompletion
+            publicationCompletion = nil
+            return completion
+        }
+        completion?(succeeded)
+    }
+
+    func close() {
+        complete(succeeded: false)
+    }
+
+    func waitForMessages(count: Int, timeout: TimeInterval = 1) async throws -> [ProtocolEnvelope] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let snapshot = lock.withLock { messages }
+            if snapshot.count >= count { return snapshot }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return lock.withLock { messages }
+    }
+}
+
+private final class BlockingPublicationSink: RuntimeMessageSink, @unchecked Sendable {
+    let connectionID = UUID()
+    let publicationEntered = DispatchSemaphore(value: 0)
+    let releasePublication = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var messages: [ProtocolEnvelope] = []
+
+    func withTransportSecurityContextTransaction<Result>(
+        _ operation: (TransportSecurityContext?) throws -> Result
+    ) rethrows -> Result {
+        try operation(nil)
+    }
+
+    func send(_ envelope: ProtocolEnvelope) {
+        lock.withLock { messages.append(envelope) }
+    }
+
+    func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        lock.withLock { messages.append(envelope) }
+        publicationEntered.signal()
+        releasePublication.wait()
+        completion(true)
+    }
+
+    func close() {
+        releasePublication.signal()
+    }
+
+    func waitForMessages(count: Int, timeout: TimeInterval = 1) async throws -> [ProtocolEnvelope] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let snapshot = lock.withLock { messages }
+            if snapshot.count >= count { return snapshot }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         return lock.withLock { messages }

@@ -19892,7 +19892,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`hello.payload` accepts only `device_id`, `device_name`, and `client_capabilities`",
+            "`hello.payload` accepts only `device_id`, `device_name`, `client_capabilities`, and optional transport-owned `transport_binding`",
             "Protocol docs must document the active hello allowlist.",
         ),
         (
@@ -22064,6 +22064,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
+            'let expectedSummaryMethod = try optionalNonBlankString(\n                "expected_summary_method",',
+            "Runtime router must strictly parse memory.summary.draft.approve expected_summary_method before runtime memory mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
             "allowedMemorySummaryDraftDismissPayloadKeys",
             "Runtime router must keep a memory.summary.draft.dismiss payload key allowlist before runtime store mutation.",
         ),
@@ -22150,6 +22156,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_router_test_path,
             "summary-draft-approve-invalid-expected-count-fraction",
             "Runtime router regression must prove fractional memory.summary.draft.approve expected_source_message_count values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-invalid-expected-method-type",
+            "Runtime router regression must prove non-string memory.summary.draft.approve expected_summary_method values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-invalid-expected-method-value",
+            "Runtime router regression must prove noncanonical memory.summary.draft.approve expected_summary_method values are rejected.",
         ),
         (
             macos_router_test_text,
@@ -22244,6 +22262,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-expected-method-type",
+            "RuntimeDevServer relay smoke must reject non-string memory.summary.draft.approve expected summary methods.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-expected-method-value",
+            "RuntimeDevServer relay smoke must reject noncanonical memory.summary.draft.approve expected summary methods.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
             "smoke-memory-summary-approve-blank-draft-id",
             "RuntimeDevServer relay smoke must reject blank memory.summary.draft.approve draft ids.",
         ),
@@ -22280,13 +22310,13 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`memory.summary.draft.approve.payload` accepts only string `draft_id`, optional string `content`, optional boolean `enabled`, optional string `expected_session_id`, and optional integer `expected_source_message_count`",
+            "`memory.summary.draft.approve.payload` accepts only string `draft_id`, optional string `content`, optional boolean `enabled`, optional string `expected_session_id`, optional integer `expected_source_message_count`, and optional enum `expected_summary_method`",
             "Protocol docs must document the active memory.summary.draft.approve request allowlist.",
         ),
         (
             docs_protocol_text,
             docs_protocol_path,
-            "Malformed allowed fields, such as blank `draft_id`, non-string or blank `content`, non-boolean `enabled`, non-string or blank `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
+            "Malformed allowed fields, such as blank `draft_id`, non-string or blank `content`, non-boolean `enabled`, non-string or blank `expected_session_id`, string/fractional `expected_source_message_count`, or non-string/noncanonical `expected_summary_method` values, return `invalid_payload`",
             "Protocol docs must document malformed memory.summary.draft.approve allowed field rejection.",
         ),
         (
@@ -23427,6 +23457,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_inactivity_test_path = (
         ROOT / "apps/macos/CompanionCore/Tests/RuntimeLongInactivityMemorySummarizationPolicyTests.swift"
     )
+    macos_memory_summary_decision_test_path = (
+        ROOT / "apps/macos/CompanionCore/Tests/RuntimeMemoryStoreSummaryDecisionTests.swift"
+    )
     runtime_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     docs_progress_path = ROOT / "docs/progress.md"
@@ -23472,6 +23505,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
         macos_test_path,
         macos_sqlite_test_path,
         macos_inactivity_test_path,
+        macos_memory_summary_decision_test_path,
         no_device_path,
         docs_progress_path,
         docs_qa_evidence_path,
@@ -23518,6 +23552,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
     macos_sqlite_test_text = macos_sqlite_test_path.read_text(encoding="utf-8", errors="replace")
     macos_inactivity_test_text = macos_inactivity_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_summary_decision_test_text = macos_memory_summary_decision_test_path.read_text(
+        encoding="utf-8", errors="replace"
+    )
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
@@ -23560,6 +23597,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_test_relative = macos_test_path.relative_to(ROOT)
     macos_sqlite_test_relative = macos_sqlite_test_path.relative_to(ROOT)
     macos_inactivity_test_relative = macos_inactivity_test_path.relative_to(ROOT)
+    macos_memory_summary_decision_test_relative = (
+        macos_memory_summary_decision_test_path.relative_to(ROOT)
+    )
     no_device_relative = no_device_path.relative_to(ROOT)
     docs_progress_relative = docs_progress_path.relative_to(ROOT)
     docs_qa_evidence_relative = docs_qa_evidence_path.relative_to(ROOT)
@@ -23919,6 +23959,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android client must approve memory summary drafts through the protocol DTO.",
         ),
         (
+            "expectedSummaryMethod = draft.summaryMethod.takeIf {",
+            "Android approval must bind the exact displayed memory-summary method only after capability negotiation.",
+        ),
+        (
             "private fun handleMemorySummaryDraftApprove(\n        envelope: ProtocolEnvelope,",
             "Android client must handle memory summary draft approval responses explicitly.",
         ),
@@ -24003,8 +24047,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'assertEquals(MessageType.MemorySummaryDraftGenerate, "memory.summary.draft.generate")',
         "memorySummaryDraftGeneratePayloadRejectsBoundsMalformedValuesAndUnknownMetadata",
         "MemorySummaryDraftsListResultPayload(",
-        "memorySummaryDraftApprovePayloadUsesProtocolFieldNames",
+        "memorySummaryDraftApprovePayloadUsesProtocolFieldNamesAndAcceptsGeneratedSource",
         'assertEquals(MessageType.MemorySummaryDraftApprove, "memory.summary.draft.approve")',
+        'assertEquals("llm_summary_v1", requestJson["expected_summary_method"]?.jsonPrimitive?.content)',
         "MemorySummaryDraftApproveResultPayload(",
         "memorySummaryDraftDismissPayloadUsesProtocolFieldNames",
         'assertEquals(MessageType.MemorySummaryDraftDismiss, "memory.summary.draft.dismiss")',
@@ -24023,9 +24068,14 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "generateMemorySummaryDraftStaleErrorClearsPendingKeepsPreviewAndRefreshesDrafts",
         "generateMemorySummaryDraftSendFailureClearsPendingAndKeepsDeterministicPreview",
         "approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly",
+        'assertEquals("deterministic_preview", approvalPayload.expectedSummaryMethod)',
+        "approveMemorySummaryDraftRejectsResultsNotBoundToExactGeneratedDraftAndCanonicalEntry",
         "approveMemorySummaryDraftErrorClearsPendingAndAllowsRetry",
         "dismissMemorySummaryDraftSendsExpectedDecisionAndRemovesDraft",
+        "dismissMemorySummaryDraftRejectsNoncanonicalResultBinding",
         "dismissMemorySummaryDraftErrorClearsPendingAndAllowsRetry",
+        "staleMemorySummaryApproveAndDismissReconcileOnceAfterLastPendingAction",
+        "malformedMemorySummaryDecisionResultsClearPendingAndDrainDeferredRefreshOnce",
         "refreshRuntimeMemorySummaryDraftsErrorShowsFailureAndAllowsRetry",
         "MessageType.MemorySummaryDraftApprove",
         "MessageType.MemorySummaryDraftDismiss",
@@ -25094,7 +25144,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Memory summary draft listing must hide owner-scoped dismissed draft decisions.",
         ),
         (
-            "let result = try memoryStore.dismissMemorySummaryDraft(",
+            "try memoryStore.dismissMemorySummaryDraft(",
             "Memory summary draft dismiss must persist an owner-scoped dismiss decision.",
         ),
         (
@@ -25381,8 +25431,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "inactiveInterval >= minimumInactiveInterval",
         "RuntimeLongInactivityMemorySummarizationDraft",
         "RuntimeLongInactivityMemorySummarizationSourcePointer",
-        "draftID(for: candidate, visibleMessageCount: visibleMessages.count)",
-        "sourcePointers: selectedMessages.map",
+        "id: sourceBoundDraftID(",
+        "let sourcePointers = selectedMessages.map",
         "message.content.truncated(to: maxSourceExcerptCharacters)",
         "func listLongInactivityMemorySummarizationDrafts(",
         "listMessages(\n                ownerDeviceID: ownerDeviceID,",
@@ -25884,6 +25934,304 @@ def runtime_history_storage_guard_failures() -> list[str]:
             failures.append(
                 f"{no_device_relative}: Default no-device gate must run memory summary draft regression {test_name}."
             )
+
+    source_bound_hash = macos_inactivity_policy_text.split(
+        "private func sourceBoundDraftID(", 1
+    )[-1].split("private func visibleSourceMessages", 1)[0]
+    required_source_bound_hash_snippets = (
+        'import CryptoKit',
+        'append(Data("AetherLink long-inactivity memory-summary source v2\\0".utf8))',
+        "appendString(candidate.sessionID)",
+        "appendString(candidate.title)",
+        "appendString(candidate.model)",
+        "appendDate(candidate.lastActivityAt)",
+        "appendCount(candidate.messageCount)",
+        "appendCount(sourceMessageCount)",
+        "appendString(sourceRangeDescription)",
+        "appendCount(sourcePointers.count)",
+        "appendString(pointer.sessionID)",
+        "appendCount(pointer.messageIndex)",
+        "appendString(pointer.role)",
+        "appendOptionalDate(pointer.createdAt)",
+        "appendString(pointer.excerpt)",
+        "appendString(summaryPreview)",
+        'return "long-inactivity:v2:\\(digest)"',
+    )
+    for snippet in required_source_bound_hash_snippets:
+        target = macos_inactivity_policy_text if snippet == "import CryptoKit" else source_bound_hash
+        if snippet not in target:
+            failures.append(
+                f"{macos_inactivity_policy_relative}: Source-bound memory-summary draft identity "
+                f"is missing {snippet!r}."
+            )
+    if "candidate.inactiveInterval" in source_bound_hash:
+        failures.append(
+            f"{macos_inactivity_policy_relative}: Advancing inactivity must not rotate the source-bound draft id."
+        )
+    if "legacyUnboundDraftID" in macos_inactivity_policy_text or "legacyDraftID" in macos_router_text:
+        failures.append(
+            "Legacy v1 memory-summary ids must not be promoted into current v2 listing or decision authority."
+        )
+
+    required_source_bound_router_snippets = (
+        "!approvedEntryIDs.contains(memorySummaryDraftEntryID(draft.id))",
+        "!dismissedDraftIDs.contains(draft.id)",
+        "private func performMemorySummaryMutationIfSourceCurrent<Value: Sendable>",
+        "chatEventStore.performIfLongInactivityMemorySummarySourceCurrent(",
+        "RuntimeMemorySummaryMutationResultBox<Value>()",
+        "memorySummaryDecisionCommitCheckpoint?()",
+    )
+    for snippet in required_source_bound_router_snippets:
+        if snippet not in macos_router_text:
+            failures.append(
+                f"{macos_router_relative}: Memory-summary decision commit linearization is missing {snippet!r}."
+            )
+    if macos_router_text.count("memorySummaryDecisionCommitCheckpoint?()") != 2:
+        failures.append(
+            f"{macos_router_relative}: Approve and dismiss must each expose exactly one decision-commit checkpoint."
+        )
+    memory_summary_generate_handler = macos_router_text.split(
+        "private func executeMemorySummaryDraftGenerate(", 1
+    )[-1].split("private func performIfMemorySummarySourceCurrent", 1)[0]
+    draft_lookup_offset = memory_summary_generate_handler.find("currentMemorySummaryBaseDraft(")
+    session_guard_offset = memory_summary_generate_handler.find(
+        "expectedSessionID == baseDraft.candidate.sessionID"
+    )
+    source_count_guard_offset = memory_summary_generate_handler.find(
+        "expectedSourceMessageCount == baseDraft.sourceMessageCount"
+    )
+    model_lookup_offset = memory_summary_generate_handler.find("resolvedInstalledChatModel(model)")
+    if not (
+        0 <= draft_lookup_offset < session_guard_offset
+        < source_count_guard_offset < model_lookup_offset
+    ):
+        failures.append(
+            f"{macos_router_relative}: Memory-summary draft authority and stale guards must precede provider model lookup."
+        )
+
+    required_source_bound_tests = (
+        "testDraftIDBindsSessionMetadataAndVisibleSourceButNotAdvancingInactivity",
+        "long-inactivity:v2:8b7948073088d0a11a411caee1677acca19aa20443f79462eb1663d5a095abc1",
+        "XCTAssertEqual(reopenedDrafts.map(\\.id), drafts.map(\\.id))",
+        "testMemorySummaryDraftApproveRejectsRenamedSameCountSourceBeforeMemoryMutation",
+        "testMemorySummaryDraftApproveRevalidatesSourceAtMutationCommit",
+        "testMemorySummaryDraftDismissRevalidatesSourceAtMutationCommit",
+        "testMemorySummaryDraftApproveHoldsSQLiteSourceLockThroughMemoryMutation",
+        "testMemorySummaryDraftDismissHoldsSQLiteSourceLockThroughMemoryMutation",
+        "testMemorySummaryDecisionMutationErrorsRemainMemoryStoreErrors",
+        "testMemorySummaryDraftGenerateRejectsStaleGuardsBeforeModelLookup",
+        "generate-pre-model-title-change",
+        "Title changed after memory-summary review",
+        "testMemorySummaryDraftsListRequiresV2ReviewForLegacyRecordsAndRejectsLegacyRequestAuthority",
+        "Legacy generated content must require v2 regeneration.",
+        "XCTAssertEqual(backendDispatchCount.value, 0)",
+        "XCTAssertEqual(backend.listModelsCallCount, 0)",
+        "let contendingChatStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)",
+        "XCTAssertThrowsError(try contendingChatStore.append(titleEvent))",
+        "try contendingChatStore.append(titleEvent)",
+        'memory_summary_draft_unavailable',
+    )
+    for snippet in required_source_bound_tests:
+        target = (
+            macos_inactivity_test_text
+            if snippet.startswith("testDraftID")
+            or snippet.startswith("long-inactivity:v2")
+            or snippet.startswith("XCTAssertEqual(reopenedDrafts")
+            else macos_test_text
+        )
+        if snippet not in target:
+            failures.append(
+                "Memory-summary source-bound identity regressions are missing "
+                f"{snippet!r}."
+            )
+
+    required_source_bound_smoke_snippets = (
+        'requestID: "smoke-memory-summary-dismiss-title-stabilize"',
+        '"title": "Memory summary dismiss smoke"',
+        'dismissDraftSession["title"] as? String == "Memory summary dismiss smoke"',
+    )
+    for snippet in required_source_bound_smoke_snippets:
+        if snippet not in runtime_smoke_text:
+            failures.append(
+                f"{runtime_smoke_relative}: Source-bound memory-summary relay smoke must "
+                f"stabilize its async auto-title fixture before capturing the review id; missing {snippet!r}."
+            )
+    source_bound_smoke_block = runtime_smoke_text.split(
+        "func runAuthenticatedHistoryAndMemoryChecks(", 1
+    )[-1]
+    dismiss_seed_offset = source_bound_smoke_block.find(
+        'requestID: "smoke-memory-summary-dismiss-seed"'
+    )
+    title_stabilization_offset = source_bound_smoke_block.find(
+        'requestID: "smoke-memory-summary-dismiss-title-stabilize"'
+    )
+    draft_list_offset = source_bound_smoke_block.find(
+        'requestID: "smoke-memory-summary-drafts-invalid-limit-type"'
+    )
+    if not (
+        0 <= dismiss_seed_offset < title_stabilization_offset < draft_list_offset
+    ):
+        failures.append(
+            f"{runtime_smoke_relative}: Source-bound memory-summary relay smoke must order "
+            "dismiss seed, explicit title stabilization, then draft listing."
+        )
+
+    required_source_bound_gate_snippets = (
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsRenamedSameCountSourceBeforeMemoryMutation",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRevalidatesSourceAtMutationCommit",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRevalidatesSourceAtMutationCommit",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveHoldsSQLiteSourceLockThroughMemoryMutation",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHoldsSQLiteSourceLockThroughMemoryMutation",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDecisionMutationErrorsRemainMemoryStoreErrors",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateRejectsStaleGuardsBeforeModelLookup",
+        "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresV2ReviewForLegacyRecordsAndRejectsLegacyRequestAuthority",
+        "Covered v0.5 addendum: memory-summary source-bound review identity and commit linearization",
+    )
+    for snippet in required_source_bound_gate_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_relative}: Source-bound memory-summary gate is missing {snippet!r}."
+            )
+
+    required_source_bound_docs = (
+        (docs_roadmap_text, docs_roadmap_relative, "v0.5 Memory-Summary Source-Bound Review Identity And Commit Linearization"),
+        (docs_progress_text, docs_progress_relative, "v0.5 Memory-Summary Source-Bound Review Identity And Commit Linearization"),
+        (docs_qa_evidence_text, docs_qa_evidence_relative, "v0.5 Memory-Summary Source-Bound Review Identity And Commit Linearization"),
+        (docs_security_text, docs_security_relative, "Memory-Summary Source-Bound Review Identity And Commit Linearization"),
+        (docs_protocol_text, docs_protocol_relative, "Memory-Summary Source-Bound Draft Identity And Decision Commit Contract"),
+    )
+    for text, relative, heading in required_source_bound_docs:
+        if heading not in text:
+            failures.append(f"{relative}: Missing durable source-bound memory-summary contract {heading!r}.")
+    if "long-inactivity:v2:" not in docs_protocol_text:
+        failures.append(
+            f"{docs_protocol_relative}: Memory-summary protocol examples must use the opaque v2 draft id shape."
+        )
+
+    approval_terminal_block = macos_memory_store_text.split(
+        "public func approveMemorySummaryDraft(", 1
+    )[-1].split("public func delete(", 1)[0]
+    dismissal_terminal_block = macos_memory_store_text.rsplit(
+        "public func dismissMemorySummaryDraft(", 1
+    )[-1].split("public func generatedMemorySummaryDrafts(", 1)[0]
+    required_terminal_store_snippets = (
+        "case memorySummaryDraftTerminalDecisionConflict",
+        "case memorySummaryDraftApprovedEntryUnavailable",
+        "case memorySummaryDraftTerminalDecisionUnsupported",
+        "private static func memorySummaryDraftTerminalState(",
+        "RuntimeMemorySummaryDraftTerminalState",
+        "approvedEntryIDs.count <= 1",
+        "throw RuntimeMemoryStoreError.memorySummaryDraftTerminalDecisionUnsupported",
+    )
+    for snippet in required_terminal_store_snippets:
+        if snippet not in macos_memory_store_text:
+            failures.append(
+                f"{macos_memory_store_relative}: Durable memory-summary terminal decisions are missing {snippet!r}."
+            )
+    for name, block in (
+        ("approval", approval_terminal_block),
+        ("dismissal", dismissal_terminal_block),
+    ):
+        for snippet in (
+            "RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL)",
+            "Self.memorySummaryDraftTerminalState(",
+            "memorySummaryDraftTerminalDecisionConflict",
+        ):
+            if snippet not in block:
+                failures.append(
+                    f"{macos_memory_store_relative}: Atomic memory-summary {name} is missing {snippet!r}."
+                )
+
+    approve_handler = macos_router_text.split(
+        "private func handleMemorySummaryDraftApprove(", 1
+    )[-1].split("private func handleMemorySummaryDraftDismiss(", 1)[0]
+    if "memoryStore.approveMemorySummaryDraft(" not in approve_handler:
+        failures.append(
+            f"{macos_router_relative}: Memory-summary approval must use the atomic terminal-decision store API."
+        )
+    if "memoryStore.upsert(" in approve_handler:
+        failures.append(
+            f"{macos_router_relative}: Memory-summary approval must not bypass terminal-decision linearization with generic upsert."
+        )
+    if macos_router_text.count("case .memorySummaryDraftTerminalDecisionConflict,") != 1:
+        failures.append(
+            f"{macos_router_relative}: Terminal-decision conflicts must have one shared unavailable mapping."
+        )
+    if macos_router_text.count("memorySummaryDecisionStoreError(") != 3:
+        failures.append(
+            f"{macos_router_relative}: Approve and dismiss must both use the shared sanitized store-error mapping."
+        )
+    for snippet in (
+        'return .memoryStoreUnavailable("Memory summary decision persistence failed.")',
+        '.string("memory_store_unavailable")',
+        'XCTAssertFalse(message.contains("\\(operation.rawValue) memory mutation failed"))',
+    ):
+        if snippet not in (macos_router_text + macos_test_text):
+            failures.append(
+                f"Memory-summary decision store-error normalization is missing {snippet!r}."
+            )
+
+    memory_decode_block = macos_memory_store_text.split(
+        "private static func decodeEvents(_ data: Data)", 1
+    )[-1].split("private static func decodeFailureReason", 1)[0]
+    if "event.eventLogOrdinal = index" not in memory_decode_block or "return events" not in memory_decode_block:
+        failures.append(
+            f"{macos_memory_store_relative}: Runtime memory replay must retain physical append order."
+        )
+    if "return events.sorted" in memory_decode_block:
+        failures.append(
+            f"{macos_memory_store_relative}: Runtime memory replay must not reorder events by wall-clock timestamp."
+        )
+
+    required_terminal_decision_tests = (
+        "testConcurrentCrossInstanceApproveAndDismissCommitOneTerminalDecision",
+        "testCrossProcessDismissLinearizesBeforeWaitingApproval",
+        "testOppositeTerminalDecisionFailsClosedWithoutAppending",
+        "testApprovalRetryPreservesLaterUserEditAndDisabledState",
+        "testApprovalRetryAfterRollbackTimestampDeleteDoesNotResurrectEntry",
+        "testDismissRetryReturnsOriginalDecisionWithoutAppending",
+        "fcntl.lockf(descriptor, fcntl.LOCK_EX)",
+        "timestamp: Date(timeIntervalSince1970: 399)",
+        "timestamp: Date(timeIntervalSince1970: 699)",
+        "XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 1)",
+    )
+    for snippet in required_terminal_decision_tests:
+        if snippet not in macos_memory_summary_decision_test_text:
+            failures.append(
+                f"{macos_memory_summary_decision_test_relative}: Missing durable terminal-decision regression {snippet!r}."
+            )
+    for snippet in (
+        'requestID: "summary-draft-dismiss-after-approval"',
+        'requestID: "summary-draft-approve-after-dismiss"',
+        'content: "User edited approved memory"',
+    ):
+        if snippet not in macos_test_text:
+            failures.append(
+                f"{macos_test_relative}: Router terminal-decision regression is missing {snippet!r}."
+            )
+
+    required_terminal_decision_gate_snippets = (
+        "RuntimeMemoryStoreSummaryDecisionTests",
+        "Covered v0.5 addendum: memory-summary durable terminal decision linearization",
+    )
+    for snippet in required_terminal_decision_gate_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_relative}: Durable memory-summary terminal-decision gate is missing {snippet!r}."
+            )
+
+    required_terminal_decision_docs = (
+        (docs_roadmap_text, docs_roadmap_relative, "v0.5 Memory-Summary Durable Terminal Decision Linearization"),
+        (docs_progress_text, docs_progress_relative, "v0.5 Memory-Summary Durable Terminal Decision Linearization"),
+        (docs_qa_evidence_text, docs_qa_evidence_relative, "v0.5 Memory-Summary Durable Terminal Decision Linearization"),
+        (docs_security_text, docs_security_relative, "Memory-Summary Durable Terminal Decision Linearization"),
+        (docs_protocol_text, docs_protocol_relative, "Memory-Summary Durable Terminal Decision Linearization"),
+    )
+    for text, relative, heading in required_terminal_decision_docs:
+        if heading not in text:
+            failures.append(
+                f"{relative}: Missing durable memory-summary terminal-decision contract {heading!r}."
+            )
     if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run memory summary draft dismiss regressions."
@@ -25900,6 +26248,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run Android memory summary draft approval success regression."
         )
+    if "RuntimeClientViewModelTest.approveMemorySummaryDraftRejectsResultsNotBoundToExactGeneratedDraftAndCanonicalEntry" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must reject Android approval results not bound to the exact generated draft."
+        )
     if "RuntimeClientViewModelTest.approveMemorySummaryDraftErrorClearsPendingAndAllowsRetry" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run Android memory summary draft approval error regression."
@@ -25907,6 +26259,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
     if "RuntimeClientViewModelTest.dismissMemorySummaryDraftSendsExpectedDecisionAndRemovesDraft" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run Android memory summary draft dismiss success regression."
+        )
+    if "RuntimeClientViewModelTest.dismissMemorySummaryDraftRejectsNoncanonicalResultBinding" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must reject noncanonical Android memory-summary dismissal results."
         )
     if "RuntimeClientViewModelTest.dismissMemorySummaryDraftErrorClearsPendingAndAllowsRetry" not in no_device_text:
         failures.append(
@@ -33165,6 +33521,9 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
 def macos_runtime_compaction_guard_failures() -> list[str]:
     failures: list[str] = []
     store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
+    sqlite_store_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift"
+    calibration_report_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatCompactionCalibrationReport.swift"
+    companion_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     planner_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatContextCompactionPlanner.swift"
     fingerprint_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatCompactionSourceFingerprint.swift"
@@ -33176,6 +33535,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     fingerprint_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeChatCompactionSourceFingerprintTests.swift"
     summary_cache_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatCompactionSummaryCacheTests.swift"
     sqlite_tests_path = ROOT / "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift"
+    calibration_report_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeChatCompactionCalibrationReportTests.swift"
     llm_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
     ollama_backend_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
     lmstudio_backend_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
@@ -33190,10 +33550,21 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    status_view_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
     protocol_doc_path = ROOT / "docs/protocol.md"
+    architecture_doc_path = ROOT / "docs/architecture.md"
+    security_doc_path = ROOT / "docs/security.md"
+    roadmap_doc_path = ROOT / "docs/roadmap.md"
+    progress_doc_path = ROOT / "docs/progress.md"
+    qa_doc_path = ROOT / "docs/qa-evidence.md"
 
     required_paths = (
         store_path,
+        sqlite_store_path,
+        calibration_report_path,
+        companion_model_path,
         router_path,
         planner_path,
         fingerprint_path,
@@ -33205,6 +33576,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         fingerprint_tests_path,
         summary_cache_tests_path,
         sqlite_tests_path,
+        calibration_report_tests_path,
         llm_backend_path,
         ollama_backend_path,
         lmstudio_backend_path,
@@ -33219,12 +33591,23 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         schema_path,
         runtime_mock_smoke_path,
         no_device_path,
+        status_view_path,
+        localization_tests_path,
+        render_tests_path,
         protocol_doc_path,
+        architecture_doc_path,
+        security_doc_path,
+        roadmap_doc_path,
+        progress_doc_path,
+        qa_doc_path,
     )
     if any(not path.exists() for path in required_paths):
         return ["macOS runtime compaction guard files are missing."]
 
     store_text = store_path.read_text(encoding="utf-8", errors="replace")
+    sqlite_store_text = sqlite_store_path.read_text(encoding="utf-8", errors="replace")
+    calibration_report_text = calibration_report_path.read_text(encoding="utf-8", errors="replace")
+    companion_model_text = companion_model_path.read_text(encoding="utf-8", errors="replace")
     router_text = router_path.read_text(encoding="utf-8", errors="replace")
     planner_text = planner_path.read_text(encoding="utf-8", errors="replace")
     fingerprint_text = fingerprint_path.read_text(encoding="utf-8", errors="replace")
@@ -33236,6 +33619,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     fingerprint_tests_text = fingerprint_tests_path.read_text(encoding="utf-8", errors="replace")
     summary_cache_tests_text = summary_cache_tests_path.read_text(encoding="utf-8", errors="replace")
     sqlite_tests_text = sqlite_tests_path.read_text(encoding="utf-8", errors="replace")
+    calibration_report_tests_text = calibration_report_tests_path.read_text(encoding="utf-8", errors="replace")
     llm_backend_text = llm_backend_path.read_text(encoding="utf-8", errors="replace")
     ollama_backend_text = ollama_backend_path.read_text(encoding="utf-8", errors="replace")
     lmstudio_backend_text = lmstudio_backend_path.read_text(encoding="utf-8", errors="replace")
@@ -33250,7 +33634,15 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    status_view_text = status_view_path.read_text(encoding="utf-8", errors="replace")
+    localization_tests_text = localization_tests_path.read_text(encoding="utf-8", errors="replace")
+    render_tests_text = render_tests_path.read_text(encoding="utf-8", errors="replace")
     protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
+    architecture_doc_text = architecture_doc_path.read_text(encoding="utf-8", errors="replace")
+    security_doc_text = security_doc_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_doc_text = roadmap_doc_path.read_text(encoding="utf-8", errors="replace")
+    progress_doc_text = progress_doc_path.read_text(encoding="utf-8", errors="replace")
+    qa_doc_text = qa_doc_path.read_text(encoding="utf-8", errors="replace")
     router_snippets = (
         (
             "RuntimeChatCompactionMetadata(sourcePointers:",
@@ -33553,6 +33945,186 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 f"{store_path.relative_to(ROOT)}: missing durable runtime compaction metadata guard {snippet!r}."
             )
 
+    calibration_report_snippets = (
+        "public struct RuntimeChatCompactionCalibrationReport",
+        "public struct RuntimeChatCompactionCalibrationGroup",
+        "case inputBudgetExceededObserved",
+        "case readyForReview",
+        "case collecting",
+        "recentEligibleSampleCap = 1_000",
+        "groupCap = 32",
+        "minimumSampleFloor = 20",
+        "for event in events.reversed()",
+        "report.sampledEligibleCount < recentEligibleSampleCap",
+        "aggregates.count < groupCap",
+        "saturatingIncrement(&report.omittedSampleCount)",
+        "providerModelID: calibration.providerModelID",
+        "wireMode: calibration.wireMode",
+        "estimatorIdentifier: resolution.estimatorIdentifier",
+        "if exceededInputBudgetCount > 0",
+        "if sampleCount >= RuntimeChatCompactionCalibrationReport.minimumSampleFloor",
+        "value.addingReportingOverflow(1)",
+    )
+    for snippet in calibration_report_snippets:
+        if snippet not in calibration_report_text:
+            failures.append(
+                f"{calibration_report_path.relative_to(ROOT)}: missing bounded calibration report guard {snippet!r}."
+            )
+    for forbidden in (
+        "event.messages",
+        "event.sessionID",
+        "event.requestID",
+        "event.ownerDeviceID",
+        "event.timestamp",
+        "sourcePointers",
+    ):
+        if forbidden in calibration_report_text:
+            failures.append(
+                f"{calibration_report_path.relative_to(ROOT)}: aggregate report must not consume or expose {forbidden!r}."
+            )
+
+    for path, text, snippets in (
+        (
+            store_path,
+            store_text,
+            (
+                "func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport",
+                "jsonlByteCeiling: 64 * 1_024 * 1_024",
+                "jsonlLineCeiling: 50_000",
+                "jsonlLineByteCeiling: 4 * 1_024 * 1_024",
+                "sqliteTerminalScanCeiling: 50_000",
+                "isFullyEligibleRuntimeChatCompactionCalibrationEvent",
+                "chat provider usage calibration payload is not an object",
+                "chat compaction binding has duplicate terminal resolution",
+                "deterministic chat compaction resolution does not match request estimate",
+            ),
+        ),
+        (
+            sqlite_store_path,
+            sqlite_store_text,
+            (
+                "public func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport",
+                "calibrationReportStoreLimits.sqliteTerminalScanCeiling",
+                "from: try calibrationReportEventsUnlocked(database)",
+                "requireUniqueCompactionTerminalBindingUnlocked",
+                "idx_runtime_chat_events_compaction_binding",
+                "AND session_id = ?",
+                "AND request_id = ?",
+            ),
+        ),
+        (
+            companion_model_path,
+            companion_model_text,
+            (
+                "runtimeChatCompactionCalibrationReport",
+                "refreshRuntimeChatCompactionCalibrationReport() async",
+                "isRuntimeChatCompactionCalibrationReportRefreshing",
+                "loadRuntimeChatCompactionCalibrationReport",
+                ".chatCompactionCalibrationReport()",
+            ),
+        ),
+        (
+            status_view_path,
+            status_view_text,
+            (
+                "Inspect Compaction Calibration",
+                "RuntimeChatCompactionCalibrationSheet",
+                "localizedCompactionCalibrationStatus",
+                "Input budget exceeded",
+                "isRefreshing",
+                "Provider token usage by exact model, wire mode, and estimator revision.",
+            ),
+        ),
+    ):
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: missing host-local calibration report integration {snippet!r}."
+                )
+
+    for snippet in (
+        "testEmptyInitializerAndGroupingStatusesRespectMinimumFloor",
+        "testNewestEligibleSamplesWinAtSampleCap",
+        "testGroupCapKeepsNewestGroupsAndReportsOmittedSamples",
+        "testGroupsHaveDeterministicCountThenLexicalOrder",
+        "testInputBudgetExceededWarningWinsAfterReviewFloor",
+        "testJSONReportContainsOnlyAggregateDataNotEventPrivacyCanaries",
+        'XCTAssertFalse(json.contains("timestamp"))',
+        "prompt-private-canary",
+        "session-private-canary",
+        "request-private-canary",
+        "owner-private-canary",
+    ):
+        if snippet not in calibration_report_tests_text:
+            failures.append(
+                f"{calibration_report_tests_path.relative_to(ROOT)}: missing calibration report regression {snippet!r}."
+            )
+    for path, text, snippets in (
+        (
+            sqlite_tests_path,
+            sqlite_tests_text,
+            (
+                "testStoresExposeAggregateOnlyCompactionCalibrationReportAfterReopen",
+                "testCalibrationReportCapCountsFullyEligibleSamplesPastNewerCalibrationShapedRows",
+                "testCalibrationReportsRejectMalformedOrWrongTypeCalibrationPayloads",
+                "testCalibrationReportsRequireSelectedRequestBinding",
+                "testStoresRequireDeterministicPreviewEstimateToMatchBoundRequest",
+                "testStoresRejectDeterministicPreviewEstimateMismatchAfterReopenAndReport",
+                "testStoresRejectDuplicateCompactionTerminalBindingOnAppend",
+                "testStoresRejectDuplicateCompactionTerminalBindingAfterReopenAndReport",
+                "testStoresKeepSessionAndRequestCompactionBindingsExact",
+                "testCalibrationReportsRejectDuplicateBindingWithUncalibratedTerminal",
+                "testCalibrationReportStoreLimitsFailClosedOnExhaustion",
+            ),
+        ),
+        (
+            tests_path,
+            tests_text,
+            (
+                "testCompanionAppModelPublishesCompactionCalibrationReportOnExplicitRefresh",
+                "compactionCalibrationReportReadWasOnMainThread",
+                "setCompactionCalibrationReportFailure",
+            ),
+        ),
+        (
+            localization_tests_path,
+            localization_tests_text,
+            ("testCompactionCalibrationCopyLocalizesAcrossSupportedLanguages",),
+        ),
+        (
+            render_tests_path,
+            render_tests_text,
+            ("testCompactionCalibrationSheetRendersAcrossLanguagesAndAppearances",),
+        ),
+    ):
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: missing calibration report integration regression {snippet}."
+                )
+
+    calibration_doc_snippets = (
+        "newest 1,000",
+        "32",
+        "20",
+        "ready_for_review",
+        "automatic",
+        "provider-tokenizer parity",
+    )
+    for path, text in (
+        (protocol_doc_path, protocol_doc_text),
+        (architecture_doc_path, architecture_doc_text),
+        (security_doc_path, security_doc_text),
+        (roadmap_doc_path, roadmap_doc_text),
+        (progress_doc_path, progress_doc_text),
+        (qa_doc_path, qa_doc_text),
+    ):
+        for snippet in calibration_doc_snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: missing host-local calibration report boundary {snippet!r}."
+                )
+
     test_snippets = (
         "testChatSendDoesNotCompactShortConversation",
         "testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
@@ -33585,6 +34157,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testChatSendReusesDurableGeneratedCompactionSummaryAfterCacheReopen",
         "testFailedPrimaryDoesNotPersistGeneratedCompactionSummary",
         "testChatSessionDeletePurgesDurableCompactionSummaries",
+        "testCompanionAppModelPublishesCompactionCalibrationReportOnExplicitRefresh",
         'XCTAssertEqual(doneResolution.summaryMethod, "llm_summary_v1")',
         'XCTAssertEqual(resolution.summaryMethod, "deterministic_preview_v1")',
         "XCTAssertFalse(cancellationResolution.primaryDispatched)",
@@ -33604,6 +34177,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         "testSQLiteStoreRejectsInvalidOrMismatchedAdaptiveV3SourceFingerprint",
         "testStoresRejectInvalidCompactionResolutionShapes",
         "testStoresRoundTripProviderUsageCalibration",
+        "testStoresExposeAggregateOnlyCompactionCalibrationReportAfterReopen",
         "testStoresRejectInvalidProviderUsageCalibrationShapes",
         "testStoresBindCompactionResolutionToAdaptiveV3RequestAccounting",
         "testStoresRejectMismatchedCompactionResolutionAfterReopen",
@@ -33789,6 +34363,13 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "durable chat compaction summary cache addendum",
                 "incremental chat compaction summary lineage addendum",
                 "provider usage calibration foundation addendum",
+                "RuntimeChatCompactionCalibrationReportTests",
+                "SQLiteRuntimeChatEventStoreTests/testStoresExposeAggregateOnlyCompactionCalibrationReportAfterReopen",
+                "LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesCompactionCalibrationReportOnExplicitRefresh",
+                "AetherLinkLocalizationTests/testCompactionCalibrationCopyLocalizesAcrossSupportedLanguages",
+                "AetherLinkRenderSmokeTests/testCompactionCalibrationSheetRendersAcrossLanguagesAndAppearances",
+                "host-local chat compaction calibration acceptance report",
+                "No protocol/Android state, provider probe, automatic estimator change",
                 "OllamaBackendTests/testChatStreamsOllamaLineDelimitedJSON",
                 "LMStudioBackendTests/testChatStreamsNativeServerSentEvents",
                 "LMStudioBackendTests/testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails",
@@ -33844,6 +34425,10 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
                 "provider_usage_calibration_v1",
                 "lmstudio_openai_compat",
                 "post-dispatch provider-reported calibration only",
+                "local calibration acceptance report",
+                "newest 1,000 fully eligible records",
+                "uses 20 samples solely as a `ready_for_review` floor",
+                "does not make a provider request, change compaction decisions, grant acceptance authority",
                 "chat_compaction_summary_v1",
                 "prompt-skill identifier and revision",
                 "missing or drifted current compaction skill",
@@ -36280,7 +36865,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         "smokeCompactionSessionID",
         "mockChatRequestAuditFile",
         "mockChatRequestAuditMessages",
-        'generationID: "smoke-memory-summary-generate-memory-summary"',
+        'generationIDPrefix: "memory-summary-generation-"',
         'generationID: "smoke-trusted-source-chat-context"',
         "generationID: researchCreateRequestID",
         'titlePayload["title"] as? String == "Runtime-owned smoke title"',
@@ -37087,6 +37672,498 @@ def model_residency_user_surfaces_guard_failures() -> list[str]:
             if key not in text:
                 failures.append(
                     f"{path.relative_to(ROOT)}: macOS model-residency refresh string missing {key}."
+                )
+
+    return failures
+
+
+def runtime_model_idle_unload_policy_control_guard_failures() -> list[str]:
+    failures: list[str] = []
+    policy_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeModelIdleUnloadPolicy.swift"
+    backend_path = ROOT / "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift"
+    app_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    policy_tests_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeModelIdleUnloadPolicyTests.swift"
+    backend_tests_path = ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift"
+    status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    localization_guard_path = ROOT / "script/check_macos_localization.py"
+    string_paths = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/en.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ko.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ja.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/zh-Hans.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/fr.lproj/Localizable.strings",
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_path = ROOT / "docs/qa-evidence.md"
+    architecture_path = ROOT / "docs/architecture.md"
+    security_path = ROOT / "docs/security.md"
+    protocol_path = ROOT / "docs/protocol.md"
+
+    paths = (
+        policy_path,
+        backend_path,
+        app_model_path,
+        policy_tests_path,
+        backend_tests_path,
+        status_path,
+        localization_tests_path,
+        render_tests_path,
+        localization_guard_path,
+        *string_paths,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_path,
+        architecture_path,
+        security_path,
+        protocol_path,
+    )
+    for path in paths:
+        if not path.exists():
+            failures.append(
+                f"{path.relative_to(ROOT)} is missing for runtime model idle-unload policy control guard."
+            )
+            return failures
+
+    texts = {path: path.read_text(encoding="utf-8", errors="replace") for path in paths}
+    required_snippets_by_path = {
+        policy_path: (
+            "public enum RuntimeModelIdleUnloadPolicy: String, CaseIterable, Identifiable, Sendable",
+            'case fiveMinutes = "five_minutes"',
+            'case tenMinutes = "ten_minutes"',
+            'case thirtyMinutes = "thirty_minutes"',
+            'static let defaultsKey = "runtime.modelResidency.idleUnloadPolicy.v1"',
+            "return .tenMinutes",
+            "final class RuntimeModelIdleUnloadPolicyUpdateQueue",
+            "func enqueue(_ operation: @escaping @Sendable () async -> Void) async -> Bool",
+            "await previousTask?.value",
+        ),
+        backend_path: (
+            "public func updateModelIdleUnloadDelayNanoseconds(_ delayNanoseconds: UInt64) async",
+            "public func configureModelIdleUnloadDelayNanoseconds(_ delayNanoseconds: UInt64)",
+            "private var idleUnloadGeneration: UInt64 = 0",
+            "private var idleResidencyStartedAtUptimeNanoseconds: UInt64?",
+            "private var residencyUnloadOperations: [RuntimeModelResidencyKey: RuntimeResidencyUnloadOperation]",
+            "let elapsed = now >= idleStartedAt ? now - idleStartedAt : 0",
+            "guard delayNanoseconds > elapsed else",
+            "guard idleUnloadGeneration == generation",
+            "if let unloadOperation = residencyUnloadOperations[model]",
+            "await runResidencyUnloadOperation(unloadOperation)",
+            "private func prepareResidency(for model: RuntimeModelResidencyKey) async throws",
+            "guard !Task.isCancelled else",
+            "idleUnloadAttemptHandler()",
+        ),
+        app_model_path: (
+            "@Published public private(set) var modelIdleUnloadPolicy: RuntimeModelIdleUnloadPolicy",
+            "@Published public private(set) var isModelIdleUnloadPolicyUpdateInFlight = false",
+            "backend: (any LlmBackend)? = nil",
+            "let loadedModelIdleUnloadPolicy = modelIdleUnloadPolicyStore.load()",
+            "modelIdleUnloadDelayNanoseconds: loadedModelIdleUnloadPolicy.idleUnloadDelayNanoseconds",
+            "aggregate.configureModelIdleUnloadDelayNanoseconds(",
+            "private let modelIdleUnloadPolicyUpdateQueue = RuntimeModelIdleUnloadPolicyUpdateQueue()",
+            "await modelIdleUnloadPolicyUpdateQueue.enqueue",
+            "public func setModelIdleUnloadPolicy(_ policy: RuntimeModelIdleUnloadPolicy) async",
+            "public func requestModelIdleUnloadPolicy(_ policy: RuntimeModelIdleUnloadPolicy) -> Bool",
+            "guard !isModelIdleUnloadPolicyUpdateInFlight",
+            "self.isModelIdleUnloadPolicyUpdateInFlight = false",
+            "RuntimeModelIdleUnloadPolicyStore(defaults: userDefaults).save(policy)",
+        ),
+        policy_tests_path: (
+            "testPolicyPresetsExposeStableDurations",
+            "testPolicyStoreDefaultsToTenMinutesAndRestoresKnownValue",
+            "testPolicyStoreRejectsUnknownPersistedValue",
+            "testPolicyUpdateQueueSerializesConcurrentChangesAndIdentifiesLatest",
+        ),
+        backend_tests_path: (
+            "testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed",
+            "testUpdatingIdlePolicyWhileGenerationIsInFlightDefersUnloadUntilCompletion",
+            "testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes",
+            "testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch",
+            "testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch",
+            "testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch",
+            "testExtendingIdlePolicyInvalidatesEarlierTimer",
+            "ControlledIdleUnloadSleeper",
+            "idleUnloadAttempted.wait",
+        ),
+        status_path: (
+            "struct ModelIdleUnloadPolicyPicker: View",
+            'Label(NSLocalizedString("Idle Unload", comment: ""), systemImage: "timer")',
+            "selection: modelIdleUnloadPolicyBinding",
+            "ForEach(RuntimeModelIdleUnloadPolicy.allCases)",
+            ".tag(policy)",
+            ".pickerStyle(.segmented)",
+            ".disabled(!isSupported || model.isModelIdleUnloadPolicyUpdateInFlight)",
+            "model.requestModelIdleUnloadPolicy(policy)",
+            ".accessibilityLabel(Text(NSLocalizedString(\"Idle Unload\", comment: \"\")))",
+            "let accessibilityValue = modelIdleUnloadPolicyPickerAccessibilityValue(",
+            ".accessibilityValue(Text(accessibilityValue))",
+            "modelIdleUnloadPolicyPickerAccessibilityHint(",
+            "isUpdating: Bool = false",
+            'NSLocalizedString("Wait for the current idle unload policy update to finish.", comment: "")',
+            'NSLocalizedString("Unavailable", comment: "")',
+            'NSLocalizedString("Model residency is not managed by this provider.", comment: "")',
+        ),
+        localization_tests_path: (
+            "testModelIdleUnloadPolicyPickerUsesSelectedLanguage",
+            "RuntimeModelIdleUnloadPolicy.allCases.map(modelIdleUnloadPolicyOptionTitle)",
+            "modelIdleUnloadPolicyPickerAccessibilityValue(",
+            "modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: true)",
+            "isUpdating: true",
+            "modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: false)",
+        ),
+        render_tests_path: (
+            "testModelIdleUnloadPolicyPickerRendersAcrossLanguagesAndAppearances",
+            "ModelIdleUnloadPolicyPicker(model: model)",
+            "testCompanionAppModelAppliesPersistedPolicyToInjectedAggregate",
+        ),
+        localization_guard_path: (
+            "REQUIRED_MODEL_IDLE_UNLOAD_KEYS",
+            "check_model_idle_unload_picker",
+            '"Choose when an idle resident model is unloaded."',
+            '"Wait for the current idle unload policy update to finish."',
+        ),
+        no_device_path: (
+            "RuntimeModelIdleUnloadPolicyTests",
+            "AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed",
+            "AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyWhileGenerationIsInFlightDefersUnloadUntilCompletion",
+            "AggregatingLlmBackendResidencyTests/testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes",
+            "AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch",
+            "AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch",
+            "AggregatingLlmBackendResidencyTests/testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch",
+            "AggregatingLlmBackendResidencyTests/testExtendingIdlePolicyInvalidatesEarlierTimer",
+            "AetherLinkRenderSmokeTests/testModelIdleUnloadPolicyPickerRendersAcrossLanguagesAndAppearances",
+            "AetherLinkRenderSmokeTests/testCompanionAppModelAppliesPersistedPolicyToInjectedAggregate",
+            "Covered v0.2 addendum: runtime model idle-unload policy user control",
+        ),
+        roadmap_path: (
+            "v0.2 Runtime Model Idle-Unload Policy User Control",
+            "persisted host-local 5/10/30 minute idle-unload selector",
+            "Every cancel or reschedule advances a timer generation",
+            "same-model request waits for that provider unload to complete",
+            "cancelled waiters cannot reserve residency or dispatch provider work",
+        ),
+        progress_path: (
+            "v0.2 Runtime Model Idle-Unload Policy User Control",
+            "Dynamic policy updates preserve the current model's monotonic idle start",
+            "injected aggregate backend",
+            "serialized policy-update queue",
+            "direct picker render",
+        ),
+        qa_path: (
+            "v0.2 Runtime Model Idle-Unload Policy User Control",
+            "testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed",
+            "testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes",
+            "testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch",
+            "testModelIdleUnloadPolicyPickerUsesSelectedLanguage",
+            "testModelIdleUnloadPolicyPickerRendersAcrossLanguagesAndAppearances",
+        ),
+        architecture_path: (
+            "persisted host-local 5, 10, or 30 minute idle policy",
+            "Ten minutes remains the default",
+            "unload the previous model before admitting a newly selected model",
+            "Per-model unload operations serialize same-model provider dispatch",
+            "cancelled waiters cannot acquire residency",
+        ),
+        security_path: (
+            "persisted host-local 5, 10, or 30 minute idle policy",
+            "grants no client or provider authority",
+            "Host updates are serialized",
+            "switch unload finishes before new-model admission",
+            "cancelled waiters are rejected before residency admission",
+        ),
+        protocol_path: (
+            "idle_unload_delay_seconds` reports the current idle-unload policy delay",
+            "the residency policy remains enforced by the runtime host",
+        ),
+    }
+    for path, snippets in required_snippets_by_path.items():
+        text = texts[path]
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: runtime model idle-unload policy control guard "
+                    f"missing {snippet}."
+                )
+
+    for path in string_paths:
+        text = texts[path]
+        for key in (
+            '"Idle Unload"',
+            '"%d min"',
+            '"Choose when an idle resident model is unloaded."',
+            '"Wait for the current idle unload policy update to finish."',
+            '"Unavailable"',
+            '"Model residency is not managed by this provider."',
+        ):
+            if key not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: runtime model idle-unload localization missing {key}."
+                )
+
+    return failures
+
+
+def provider_confirmed_runtime_model_unload_state_guard_failures() -> list[str]:
+    failures: list[str] = []
+    result_path = ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift"
+    strict_json_path = ROOT / "apps/macos/OllamaBackend/Sources/StrictJSONValidator.swift"
+    ollama_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift"
+    ollama_error_path = ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackendError.swift"
+    ollama_tests_path = ROOT / "apps/macos/OllamaBackend/Tests/OllamaBackendTests.swift"
+    lmstudio_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift"
+    lmstudio_error_path = ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackendError.swift"
+    lmstudio_tests_path = ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift"
+    aggregate_path = ROOT / "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift"
+    app_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    aggregate_tests_path = ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift"
+    app_model_tests_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    chrome_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/CompanionChrome.swift"
+    app_entry_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LocalAgentBridgeApp.swift"
+    localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    localization_guard_path = ROOT / "script/check_macos_localization.py"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_path = ROOT / "docs/qa-evidence.md"
+    architecture_path = ROOT / "docs/architecture.md"
+    security_path = ROOT / "docs/security.md"
+    protocol_path = ROOT / "docs/protocol.md"
+    string_paths = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/en.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ko.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ja.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/zh-Hans.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/fr.lproj/Localizable.strings",
+    )
+
+    required_snippets_by_path = {
+        result_path: (
+            "public enum Outcome: String, Equatable, Sendable",
+            "case confirmed",
+            'case alreadyAbsent = "already_absent"',
+            "case unsupported",
+            "outcome == .confirmed || outcome == .alreadyAbsent",
+        ),
+        strict_json_path: (
+            "public enum StrictJSONValidationError",
+            "case duplicateObjectKey",
+            "validateNoDuplicateObjectKeys",
+            "guard keys.insert(key).inserted else",
+            "JSONDecoder().decode(String.self",
+            "maximumDepth: 128",
+        ),
+        ollama_path: (
+            "guard let runningModelID = try await findRunningModelID(matching: providerModelID)",
+            "guard acknowledgement.done == true, acknowledgement.doneReason == \"unload\"",
+            "for attempt in 0..<unloadPollAttempts",
+            "try Task.checkCancellation()",
+            "findRunningModelID(matching: providerModelID) == nil",
+            "StrictJSONValidator.validateNoDuplicateObjectKeys",
+        ),
+        ollama_error_path: (
+            "case unloadNotConfirmed(reason: String)",
+            'return "ollama_unload_not_confirmed"',
+            'message: "Ollama did not confirm that the model left provider memory."',
+            "public var errorDescription: String?",
+            "backendError.message",
+        ),
+        ollama_tests_path: (
+            "testModelUnloadResultOutcomesPreserveBooleanGuard",
+            "testUnloadModelReturnsAlreadyAbsentWithoutPosting",
+            "testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup",
+            "testUnloadModelRejectsDuplicateRunningStateKeysDuringPolling",
+            "testUnloadModelRejectsMalformedAndFalseAcknowledgements",
+            "testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling",
+            "testUnloadModelPollingPropagatesCancellation",
+            "testUnloadConfirmationFailureBackendErrorIsSanitized",
+            "XCTAssertFalse(error.localizedDescription.contains",
+            "testLiveOllamaConfirmedUnload",
+            'AETHERLINK_RUN_OLLAMA_LIVE_UNLOAD_TEST',
+        ),
+        lmstudio_path: (
+            "LMStudioUnloadModelsResponse.self",
+            "let matches = response.models.filter { $0.key == modelID }",
+            "guard matches.count <= 1 else",
+            "return .unsupported(provider: provider, modelID: providerModelID)",
+            "instanceIDs = model.loadedInstances.map(\\.id)",
+            "guard acknowledgement.instanceID == instanceID",
+            "for attempt in 0..<unloadPollAttempts",
+            "Native model residency state was malformed.",
+            "StrictJSONValidator.validateNoDuplicateObjectKeys",
+        ),
+        lmstudio_error_path: (
+            "case unloadNotConfirmed(reason: String)",
+            'return "lm_studio_unload_not_confirmed"',
+            'message: "LM Studio did not confirm that the model left provider memory."',
+            "public var errorDescription: String?",
+            "backendError.message",
+        ),
+        lmstudio_tests_path: (
+            "testUnloadModelReturnsAlreadyAbsentForMissingModelWithoutRawIDFallback",
+            "testUnloadModelRejectsMissingNullOrDuplicateResidencyAtInitialLookup",
+            "testUnloadModelRejectsMissingNullOrDuplicateResidencyDuringPolling",
+            "testUnloadModelResolvesExactKeyOnly",
+            "testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback",
+            "testUnloadModelRejectsMalformedAndMismatchedInstanceAcknowledgements",
+            "testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling",
+            "testUnloadModelPollingPropagatesCancellation",
+            "testUnloadConfirmationFailureBackendErrorIsSanitized",
+            "XCTAssertFalse(error.localizedDescription.contains",
+            "testLiveLMStudioConfirmedUnload",
+            'AETHERLINK_RUN_LMSTUDIO_LIVE_UNLOAD_TEST',
+        ),
+        aggregate_path: (
+            "private enum RuntimeResidencyUnloadExecution",
+            "guard result.unloaded else",
+            "result.provider == model.provider",
+            "result.modelID == model.modelID",
+            "The model provider returned a mismatched unload confirmation.",
+            "case stateChanged",
+            "emit(.stateChanged)",
+            "unloadingProvider: unloading?.model.provider",
+            "lastUnloadFailure = RuntimeModelResidencyUnloadFailure(",
+            "if reason == .modelSwitch",
+        ),
+        app_model_path: (
+            "public var unloadingProvider: ModelProvider?",
+            "public var unloadingModelID: String?",
+            "public var unloadingReason: RuntimeModelResidencyUnloadReason?",
+            "public var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?",
+            "case .stateChanged:\n            return nil",
+        ),
+        aggregate_tests_path: (
+            "testManualUnloadKeepsActiveModelVisibleWhileProviderConfirmationIsPending",
+            "testNonthrowingUnsupportedUnloadIsFailureAndKeepsManualResidencyActive",
+            "testMismatchedUnloadConfirmationIdentityIsFailureAndKeepsManualResidencyActive",
+            "testIdleUnloadFailureKeepsPossiblyResidentModelActive",
+            "testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat",
+        ),
+        app_model_tests_path: (
+            "testCompanionAppModelPublishesResidencyInFlightTransitionsWithoutManualRefresh",
+            "testCompanionAppModelRejectsRapidIdleUnloadPolicyIntentWhileUpdateIsPending",
+            "waitForPublishedResidencyInFlightCount",
+            'XCTAssertEqual(firstActiveEvent, "Model residency active: Ollama qwen-local")',
+            "XCTAssertEqual(model.logs, logsAfterFirstCompletion)",
+        ),
+        status_path: (
+            "localizedModelResidencyStatusValue(model.modelResidency)",
+            "localizedModelResidencyStatusDetail(model.modelResidency)",
+            "modelResidencyStatusTone(model.modelResidency)",
+            'NSLocalizedString("Unloading", comment: "")',
+            'NSLocalizedString("Could not confirm %@ %@ was unloaded. It may still be resident.", comment: "")',
+            "model.modelResidency.unloadingModelID == nil",
+        ),
+        chrome_path: (
+            "isUnloading: Bool = false",
+            'NSLocalizedString("Model unload in progress", comment: "")',
+            'NSLocalizedString("Wait for the current model unload to finish.", comment: "")',
+        ),
+        app_entry_path: (
+            "model.modelResidency.unloadingModelID == nil",
+            "isUnloading: model.modelResidency.unloadingModelID != nil",
+        ),
+        localization_tests_path: (
+            "testModelResidencyUnloadConfirmationStatesUseSelectedLanguage",
+            "localizedModelResidencyStatusValue(unloading)",
+            "modelResidencyStatusTone(failure)",
+        ),
+        render_tests_path: (
+            "testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "holdsUnloadsOpen: true",
+            "Task.detached",
+            "unloadingModelState.modelResidency.unloadingModelID",
+        ),
+        localization_guard_path: (
+            "REQUIRED_MODEL_UNLOAD_CONFIRMATION_KEYS",
+            "check_model_residency_unload_confirmation_states",
+            '"Could not confirm %@ %@ was unloaded. It may still be resident."',
+        ),
+        no_device_path: (
+            "OllamaBackendTests/testModelUnloadResultOutcomesPreserveBooleanGuard",
+            "OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup",
+            "OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysDuringPolling",
+            "LMStudioBackendTests/testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback",
+            "AggregatingLlmBackendResidencyTests/testManualUnloadKeepsActiveModelVisibleWhileProviderConfirmationIsPending",
+            "AggregatingLlmBackendResidencyTests/testNonthrowingUnsupportedUnloadIsFailureAndKeepsManualResidencyActive",
+            "AggregatingLlmBackendResidencyTests/testMismatchedUnloadConfirmationIdentityIsFailureAndKeepsManualResidencyActive",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesResidencyInFlightTransitionsWithoutManualRefresh",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsRapidIdleUnloadPolicyIntentWhileUpdateIsPending",
+            "AetherLinkLocalizationTests/testModelResidencyUnloadConfirmationStatesUseSelectedLanguage",
+            "AetherLinkRenderSmokeTests/testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "Covered v0.2 addendum: provider-confirmed runtime model unload state",
+        ),
+        roadmap_path: (
+            "v0.2 Provider-Confirmed Runtime Model Unload State",
+            "provider-confirmed or already-absent",
+            "opt-in localhost live-provider tests",
+        ),
+        progress_path: (
+            "v0.2 Provider-Confirmed Runtime Model Unload State",
+            "provider-confirmed or already-absent",
+            "Unloading` and `Needs attention",
+        ),
+        qa_path: (
+            "v0.2 Provider-Confirmed Runtime Model Unload State",
+            "testLiveOllamaConfirmedUnload",
+            "testLiveLMStudioConfirmedUnload",
+            "provider-confirmed runtime model unload state",
+        ),
+        architecture_path: (
+            "Only provider-confirmed or already-absent outcomes clear runtime residency",
+            "Unloading` and `Needs attention",
+        ),
+        security_path: (
+            "Provider-confirmed model unload",
+            "does not trust HTTP success alone",
+            "raw provider errors remain host-local",
+        ),
+        protocol_path: (
+            "Provider-confirmed unload does not change the wire shape",
+            "transient `Unloading` state remains host-local",
+        ),
+    }
+
+    for path in (*required_snippets_by_path.keys(), *string_paths):
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for provider-confirmed model unload guard.")
+            return failures
+
+    for path, snippets in required_snippets_by_path.items():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: provider-confirmed model unload guard missing {snippet}."
+                )
+
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    for live_selector in (
+        "OllamaBackendTests/testLiveOllamaConfirmedUnload",
+        "LMStudioBackendTests/testLiveLMStudioConfirmedUnload",
+    ):
+        if live_selector in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: default no-device gate must not select {live_selector}."
+            )
+
+    for path in string_paths:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for key in (
+            '"Unloading"',
+            '"Model unload in progress"',
+            '"Wait for the current model unload to finish."',
+            '"%@ %@ is being unloaded by AetherLink Runtime."',
+            '"Could not confirm %@ %@ was unloaded. It may still be resident."',
+        ):
+            if key not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: provider-confirmed model unload localization missing {key}."
                 )
 
     return failures
@@ -38868,6 +39945,11 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     android_viewmodel_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     )
+    android_viewmodel_production_deadline_test_path = (
+        ROOT
+        / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
+        "RuntimeClientViewModelProductionDeadlineTest.kt"
+    )
     client_screens_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
         "ClientScreensNoDeviceComposeTest.kt"
@@ -38916,6 +39998,7 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         android_protocol_test_path,
         android_viewmodel_path,
         android_viewmodel_test_path,
+        android_viewmodel_production_deadline_test_path,
         client_screens_test_path,
         runtime_smoke_path,
         android_chat_session_mutation_failure_test_path,
@@ -38955,6 +40038,9 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
     android_viewmodel_text = android_viewmodel_path.read_text(encoding="utf-8", errors="replace")
     android_viewmodel_test_text = android_viewmodel_test_path.read_text(encoding="utf-8", errors="replace")
+    android_viewmodel_production_deadline_test_text = (
+        android_viewmodel_production_deadline_test_path.read_text(encoding="utf-8", errors="replace")
+    )
     client_screens_test_text = client_screens_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_smoke_text = runtime_smoke_path.read_text(encoding="utf-8", errors="replace")
     android_chat_session_mutation_failure_test_text = (
@@ -40825,14 +41911,14 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
 
     required_memory_summary_protocol_snippets = (
         'private const val MEMORY_ENTRY_SOURCE_KIND = "long_inactivity_summary_draft"',
-        'private const val MEMORY_ENTRY_SOURCE_SUMMARY_METHOD = "deterministic_preview"',
+        'private val MEMORY_SUMMARY_DRAFT_METHODS = setOf("deterministic_preview", "llm_summary_v1")',
         'private val MEMORY_SUMMARY_SOURCE_POINTER_ROLES = setOf("user", "assistant")',
         "data class MemoryEntryPayload(",
         "memory entry id must be nonempty",
         "memory entry content must be nonempty",
         "data class MemoryEntrySourcePayload(",
         "memory entry source kind must be long_inactivity_summary_draft",
-        "memory entry source summary_method must be deterministic_preview",
+        "memory entry source summary_method must be deterministic_preview or llm_summary_v1",
         "memory entry source source_message_count must be positive",
         "memory entry source source_pointers must be nonempty",
         "private const val MAX_MEMORY_SUMMARY_DRAFTS_LIST_LIMIT = 50",
@@ -40856,6 +41942,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         "require(content == null || content.isNotBlank())",
         "require(expectedSessionId == null || expectedSessionId.isNotBlank())",
         "require(expectedSourceMessageCount == null || expectedSourceMessageCount > 0)",
+        "require(expectedSummaryMethod == null || expectedSummaryMethod in MEMORY_SUMMARY_DRAFT_METHODS)",
+        "memory.summary.draft.approve request expected_summary_method must be deterministic_preview or llm_summary_v1",
         "data class MemorySummaryDraftDismissPayload(",
     )
     for snippet in required_memory_summary_protocol_snippets:
@@ -40885,6 +41973,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":"   "}"""',
         '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":0}"""',
         '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":-1}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_summary_method":""}"""',
+        '"""{"draft_id":"long-inactivity:session-1:1000:6","expected_summary_method":"manual"}"""',
     )
     for snippet in required_memory_summary_test_snippets:
         if snippet not in android_protocol_test_text:
@@ -41070,6 +42160,272 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             failures.append(
                 f"{document_path.relative_to(ROOT)}: Missing Android memory-summary deferred-reconciliation contract."
             )
+
+    runtime_source_matcher_marker = "internal fun RuntimeMemorySummaryDraft.hasSameMemorySummarySourceAs("
+    approved_source_matcher_marker = "internal fun MemoryEntrySourcePayload.hasSameMemorySummarySourceAs("
+    if runtime_source_matcher_marker not in android_viewmodel_text:
+        failures.append(
+            f"{android_viewmodel_path.relative_to(ROOT)}: Missing test-visible runtime memory-summary source matcher."
+        )
+        runtime_source_matcher_text = ""
+    else:
+        runtime_source_matcher_text = android_viewmodel_text.split(runtime_source_matcher_marker, 1)[1]
+        runtime_source_matcher_text = runtime_source_matcher_text.split(approved_source_matcher_marker, 1)[0]
+    if approved_source_matcher_marker not in android_viewmodel_text:
+        failures.append(
+            f"{android_viewmodel_path.relative_to(ROOT)}: Missing test-visible approved memory-summary source matcher."
+        )
+        approved_source_matcher_text = ""
+    else:
+        approved_source_matcher_text = android_viewmodel_text.split(approved_source_matcher_marker, 1)[1]
+        approved_source_matcher_text = approved_source_matcher_text.split(
+            "private fun parseProtocolTimestampMillisOrNull",
+            1,
+        )[0]
+    for matcher_name, matcher_text, required_snippets in (
+        (
+            "runtime draft",
+            runtime_source_matcher_text,
+            (
+                "id == expected.id",
+                "session.sessionId == expected.session.sessionId",
+                "session.title == expected.session.title",
+                "session.modelId == expected.session.modelId",
+                "session.lastActivityAtMillis == expected.session.lastActivityAtMillis",
+                "session.messageCount == expected.session.messageCount",
+                "sourceMessageCount == expected.sourceMessageCount",
+                "sourceRange == expected.sourceRange",
+                "sourcePointers == expected.sourcePointers",
+            ),
+        ),
+        (
+            "approved entry",
+            approved_source_matcher_text,
+            (
+                'kind == "long_inactivity_summary_draft"',
+                "draftId == expected.id",
+                "summaryMethod == expected.summaryMethod",
+                "session.sessionId == expected.session.sessionId",
+                "session.title == expected.session.title",
+                "session.model == expected.session.modelId",
+                "parseProtocolTimestampMillisOrNull(session.lastActivityAt) == expected.session.lastActivityAtMillis",
+                "session.messageCount == expected.session.messageCount",
+                "sourceMessageCount == expected.sourceMessageCount",
+                "sourceRange == expected.sourceRange",
+                "sourcePointers.size == expected.sourcePointers.size",
+                "actual.sessionId == expectedPointer.sessionId",
+                "actual.messageIndex == expectedPointer.messageIndex",
+                "actual.role == expectedPointer.role",
+                "actual.createdAt?.let(::parseProtocolTimestampMillisOrNull) == expectedPointer.createdAtMillis",
+                "actual.excerpt == expectedPointer.excerpt",
+            ),
+        ),
+    ):
+        for snippet in required_snippets:
+            if snippet not in matcher_text:
+                failures.append(
+                    f"{android_viewmodel_path.relative_to(ROOT)}: Missing {matcher_name} memory-summary "
+                    f"source-identity guard {snippet!r}."
+                )
+        if "inactiveSeconds" in matcher_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: {matcher_name} memory-summary source identity "
+                "must exclude naturally advancing inactiveSeconds."
+            )
+
+    for snippet in (
+        "memorySummarySourceIdentityRejectsEveryAuthoritativeFieldMutationExceptInactivity",
+        '"runtime source mutation $index must be rejected"',
+        '"approved source mutation $index must be rejected"',
+        'source.copy(kind = "future_source_kind")',
+        "memorySummaryDecisionFramesRequireExactChannelAndIgnoreLateDuplicates",
+        "val wrongChannel = ScriptedRuntimeProtocolChannel()",
+        'methodName = "handleMemorySummaryDraftApprove"',
+        'methodName = "handleMemorySummaryDraftDismiss"',
+        'code = "authentication_required"',
+        "assertEquals(canonicalState, fixture.viewModel.state.value)",
+        "persistedAfterCanonicalTerminals",
+    ):
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory-summary terminal/source "
+                f"closure regression {snippet!r}."
+            )
+    for snippet in (
+        "RuntimeClientViewModelTest.memorySummarySourceIdentityRejectsEveryAuthoritativeFieldMutationExceptInactivity",
+        "RuntimeClientViewModelTest.memorySummaryDecisionFramesRequireExactChannelAndIgnoreLateDuplicates",
+        "Covered v0.5 addendum: Android memory-summary terminal channel and source-identity closure",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Missing Android memory-summary terminal/source closure "
+                f"selector or marker {snippet!r}."
+            )
+    for document_path, document_text, heading in (
+        (roadmap_path, roadmap_text, "v0.5 Android Memory-Summary Terminal Channel And Source-Identity Closure"),
+        (progress_path, progress_text, "2026-07-16 v0.5 Android Memory-Summary Terminal Channel And Source-Identity Closure"),
+        (qa_evidence_path, qa_evidence_text, "2026-07-16 v0.5 Android Memory-Summary Terminal Channel And Source-Identity Closure"),
+        (docs_security_path, docs_security_text, "Android Memory-Summary Terminal Channel And Source-Identity Closure"),
+        (docs_protocol_path, docs_protocol_text, "Android Memory-Summary Terminal Correlation And Source Identity"),
+    ):
+        if f"## {heading}" not in document_text:
+            failures.append(
+                f"{document_path.relative_to(ROOT)}: Missing Android memory-summary terminal/source closure record."
+            )
+    for document_path, document_text in (
+        (roadmap_path, roadmap_text),
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+        (docs_security_path, docs_security_text),
+        (docs_protocol_path, docs_protocol_text),
+    ):
+        for snippet in (
+            "Wrong-channel and late-duplicate result/error frames are inert",
+            "Only `inactive_seconds` is excluded from source identity because it advances with wall time",
+        ):
+            if snippet not in document_text:
+                failures.append(
+                    f"{document_path.relative_to(ROOT)}: Missing Android memory-summary terminal/source boundary "
+                    f"{snippet!r}."
+                )
+
+    for snippet in (
+        "internal const val MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS = 15_000L",
+        "internal const val MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS = 75_000L",
+        "val memorySummaryControlRequestTimeoutMillis: Long? = null",
+        "val memorySummaryGenerationRequestTimeoutMillis: Long? = null",
+        "memorySummaryControlRequestTimeoutMillis =\n                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS",
+        "memorySummaryGenerationRequestTimeoutMillis =\n                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS",
+        "dependencies = RuntimeClientViewModelDependencies.create(application)",
+        "private val memorySummaryRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()",
+        "private fun scheduleMemorySummaryRequestTimeout(",
+        "private fun scheduleMemorySummaryDraftsListTimeout(",
+        "private fun scheduleMemorySummaryDraftGenerationTimeout(",
+        "private fun scheduleMemorySummaryDraftApprovalTimeout(",
+        "private fun scheduleMemorySummaryDraftDismissalTimeout(",
+        "timeoutMillis = dependencies.memorySummaryControlRequestTimeoutMillis",
+        "timeoutMillis = dependencies.memorySummaryGenerationRequestTimeoutMillis",
+        "delay(enabledTimeoutMillis)",
+        "memorySummaryRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)",
+    ):
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: Missing Android memory-summary request deadline "
+                f"contract {snippet!r}."
+            )
+    for snippet in (
+        "memorySummaryGenerationAcceptsResultAfterControlDeadlineBeforeHostAlignedDeadline",
+        "memorySummaryProtocolErrorMalformedResultAndSendFailureCancelExactTimeoutJobs",
+        "memorySummaryListAndActionsTimeoutClosePendingAndAllowRetry",
+        "memorySummaryActionTimeoutDrainsDeferredRefreshOnceAndIgnoresLateTerminals",
+        "memorySummaryTimeoutJobsStayAuthorityBoundAndCancelOnDisconnectAndClear",
+        "advanceTimeBy(MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS - 1L)",
+        "60_000L - MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS - 1L",
+        '"memorySummaryRequestTimeoutJobsByRequestId"',
+        'code = "authentication_required"',
+        "assertEquals(timeoutError, afterLateTerminals.error)",
+        "assertTrue(timeoutJob.isCancelled)",
+        "assertTrue(errorTimeoutJob.isCancelled)",
+        "assertTrue(malformedTimeoutJob.isCancelled)",
+        "assertTrue(sendFailureTimeoutEntry.value.isCancelled)",
+        "assertTrue(oldTimeoutJob.isCancelled)",
+        "assertTrue(jobsBeforeClear.all(Job::isCancelled))",
+    ):
+        if snippet not in android_viewmodel_test_text:
+            failures.append(
+                f"{android_viewmodel_test_path.relative_to(ROOT)}: Missing Android memory-summary request deadline "
+                f"regression {snippet!r}."
+            )
+    for snippet in (
+        "class RuntimeClientViewModelProductionDeadlineTest",
+        "productionFactoryEnablesHostAlignedMemorySummaryDeadlines",
+        "RuntimeClientViewModelDependencies.create(",
+        "MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS",
+        "MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS",
+        "requireNotNull(dependencies.memorySummaryGenerationRequestTimeoutMillis) > 60_000L",
+    ):
+        if snippet not in android_viewmodel_production_deadline_test_text:
+            failures.append(
+                f"{android_viewmodel_production_deadline_test_path.relative_to(ROOT)}: Missing production "
+                f"memory-summary deadline regression {snippet!r}."
+            )
+    for snippet in (
+        "RuntimeClientViewModelProductionDeadlineTest.productionFactoryEnablesHostAlignedMemorySummaryDeadlines",
+        "RuntimeClientViewModelTest.memorySummaryGenerationAcceptsResultAfterControlDeadlineBeforeHostAlignedDeadline",
+        "RuntimeClientViewModelTest.memorySummaryProtocolErrorMalformedResultAndSendFailureCancelExactTimeoutJobs",
+        "RuntimeClientViewModelTest.memorySummaryListAndActionsTimeoutClosePendingAndAllowRetry",
+        "RuntimeClientViewModelTest.memorySummaryActionTimeoutDrainsDeferredRefreshOnceAndIgnoresLateTerminals",
+        "RuntimeClientViewModelTest.memorySummaryTimeoutJobsStayAuthorityBoundAndCancelOnDisconnectAndClear",
+        "Covered v0.5 addendum: Android memory-summary request deadline closure",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Missing Android memory-summary request deadline selector "
+                f"or marker {snippet!r}."
+            )
+    for document_path, document_text, heading in (
+        (roadmap_path, roadmap_text, "v0.5 Android Memory-Summary Request Deadline Closure"),
+        (progress_path, progress_text, "2026-07-16 v0.5 Android Memory-Summary Request Deadline Closure"),
+        (qa_evidence_path, qa_evidence_text, "2026-07-16 v0.5 Android Memory-Summary Request Deadline Closure"),
+        (docs_security_path, docs_security_text, "Android Memory-Summary Request Deadline Closure"),
+        (docs_protocol_path, docs_protocol_text, "Android Memory-Summary Request Deadlines"),
+    ):
+        if f"## {heading}" not in document_text:
+            failures.append(
+                f"{document_path.relative_to(ROOT)}: Missing Android memory-summary request deadline record."
+            )
+    for document_path, document_text in (
+        (roadmap_path, roadmap_text),
+        (progress_path, progress_text),
+        (docs_security_path, docs_security_text),
+        (docs_protocol_path, docs_protocol_text),
+    ):
+        for snippet in (
+            "15-second",
+            "75-second",
+            "60-second",
+            "Late result/error frames after timeout are inert",
+            "exactly once",
+        ):
+            if snippet not in document_text:
+                failures.append(
+                    f"{document_path.relative_to(ROOT)}: Missing Android memory-summary request deadline boundary "
+                    f"{snippet!r}."
+                )
+    for snippet in (
+        "15,000 milliseconds",
+        "75,000 milliseconds",
+        "59,999 milliseconds",
+        "Late valid generate/approve/dismiss results",
+        "exactly one replacement list",
+    ):
+        if snippet not in qa_evidence_text:
+            failures.append(
+                f"{qa_evidence_path.relative_to(ROOT)}: Missing Android memory-summary request deadline evidence "
+                f"{snippet!r}."
+            )
+    final_memory_summary_deadline_log = (
+        "build/qa/check-no-device-quality-android-memory-summary-request-deadline-"
+        "final-reviewed-r2-20260716.log"
+    )
+    for document_path, document_text in (
+        (roadmap_path, roadmap_text),
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+        (docs_security_path, docs_security_text),
+    ):
+        for snippet in (
+            final_memory_summary_deadline_log,
+            "11,556 lines",
+            "88 local development-relay matches",
+            "903 encrypted frame bodies",
+            "two zero-delay mock registry self-tests",
+        ):
+            if snippet not in document_text:
+                failures.append(
+                    f"{document_path.relative_to(ROOT)}: Missing final Android memory-summary request deadline "
+                    f"aggregate evidence {snippet!r}."
+                )
     final_memory_summary_authority_log = (
         "build/qa/check-no-device-quality-v05-memory-summary-authority-"
         "deferred-reconciliation-final-reviewed-20260716.log"
@@ -41208,7 +42564,7 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
             )
 
     required_auth_challenge_protocol_doc_snippets = (
-        "Runtime `auth.challenge` payloads accept only `device_id`, `nonce`, `runtime_key_fingerprint`, and `runtime_signature`",
+        "Runtime `auth.challenge` payloads accept only `device_id`, `nonce`, `runtime_key_fingerprint`, `runtime_signature`, optional `runtime_capabilities`, and optional transport-owned `transport_binding`",
         "Auth challenges must not carry backend URLs, provider URLs, backend credentials, route tokens",
         "Android clients reject unsupported auth.challenge metadata before device identity loading, runtime proof verification, auth.response signing/sending, authenticated session state, route-refresh scheduling, or runtime refresh fanout",
     )
@@ -41458,13 +42814,76 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
                 f"decision result closed-payload app-path guard {snippet!r}."
             )
 
+    for operation, next_operation, pending_map, close_helper, action_state, unknown_guard in (
+        (
+            "handleMemorySummaryDraftApprove",
+            "handleMemorySummaryDraftDismiss",
+            "pendingMemorySummaryDraftApprovalDraftIdsByRequestId",
+            "closePendingMemorySummaryDraftApproval",
+            "approvingMemorySummaryDraftIds",
+            "memorySummaryDraftApproveResultUnknownMetadataKey",
+        ),
+        (
+            "handleMemorySummaryDraftDismiss",
+            "handleMemoryUpsert",
+            "pendingMemorySummaryDraftDismissalDraftIdsByRequestId",
+            "closePendingMemorySummaryDraftDismissal",
+            "dismissingMemorySummaryDraftIds",
+            "memorySummaryDraftDismissResultUnknownMetadataKey",
+        ),
+    ):
+        handler = android_viewmodel_text.split(f"private fun {operation}(", 1)[-1].split(
+            f"private fun {next_operation}(", 1
+        )[0]
+        pending_offset = handler.find(f"{pending_map}[envelope.requestId] ?: return")
+        authority_offset = handler.find("matchesCurrentMemorySummaryAuthority(", pending_offset)
+        consume_offset = handler.find(f"{close_helper}(envelope.requestId)", authority_offset)
+        clear_ui_offset = handler.find(action_state, consume_offset)
+        unknown_offset = handler.find(unknown_guard, clear_ui_offset)
+        refresh_offset = handler.find("drainDeferredMemorySummaryDraftsRefresh()", unknown_offset)
+        if (
+            pending_offset < 0
+            or authority_offset < pending_offset
+            or consume_offset < authority_offset
+            or clear_ui_offset < consume_offset
+            or unknown_offset < clear_ui_offset
+            or refresh_offset < unknown_offset
+        ):
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: {operation} must validate exact authority before "
+                "terminal correlation consumption, action-state clearing, unknown-metadata rejection, and deferred refresh."
+            )
+
+    required_memory_summary_source_identity_snippets = (
+        "session.sessionId == expected.session.sessionId",
+        "session.title == expected.session.title",
+        "session.modelId == expected.session.modelId",
+        "session.lastActivityAtMillis == expected.session.lastActivityAtMillis",
+        "session.messageCount == expected.session.messageCount",
+    )
+    for snippet in required_memory_summary_source_identity_snippets:
+        if snippet not in android_viewmodel_text:
+            failures.append(
+                f"{android_viewmodel_path.relative_to(ROOT)}: generated memory-summary source identity must "
+                f"exclude only changing inactiveSeconds; missing {snippet!r}."
+            )
+
     required_memory_summary_draft_decision_result_app_path_test_snippets = (
         "memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation",
         "memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation",
+        "approveMemorySummaryDraftRejectsResultsNotBoundToExactGeneratedDraftAndCanonicalEntry",
         '"backend_url": "http://127.0.0.1:11434"',
         '"workspace_id": "workspace-canary"',
         "entry.source.source_pointers[0].backend_url",
-        "Canonical approved memory",
+        'canonicalEntry.copy(content = "Different approved content.")',
+        "canonicalEntry.copy(enabled = false)",
+        'assertEquals("llm_summary_v1", fixture.viewModel.state.value.memoryEntries.single().source?.summaryMethod)',
+        "generatedDraftSource.session.inactiveSeconds + 37",
+        '"pendingMemorySummaryDraftApprovalDraftIdsByRequestId"',
+        '"pendingMemorySummaryDraftDismissalDraftIdsByRequestId"',
+        "listRequestCountBeforeApproval + 1",
+        "listRequestCountBeforeDismiss + 1",
+        "lateResultIgnoredState",
     )
     for snippet in required_memory_summary_draft_decision_result_app_path_test_snippets:
         if snippet not in android_viewmodel_test_text:
@@ -41477,7 +42896,9 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation",
         "RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation",
         "Android memory summary draft decision result closed-payload app-path addendum",
-        "preserves pending draft decisions for canonical retry",
+        "treats unknown memory.summary.draft.approve and memory.summary.draft.dismiss result metadata as terminal",
+        "consumes the correlation, clears action UI, drains one deferred refresh",
+        "ignores a late result using the old request id",
     )
     for snippet in required_memory_summary_draft_decision_result_app_path_no_device_snippets:
         if snippet not in no_device_text:
@@ -41490,7 +42911,10 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         "memory.summary.draft.approve` result payloads accept only `draft_id`, `status`, and `entry`",
         "Approved-memory result `entry.source.source_pointers` accepts only `session_id`, `message_index`, `role`, `created_at`, and `excerpt`",
         "memory.summary.draft.dismiss` result payloads accept only `draft_id`, `status`, and `dismissed_at`",
-        "Clients preserve pending draft decisions when unsupported result metadata is rejected",
+        "After exact request-id, channel, connection-generation, and authenticated-authority correlation, unsupported metadata or any malformed/noncanonical result is terminal",
+        "clears approval UI, drains one deferred draft refresh",
+        "clears dismissal UI, drains one deferred draft refresh",
+        "all other draft, session, source-range, and source-pointer identity fields remain exact",
     )
     for snippet in required_memory_summary_draft_decision_result_protocol_doc_snippets:
         if snippet not in docs_protocol_text:
@@ -46245,7 +47669,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_bytes = paths["manifest"].read_bytes() if paths["manifest"].is_file() else b""
     manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
-    expected_manifest_hash = "4409296330b9182128927c1c05116590fe5556e453fbacc4df6f6a9a0e25b74a"
+    expected_manifest_hash = "dd26adc9070c878d72a4e4299bcb241e7fc856f85a3f570419bd84509ace99ba"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -48417,8 +49841,15 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
     paths = {
         "registry": ROOT / "apps/macos/CompanionCore/Sources/RuntimePromptSkillRegistry.swift",
         "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "local_peer": ROOT / "apps/macos/Transport/Sources/LocalPeerServer.swift",
+        "relay_peer": ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift",
+        "local_peer_tests": ROOT / "apps/macos/Transport/Tests/LocalPeerServerTests.swift",
+        "relay_peer_tests": ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift",
+        "runtime_dev_server": ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift",
         "protocol_codec": ROOT / "apps/macos/Protocol/Sources/ProtocolCodec.swift",
         "memory_store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeMemoryStore.swift",
+        "chat_event_store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift",
+        "sqlite_chat_event_store": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
         "notebook_store": ROOT / "apps/macos/CompanionCore/Sources/RuntimeResearchNotebookStore.swift",
         "sqlite_notebook_store": ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeResearchNotebookStore.swift",
         "app_model": ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift",
@@ -48447,6 +49878,10 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "android_runtime_tests": ROOT / (
             "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
             "RuntimeClientViewModelTest.kt"
+        ),
+        "android_protocol_tests": ROOT / (
+            "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/"
+            "protocol/ProtocolCodecTest.kt"
         ),
     }
     missing = [str(path.relative_to(ROOT)) for path in paths.values() if not path.exists()]
@@ -48859,7 +50294,7 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "let memorySummaryPromptSkill = try requiredMemorySummaryPromptSkill()"
     )
     first_cache_offset = memory_summary_generate.find(
-        "cachedGeneratedMemorySummaryDraft(", current_skill_offset
+        "cachedGeneratedMemorySummaryPublication(", current_skill_offset
     )
     backend_offset = memory_summary_generate.find(
         "generateMemorySummaryContent(", first_cache_offset
@@ -48867,18 +50302,34 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
     commit_recheck_offset = memory_summary_generate.rfind(
         "requiredMemorySummaryPromptSkill("
     )
-    cache_commit_offset = memory_summary_generate.find(
-        "cacheGeneratedMemorySummaryDraft(", commit_recheck_offset
+    publication_transaction_offset = memory_summary_generate.find(
+        "performIfMemorySummarySourceCurrent(", commit_recheck_offset
+    )
+    materialized_cache_offset = memory_summary_generate.find(
+        ".storeAndReservePublication(", publication_transaction_offset
+    )
+    transport_enqueue_offset = memory_summary_generate.find(
+        "sink.send(", materialized_cache_offset
+    )
+    transport_success_offset = memory_summary_generate.find(
+        ".completePublication(", transport_enqueue_offset
+    )
+    persistence_dispatch_offset = memory_summary_generate.find(
+        "memorySummaryPersistenceDispatcher.dispatch(", transport_success_offset
     )
     if (
         current_skill_offset < 0
         or first_cache_offset < current_skill_offset
         or backend_offset < first_cache_offset
         or commit_recheck_offset < backend_offset
-        or cache_commit_offset < commit_recheck_offset
+        or publication_transaction_offset < commit_recheck_offset
+        or materialized_cache_offset < publication_transaction_offset
+        or transport_enqueue_offset < materialized_cache_offset
+        or transport_success_offset < transport_enqueue_offset
+        or persistence_dispatch_offset < transport_success_offset
     ):
         failures.append(
-            "LocalRuntimeMessageRouter.swift must resolve and revalidate the exact memory-summary prompt binding around cache/backend commit."
+            "LocalRuntimeMessageRouter.swift must resolve and revalidate the exact memory-summary prompt binding before source-current transport enqueue, then gate deferred persistence on transport success."
         )
     memory_summary_stream = router.split(
         "private func generateMemorySummaryContent", 1
@@ -48903,7 +50354,38 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "private final class RuntimeMemorySummaryRequestAuthority",
         "private final class RuntimeMemorySummaryGenerationWorkerGate",
         "private final class RuntimeMemorySummaryCancellationDispatcher",
+        "final class RuntimeMemorySummaryMaterializedCache",
+        "private final class RuntimeMemorySummaryPersistenceDispatcher",
         "private final class RuntimeMemorySummaryGenerationCancellation",
+        "private let maximumEntryCount: Int",
+        "storeAndReservePublication(",
+        "guard makeInsertionCapacityUnlocked() else { return nil }",
+        "while entriesByIdentity.count >= maximumEntryCount",
+        "reserveCurrentPublication(",
+        "reservePublication(",
+        "case reserveExisting",
+        "case materializeNew",
+        "var reservationID: UUID",
+        "var publicationReservations = Set<UUID>()",
+        "entry.publicationReservations.insert(reservationID)",
+        "entry.publicationReservations.remove(token.reservationID) != nil",
+        "entry.persistenceAttempted = true",
+        "entry.persistenceRetryRequested = true",
+        "entry.persistenceRetryConsumed = true",
+        "var published = false",
+        "entry.published = true",
+        "func publishedDraft(",
+        "private func publishedGeneratedMemorySummaryDraft(",
+        "let matchingMethods = Set(matchingDrafts.map",
+        "matchingMethods.count == 1",
+        "expectedSummaryMethod == RuntimeGeneratedMemorySummaryDraft.summaryMethod",
+        "persistenceOperationID: UUID().uuidString.lowercased()",
+        "entriesByIdentity[candidate]?.isPinned == false",
+        "cache.isPersistable(token)",
+        "cache.completePersistence(",
+        "retryAllowed: store.generatedMemorySummaryDraftCacheWritesAreIdempotent",
+        "entry.persistenceInFlight = false",
+        "performIfLongInactivityMemorySummarySourceCurrent(",
         "private var acquiredKeys = Set<RuntimeMemorySummaryGenerationKey>()",
         "guard !resolved else { return false }",
     ):
@@ -48919,6 +50401,90 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         failures.append(
             "LocalRuntimeMessageRouter.swift: memory-summary backend generation ids must not derive from client request ids."
         )
+    if 'generationIDPrefix: "memory-summary-generation-"' not in texts["smoke"]:
+        failures.append(
+            "runtime_authenticated_mock_smoke.swift must locate memory-summary backend audit entries by the host-private generation prefix."
+        )
+    if 'generationID: "smoke-memory-summary-generate-memory-summary"' in texts["smoke"]:
+        failures.append(
+            "runtime_authenticated_mock_smoke.swift must not expect memory-summary backend ids derived from client request ids."
+        )
+    cancellation_dispatcher = router.split(
+        "private final class RuntimeMemorySummaryCancellationDispatcher", 1
+    )[-1].split("private struct RuntimeMemorySummaryMaterializedCacheKey", 1)[0]
+    persistence_dispatcher = router.split(
+        "private final class RuntimeMemorySummaryPersistenceDispatcher", 1
+    )[-1].split("private final class RuntimeMemorySummaryGenerationCancellation", 1)[0]
+    if "attributes: .concurrent" not in cancellation_dispatcher:
+        failures.append(
+            "LocalRuntimeMessageRouter.swift: memory-summary cancellation must use a concurrent lane so one blocked key cannot starve another."
+        )
+    if "attributes: .concurrent" not in persistence_dispatcher:
+        failures.append(
+            "LocalRuntimeMessageRouter.swift: deferred memory-summary persistence must not serialize unrelated draft keys."
+        )
+    for label in ("local_peer", "relay_peer"):
+        for snippet in (
+            "completion: @escaping @Sendable (Bool) -> Void",
+            "completion: .contentProcessed { error in",
+            "completion(error == nil)",
+            "completion(false)",
+        ):
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: production runtime sends must report "
+                    f"Network.framework contentProcessed completion; missing {snippet!r}."
+                )
+    for label, snippets in (
+        (
+            "local_peer_tests",
+            (
+                "testLocalPeerConnectionCompletionReportsSuccessfulContentProcessing",
+                "testLocalPeerConnectionCompletionReportsEncodingFailure",
+                "testLocalPeerConnectionCompletionReportsContentProcessedErrorAfterCancellation",
+                "LocalPeerControlledListener",
+                "guard let listenerPort = listener.port",
+                "waitForAdditionalValue",
+            ),
+        ),
+        (
+            "relay_peer_tests",
+            (
+                "testRelayPeerConnectionCompletionReportsSuccessfulEncryptedContentProcessing",
+                "testRelayPeerConnectionCompletionReportsEncodingFailure",
+                "testRelayPeerConnectionCompletionReportsEncryptionFailure",
+                "testRelayPeerConnectionCompletionReportsContentProcessedErrorAfterCancellation",
+                "initialFrameIndex: Int64.max",
+                "waitForAdditionalValue",
+            ),
+        ),
+    ):
+        for snippet in snippets:
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing production transport completion regression {snippet!r}."
+                )
+    for snippet in (
+        "package init(sessionKeys: RelaySessionKeys, frameIndex: Int64)",
+        "initialFrameIndex: Int64 = 0",
+        "frameIndex: initialFrameIndex",
+    ):
+        if snippet not in texts["protocol_codec"] + texts["relay_peer"]:
+            failures.append(
+                f"Relay frame counter-injection seam is missing {snippet!r}."
+            )
+    runtime_dev_logging_sink = texts["runtime_dev_server"].split(
+        "private final class LoggingSink", 1
+    )[-1]
+    for snippet in (
+        "completion: @escaping @Sendable (Bool) -> Void",
+        "wrapped.send(envelope, completion: completion)",
+    ):
+        if snippet not in runtime_dev_logging_sink:
+            failures.append(
+                "RuntimeDevServer LoggingSink must forward transport completion without converting "
+                f"an asynchronous send into immediate success; missing {snippet!r}."
+            )
     memory_summary_handler = router.split(
         "private func handleMemorySummaryDraftGenerate", 1
     )[-1].split("private func currentMemorySummaryBaseDraft", 1)[0]
@@ -48973,6 +50539,23 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "container.contains(.promptSkillRevision)",
         "case (.some, nil), (nil, .some):",
         "== RuntimePromptSkillRegistry.memorySummaryDraftSkillID",
+        "if shouldCommit: @Sendable () -> Bool",
+        "guard shouldCommit() else { return nil }",
+        "var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { false }",
+        "public var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { true }",
+        "RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL)",
+        "withExclusiveFileAccess(to: fileURL) {\n                guard shouldCommit() else { return nil }",
+        ".compactMap(\\.generatedMemorySummaryDraft)",
+        ".first { $0 == draft }",
+        "public var persistenceOperationID: String?",
+        'case persistenceOperationID = "persistence_operation_id"',
+        "if let persistenceOperationID = draft.persistenceOperationID",
+        "$0.persistenceOperationID == persistenceOperationID",
+        ".generatedMemorySummaryDraftPersistenceConflict",
+        "if let existingDraft",
+        "event.eventLogOrdinal = index",
+        "existing.eventLogOrdinal >= event.eventLogOrdinal",
+        "var eventLogOrdinal: Int = -1",
     ):
         if snippet not in memory_store:
             failures.append(f"RuntimeMemoryStore.swift: missing generated-draft provenance guard {snippet!r}.")
@@ -48980,6 +50563,62 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         failures.append(
             "RuntimeMemoryStore.swift must persist only memory-summary prompt identity, never prompt text."
         )
+    if '"persistence_operation_id"' in router:
+        failures.append(
+            "LocalRuntimeMessageRouter.swift must not expose host-private memory-summary persistence operation ids on the wire."
+        )
+    stored_event_coding_keys = memory_store.split(
+        "private struct RuntimeMemoryStoredEvent", 1
+    )[-1].split("enum CodingKeys", 1)[-1].split("}", 1)[0]
+    if "eventLogOrdinal" in stored_event_coding_keys:
+        failures.append(
+            "RuntimeMemoryStore.swift: physical event-log ordinal must remain transient and absent from JSONL coding keys."
+        )
+    for snippet in (
+        "clientCapabilities.contains(runtimeCapabilityNegotiationClientCapability)",
+        'payload["runtime_capabilities"] = .array([',
+        'runtimeCapabilityNegotiationClientCapability = "auth.challenge.runtime_capabilities.v1"',
+        'memorySummaryDraftApprovalMethodRuntimeCapability = "memory.summary.approval_method.v1"',
+    ):
+        if snippet not in router:
+            failures.append(
+                f"LocalRuntimeMessageRouter.swift: missing mixed-version runtime capability guard {snippet!r}."
+            )
+    for snippet in (
+        "canonical host-private UUID persistence operation id",
+        "absent from protocol and Android models",
+        "exact displayed preview and summary method",
+    ):
+        if snippet not in texts["security"]:
+            failures.append(
+                f"docs/security.md: missing memory-summary persistence/method boundary {snippet!r}."
+            )
+    for label, snippets in (
+        (
+            "RuntimeChatEventStore.swift",
+            (
+                "func performIfLongInactivityMemorySummarySourceCurrent(",
+                "RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL)",
+                "currentDraft.hasSameMemorySummarySource(as: expectedDraft)",
+                "try operation()",
+            ),
+        ),
+        (
+            "SQLiteRuntimeChatEventStore.swift",
+            (
+                "public func performIfLongInactivityMemorySummarySourceCurrent(",
+                'try Self.execute(database, "BEGIN IMMEDIATE")',
+                "currentDraft.hasSameMemorySummarySource(as: expectedDraft)",
+                'try Self.execute(database, "COMMIT")',
+            ),
+        ),
+    ):
+        store_text = texts[
+            "chat_event_store" if label == "RuntimeChatEventStore.swift" else "sqlite_chat_event_store"
+        ]
+        for snippet in snippets:
+            if snippet not in store_text:
+                failures.append(f"{label}: missing source-atomic memory-summary publication guard {snippet!r}.")
     protocol_codec = texts["protocol_codec"]
     for snippet in (
         "public enum StrictJSONDocumentValidator",
@@ -49058,6 +50697,21 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "testMemorySummaryDraftGenerationDeadlineBoundsModelLookupBeforeBackendDispatch",
         "testMemorySummaryDraftGenerationDeadlineRetiresOnlyExpiredSharedWaiter",
         "testMemorySummaryDraftGenerateRejectsOversizedRawReasoningAndCancelsExactGeneration",
+        "testMemorySummaryDraftCancellationForOneKeyDoesNotStarveAnotherKey",
+        "testMemorySummaryDraftGenerateRevalidatesSourceAfterWorkerBeforePublication",
+        "testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache",
+        "testMemorySummaryDraftGeneratePersistsOnlyAfterTransportSuccessAndRetriesMaterializedCandidate",
+        "testMemorySummaryDraftApproveRejectsUndeliveredGeneratedContentAndFallsBackToVisiblePreview",
+        "testMemorySummaryDraftApproveAcceptsExactPublishedContentWhilePersistenceIsPending",
+        "testMemorySummaryDraftApproveBindsIdenticalContentToExpectedSummaryMethod",
+        "testMemorySummaryDraftConcurrentSuccessfulRetriesPersistMaterializedCandidateOnce",
+        "testMemorySummaryDraftMaterializedCacheKeepsTokensBoundAcrossReplacement",
+        "testMemorySummaryDraftMaterializedCacheRejectsReplacedWorkerSnapshot",
+        "testMemorySummaryDraftMaterializedCachePinsPublicationAcrossCapacityEviction",
+        "testMemorySummaryDraftMaterializedCacheRetriesOnlyIdempotentPersistenceFailure",
+        "testMemorySummaryDraftPersistenceDispatcherBoundsIdempotentRetryToTwoAttempts",
+        "testMemorySummaryDraftAmbiguousPersistenceFailureRetriesIdempotentlyAfterConcurrentSuccess",
+        "testMemorySummaryDraftGenerateJSONLSourceLockCoversTransportEnqueue",
         "ManualMemorySummaryGenerationDeadlineScheduler",
         "RuntimePromptSkillRegistry.memorySummaryDraftPrompt",
         "testChatSendUsesBoundedBackendOnlyGeneratedCompactionSummary",
@@ -49091,6 +50745,13 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "testGeneratedDraftCacheMapsCompleteLegacyEventToOriginalPromptBinding",
         "testGeneratedDraftCacheRejectsPartialMalformedOrWrongPromptBinding",
         "testGeneratedDraftCacheRejectsNullAndDuplicatePromptBindingBeforeLegacyMapping",
+        "testGeneratedDraftCacheDoesNotAppendExactDuplicate",
+        "testGeneratedDraftCacheDeduplicatesConcurrentCrossInstanceWrites",
+        "testGeneratedDraftCacheDoesNotReappendHistoricalExactDraftAfterReplacement",
+        "testGeneratedDraftCacheAppendsNewIdenticalValueWithDistinctOperationID",
+        "testGeneratedDraftCacheRejectsConflictingValueForSameOperationID",
+        "testGeneratedDraftCacheUsesPhysicalAppendOrderWhenClockMovesBackward",
+        "testGeneratedDraftConditionalCacheRechecksInsideFileLock",
         "RuntimePromptSkillRegistry.originalMemorySummaryDraftBinding",
         "XCTAssertFalse(persisted.contains(RuntimePromptSkillRegistry.memorySummaryDraftPrompt))",
         '"prompt_skill_id"',
@@ -49108,6 +50769,49 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
             "RuntimeClientViewModelTest.kt: missing wrong-model generated-draft rejection regression."
         )
     android_runtime = texts["android_runtime"]
+    if "content = draft.summaryPreview" not in android_runtime:
+        failures.append(
+            "RuntimeClientViewModel.kt: memory-summary approval must bind the exact displayed content."
+        )
+    if "expectedSummaryMethod = draft.summaryMethod" not in android_runtime:
+        failures.append(
+            "RuntimeClientViewModel.kt: memory-summary approval must bind the exact displayed summary method."
+        )
+    for snippet in (
+        "RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY,",
+        "runtimeCapabilities = payload.runtimeCapabilities.toSet()",
+        "authenticatedRuntimeCapabilities = pending.runtimeCapabilities",
+        "MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY in authenticatedRuntimeCapabilities",
+        "authenticatedRuntimeCapabilities = emptySet()",
+    ):
+        if snippet not in android_runtime:
+            failures.append(
+                f"RuntimeClientViewModel.kt: missing negotiated approval-method capability guard {snippet!r}."
+            )
+    for snippet in (
+        'const val RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY = "auth.challenge.runtime_capabilities.v1"',
+        'const val MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY = "memory.summary.approval_method.v1"',
+        '@SerialName("runtime_capabilities") val runtimeCapabilities: List<String> = emptyList()',
+        "auth.challenge runtime_capabilities must contain at most 64 entries",
+        "auth.challenge runtime_capabilities entries must be unique",
+    ):
+        if snippet not in texts["android_protocol"]:
+            failures.append(
+                f"ProtocolModels.kt: missing bounded runtime-capability negotiation contract {snippet!r}."
+            )
+    for snippet in (
+        "approveMemorySummaryDraftOmitsExpectedMethodForLegacyRuntime",
+        'assertFalse(request.payload.containsKey("expected_summary_method"))',
+        "runtimeCapabilities = emptyList()",
+    ):
+        if snippet not in texts["android_runtime_tests"]:
+            failures.append(
+                f"RuntimeClientViewModelTest.kt: missing legacy-runtime approval compatibility regression {snippet!r}."
+            )
+    if "authChallengePayloadUsesBoundedOptionalRuntimeCapabilities" not in texts["android_protocol_tests"]:
+        failures.append(
+            "ProtocolCodecTest.kt: missing bounded auth.challenge runtime-capabilities regression."
+        )
     for snippet in (
         "private data class ChatTitleRequestCorrelation(",
         "private data class ChatTitleReconciliation(",
@@ -49193,17 +50897,47 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         chat_properties = schema.get("$defs", {}).get("chatSendPayload", {}).get("properties", {})
         if "prompt_skill_id" in chat_properties:
             failures.append("protocol.schema.json: prompt_skill_id must remain absent from chat.send.")
+        if "persistence_operation_id" in json.dumps(schema, sort_keys=True):
+            failures.append(
+                "protocol.schema.json: host-private memory-summary persistence operation ids must remain absent."
+            )
+        runtime_capabilities = (
+            schema.get("$defs", {})
+            .get("authChallengePayload", {})
+            .get("properties", {})
+            .get("runtime_capabilities")
+        )
+        if runtime_capabilities != {
+            "type": "array",
+            "items": {"$ref": "#/$defs/nonBlankString"},
+            "maxItems": 64,
+            "uniqueItems": True,
+        }:
+            failures.append(
+                "protocol.schema.json: auth.challenge runtime_capabilities must remain optional, bounded, unique, and nonblank."
+            )
     if '"prompt_skill_id",' not in texts["schema_check"]:
         failures.append("check_protocol_schema.py must explicitly forbid prompt_skill_id.")
     if '"runtime_prompt_skill_unavailable",' not in texts["schema_check"]:
         failures.append("check_protocol_schema.py must pin runtime_prompt_skill_unavailable.")
     if "prompt_skill_id" in texts["android_protocol"]:
         failures.append("Android protocol models must not activate prompt_skill_id.")
+    if "persistence_operation_id" in texts["android_protocol"]:
+        failures.append(
+            "Android protocol models must not expose host-private memory-summary persistence operation ids."
+        )
     if '"runtime_prompt_skill_unavailable",' not in texts["android_protocol"]:
         failures.append("Android protocol models must accept runtime_prompt_skill_unavailable.")
+    if "authChallengePayload runtime_capabilities must be an optional bounded unique nonblank string array" not in texts["schema_check"]:
+        failures.append(
+            "check_protocol_schema.py must pin the optional bounded auth.challenge runtime_capabilities array."
+        )
     for snippet in (
         '"smoke-chat-prompt-skill-id-reserved"',
         '"chat.send reserved prompt_skill_id"',
+        'runtimeCapabilityNegotiationCapability = "auth.challenge.runtime_capabilities.v1"',
+        'memorySummaryDraftApprovalMethodCapability = "memory.summary.approval_method.v1"',
+        "legacy challenge unexpectedly disclosed runtime capabilities",
     ):
         if snippet not in texts["smoke"]:
             failures.append(f"runtime_authenticated_mock_smoke.swift: missing {snippet!r}.")
@@ -49224,6 +50958,25 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "testMemorySummaryDraftGenerationDeadlineBoundsModelLookupBeforeBackendDispatch",
         "testMemorySummaryDraftGenerationDeadlineRetiresOnlyExpiredSharedWaiter",
         "testMemorySummaryDraftGenerateRejectsOversizedRawReasoningAndCancelsExactGeneration",
+        "testMemorySummaryDraftCancellationForOneKeyDoesNotStarveAnotherKey",
+        "testMemorySummaryDraftGenerateRevalidatesSourceAfterWorkerBeforePublication",
+        "testMemorySummaryDraftGeneratePublishesBeforeBlockingDurableCache",
+        "testMemorySummaryDraftGeneratePersistsOnlyAfterTransportSuccessAndRetriesMaterializedCandidate",
+        "testMemorySummaryDraftApproveRejectsUndeliveredGeneratedContentAndFallsBackToVisiblePreview",
+        "testMemorySummaryDraftApproveAcceptsExactPublishedContentWhilePersistenceIsPending",
+        "testMemorySummaryDraftApproveBindsIdenticalContentToExpectedSummaryMethod",
+        "testMemorySummaryDraftConcurrentSuccessfulRetriesPersistMaterializedCandidateOnce",
+        "testMemorySummaryDraftMaterializedCacheKeepsTokensBoundAcrossReplacement",
+        "testMemorySummaryDraftMaterializedCacheRejectsReplacedWorkerSnapshot",
+        "testMemorySummaryDraftMaterializedCachePinsPublicationAcrossCapacityEviction",
+        "testMemorySummaryDraftMaterializedCacheRetriesOnlyIdempotentPersistenceFailure",
+        "testMemorySummaryDraftPersistenceDispatcherBoundsIdempotentRetryToTwoAttempts",
+        "testMemorySummaryDraftAmbiguousPersistenceFailureRetriesIdempotentlyAfterConcurrentSuccess",
+        "testMemorySummaryDraftGenerateJSONLSourceLockCoversTransportEnqueue",
+        "testHelloNegotiatesRuntimeCapabilitiesWithoutChangingLegacyChallengeShape",
+        "approveMemorySummaryDraftOmitsExpectedMethodForLegacyRuntime",
+        "LocalPeerServerTests/testLocalPeerConnectionCompletion",
+        "RelayPeerClientTests/testRelayPeerConnectionCompletion",
         "testChatSendSkipsCompactionPrepassAndCacheWhenCurrentPromptSkillIsUnavailable",
         "testChatCancelBeforeCompactionPrepassRegistrationPreventsDerivedAndPrimaryDispatch",
         "LocalRuntimeMessageRouterTests/(testChatTitle|testAutomaticChatTitle|testAutomaticAndExplicitChatTitle|testConcurrentExplicitChatTitle)",
@@ -49247,11 +51000,26 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "Covered v0.5 addendum: memory-summary draft requested-model and prompt-skill revision binding",
         "Covered v0.5 addendum: memory-summary generation terminal-event integrity",
         "Covered v0.5 addendum: memory-summary generation bounded lifecycle",
+        "Covered v0.5 addendum: memory-summary transport completion and persistence coalescing",
         "Covered v0.5 addendum: chat compaction prompt-skill revision binding",
         "Covered v0.5 addendum: runtime-authoritative chat title single-flight and terminal correlation",
     ):
         if snippet not in texts["no_device"]:
             failures.append(f"check_no_device_quality.sh: missing prompt-skill gate {snippet!r}.")
+    for label in ("protocol", "roadmap", "progress", "qa", "security"):
+        for snippet in (
+            "auth.challenge.runtime_capabilities.v1",
+            "memory.summary.approval_method.v1",
+        ):
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing mixed-version approval capability boundary {snippet!r}."
+                )
+    for label in ("protocol", "roadmap", "progress", "qa", "security"):
+        if "physical" not in texts[label] or "append" not in texts[label] or "rollback" not in texts[label]:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: missing physical-append clock-rollback persistence boundary."
+            )
     expected_android_chat_title_tests = (
         "chatTitleRequestCandidateBuildsAfterFirstCompletedExchange",
         "chatTitleRequestCandidateUsesEnglishWhenLanguagePreferenceIsLegacyBlank",
@@ -49483,6 +51251,9 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
             "16,384",
             "memory-summary-generation-",
             "memory_summary_draft_generation_failed",
+            "transport enqueue",
+            "contentProcessed",
+            "peer receipt",
             "no-device",
             "physical Android",
             "bounded Phase A",
@@ -49498,6 +51269,8 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "16,384-byte raw-output ceiling",
         "memory-summary-generation-",
         "one-shot request authority",
+        "contentProcessed",
+        "peer receipt",
     ):
         if snippet not in texts["security"]:
             failures.append(
@@ -49508,6 +51281,8 @@ def runtime_prompt_skill_registry_guard_failures() -> list[str]:
         "16,384 raw UTF-8 bytes",
         "memory-summary-generation-",
         "one-shot deadline authority",
+        "contentProcessed",
+        "peer receipt",
     ):
         if snippet not in texts["protocol"]:
             failures.append(
@@ -50390,12 +52165,12 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         return failures
 
     expected_hashes = {
-        "review": "c1968e19f546311e35422aaeeb5b5f5cd0ca3cd0e1dde289403da2cef213c571",
+        "review": "44db1fd48cf4da9bf777f276fe9acc5df2838e3dcdc83388051222ae101179dd",
         "review_md": "3e2fc5892120a46522096f700ad4ca7cdb0516aa530f7e3a9ea8a8f6b308fc9a",
         "threat": "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
         "standards": "3c43ed9fc2aa63e7d4eee8f6a19392c97d1eca3a814a4c79b5fd91e9618cdbdd",
-        "manifest": "d8e5f9de86d68aa17e6a6959d5c2b7d0b7e7e89e5b287c51e9aa49b40a2dc6aa",
-        "validator": "51235dacd6466b4a8ad28ed123a0c26703a21c6bc38209bbbb0aad97e3868bec",
+        "manifest": "9bff16c06ca8d36dea4b1a0933547f6e46ddb287c6c84de8df1783f53b91e2d5",
+        "validator": "0b43dca32d435f64bd57e9ccd7b2f864a57f7d841608984d09b80da7068b24d5",
         "tests": "3bc1af16952520d474efa40bd81d47230e6747ff99ef97ca18ac8409c8ba30b0",
     }
     for label, expected in expected_hashes.items():
@@ -50931,6 +52706,24 @@ def main() -> int:
     if model_residency_user_surfaces_failures:
         print("model-residency user-surface guard failed:", file=sys.stderr)
         for failure in model_residency_user_surfaces_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_model_idle_unload_policy_control_failures = (
+        runtime_model_idle_unload_policy_control_guard_failures()
+    )
+    if runtime_model_idle_unload_policy_control_failures:
+        print("runtime model idle-unload policy control guard failed:", file=sys.stderr)
+        for failure in runtime_model_idle_unload_policy_control_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    provider_confirmed_model_unload_failures = (
+        provider_confirmed_runtime_model_unload_state_guard_failures()
+    )
+    if provider_confirmed_model_unload_failures:
+        print("provider-confirmed runtime model unload state guard failed:", file=sys.stderr)
+        for failure in provider_confirmed_model_unload_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

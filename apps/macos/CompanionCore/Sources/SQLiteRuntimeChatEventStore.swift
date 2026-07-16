@@ -23,6 +23,7 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private let decoder: JSONDecoder
     private let semanticEmbeddingRowLimitPerOwnerModel: Int
     private let legacyJSONLCompactionWillReplace: (() -> Void)?
+    private let calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits
     private let lock = NSLock()
 
     public convenience init(
@@ -51,16 +52,31 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         )
     }
 
+    convenience init(
+        databaseURL: URL,
+        calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits
+    ) {
+        self.init(
+            databaseURL: databaseURL,
+            legacyJSONLFileURL: nil,
+            semanticEmbeddingRowLimitPerOwnerModel: 10_000,
+            legacyJSONLCompactionWillReplace: nil,
+            calibrationReportStoreLimits: calibrationReportStoreLimits
+        )
+    }
+
     private init(
         databaseURL: URL,
         legacyJSONLFileURL: URL?,
         semanticEmbeddingRowLimitPerOwnerModel: Int,
-        legacyJSONLCompactionWillReplace: (() -> Void)?
+        legacyJSONLCompactionWillReplace: (() -> Void)?,
+        calibrationReportStoreLimits: RuntimeChatCompactionCalibrationStoreLimits = .production
     ) {
         self.databaseURL = databaseURL
         self.legacyJSONLFileURL = legacyJSONLFileURL
         self.semanticEmbeddingRowLimitPerOwnerModel = max(1, semanticEmbeddingRowLimitPerOwnerModel)
         self.legacyJSONLCompactionWillReplace = legacyJSONLCompactionWillReplace
+        self.calibrationReportStoreLimits = calibrationReportStoreLimits
         self.encoder = JSONEncoder()
         self.encoder.dateEncodingStrategy = .iso8601
         self.encoder.outputFormatting = [.sortedKeys]
@@ -75,6 +91,24 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
                 do {
                     try appendUnlocked(event, database: database)
                     try Self.execute(database, "COMMIT")
+                } catch {
+                    try? Self.execute(database, "ROLLBACK")
+                    throw error
+                }
+            }
+        }
+    }
+
+    public func chatCompactionCalibrationReport() throws -> RuntimeChatCompactionCalibrationReport {
+        try lock.withLock {
+            try withDatabase { database in
+                try Self.execute(database, "BEGIN")
+                do {
+                    let report = RuntimeChatCompactionCalibrationReport.build(
+                        from: try calibrationReportEventsUnlocked(database)
+                    )
+                    try Self.execute(database, "COMMIT")
+                    return report
                 } catch {
                     try? Self.execute(database, "ROLLBACK")
                     throw error
@@ -824,6 +858,288 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         return events
     }
 
+    private func calibrationReportEventsUnlocked(
+        _ database: OpaquePointer
+    ) throws -> [RuntimeChatStoredEvent] {
+        let lowerBound = try calibrationReportDoneSequenceLowerBoundUnlocked(database)
+        let candidateSQL: String
+        // SQL bounds calibration-shaped candidates; the shared report predicate below applies
+        // the sample cap only after full report eligibility is established.
+        if lowerBound == nil {
+            candidateSQL = """
+                SELECT sequence,
+                       event_json,
+                       json_type(
+                         event_json,
+                         '$.compaction_resolution.provider_usage_calibration'
+                       )
+                FROM runtime_chat_events
+                WHERE kind = 'done'
+                  AND json_type(
+                    event_json,
+                    '$.compaction_resolution.provider_usage_calibration'
+                  ) IS NOT NULL
+                ORDER BY sequence DESC
+                LIMIT ?
+                """
+        } else {
+            candidateSQL = """
+                SELECT sequence,
+                       event_json,
+                       json_type(
+                         event_json,
+                         '$.compaction_resolution.provider_usage_calibration'
+                       )
+                FROM runtime_chat_events
+                WHERE kind = 'done'
+                  AND sequence >= ?
+                  AND json_type(
+                    event_json,
+                    '$.compaction_resolution.provider_usage_calibration'
+                  ) IS NOT NULL
+                ORDER BY sequence DESC
+                LIMIT ?
+                """
+        }
+
+        let statement = try Self.prepare(database, candidateSQL)
+        defer { sqlite3_finalize(statement) }
+        var bindIndex: Int32 = 1
+        if let lowerBound {
+            guard sqlite3_bind_int64(statement, bindIndex, lowerBound) == SQLITE_OK else {
+                throw Self.failure(database, "Could not bind runtime chat calibration lower bound.")
+            }
+            bindIndex += 1
+        }
+        guard sqlite3_bind_int64(
+            statement,
+            bindIndex,
+            Int64(calibrationReportStoreLimits.sqliteTerminalScanCeiling)
+        ) == SQLITE_OK else {
+            throw Self.failure(database, "Could not bind runtime chat calibration sample limit.")
+        }
+
+        var selected: [(sequence: Int64, event: RuntimeChatStoredEvent)] = []
+        var selectedKeys: Set<RuntimeChatCompactionResolutionBindingKey> = []
+        while true {
+            if selected.count == RuntimeChatCompactionCalibrationReport.recentEligibleSampleCap {
+                break
+            }
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW else {
+                throw Self.failure(database, "Could not read bounded runtime chat calibration events.")
+            }
+            let sequence = sqlite3_column_int64(statement, 0)
+            guard let calibrationType = sqlite3_column_text(statement, 2),
+                  String(cString: calibrationType) == "object" else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: Int(sequence),
+                    reason: "chat provider usage calibration payload is not an object"
+                )
+            }
+            let event = try decodeStoredEvent(
+                from: statement,
+                column: 1,
+                line: Int(sequence),
+                validating: false
+            )
+            guard isFullyEligibleRuntimeChatCompactionCalibrationEvent(event) else {
+                continue
+            }
+            try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: Int(sequence))
+            let key = RuntimeChatCompactionResolutionBindingKey(event: event)
+            guard selectedKeys.insert(key).inserted else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: Int(sequence),
+                    reason: "chat compaction binding has duplicate terminal resolution"
+                )
+            }
+            selected.append((sequence, event))
+        }
+
+        if selected.count < RuntimeChatCompactionCalibrationReport.recentEligibleSampleCap,
+           let lowerBound,
+           try hasDoneEventBeforeUnlocked(database, sequence: lowerBound) {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: 0,
+                reason: "chat compaction calibration SQLite scan exceeds the terminal ceiling"
+            )
+        }
+
+        var validationEvents: [(sequence: Int64, event: RuntimeChatStoredEvent)] = selected
+        for terminal in selected {
+            let key = RuntimeChatCompactionResolutionBindingKey(event: terminal.event)
+            try requireUniqueCompactionTerminalBindingUnlocked(database, key: key)
+            if let request = try latestRequestBindingUnlocked(
+                database,
+                key: key,
+                beforeSequence: terminal.sequence
+            ) {
+                validationEvents.append(request)
+            }
+        }
+        validationEvents.sort { $0.sequence < $1.sequence }
+        try JSONLRuntimeChatEventStore.validateCompactionResolutionBindings(
+            validationEvents.map { (line: Int($0.sequence), event: $0.event) }
+        )
+        return selected
+            .sorted { $0.sequence < $1.sequence }
+            .map(\.event)
+    }
+
+    private func calibrationReportDoneSequenceLowerBoundUnlocked(
+        _ database: OpaquePointer
+    ) throws -> Int64? {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT sequence
+            FROM runtime_chat_events
+            WHERE kind = 'done'
+            ORDER BY sequence DESC
+            LIMIT 1 OFFSET ?
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int64(
+            statement,
+            1,
+            Int64(calibrationReportStoreLimits.sqliteTerminalScanCeiling - 1)
+        ) == SQLITE_OK else {
+            throw Self.failure(database, "Could not bind runtime chat calibration scan ceiling.")
+        }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { return nil }
+        guard result == SQLITE_ROW else {
+            throw Self.failure(database, "Could not determine runtime chat calibration scan window.")
+        }
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    private func hasDoneEventBeforeUnlocked(
+        _ database: OpaquePointer,
+        sequence: Int64
+    ) throws -> Bool {
+        let statement = try Self.prepare(
+            database,
+            "SELECT 1 FROM runtime_chat_events WHERE kind = 'done' AND sequence < ? LIMIT 1"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_bind_int64(statement, 1, sequence) == SQLITE_OK else {
+            throw Self.failure(database, "Could not bind runtime chat calibration boundary.")
+        }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_ROW { return true }
+        guard result == SQLITE_DONE else {
+            throw Self.failure(database, "Could not verify runtime chat calibration scan completeness.")
+        }
+        return false
+    }
+
+    private func requireUniqueCompactionTerminalBindingUnlocked(
+        _ database: OpaquePointer,
+        key: RuntimeChatCompactionResolutionBindingKey
+    ) throws {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 1
+                FROM runtime_chat_events
+                WHERE kind IN ('done', 'cancelled', 'error')
+                  AND COALESCE(NULLIF(TRIM(owner_device_id), ''), '') = ?
+                  AND session_id = ?
+                  AND request_id = ?
+                  AND json_type(event_json, '$.compaction_resolution') IS NOT NULL
+                LIMIT 2
+            )
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(key.ownerDeviceID ?? "", to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.requestID, to: statement, at: 3)
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw Self.failure(database, "Could not verify runtime chat compaction terminal uniqueness.")
+        }
+        guard sqlite3_column_int64(statement, 0) == 1 else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: 0,
+                reason: "chat compaction binding has duplicate terminal resolution"
+            )
+        }
+    }
+
+    private func latestRequestBindingUnlocked(
+        _ database: OpaquePointer,
+        key: RuntimeChatCompactionResolutionBindingKey,
+        beforeSequence: Int64
+    ) throws -> (sequence: Int64, event: RuntimeChatStoredEvent)? {
+        let statement = try Self.prepare(
+            database,
+            """
+            SELECT sequence, event_json
+            FROM runtime_chat_events
+            WHERE kind = 'request'
+              AND COALESCE(NULLIF(TRIM(owner_device_id), ''), '') = ?
+              AND session_id = ?
+              AND request_id = ?
+              AND sequence < ?
+            ORDER BY sequence DESC
+            LIMIT 1
+            """
+        )
+        defer { sqlite3_finalize(statement) }
+        try Self.bindText(key.ownerDeviceID ?? "", to: statement, at: 1)
+        try Self.bindText(key.sessionID, to: statement, at: 2)
+        try Self.bindText(key.requestID, to: statement, at: 3)
+        guard sqlite3_bind_int64(statement, 4, beforeSequence) == SQLITE_OK else {
+            throw Self.failure(database, "Could not bind runtime chat calibration terminal sequence.")
+        }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_DONE { return nil }
+        guard result == SQLITE_ROW else {
+            throw Self.failure(database, "Could not read runtime chat calibration request binding.")
+        }
+        let sequence = sqlite3_column_int64(statement, 0)
+        return (
+            sequence,
+            try decodeStoredEvent(from: statement, column: 1, line: Int(sequence))
+        )
+    }
+
+    private func decodeStoredEvent(
+        from statement: OpaquePointer,
+        column: Int32,
+        line: Int,
+        validating: Bool = true
+    ) throws -> RuntimeChatStoredEvent {
+        guard let text = sqlite3_column_text(statement, column) else {
+            throw RuntimeChatEventStoreError.corruptEventLog(
+                line: line,
+                reason: "stored event JSON is empty"
+            )
+        }
+        do {
+            let decoded = try decoder.decode(
+                RuntimeChatStoredEvent.self,
+                from: Data(String(cString: text).utf8)
+            )
+            let event = JSONLRuntimeChatEventStore.projectingLegacyTitleForReplay(decoded)
+            if validating {
+                try JSONLRuntimeChatEventStore.validateStoredEvent(event, line: line)
+            }
+            return event
+        } catch {
+            if let storeError = error as? RuntimeChatEventStoreError {
+                throw storeError
+            }
+            throw RuntimeChatEventStoreError.corruptEventLog(line: line, reason: "decode failed")
+        }
+    }
+
     private func rebuildSearchIndexUnlocked(_ database: OpaquePointer) throws {
         try Self.execute(database, "DELETE FROM runtime_chat_session_fts")
         let events = try readEventsUnlocked(database)
@@ -1434,6 +1750,23 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         try execute(
             database,
             "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_timestamp ON runtime_chat_events(timestamp)"
+        )
+        try execute(
+            database,
+            "CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_kind_sequence ON runtime_chat_events(kind, sequence DESC)"
+        )
+        try execute(
+            database,
+            """
+            CREATE INDEX IF NOT EXISTS idx_runtime_chat_events_compaction_binding
+            ON runtime_chat_events(
+                kind,
+                COALESCE(NULLIF(TRIM(owner_device_id), ''), ''),
+                session_id,
+                request_id,
+                sequence DESC
+            )
+            """
         )
         try execute(
             database,

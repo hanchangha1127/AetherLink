@@ -47,7 +47,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let memorySummaryGenerationWorkerGate = RuntimeMemorySummaryGenerationWorkerGate()
     private let memorySummaryCancellationDispatcher = RuntimeMemorySummaryCancellationDispatcher()
     private let memorySummaryMaterializedCache = RuntimeMemorySummaryMaterializedCache()
-    private let memorySummaryPersistenceDispatcher = RuntimeMemorySummaryPersistenceDispatcher()
+    private let memorySummaryPersistenceDispatcher: RuntimeMemorySummaryPersistenceDispatcher
     private let chatTitleGenerationCoordinator = RuntimeChatTitleGenerationCoordinator()
     private let chatTitleGenerationWorkerGate = RuntimeChatTitleGenerationWorkerGate()
     private let chatTitleCancellationDispatcher = RuntimeChatTitleCancellationDispatcher()
@@ -81,6 +81,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     ) -> (@Sendable () -> Void)
     private let memorySummaryGenerationWorkerCompletionCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryCancellationCompletionCheckpoint: (@Sendable () -> Void)?
+    private let memorySummaryDecisionCommitCheckpoint: (@Sendable () -> Void)?
     private let modelPullOutcomePublicationCheckpoint: (@Sendable () -> Void)?
     private let chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)?
     private let researchNotebookLifecycleCompletionCheckpoint: (@Sendable () throws -> Void)?
@@ -145,6 +146,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ) -> (@Sendable () -> Void))? = nil,
         memorySummaryGenerationWorkerCompletionCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryCancellationCompletionCheckpoint: (@Sendable () -> Void)? = nil,
+        memorySummaryPersistenceRequestCompletionCheckpoint: (@Sendable () -> Void)? = nil,
+        memorySummaryDecisionCommitCheckpoint: (@Sendable () -> Void)? = nil,
         modelPullOutcomePublicationCheckpoint: (@Sendable () -> Void)? = nil,
         chatSessionLifecycleAuthorizationCheckpoint: (@Sendable () -> Void)? = nil,
         researchNotebookLifecycleCompletionCheckpoint: (@Sendable () throws -> Void)? = nil,
@@ -229,6 +232,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             memorySummaryGenerationWorkerCompletionCheckpoint
         self.memorySummaryCancellationCompletionCheckpoint =
             memorySummaryCancellationCompletionCheckpoint
+        self.memorySummaryPersistenceDispatcher = RuntimeMemorySummaryPersistenceDispatcher(
+            requestCompletionCheckpoint:
+                memorySummaryPersistenceRequestCompletionCheckpoint
+        )
+        self.memorySummaryDecisionCommitCheckpoint = memorySummaryDecisionCommitCheckpoint
         self.modelPullOutcomePublicationCheckpoint = modelPullOutcomePublicationCheckpoint
         self.chatSessionLifecycleAuthorizationCheckpoint = chatSessionLifecycleAuthorizationCheckpoint
         self.researchNotebookLifecycleCompletionCheckpoint =
@@ -824,6 +832,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 )
                 payload["runtime_key_fingerprint"] = .string(proof.runtimeKeyFingerprint)
                 payload["runtime_signature"] = .string(proof.signatureBase64)
+            }
+            if clientCapabilities.contains(runtimeCapabilityNegotiationClientCapability) {
+                payload["runtime_capabilities"] = .array([
+                    .string(memorySummaryDraftApprovalMethodRuntimeCapability)
+                ])
             }
             sink.send(ProtocolEnvelope(
                 type: MessageType.authChallenge,
@@ -6207,7 +6220,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
         let approvedEntryIDs: Set<String>
         let dismissedDraftIDs: Set<String>
-        let generatedDrafts: [RuntimeGeneratedMemorySummaryDraft]
+        var generatedDrafts: [RuntimeGeneratedMemorySummaryDraft]
         do {
             approvedEntryIDs = Set(try memoryStore.list(ownerDeviceID: ownerDeviceID).map(\.id))
             dismissedDraftIDs = try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: ownerDeviceID)
@@ -6220,6 +6233,19 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         } catch {
             throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+        }
+        for baseDraft in baseDrafts {
+            guard let publishedDraft = memorySummaryMaterializedCache.publishedDraft(
+                ownerDeviceID: ownerDeviceID,
+                draftID: baseDraft.id
+            ), generatedMemorySummaryDraftMatchesCurrentReview(
+                publishedDraft,
+                draft: baseDraft
+            ) else {
+                continue
+            }
+            generatedDrafts.removeAll { $0.draftID == baseDraft.id }
+            generatedDrafts.append(publishedDraft)
         }
         let drafts = policy.applyingGeneratedResults(
             to: baseDrafts,
@@ -6326,6 +6352,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             )
         }
 
+        let baseDraft = try currentMemorySummaryBaseDraft(
+            ownerDeviceID: ownerDeviceID,
+            draftID: draftID
+        )
+        guard expectedSessionID == baseDraft.candidate.sessionID,
+            expectedSourceMessageCount == baseDraft.sourceMessageCount
+        else {
+            throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+        }
         let resolvedModel = try await resolvedInstalledChatModel(model)
         try Task.checkCancellation()
         let backendDispatchModel = try Self.backendDispatchModelReference(
@@ -6338,43 +6373,66 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
         let memorySummaryPromptSkill = try requiredMemorySummaryPromptSkill()
         try Task.checkCancellation()
-        let baseDraft = try currentMemorySummaryBaseDraft(
-            ownerDeviceID: ownerDeviceID,
-            draftID: draftID
-        )
-        guard expectedSessionID == baseDraft.candidate.sessionID,
-            expectedSourceMessageCount == baseDraft.sourceMessageCount
-        else {
-            throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
-        }
 
-        if let cachedDraft = try cachedGeneratedMemorySummaryDraft(
+        if let cachedPublication = try cachedGeneratedMemorySummaryPublication(
             ownerDeviceID: ownerDeviceID,
             matching: baseDraft,
             modelID: model,
             providerQualifiedModelID: providerQualifiedModelID,
             promptSkillBinding: memorySummaryPromptSkill.binding
         ) {
+            let cachedDraft = cachedPublication.draft
             memorySummaryPublicationCheckpoint?()
-            let didPublish = try performIfMemorySummarySourceCurrent(
-                ownerDeviceID: ownerDeviceID,
-                expectedDraft: baseDraft
-            ) { [self] in
-                try self.requestTaskLock.withLock {
-                    guard !Task.isCancelled,
-                        self.requestTasksByConnection[sink.connectionID]?[requestTaskID] != nil,
-                        authority.claimPublication()
-                    else {
-                        throw CancellationError()
+            let didPublish: Bool
+            do {
+                didPublish = try performIfMemorySummarySourceCurrent(
+                    ownerDeviceID: ownerDeviceID,
+                    expectedDraft: baseDraft
+                ) { [self] in
+                    try self.requestTaskLock.withLock {
+                        guard !Task.isCancelled,
+                            self.requestTasksByConnection[sink.connectionID]?[requestTaskID] != nil,
+                            authority.claimPublication()
+                        else {
+                            throw CancellationError()
+                        }
+                        sink.send(
+                            self.memorySummaryDraftEnvelope(
+                                baseDraft.applyingGeneratedResult(cachedDraft),
+                                requestID: envelope.requestID
+                            )
+                        ) { [self] succeeded in
+                            guard let token = cachedPublication.token,
+                                  let draft = self.memorySummaryMaterializedCache
+                                    .completePublication(token, succeeded: succeeded) else {
+                                return
+                            }
+                            self.memorySummaryPersistenceDispatcher.dispatch(
+                                ownerDeviceID: ownerDeviceID,
+                                draft: draft,
+                                token: token,
+                                cache: self.memorySummaryMaterializedCache,
+                                store: self.memoryStore
+                            )
+                        }
                     }
-                    sink.send(
-                        self.memorySummaryDraftEnvelope(
-                            baseDraft.applyingGeneratedResult(cachedDraft),
-                            requestID: envelope.requestID
-                        ))
                 }
+            } catch {
+                if let token = cachedPublication.token {
+                    _ = memorySummaryMaterializedCache.completePublication(
+                        token,
+                        succeeded: false
+                    )
+                }
+                throw error
             }
             guard didPublish else {
+                if let token = cachedPublication.token {
+                    _ = memorySummaryMaterializedCache.completePublication(
+                        token,
+                        succeeded: false
+                    )
+                }
                 throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
             }
             return
@@ -6391,7 +6449,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             key: generationKey,
             operation: { [self] _ in
                 try Task.checkCancellation()
-                if let cachedDraft = try cachedGeneratedMemorySummaryDraft(
+                if let cachedDraftState = try cachedGeneratedMemorySummaryDraftState(
                     ownerDeviceID: ownerDeviceID,
                     matching: baseDraft,
                     modelID: model,
@@ -6399,8 +6457,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     promptSkillBinding: memorySummaryPromptSkill.binding
                 ) {
                     return RuntimeMemorySummaryGenerationProduct(
-                        draft: cachedDraft,
-                        requiresPersistence: false
+                        draft: cachedDraftState.draft,
+                        persistencePlan: cachedDraftState.persistencePlan
                     )
                 }
 
@@ -6438,6 +6496,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     content: content,
                     modelID: model,
                     providerQualifiedModelID: providerQualifiedModelID,
+                    persistenceOperationID: UUID().uuidString.lowercased(),
                     promptSkillBinding: memorySummaryPromptSkill.binding,
                     generatedAt: Date(
                         timeIntervalSince1970: floor(Date().timeIntervalSince1970)
@@ -6445,7 +6504,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 )
                 return RuntimeMemorySummaryGenerationProduct(
                     draft: generatedDraft,
-                    requiresPersistence: true
+                    persistencePlan: .materializeNew
                 )
             },
             waiterRegistered: { [self] in
@@ -6473,22 +6532,46 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             product,
                             for: waiterID
                         )
-                        let persistenceToken = product.requiresPersistence &&
-                            materialization.didMaterialize
-                            ? self.memorySummaryMaterializedCache.store(
-                                ownerDeviceID: ownerDeviceID,
-                                draft: materialization.draft
-                            )
-                            : nil
+                        let persistenceToken: RuntimeMemorySummaryMaterializedCacheToken?
+                        if product.persistencePlan == .materializeNew
+                            && materialization.didMaterialize {
+                            guard let publication = self.memorySummaryMaterializedCache
+                                .storeAndReservePublication(
+                                    ownerDeviceID: ownerDeviceID,
+                                    draft: materialization.draft
+                                ) else {
+                                throw LocalRuntimeRouterError.memorySummaryDraftGenerationFailed
+                            }
+                            persistenceToken = publication.token
+                        } else if product.persistencePlan != .none {
+                            guard let reservedToken = self.memorySummaryMaterializedCache
+                                .reservePublication(
+                                    ownerDeviceID: ownerDeviceID,
+                                    draft: materialization.draft
+                                ) else {
+                                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+                            }
+                            persistenceToken = reservedToken
+                        } else {
+                            persistenceToken = nil
+                        }
                         sink.send(
                             self.memorySummaryDraftEnvelope(
                                 baseDraft.applyingGeneratedResult(materialization.draft),
                                 requestID: envelope.requestID
-                            ))
-                        if let persistenceToken {
+                            )
+                        ) { [self] succeeded in
+                            guard let persistenceToken,
+                                  let draft = self.memorySummaryMaterializedCache
+                                    .completePublication(
+                                        persistenceToken,
+                                        succeeded: succeeded
+                                    ) else {
+                                return
+                            }
                             self.memorySummaryPersistenceDispatcher.dispatch(
                                 ownerDeviceID: ownerDeviceID,
-                                draft: materialization.draft,
+                                draft: draft,
                                 token: persistenceToken,
                                 cache: self.memorySummaryMaterializedCache,
                                 store: self.memoryStore
@@ -6523,6 +6606,39 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func performMemorySummaryMutationIfSourceCurrent<Value: Sendable>(
+        ownerDeviceID: String?,
+        expectedDraft: RuntimeLongInactivityMemorySummarizationDraft,
+        operation: @escaping @Sendable () throws -> Value
+    ) throws -> Value? {
+        let resultBox = RuntimeMemorySummaryMutationResultBox<Value>()
+        let didPerform: Bool
+        do {
+            didPerform = try chatEventStore.performIfLongInactivityMemorySummarySourceCurrent(
+                ownerDeviceID: ownerDeviceID,
+                expectedDraft: expectedDraft,
+                policy: memorySummaryPolicy(50)
+            ) {
+                do {
+                    resultBox.store(.success(try operation()))
+                } catch {
+                    resultBox.store(.failure(error))
+                }
+            }
+        } catch let error as LocalRuntimeRouterError {
+            throw error
+        } catch {
+            throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+        guard didPerform else { return nil }
+        guard let result = resultBox.value else {
+            throw LocalRuntimeRouterError.memoryStoreUnavailable(
+                "Memory summary mutation did not complete."
+            )
+        }
+        return try result.get()
+    }
+
     private func currentMemorySummaryBaseDraft(
         ownerDeviceID: String?,
         draftID: String
@@ -6543,25 +6659,79 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func cachedGeneratedMemorySummaryDraft(
+    private func persistedGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        matching draft: RuntimeLongInactivityMemorySummarizationDraft
+    ) throws -> RuntimeGeneratedMemorySummaryDraft? {
+        do {
+            guard let persistedDraft = try memoryStore.generatedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draft.id
+            ), generatedMemorySummaryDraftMatchesCurrentReview(
+                persistedDraft,
+                draft: draft
+            ) else {
+                return nil
+            }
+            return persistedDraft
+        } catch {
+            throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+        }
+    }
+
+    private func publishedGeneratedMemorySummaryDraft(
+        ownerDeviceID: String?,
+        matching draft: RuntimeLongInactivityMemorySummarizationDraft
+    ) -> RuntimeGeneratedMemorySummaryDraft? {
+        guard let publishedDraft = memorySummaryMaterializedCache.publishedDraft(
+            ownerDeviceID: ownerDeviceID,
+            draftID: draft.id
+        ), generatedMemorySummaryDraftMatchesCurrentReview(
+            publishedDraft,
+            draft: draft
+        ) else {
+            return nil
+        }
+        return publishedDraft
+    }
+
+    private func generatedMemorySummaryDraftMatchesCurrentReview(
+        _ generatedDraft: RuntimeGeneratedMemorySummaryDraft,
+        draft: RuntimeLongInactivityMemorySummarizationDraft
+    ) -> Bool {
+        generatedDraft.draftID == draft.id
+            && generatedDraft.sessionID == draft.candidate.sessionID
+            && generatedDraft.sourceMessageCount == draft.sourceMessageCount
+            && isAvailableMemorySummaryPromptSkill(
+                binding: generatedDraft.promptSkillBinding
+            )
+    }
+
+    private func cachedGeneratedMemorySummaryDraftState(
         ownerDeviceID: String?,
         matching draft: RuntimeLongInactivityMemorySummarizationDraft,
         modelID: String? = nil,
         providerQualifiedModelID: String? = nil,
         promptSkillBinding: RuntimePromptSkillBinding? = nil
-    ) throws -> RuntimeGeneratedMemorySummaryDraft? {
+    ) throws -> (
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        persistencePlan: RuntimeMemorySummaryGenerationPersistencePlan
+    )? {
         do {
             let cachedDraft: RuntimeGeneratedMemorySummaryDraft?
+            let persistencePlan: RuntimeMemorySummaryGenerationPersistencePlan
             if let materializedDraft = memorySummaryMaterializedCache.draft(
                     ownerDeviceID: ownerDeviceID,
                     draftID: draft.id
             ) {
                 cachedDraft = materializedDraft
+                persistencePlan = .reserveExisting
             } else {
                 cachedDraft = try memoryStore.generatedMemorySummaryDraft(
                     ownerDeviceID: ownerDeviceID,
                     draftID: draft.id
                 )
+                persistencePlan = .none
             }
             guard let cachedDraft,
                 cachedDraft.sessionID == draft.candidate.sessionID,
@@ -6581,10 +6751,72 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             ) {
                 return nil
             }
-            return cachedDraft
+            return (cachedDraft, persistencePlan)
         } catch {
             throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
         }
+    }
+
+    private func cachedGeneratedMemorySummaryPublication(
+        ownerDeviceID: String?,
+        matching draft: RuntimeLongInactivityMemorySummarizationDraft,
+        modelID: String,
+        providerQualifiedModelID: String,
+        promptSkillBinding: RuntimePromptSkillBinding
+    ) throws -> (
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        token: RuntimeMemorySummaryMaterializedCacheToken?
+    )? {
+        if let publication = memorySummaryMaterializedCache.reserveCurrentPublication(
+            ownerDeviceID: ownerDeviceID,
+            draftID: draft.id
+        ) {
+            guard generatedMemorySummaryDraft(
+                publication.draft,
+                matches: draft,
+                modelID: modelID,
+                providerQualifiedModelID: providerQualifiedModelID,
+                promptSkillBinding: promptSkillBinding
+            ) else {
+                _ = memorySummaryMaterializedCache.completePublication(
+                    publication.token,
+                    succeeded: false
+                )
+                return nil
+            }
+            return (publication.draft, publication.token)
+        }
+        do {
+            guard let persistedDraft = try memoryStore.generatedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draft.id
+            ), generatedMemorySummaryDraft(
+                persistedDraft,
+                matches: draft,
+                modelID: modelID,
+                providerQualifiedModelID: providerQualifiedModelID,
+                promptSkillBinding: promptSkillBinding
+            ) else {
+                return nil
+            }
+            return (persistedDraft, nil)
+        } catch {
+            throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+        }
+    }
+
+    private func generatedMemorySummaryDraft(
+        _ cachedDraft: RuntimeGeneratedMemorySummaryDraft,
+        matches draft: RuntimeLongInactivityMemorySummarizationDraft,
+        modelID: String,
+        providerQualifiedModelID: String,
+        promptSkillBinding: RuntimePromptSkillBinding
+    ) -> Bool {
+        cachedDraft.sessionID == draft.candidate.sessionID
+            && cachedDraft.sourceMessageCount == draft.sourceMessageCount
+            && cachedDraft.modelID == modelID
+            && cachedDraft.providerQualifiedModelID == providerQualifiedModelID
+            && cachedDraft.promptSkillBinding == promptSkillBinding
     }
 
     private func generateMemorySummaryContent(
@@ -6738,31 +6970,96 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)
             let rawContent = try optionalNonBlankString("content", in: envelope.payload)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            let expectedSummaryMethod = try optionalNonBlankString(
+                "expected_summary_method",
+                in: envelope.payload
+            )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let expectedSummaryMethod,
+               expectedSummaryMethod != "deterministic_preview",
+               expectedSummaryMethod != RuntimeGeneratedMemorySummaryDraft.summaryMethod {
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "Payload field expected_summary_method must be deterministic_preview or llm_summary_v1"
+                )
+            }
             let requestedEnabled = try optionalRequestBool("enabled", in: envelope.payload) ?? true
             let baseDraft = try currentMemorySummaryBaseDraft(
                 ownerDeviceID: ownerDeviceID,
                 draftID: draftID
             )
-            let draft = try cachedGeneratedMemorySummaryDraft(
+            if let expectedSessionID, expectedSessionID != baseDraft.candidate.sessionID {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            if let expectedSourceMessageCount,
+               expectedSourceMessageCount != baseDraft.sourceMessageCount {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            let requestedContent = rawContent.flatMap { $0.isEmpty ? nil : $0 }
+            let persistedGeneratedDraft = try persistedGeneratedMemorySummaryDraft(
                 ownerDeviceID: ownerDeviceID,
                 matching: baseDraft
-            ).map { baseDraft.applyingGeneratedResult($0) } ?? baseDraft
-            if let expectedSessionID, expectedSessionID != draft.candidate.sessionID {
-                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            )
+            let publishedGeneratedDraft = publishedGeneratedMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                matching: baseDraft
+            )
+            let generatedReviewDrafts = [
+                publishedGeneratedDraft,
+                persistedGeneratedDraft,
+            ].compactMap { generatedDraft in
+                generatedDraft.map { baseDraft.applyingGeneratedResult($0) }
             }
-            if let expectedSourceMessageCount, expectedSourceMessageCount != draft.sourceMessageCount {
+            let draft: RuntimeLongInactivityMemorySummarizationDraft
+            if let requestedContent {
+                let matchingDrafts = ([baseDraft] + generatedReviewDrafts).filter {
+                    $0.summaryPreview == requestedContent
+                        && (expectedSummaryMethod == nil
+                            || $0.summaryMethod == expectedSummaryMethod)
+                }
+                let matchingMethods = Set(matchingDrafts.map(\.summaryMethod))
+                guard let matchingDraft = matchingDrafts.first,
+                      matchingMethods.count == 1 else {
+                    throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+                }
+                draft = matchingDraft
+            } else if expectedSummaryMethod == "deterministic_preview" {
+                draft = baseDraft
+            } else if let persistedGeneratedDraft,
+                      expectedSummaryMethod == nil
+                        || expectedSummaryMethod == RuntimeGeneratedMemorySummaryDraft.summaryMethod {
+                draft = baseDraft.applyingGeneratedResult(persistedGeneratedDraft)
+            } else if expectedSummaryMethod == RuntimeGeneratedMemorySummaryDraft.summaryMethod {
                 throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            } else {
+                draft = baseDraft
             }
-            let content = rawContent.flatMap { $0.isEmpty ? nil : $0 } ?? draft.summaryPreview
+            let content = requestedContent ?? draft.summaryPreview
+            memorySummaryDecisionCommitCheckpoint?()
             let entry = try withSemanticDuplicateCoordinatedMemoryMutation {
-                try memoryStore.upsert(
+                guard let entry = try performMemorySummaryMutationIfSourceCurrent(
                     ownerDeviceID: ownerDeviceID,
-                    id: memorySummaryDraftEntryID(draftID),
-                    content: content,
-                    enabled: requestedEnabled,
-                    source: memorySummaryDraftEntrySource(draft),
-                    timestamp: Date()
-                )
+                    expectedDraft: baseDraft,
+                    operation: { [self] in
+                        do {
+                            return try memoryStore.approveMemorySummaryDraft(
+                                ownerDeviceID: ownerDeviceID,
+                                draftID: draftID,
+                                id: memorySummaryDraftEntryID(draftID),
+                                content: content,
+                                enabled: requestedEnabled,
+                                source: memorySummaryDraftEntrySource(draft),
+                                timestamp: Date()
+                            )
+                        } catch {
+                            throw memorySummaryDecisionStoreError(
+                                error,
+                                draftID: draftID
+                            )
+                        }
+                    }
+                ) else {
+                    throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+                }
+                return entry
             }
             sink.send(ProtocolEnvelope(
                 type: MessageType.memorySummaryDraftApprove,
@@ -6807,11 +7104,30 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             if let expectedSourceMessageCount, expectedSourceMessageCount != draft.sourceMessageCount {
                 throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
             }
-            let result = try memoryStore.dismissMemorySummaryDraft(
-                ownerDeviceID: ownerDeviceID,
-                draftID: draft.id,
-                timestamp: Date()
-            )
+            memorySummaryDecisionCommitCheckpoint?()
+            let result = try withSemanticDuplicateCoordinatedMemoryMutation {
+                guard let result = try performMemorySummaryMutationIfSourceCurrent(
+                    ownerDeviceID: ownerDeviceID,
+                    expectedDraft: draft,
+                    operation: { [self] in
+                        do {
+                            return try memoryStore.dismissMemorySummaryDraft(
+                                ownerDeviceID: ownerDeviceID,
+                                draftID: draft.id,
+                                timestamp: Date()
+                            )
+                        } catch {
+                            throw memorySummaryDecisionStoreError(
+                                error,
+                                draftID: draftID
+                            )
+                        }
+                    }
+                ) else {
+                    throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+                }
+                return result
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.memorySummaryDraftDismiss,
                 requestID: envelope.requestID,
@@ -6828,6 +7144,22 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func memorySummaryDraftEntryID(_ draftID: String) -> String {
         "memory-summary:\(draftID)"
+    }
+
+    private func memorySummaryDecisionStoreError(
+        _ error: Error,
+        draftID: String
+    ) -> LocalRuntimeRouterError {
+        if let storeError = error as? RuntimeMemoryStoreError {
+            switch storeError {
+            case .memorySummaryDraftTerminalDecisionConflict,
+                 .memorySummaryDraftApprovedEntryUnavailable:
+                return .memorySummaryDraftUnavailable(draftID)
+            default:
+                break
+            }
+        }
+        return .memoryStoreUnavailable("Memory summary decision persistence failed.")
     }
 
     private func memorySummaryDraftEntrySource(
@@ -10961,6 +11293,21 @@ private enum RuntimeMemorySummaryGenerationStreamError: Error {
     case outputLimitExceeded
 }
 
+private final class RuntimeMemorySummaryMutationResultBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: Result<Value, Error>?
+
+    var value: Result<Value, Error>? {
+        lock.withLock { storedValue }
+    }
+
+    func store(_ value: Result<Value, Error>) {
+        lock.withLock {
+            storedValue = value
+        }
+    }
+}
+
 private final class RuntimeMemorySummaryGenerationScheduledDeadline: @unchecked Sendable {
     private let lock = NSLock()
     private var action: (@Sendable () -> Void)?
@@ -11171,62 +11518,285 @@ private final class RuntimeMemorySummaryCancellationDispatcher: @unchecked Senda
     }
 }
 
-private struct RuntimeMemorySummaryMaterializedCacheKey: Hashable, Sendable {
+struct RuntimeMemorySummaryMaterializedCacheKey: Hashable, Sendable {
     var ownerDeviceID: String?
     var draftID: String
 }
 
-private struct RuntimeMemorySummaryMaterializedCacheToken: Sendable {
+struct RuntimeMemorySummaryMaterializedCacheToken: Sendable {
     var key: RuntimeMemorySummaryMaterializedCacheKey
     var identity: UUID
+    var reservationID: UUID
 }
 
-private final class RuntimeMemorySummaryMaterializedCache: @unchecked Sendable {
+struct RuntimeMemorySummaryMaterializedPublication: Sendable {
+    var draft: RuntimeGeneratedMemorySummaryDraft
+    var token: RuntimeMemorySummaryMaterializedCacheToken
+}
+
+final class RuntimeMemorySummaryMaterializedCache: @unchecked Sendable {
     private struct Entry {
-        var identity: UUID
+        var key: RuntimeMemorySummaryMaterializedCacheKey
         var draft: RuntimeGeneratedMemorySummaryDraft
+        var publicationReservations = Set<UUID>()
+        var persistenceInFlight = false
+        var persistenceAttempted = false
+        var persistenceRetryRequested = false
+        var persistenceRetryConsumed = false
+        var persisted = false
+        var published = false
+
+        var isPinned: Bool {
+            !publicationReservations.isEmpty || persistenceInFlight
+        }
     }
 
-    private static let maximumEntryCount = 256
+    private let maximumEntryCount: Int
     private let lock = NSLock()
-    private var entries: [RuntimeMemorySummaryMaterializedCacheKey: Entry] = [:]
-    private var entryOrder: [RuntimeMemorySummaryMaterializedCacheKey] = []
+    private var entriesByIdentity: [UUID: Entry] = [:]
+    private var currentIdentityByKey: [RuntimeMemorySummaryMaterializedCacheKey: UUID] = [:]
+    private var entryOrder: [UUID] = []
 
-    func store(
+    init(maximumEntryCount: Int = 256) {
+        self.maximumEntryCount = max(1, maximumEntryCount)
+    }
+
+    func storeAndReservePublication(
         ownerDeviceID: String?,
         draft: RuntimeGeneratedMemorySummaryDraft
-    ) -> RuntimeMemorySummaryMaterializedCacheToken {
+    ) -> RuntimeMemorySummaryMaterializedPublication? {
         lock.withLock {
             let key = RuntimeMemorySummaryMaterializedCacheKey(
                 ownerDeviceID: ownerDeviceID,
                 draftID: draft.draftID
             )
             let identity = UUID()
-            entries[key] = Entry(identity: identity, draft: draft)
-            entryOrder.removeAll { $0 == key }
-            entryOrder.append(key)
-            while entryOrder.count > Self.maximumEntryCount {
-                entries[entryOrder.removeFirst()] = nil
+            let reservationID = UUID()
+            if let previousIdentity = currentIdentityByKey[key],
+               let previousEntry = entriesByIdentity[previousIdentity],
+               !previousEntry.isPinned {
+                removeEntryUnlocked(previousIdentity)
             }
-            return RuntimeMemorySummaryMaterializedCacheToken(
+            guard makeInsertionCapacityUnlocked() else { return nil }
+            entriesByIdentity[identity] = Entry(
                 key: key,
-                identity: identity
+                draft: draft,
+                publicationReservations: [reservationID]
+            )
+            currentIdentityByKey[key] = identity
+            entryOrder.append(identity)
+            trimUnlocked()
+            return RuntimeMemorySummaryMaterializedPublication(
+                draft: draft,
+                token: RuntimeMemorySummaryMaterializedCacheToken(
+                    key: key,
+                    identity: identity,
+                    reservationID: reservationID
+                )
             )
         }
     }
 
     func draft(ownerDeviceID: String?, draftID: String) -> RuntimeGeneratedMemorySummaryDraft? {
         lock.withLock {
-            entries[RuntimeMemorySummaryMaterializedCacheKey(
+            let key = RuntimeMemorySummaryMaterializedCacheKey(
                 ownerDeviceID: ownerDeviceID,
                 draftID: draftID
-            )]?.draft
+            )
+            guard let identity = currentIdentityByKey[key] else { return nil }
+            return entriesByIdentity[identity]?.draft
         }
     }
 
-    func isCurrent(_ token: RuntimeMemorySummaryMaterializedCacheToken) -> Bool {
+    func publishedDraft(
+        ownerDeviceID: String?,
+        draftID: String
+    ) -> RuntimeGeneratedMemorySummaryDraft? {
         lock.withLock {
-            entries[token.key]?.identity == token.identity
+            let key = RuntimeMemorySummaryMaterializedCacheKey(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draftID
+            )
+            guard let identity = currentIdentityByKey[key],
+                  let entry = entriesByIdentity[identity],
+                  entry.published else {
+                return nil
+            }
+            return entry.draft
+        }
+    }
+
+    func reserveCurrentPublication(
+        ownerDeviceID: String?,
+        draftID: String
+    ) -> RuntimeMemorySummaryMaterializedPublication? {
+        lock.withLock {
+            let key = RuntimeMemorySummaryMaterializedCacheKey(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draftID
+            )
+            guard let identity = currentIdentityByKey[key],
+                  var entry = entriesByIdentity[identity] else {
+                return nil
+            }
+            let reservationID = UUID()
+            entry.publicationReservations.insert(reservationID)
+            entriesByIdentity[identity] = entry
+            return RuntimeMemorySummaryMaterializedPublication(
+                draft: entry.draft,
+                token: RuntimeMemorySummaryMaterializedCacheToken(
+                    key: key,
+                    identity: identity,
+                    reservationID: reservationID
+                )
+            )
+        }
+    }
+
+    func reservePublication(
+        ownerDeviceID: String?,
+        draft: RuntimeGeneratedMemorySummaryDraft
+    ) -> RuntimeMemorySummaryMaterializedCacheToken? {
+        lock.withLock {
+            let key = RuntimeMemorySummaryMaterializedCacheKey(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draft.draftID
+            )
+            let preferredIdentity = currentIdentityByKey[key]
+            let identity = preferredIdentity.flatMap { candidate in
+                entriesByIdentity[candidate]?.draft == draft ? candidate : nil
+            } ?? entryOrder.reversed().first { candidate in
+                guard let entry = entriesByIdentity[candidate] else { return false }
+                return entry.key == key && entry.draft == draft
+            }
+            guard let identity, var entry = entriesByIdentity[identity] else {
+                return nil
+            }
+            let reservationID = UUID()
+            entry.publicationReservations.insert(reservationID)
+            entriesByIdentity[identity] = entry
+            return RuntimeMemorySummaryMaterializedCacheToken(
+                key: key,
+                identity: identity,
+                reservationID: reservationID
+            )
+        }
+    }
+
+    func completePublication(
+        _ token: RuntimeMemorySummaryMaterializedCacheToken,
+        succeeded: Bool
+    ) -> RuntimeGeneratedMemorySummaryDraft? {
+        lock.withLock {
+            guard var entry = entriesByIdentity[token.identity],
+                  entry.key == token.key,
+                  entry.publicationReservations.remove(token.reservationID) != nil else {
+                return nil
+            }
+            if succeeded {
+                entry.published = true
+            }
+            let shouldStartInitialPersistence = succeeded
+                && !entry.persistenceAttempted
+                && !entry.persisted
+            let shouldStartDeferredRetry = succeeded
+                && entry.persistenceAttempted
+                && !entry.persistenceInFlight
+                && !entry.persistenceRetryConsumed
+                && !entry.persisted
+            if shouldStartInitialPersistence {
+                entry.persistenceAttempted = true
+                entry.persistenceInFlight = true
+            } else if shouldStartDeferredRetry {
+                entry.persistenceRetryConsumed = true
+                entry.persistenceInFlight = true
+            } else if succeeded,
+                      entry.persistenceInFlight,
+                      !entry.persistenceRetryConsumed,
+                      !entry.persisted {
+                entry.persistenceRetryRequested = true
+            }
+            entriesByIdentity[token.identity] = entry
+            trimUnlocked()
+            return shouldStartInitialPersistence || shouldStartDeferredRetry ? entry.draft : nil
+        }
+    }
+
+    func isPersistable(_ token: RuntimeMemorySummaryMaterializedCacheToken) -> Bool {
+        lock.withLock {
+            guard let entry = entriesByIdentity[token.identity] else { return false }
+            return entry.key == token.key
+                && entry.persistenceInFlight
+                && !entry.persisted
+        }
+    }
+
+    func completePersistence(
+        _ token: RuntimeMemorySummaryMaterializedCacheToken,
+        succeeded: Bool,
+        retryAllowed: Bool
+    ) -> Bool {
+        lock.withLock {
+            guard var entry = entriesByIdentity[token.identity],
+                  entry.key == token.key,
+                  entry.persistenceInFlight else {
+                return false
+            }
+            if succeeded {
+                entry.persistenceInFlight = false
+                entry.persistenceRetryRequested = false
+                entry.persisted = true
+                entriesByIdentity[token.identity] = entry
+                trimUnlocked()
+                return false
+            }
+            if retryAllowed,
+               !entry.persistenceRetryConsumed,
+               entry.persistenceRetryRequested {
+                entry.persistenceRetryRequested = false
+                entry.persistenceRetryConsumed = true
+                entriesByIdentity[token.identity] = entry
+                return true
+            }
+            entry.persistenceInFlight = false
+            entry.persistenceRetryRequested = false
+            if !retryAllowed {
+                entry.persistenceRetryConsumed = true
+            }
+            entriesByIdentity[token.identity] = entry
+            trimUnlocked()
+            return false
+        }
+    }
+
+    private func trimUnlocked() {
+        while entriesByIdentity.count > maximumEntryCount {
+            guard let identity = entryOrder.first(where: { candidate in
+                entriesByIdentity[candidate]?.isPinned == false
+            }) else {
+                return
+            }
+            removeEntryUnlocked(identity)
+        }
+    }
+
+    private func makeInsertionCapacityUnlocked() -> Bool {
+        while entriesByIdentity.count >= maximumEntryCount {
+            guard let identity = entryOrder.first(where: { candidate in
+                entriesByIdentity[candidate]?.isPinned == false
+            }) else {
+                return false
+            }
+            removeEntryUnlocked(identity)
+        }
+        return true
+    }
+
+    private func removeEntryUnlocked(_ identity: UUID) {
+        guard let entry = entriesByIdentity.removeValue(forKey: identity) else { return }
+        entryOrder.removeAll { $0 == identity }
+        if currentIdentityByKey[entry.key] == identity {
+            currentIdentityByKey[entry.key] = nil
         }
     }
 }
@@ -11237,6 +11807,11 @@ private final class RuntimeMemorySummaryPersistenceDispatcher: @unchecked Sendab
         qos: .utility,
         attributes: .concurrent
     )
+    private let requestCompletionCheckpoint: (@Sendable () -> Void)?
+
+    init(requestCompletionCheckpoint: (@Sendable () -> Void)? = nil) {
+        self.requestCompletionCheckpoint = requestCompletionCheckpoint
+    }
 
     func dispatch(
         ownerDeviceID: String?,
@@ -11245,12 +11820,23 @@ private final class RuntimeMemorySummaryPersistenceDispatcher: @unchecked Sendab
         cache: RuntimeMemorySummaryMaterializedCache,
         store: any RuntimeMemoryStore
     ) {
-        queue.async {
-            _ = try? store.cacheGeneratedMemorySummaryDraft(
-                ownerDeviceID: ownerDeviceID,
-                draft: draft,
-                if: { cache.isCurrent(token) }
-            )
+        queue.async { [requestCompletionCheckpoint] in
+            defer { requestCompletionCheckpoint?() }
+            guard cache.isPersistable(token) else { return }
+            while true {
+                let cachedDraft = try? store.cacheGeneratedMemorySummaryDraft(
+                    ownerDeviceID: ownerDeviceID,
+                    draft: draft,
+                    if: { cache.isPersistable(token) }
+                )
+                guard cache.completePersistence(
+                    token,
+                    succeeded: cachedDraft != nil,
+                    retryAllowed: store.generatedMemorySummaryDraftCacheWritesAreIdempotent
+                ) else {
+                    return
+                }
+            }
         }
     }
 }
@@ -11315,7 +11901,13 @@ private struct RuntimeMemorySummaryGenerationKey: Hashable, Sendable {
 
 private struct RuntimeMemorySummaryGenerationProduct: Sendable {
     var draft: RuntimeGeneratedMemorySummaryDraft
-    var requiresPersistence: Bool
+    var persistencePlan: RuntimeMemorySummaryGenerationPersistencePlan
+}
+
+private enum RuntimeMemorySummaryGenerationPersistencePlan: Sendable {
+    case none
+    case reserveExisting
+    case materializeNew
 }
 
 private struct RuntimeMemorySummaryMaterialization: Sendable {
@@ -11846,6 +12438,7 @@ private let allowedMemorySummaryDraftApprovePayloadKeys: Set<String> = [
     "enabled",
     "expected_session_id",
     "expected_source_message_count",
+    "expected_summary_method",
 ]
 
 private let allowedMemorySummaryDraftDismissPayloadKeys: Set<String> = [
@@ -12454,6 +13047,8 @@ private func canonicalClientCapabilities(in payload: [String: JSONValue]) throws
 
 private let runtimeClientCapabilityCountLimit = 64
 private let runtimeClientCapabilityByteLimit = 128
+private let runtimeCapabilityNegotiationClientCapability = "auth.challenge.runtime_capabilities.v1"
+private let memorySummaryDraftApprovalMethodRuntimeCapability = "memory.summary.approval_method.v1"
 
 private func requiredRequestInt(_ key: String, in payload: [String: JSONValue]) throws -> Int {
     guard let value = try optionalRequestInt(key, in: payload) else {

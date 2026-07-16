@@ -31,6 +31,53 @@ private final class RuntimeAggregateGenerationReservation: @unchecked Sendable {
     }
 }
 
+private final class RuntimeResidencyUnloadGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activated = false
+    private var activationContinuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilActivated() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if activated {
+                    continuation.resume()
+                } else {
+                    activationContinuation = continuation
+                }
+            }
+        }
+    }
+
+    func activate() {
+        let continuation = lock.withLock {
+            activated = true
+            let continuation = activationContinuation
+            activationContinuation = nil
+            return continuation
+        }
+        continuation?.resume()
+    }
+}
+
+private struct RuntimeResidencyUnloadOperation: @unchecked Sendable {
+    let id: UUID
+    let model: RuntimeModelResidencyKey
+    let reason: RuntimeModelResidencyUnloadReason
+    let gate: RuntimeResidencyUnloadGate
+    let task: Task<Void, Never>
+}
+
+private enum RuntimeResidencyUnloadExecution {
+    case succeeded
+    case failed(message: String)
+}
+
+private enum RuntimeResidencyPreparation {
+    case cancelled
+    case wait(RuntimeResidencyUnloadOperation)
+    case ready(activeChanged: Bool)
+}
+
 public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     public let provider = ModelProvider.aggregate
 
@@ -45,17 +92,40 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private var inFlightResidencyCounts: [RuntimeModelResidencyKey: Int] = [:]
     private var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
     private var idleUnloadTask: Task<Void, Never>?
-    private let modelIdleUnloadDelayNanoseconds: UInt64
+    private var idleUnloadGeneration: UInt64 = 0
+    private var idleResidencyStartedAtUptimeNanoseconds: UInt64?
+    private var modelIdleUnloadDelayNanoseconds: UInt64
+    private let idleUnloadSleeper: @Sendable (UInt64) async throws -> Void
+    private let idleUnloadAttemptHandler: @Sendable () -> Void
+    private var residencyUnloadOperations: [RuntimeModelResidencyKey: RuntimeResidencyUnloadOperation] = [:]
     private var residencyEventHandler: (@Sendable (RuntimeModelResidencyEvent) -> Void)?
 
-    public init(
+    public convenience init(
         _ backends: [any LlmBackend],
         modelIdleUnloadDelayNanoseconds: UInt64 = 600_000_000_000
+    ) {
+        self.init(
+            backends,
+            modelIdleUnloadDelayNanoseconds: modelIdleUnloadDelayNanoseconds,
+            idleUnloadSleeper: { delayNanoseconds in
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            },
+            idleUnloadAttemptHandler: {}
+        )
+    }
+
+    init(
+        _ backends: [any LlmBackend],
+        modelIdleUnloadDelayNanoseconds: UInt64,
+        idleUnloadSleeper: @escaping @Sendable (UInt64) async throws -> Void,
+        idleUnloadAttemptHandler: @escaping @Sendable () -> Void = {}
     ) {
         let uniqueBackends = Self.firstBackendsByProvider(backends)
         orderedBackends = uniqueBackends.ordered
         backendsByProvider = uniqueBackends.byProvider
         self.modelIdleUnloadDelayNanoseconds = modelIdleUnloadDelayNanoseconds
+        self.idleUnloadSleeper = idleUnloadSleeper
+        self.idleUnloadAttemptHandler = idleUnloadAttemptHandler
     }
 
     public convenience init(ollama: any LlmBackend, lmStudio: any LlmBackend) {
@@ -70,13 +140,72 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
     public func modelResidencySnapshot() -> RuntimeModelResidencySnapshot {
         lock.withLock {
-            RuntimeModelResidencySnapshot(
+            let unloading = residencyUnloadOperations.values.min { lhs, rhs in
+                let lhsKey = "\(lhs.model.provider.rawValue):\(lhs.model.modelID)"
+                let rhsKey = "\(rhs.model.provider.rawValue):\(rhs.model.modelID)"
+                return lhsKey < rhsKey
+            }
+            return RuntimeModelResidencySnapshot(
                 activeProvider: activeResidencyModel?.provider,
                 activeModelID: activeResidencyModel?.modelID,
                 inFlightGenerations: inFlightResidencyCounts.values.reduce(0, +),
                 idleUnloadDelaySeconds: Int(modelIdleUnloadDelayNanoseconds / 1_000_000_000),
+                unloadingProvider: unloading?.model.provider,
+                unloadingModelID: unloading?.model.modelID,
+                unloadingReason: unloading?.reason,
                 lastUnloadFailure: lastUnloadFailure
             )
+        }
+    }
+
+    public func updateModelIdleUnloadDelayNanoseconds(_ delayNanoseconds: UInt64) async {
+        let unloadOperation = beginModelIdleUnloadDelayUpdate(delayNanoseconds)
+        if let unloadOperation {
+            await runResidencyUnloadOperation(unloadOperation)
+        }
+    }
+
+    public func configureModelIdleUnloadDelayNanoseconds(_ delayNanoseconds: UInt64) {
+        let unloadOperation = beginModelIdleUnloadDelayUpdate(delayNanoseconds)
+        if let unloadOperation {
+            unloadOperation.gate.activate()
+        }
+    }
+
+    private func beginModelIdleUnloadDelayUpdate(
+        _ delayNanoseconds: UInt64
+    ) -> RuntimeResidencyUnloadOperation? {
+        lock.withLock {
+            guard modelIdleUnloadDelayNanoseconds != delayNanoseconds else {
+                return nil
+            }
+            modelIdleUnloadDelayNanoseconds = delayNanoseconds
+            cancelIdleUnloadTaskLocked()
+
+            guard let activeResidencyModel,
+                  inFlightResidencyCounts[activeResidencyModel, default: 0] == 0
+            else {
+                idleResidencyStartedAtUptimeNanoseconds = nil
+                return nil
+            }
+
+            let now = DispatchTime.now().uptimeNanoseconds
+            let idleStartedAt = idleResidencyStartedAtUptimeNanoseconds ?? now
+            idleResidencyStartedAtUptimeNanoseconds = idleStartedAt
+            let elapsed = now >= idleStartedAt ? now - idleStartedAt : 0
+            guard delayNanoseconds > elapsed else {
+                idleResidencyStartedAtUptimeNanoseconds = nil
+                return makeResidencyUnloadOperationLocked(
+                    for: activeResidencyModel,
+                    reason: .idleTimeout
+                )
+            }
+
+            scheduleIdleUnloadTaskLocked(
+                for: activeResidencyModel,
+                delayNanoseconds: delayNanoseconds - elapsed
+            )
+            return nil
         }
     }
 
@@ -148,8 +277,8 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                         provider: resolved.provider,
                         modelID: resolved.modelID
                     )
+                    try await prepareResidency(for: currentResidencyModel)
                     residencyModel = currentResidencyModel
-                    await prepareResidency(for: currentResidencyModel)
                     try Task.checkCancellation()
                     let routedRequest = ChatRequest(
                         generationID: request.generationID,
@@ -236,8 +365,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             provider: resolved.provider,
             modelID: resolved.modelID
         )
-        await prepareResidency(for: residencyModel)
+        try await prepareResidency(for: residencyModel)
         do {
+            try Task.checkCancellation()
             let result = try await backend.embed(request: EmbeddingRequest(
                 model: resolved.modelID,
                 texts: request.texts
@@ -280,27 +410,29 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
 
     @discardableResult
     public func unloadActiveResidencyModelNow() async -> RuntimeModelResidencyManualUnloadResult {
-        let result: RuntimeModelResidencyManualUnloadResult = lock.withLock {
+        let outcome: (
+            result: RuntimeModelResidencyManualUnloadResult,
+            unloadOperation: RuntimeResidencyUnloadOperation?
+        ) = lock.withLock {
             guard let model = activeResidencyModel else {
-                return .noActiveModel
+                return (.noActiveModel, nil)
             }
             let inFlightGenerations = inFlightResidencyCounts[model, default: 0]
             guard inFlightGenerations == 0 else {
-                return .inFlightGenerations(inFlightGenerations)
+                return (.inFlightGenerations(inFlightGenerations), nil)
             }
-            activeResidencyModel = nil
-            idleUnloadTask?.cancel()
-            idleUnloadTask = nil
-            return .requested(provider: model.provider, modelID: model.modelID)
-        }
-
-        if case .requested(let provider, let modelID) = result {
-            await unloadResidencyModel(
-                RuntimeModelResidencyKey(provider: provider, modelID: modelID),
-                reason: .manual
+            idleResidencyStartedAtUptimeNanoseconds = nil
+            cancelIdleUnloadTaskLocked()
+            return (
+                .requested(provider: model.provider, modelID: model.modelID),
+                makeResidencyUnloadOperationLocked(for: model, reason: .manual)
             )
         }
-        return result
+
+        if let unloadOperation = outcome.unloadOperation {
+            await runResidencyUnloadOperation(unloadOperation)
+        }
+        return outcome.result
     }
 
     private func resolveChatRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
@@ -417,113 +549,256 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func prepareResidency(for model: RuntimeModelResidencyKey) async {
-        let result: (modelToUnload: RuntimeModelResidencyKey?, activeChanged: Bool) = lock.withLock {
-            idleUnloadTask?.cancel()
-            idleUnloadTask = nil
+    private func prepareResidency(for model: RuntimeModelResidencyKey) async throws {
+        while true {
+            try Task.checkCancellation()
+            let preparation: RuntimeResidencyPreparation = lock.withLock {
+                guard !Task.isCancelled else {
+                    return .cancelled
+                }
+                if let unloadOperation = residencyUnloadOperations[model] {
+                    return .wait(unloadOperation)
+                }
 
-            let previous = activeResidencyModel
-            let previousCanUnload = previous.flatMap { inFlightResidencyCounts[$0, default: 0] == 0 ? $0 : nil }
-            activeResidencyModel = model
-            inFlightResidencyCounts[model, default: 0] += 1
-            guard previousCanUnload != model else {
-                return (nil, previous != model)
+                cancelIdleUnloadTaskLocked()
+                idleResidencyStartedAtUptimeNanoseconds = nil
+
+                let previous = activeResidencyModel
+                let previousCanUnload = previous.flatMap {
+                    inFlightResidencyCounts[$0, default: 0] == 0 ? $0 : nil
+                }
+                if let previousCanUnload, previousCanUnload != model {
+                    return .wait(
+                        makeResidencyUnloadOperationLocked(
+                            for: previousCanUnload,
+                            reason: .modelSwitch
+                        )
+                    )
+                }
+                activeResidencyModel = model
+                inFlightResidencyCounts[model, default: 0] += 1
+                return .ready(activeChanged: previous != model)
             }
-            return (previousCanUnload, previous != model)
-        }
 
-        if result.activeChanged {
-            emit(.activeModelChanged(provider: model.provider, modelID: model.modelID))
-        }
-
-        if let modelToUnload = result.modelToUnload {
-            await unloadResidencyModel(modelToUnload, reason: .modelSwitch)
+            switch preparation {
+            case .cancelled:
+                throw CancellationError()
+            case .wait(let unloadOperation):
+                await runResidencyUnloadOperation(unloadOperation)
+                try Task.checkCancellation()
+                continue
+            case .ready(let activeChanged):
+                if activeChanged {
+                    emit(.activeModelChanged(provider: model.provider, modelID: model.modelID))
+                } else {
+                    emit(.stateChanged)
+                }
+                return
+            }
         }
     }
 
     private func finishResidency(for model: RuntimeModelResidencyKey) async {
-        let result: (modelToUnload: RuntimeModelResidencyKey?, reason: RuntimeModelResidencyUnloadReason?) = lock.withLock {
+        let unloadOperation: RuntimeResidencyUnloadOperation? = lock.withLock {
             let remaining = max(0, inFlightResidencyCounts[model, default: 0] - 1)
             if remaining == 0 {
                 inFlightResidencyCounts[model] = nil
             } else {
                 inFlightResidencyCounts[model] = remaining
-                return (nil, nil)
+                return nil
             }
 
             if activeResidencyModel == model {
-                idleUnloadTask?.cancel()
+                idleResidencyStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
                 if modelIdleUnloadDelayNanoseconds == 0 {
-                    activeResidencyModel = nil
-                    idleUnloadTask = nil
-                    return (model, .idleTimeout)
+                    idleResidencyStartedAtUptimeNanoseconds = nil
+                    cancelIdleUnloadTaskLocked()
+                    return makeResidencyUnloadOperationLocked(for: model, reason: .idleTimeout)
                 }
-                idleUnloadTask = Task { [weak self, modelIdleUnloadDelayNanoseconds] in
-                    do {
-                        try await Task.sleep(nanoseconds: modelIdleUnloadDelayNanoseconds)
-                    } catch {
-                        return
-                    }
-                    await self?.unloadIdleResidencyModel(model)
-                }
-                return (nil, nil)
+                scheduleIdleUnloadTaskLocked(
+                    for: model,
+                    delayNanoseconds: modelIdleUnloadDelayNanoseconds
+                )
+                return nil
             }
 
-            return (model, .modelSwitch)
+            return makeResidencyUnloadOperationLocked(for: model, reason: .modelSwitch)
         }
+        emit(.stateChanged)
 
-        if let modelToUnload = result.modelToUnload, let reason = result.reason {
-            await unloadResidencyModel(modelToUnload, reason: reason)
+        if let unloadOperation {
+            await runResidencyUnloadOperation(unloadOperation)
         }
     }
 
-    private func unloadIdleResidencyModel(_ model: RuntimeModelResidencyKey) async {
-        let shouldUnload = lock.withLock {
-            guard activeResidencyModel == model, inFlightResidencyCounts[model, default: 0] == 0 else {
-                return false
-            }
-            activeResidencyModel = nil
-            idleUnloadTask = nil
-            return true
-        }
+    private func cancelIdleUnloadTaskLocked() {
+        idleUnloadGeneration &+= 1
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
+    }
 
-        if shouldUnload {
-            await unloadResidencyModel(model, reason: .idleTimeout)
+    private func scheduleIdleUnloadTaskLocked(
+        for model: RuntimeModelResidencyKey,
+        delayNanoseconds: UInt64
+    ) {
+        idleUnloadGeneration &+= 1
+        let generation = idleUnloadGeneration
+        let sleeper = idleUnloadSleeper
+        idleUnloadTask?.cancel()
+        idleUnloadTask = Task { [weak self] in
+            do {
+                try await sleeper(delayNanoseconds)
+            } catch {
+                return
+            }
+            await self?.unloadIdleResidencyModel(model, generation: generation)
         }
     }
 
-    private func unloadResidencyModel(
+    private func unloadIdleResidencyModel(
         _ model: RuntimeModelResidencyKey,
-        reason: RuntimeModelResidencyUnloadReason
+        generation: UInt64
     ) async {
-        guard let backend = backendsByProvider[model.provider] else {
-            return
+        let unloadOperation: RuntimeResidencyUnloadOperation? = lock.withLock {
+            guard idleUnloadGeneration == generation,
+                  activeResidencyModel == model,
+                  inFlightResidencyCounts[model, default: 0] == 0
+            else {
+                return nil
+            }
+            idleUnloadTask = nil
+            idleResidencyStartedAtUptimeNanoseconds = nil
+            idleUnloadGeneration &+= 1
+            return makeResidencyUnloadOperationLocked(for: model, reason: .idleTimeout)
         }
-        emit(.unloadRequested(provider: model.provider, modelID: model.modelID, reason: reason))
-        do {
-            _ = try await backend.unloadModel(providerModelID: model.modelID)
-            lock.withLock {
+        idleUnloadAttemptHandler()
+
+        if let unloadOperation {
+            await runResidencyUnloadOperation(unloadOperation)
+        }
+    }
+
+    private func makeResidencyUnloadOperationLocked(
+        for model: RuntimeModelResidencyKey,
+        reason: RuntimeModelResidencyUnloadReason
+    ) -> RuntimeResidencyUnloadOperation {
+        if let existing = residencyUnloadOperations[model] {
+            return existing
+        }
+
+        let id = UUID()
+        let gate = RuntimeResidencyUnloadGate()
+        let task = Task { [weak self] in
+            await gate.waitUntilActivated()
+            guard let self else { return }
+            let execution = await self.performResidencyUnload(model, reason: reason)
+            self.completeResidencyUnloadOperation(
+                model: model,
+                reason: reason,
+                id: id,
+                execution: execution
+            )
+            switch execution {
+            case .succeeded:
+                self.emit(.unloadSucceeded(provider: model.provider, modelID: model.modelID, reason: reason))
+            case .failed(let message):
+                self.emit(.unloadFailed(
+                    provider: model.provider,
+                    modelID: model.modelID,
+                    reason: reason,
+                    message: message
+                ))
+            }
+        }
+        let operation = RuntimeResidencyUnloadOperation(
+            id: id,
+            model: model,
+            reason: reason,
+            gate: gate,
+            task: task
+        )
+        residencyUnloadOperations[model] = operation
+        return operation
+    }
+
+    private func runResidencyUnloadOperation(
+        _ operation: RuntimeResidencyUnloadOperation
+    ) async {
+        operation.gate.activate()
+        await operation.task.value
+    }
+
+    private func completeResidencyUnloadOperation(
+        model: RuntimeModelResidencyKey,
+        reason: RuntimeModelResidencyUnloadReason,
+        id: UUID,
+        execution: RuntimeResidencyUnloadExecution
+    ) {
+        lock.withLock {
+            guard residencyUnloadOperations[model]?.id == id else { return }
+            residencyUnloadOperations[model] = nil
+
+            switch execution {
+            case .succeeded:
                 if lastUnloadFailure?.provider == model.provider,
                    lastUnloadFailure?.modelID == model.modelID {
                     lastUnloadFailure = nil
                 }
-            }
-            emit(.unloadSucceeded(provider: model.provider, modelID: model.modelID, reason: reason))
-        } catch {
-            lock.withLock {
+                if activeResidencyModel == model,
+                   inFlightResidencyCounts[model, default: 0] == 0 {
+                    activeResidencyModel = nil
+                    idleResidencyStartedAtUptimeNanoseconds = nil
+                    cancelIdleUnloadTaskLocked()
+                }
+            case .failed:
                 lastUnloadFailure = RuntimeModelResidencyUnloadFailure(
                     provider: model.provider,
                     modelID: model.modelID,
                     reason: reason
                 )
+                if reason == .modelSwitch {
+                    if activeResidencyModel == model,
+                       inFlightResidencyCounts[model, default: 0] == 0 {
+                        activeResidencyModel = nil
+                        idleResidencyStartedAtUptimeNanoseconds = nil
+                        cancelIdleUnloadTaskLocked()
+                    }
+                } else if activeResidencyModel == model,
+                          inFlightResidencyCounts[model, default: 0] == 0 {
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    idleResidencyStartedAtUptimeNanoseconds = now
+                    if modelIdleUnloadDelayNanoseconds > 0 {
+                        scheduleIdleUnloadTaskLocked(
+                            for: model,
+                            delayNanoseconds: modelIdleUnloadDelayNanoseconds
+                        )
+                    }
+                }
             }
-            emit(.unloadFailed(
-                provider: model.provider,
-                modelID: model.modelID,
-                reason: reason,
-                message: error.localizedDescription
-            ))
-            return
+        }
+    }
+
+    private func performResidencyUnload(
+        _ model: RuntimeModelResidencyKey,
+        reason: RuntimeModelResidencyUnloadReason
+    ) async -> RuntimeResidencyUnloadExecution {
+        guard let backend = backendsByProvider[model.provider] else {
+            return .failed(message: "The model provider is not enabled in AetherLink Runtime.")
+        }
+        emit(.unloadRequested(provider: model.provider, modelID: model.modelID, reason: reason))
+        do {
+            let result = try await backend.unloadModel(providerModelID: model.modelID)
+            guard result.provider == model.provider,
+                  result.modelID == model.modelID
+            else {
+                return .failed(message: "The model provider returned a mismatched unload confirmation.")
+            }
+            guard result.unloaded else {
+                return .failed(message: result.message)
+            }
+            return .succeeded
+        } catch {
+            return .failed(message: error.localizedDescription)
         }
     }
 
@@ -614,6 +889,9 @@ public struct RuntimeModelResidencySnapshot: Equatable, Sendable {
     public var activeModelID: String?
     public var inFlightGenerations: Int
     public var idleUnloadDelaySeconds: Int
+    public var unloadingProvider: ModelProvider?
+    public var unloadingModelID: String?
+    public var unloadingReason: RuntimeModelResidencyUnloadReason?
     public var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
 
     public init(
@@ -621,12 +899,18 @@ public struct RuntimeModelResidencySnapshot: Equatable, Sendable {
         activeModelID: String?,
         inFlightGenerations: Int,
         idleUnloadDelaySeconds: Int,
+        unloadingProvider: ModelProvider? = nil,
+        unloadingModelID: String? = nil,
+        unloadingReason: RuntimeModelResidencyUnloadReason? = nil,
         lastUnloadFailure: RuntimeModelResidencyUnloadFailure? = nil
     ) {
         self.activeProvider = activeProvider
         self.activeModelID = activeModelID
         self.inFlightGenerations = inFlightGenerations
         self.idleUnloadDelaySeconds = idleUnloadDelaySeconds
+        self.unloadingProvider = unloadingProvider
+        self.unloadingModelID = unloadingModelID
+        self.unloadingReason = unloadingReason
         self.lastUnloadFailure = lastUnloadFailure
     }
 }
@@ -660,6 +944,7 @@ public struct RuntimeModelResidencyUnloadFailure: Equatable, Sendable {
 }
 
 public enum RuntimeModelResidencyEvent: Equatable, Sendable {
+    case stateChanged
     case activeModelChanged(provider: ModelProvider, modelID: String)
     case unloadRequested(provider: ModelProvider, modelID: String, reason: RuntimeModelResidencyUnloadReason)
     case unloadSucceeded(provider: ModelProvider, modelID: String, reason: RuntimeModelResidencyUnloadReason)

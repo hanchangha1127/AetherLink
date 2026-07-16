@@ -219,6 +219,7 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
     public var content: String
     public var modelID: String
     public var providerQualifiedModelID: String?
+    public var persistenceOperationID: String?
     public var promptSkillBinding: RuntimePromptSkillBinding
     public var generatedAt: Date
 
@@ -229,6 +230,7 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
         content: String,
         modelID: String,
         providerQualifiedModelID: String? = nil,
+        persistenceOperationID: String? = nil,
         promptSkillBinding: RuntimePromptSkillBinding,
         generatedAt: Date
     ) {
@@ -241,6 +243,8 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
         )
         self.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         self.providerQualifiedModelID = providerQualifiedModelID
+        self.persistenceOperationID = persistenceOperationID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         self.promptSkillBinding = promptSkillBinding
         self.generatedAt = generatedAt
     }
@@ -253,6 +257,10 @@ public struct RuntimeGeneratedMemorySummaryDraft: Equatable, Sendable {
 public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
     case emptyContent
     case missingID
+    case generatedMemorySummaryDraftPersistenceConflict
+    case memorySummaryDraftTerminalDecisionConflict
+    case memorySummaryDraftApprovedEntryUnavailable
+    case memorySummaryDraftTerminalDecisionUnsupported
     case corruptEventLog(line: Int, reason: String)
     case duplicateSuggestionResourceLimitExceeded
 
@@ -262,6 +270,14 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
             return "Memory content must not be empty."
         case .missingID:
             return "Memory id must not be empty."
+        case .generatedMemorySummaryDraftPersistenceConflict:
+            return "Generated memory summary draft persistence operation conflicts with stored data."
+        case .memorySummaryDraftTerminalDecisionConflict:
+            return "Memory summary draft already has a different terminal decision."
+        case .memorySummaryDraftApprovedEntryUnavailable:
+            return "The approved memory summary entry is no longer available."
+        case .memorySummaryDraftTerminalDecisionUnsupported:
+            return "This memory store does not support atomic memory summary decisions."
         case .corruptEventLog(let line, let reason):
             return "Runtime memory event log is corrupt at line \(line): \(reason)"
         case .duplicateSuggestionResourceLimitExceeded:
@@ -271,6 +287,7 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
 }
 
 public protocol RuntimeMemoryStore: Sendable {
+    var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { get }
     func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry]
     func exactDuplicateSuggestions(ownerDeviceID: String?) throws -> RuntimeMemoryDuplicateSuggestions
     func semanticDuplicateSuggestionSources(
@@ -284,6 +301,15 @@ public protocol RuntimeMemoryStore: Sendable {
         content: String,
         enabled: Bool?,
         source: RuntimeMemoryEntrySource?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
         timestamp: Date
     ) throws -> RuntimeMemoryEntry
     func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult
@@ -319,6 +345,8 @@ public protocol RuntimeMemoryStore: Sendable {
 }
 
 public extension RuntimeMemoryStore {
+    var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { false }
+
     func list() throws -> [RuntimeMemoryEntry] {
         try list(ownerDeviceID: nil)
     }
@@ -384,6 +412,18 @@ public extension RuntimeMemoryStore {
             source: nil,
             timestamp: timestamp
         )
+    }
+
+    func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        throw RuntimeMemoryStoreError.memorySummaryDraftTerminalDecisionUnsupported
     }
 
     func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
@@ -506,6 +546,8 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
     private let encoder: JSONEncoder
     private let semanticEmbeddingCache: SQLiteRuntimeMemorySemanticEmbeddingCache
     private let lock = NSLock()
+
+    public var generatedMemorySummaryDraftCacheWritesAreIdempotent: Bool { true }
 
     public init(
         fileURL: URL = JSONLRuntimeMemoryStore.defaultFileURL(),
@@ -661,6 +703,76 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         }
     }
 
+    public func approveMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        id: String,
+        content: String,
+        enabled: Bool,
+        source: RuntimeMemoryEntrySource,
+        timestamp: Date = Date()
+    ) throws -> RuntimeMemoryEntry {
+        try lock.withLock {
+            let cleanDraftID = draftID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanDraftID.isEmpty, !cleanID.isEmpty else {
+                throw RuntimeMemoryStoreError.missingID
+            }
+            guard !cleanContent.isEmpty else {
+                throw RuntimeMemoryStoreError.emptyContent
+            }
+            guard source.draftID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == cleanDraftID else {
+                throw RuntimeMemoryStoreError.memorySummaryDraftTerminalDecisionConflict
+            }
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            return try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                let events = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
+                switch Self.memorySummaryDraftTerminalState(
+                    from: events,
+                    draftID: cleanDraftID
+                ) {
+                case .approved(let approvedEntryID):
+                    guard let existing = Self.entries(from: events).first(where: {
+                        $0.id == approvedEntryID && $0.source?.draftID == cleanDraftID
+                    }) else {
+                        throw RuntimeMemoryStoreError.memorySummaryDraftApprovedEntryUnavailable
+                    }
+                    return existing
+                case .dismissed,
+                     .conflicted:
+                    throw RuntimeMemoryStoreError.memorySummaryDraftTerminalDecisionConflict
+                case .undecided:
+                    let existing = Self.entries(from: events).first { $0.id == cleanID }
+                    let entry = RuntimeMemoryEntry(
+                        id: cleanID,
+                        content: cleanContent,
+                        enabled: enabled,
+                        createdAt: existing?.createdAt ?? timestamp,
+                        updatedAt: timestamp,
+                        source: source
+                    )
+                    try semanticEmbeddingCache.deleteEmbeddings(
+                        ownerDeviceID: scopedOwnerDeviceID,
+                        entryID: entry.id
+                    )
+                    try appendUnlocked(RuntimeMemoryStoredEvent(
+                        kind: .upsert,
+                        id: entry.id,
+                        timestamp: timestamp,
+                        content: entry.content,
+                        enabled: entry.enabled,
+                        createdAt: entry.createdAt,
+                        ownerDeviceID: scopedOwnerDeviceID,
+                        source: entry.source
+                    ))
+                    return entry
+                }
+            }
+        }
+    }
+
     public func delete(ownerDeviceID: String?, id: String, timestamp: Date = Date()) throws -> RuntimeMemoryDeleteResult {
         try lock.withLock {
             let cleanID = id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -699,13 +811,33 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 throw RuntimeMemoryStoreError.missingID
             }
             let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
-            try appendUnlocked(RuntimeMemoryStoredEvent(
-                kind: .dismissMemorySummaryDraft,
-                id: cleanDraftID,
-                timestamp: timestamp,
-                ownerDeviceID: scopedOwnerDeviceID
-            ))
-            return RuntimeMemorySummaryDraftDismissResult(draftID: cleanDraftID, dismissedAt: timestamp)
+            return try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                let events = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
+                switch Self.memorySummaryDraftTerminalState(
+                    from: events,
+                    draftID: cleanDraftID
+                ) {
+                case .approved,
+                     .conflicted:
+                    throw RuntimeMemoryStoreError.memorySummaryDraftTerminalDecisionConflict
+                case .dismissed(let dismissedAt):
+                    return RuntimeMemorySummaryDraftDismissResult(
+                        draftID: cleanDraftID,
+                        dismissedAt: dismissedAt
+                    )
+                case .undecided:
+                    try appendUnlocked(RuntimeMemoryStoredEvent(
+                        kind: .dismissMemorySummaryDraft,
+                        id: cleanDraftID,
+                        timestamp: timestamp,
+                        ownerDeviceID: scopedOwnerDeviceID
+                    ))
+                    return RuntimeMemorySummaryDraftDismissResult(
+                        draftID: cleanDraftID,
+                        dismissedAt: timestamp
+                    )
+                }
+            }
         }
     }
 
@@ -738,22 +870,45 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         try lock.withLock {
             try Self.validateGeneratedMemorySummaryDraft(draft)
             guard shouldCommit() else { return nil }
-            try appendUnlocked(RuntimeMemoryStoredEvent(
-                kind: .generatedMemorySummaryDraft,
-                id: draft.draftID,
-                timestamp: draft.generatedAt,
-                content: draft.content,
-                ownerDeviceID: ownerDeviceID.normalizedOwnerDeviceID,
-                sessionID: draft.sessionID,
-                sourceMessageCount: draft.sourceMessageCount,
-                summaryMethod: draft.summaryMethod,
-                modelID: draft.modelID,
-                providerQualifiedModelID: draft.providerQualifiedModelID,
-                promptSkillID: draft.promptSkillBinding.identifier,
-                promptSkillRevision: draft.promptSkillBinding.revision,
-                generatedAt: draft.generatedAt
-            ))
-            return draft
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            return try RuntimeEventLogFileProtection.withExclusiveFileAccess(to: fileURL) {
+                guard shouldCommit() else { return nil }
+                let historicalDrafts = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
+                    .lazy
+                    .compactMap(\.generatedMemorySummaryDraft)
+                let existingDraft: RuntimeGeneratedMemorySummaryDraft?
+                if let persistenceOperationID = draft.persistenceOperationID {
+                    existingDraft = historicalDrafts.first {
+                        $0.persistenceOperationID == persistenceOperationID
+                    }
+                    if let existingDraft, existingDraft != draft {
+                        throw RuntimeMemoryStoreError
+                            .generatedMemorySummaryDraftPersistenceConflict
+                    }
+                } else {
+                    existingDraft = historicalDrafts.first { $0 == draft }
+                }
+                if let existingDraft {
+                    return existingDraft
+                }
+                try appendUnlocked(RuntimeMemoryStoredEvent(
+                    kind: .generatedMemorySummaryDraft,
+                    id: draft.draftID,
+                    timestamp: draft.generatedAt,
+                    content: draft.content,
+                    ownerDeviceID: scopedOwnerDeviceID,
+                    sessionID: draft.sessionID,
+                    sourceMessageCount: draft.sourceMessageCount,
+                    summaryMethod: draft.summaryMethod,
+                    modelID: draft.modelID,
+                    providerQualifiedModelID: draft.providerQualifiedModelID,
+                    persistenceOperationID: draft.persistenceOperationID,
+                    promptSkillID: draft.promptSkillBinding.identifier,
+                    promptSkillRevision: draft.promptSkillBinding.revision,
+                    generatedAt: draft.generatedAt
+                ))
+                return draft
+            }
         }
     }
 
@@ -814,7 +969,8 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
             do {
                 let lineData = Data(line.utf8)
                 try StrictJSONDocumentValidator.validate(lineData)
-                let event = try decoder.decode(RuntimeMemoryStoredEvent.self, from: lineData)
+                var event = try decoder.decode(RuntimeMemoryStoredEvent.self, from: lineData)
+                event.eventLogOrdinal = index
                 if event.kind == .generatedMemorySummaryDraft {
                     let promptBindingFields = try decoder.decode(
                         RuntimeMemoryPromptSkillBindingFieldPresence.self,
@@ -840,7 +996,7 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 )
             }
         }
-        return events.sorted { $0.timestamp < $1.timestamp }
+        return events
     }
 
     private static func decodeFailureReason(_ error: Error) -> String {
@@ -929,6 +1085,12 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                   ModelProvider.splitQualifiedModelID(resolved.modelID) == nil,
                   resolved.provider.qualifiedModelID(resolved.modelID)
                     == providerQualifiedModelID else {
+                throw RuntimeMemoryStoreError.missingID
+            }
+        }
+        if let persistenceOperationID = draft.persistenceOperationID {
+            guard UUID(uuidString: persistenceOperationID)?.uuidString.lowercased()
+                    == persistenceOperationID else {
                 throw RuntimeMemoryStoreError.missingID
             }
         }
@@ -1024,21 +1186,63 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         })
     }
 
+    private static func memorySummaryDraftTerminalState(
+        from events: [RuntimeMemoryStoredEvent],
+        draftID: String
+    ) -> RuntimeMemorySummaryDraftTerminalState {
+        let approvedEntryIDs = Set(events.compactMap { event -> String? in
+            guard event.kind == .upsert,
+                  event.source?.draftID == draftID else {
+                return nil
+            }
+            return event.id
+        })
+        let dismissals = events.filter {
+            $0.kind == .dismissMemorySummaryDraft && $0.id == draftID
+        }
+        guard approvedEntryIDs.isEmpty || dismissals.isEmpty else {
+            return .conflicted
+        }
+        guard approvedEntryIDs.count <= 1 else {
+            return .conflicted
+        }
+        if let approvedEntryID = approvedEntryIDs.first {
+            return .approved(entryID: approvedEntryID)
+        }
+        if let firstDismissal = dismissals.min(by: {
+            $0.eventLogOrdinal < $1.eventLogOrdinal
+        }) {
+            return .dismissed(at: firstDismissal.timestamp)
+        }
+        return .undecided
+    }
+
     private static func generatedMemorySummaryDrafts(
         from events: [RuntimeMemoryStoredEvent]
     ) -> [RuntimeGeneratedMemorySummaryDraft] {
-        var draftsByID: [String: RuntimeGeneratedMemorySummaryDraft] = [:]
+        var draftsByID: [String: (draft: RuntimeGeneratedMemorySummaryDraft, eventLogOrdinal: Int)] = [:]
         for event in events where event.kind == .generatedMemorySummaryDraft {
             guard let draft = event.generatedMemorySummaryDraft else { continue }
-            draftsByID[draft.draftID] = draft
+            if let existing = draftsByID[draft.draftID],
+               existing.eventLogOrdinal >= event.eventLogOrdinal {
+                continue
+            }
+            draftsByID[draft.draftID] = (draft, event.eventLogOrdinal)
         }
-        return draftsByID.values.sorted {
+        return draftsByID.values.map(\.draft).sorted {
             if $0.generatedAt == $1.generatedAt {
                 return $0.draftID < $1.draftID
             }
             return $0.generatedAt > $1.generatedAt
         }
     }
+}
+
+private enum RuntimeMemorySummaryDraftTerminalState {
+    case undecided
+    case approved(entryID: String)
+    case dismissed(at: Date)
+    case conflicted
 }
 
 private enum RuntimeMemoryStoredEventKind: String, Codable {
@@ -1084,9 +1288,11 @@ private struct RuntimeMemoryStoredEvent: Codable {
     var summaryMethod: String?
     var modelID: String?
     var providerQualifiedModelID: String?
+    var persistenceOperationID: String? = nil
     var promptSkillID: String?
     var promptSkillRevision: String?
     var generatedAt: Date?
+    var eventLogOrdinal: Int = -1
 
     var generatedMemorySummaryDraft: RuntimeGeneratedMemorySummaryDraft? {
         guard kind == .generatedMemorySummaryDraft,
@@ -1121,6 +1327,7 @@ private struct RuntimeMemoryStoredEvent: Codable {
             content: content,
             modelID: modelID,
             providerQualifiedModelID: providerQualifiedModelID,
+            persistenceOperationID: persistenceOperationID,
             promptSkillBinding: promptSkillBinding,
             generatedAt: generatedAt
         )
@@ -1140,6 +1347,7 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case summaryMethod = "summary_method"
         case modelID = "model_id"
         case providerQualifiedModelID = "provider_qualified_model_id"
+        case persistenceOperationID = "persistence_operation_id"
         case promptSkillID = "prompt_skill_id"
         case promptSkillRevision = "prompt_skill_revision"
         case generatedAt = "generated_at"

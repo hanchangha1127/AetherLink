@@ -35,6 +35,8 @@ const val RESEARCH_NOTEBOOKS_AUTHORITATIVE_SYNC_CAPABILITY =
 const val MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.duplicate_suggestions.v1"
 const val MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY = "memory.semantic_duplicate_suggestions.v1"
 const val MEMORY_SEMANTIC_DUPLICATE_CLUSTERS_CAPABILITY = "memory.semantic_duplicate_clusters.v1"
+const val RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY = "auth.challenge.runtime_capabilities.v1"
+const val MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY = "memory.summary.approval_method.v1"
 
 private val SOURCE_ANCHOR_ID_PATTERN = Regex("^source_anchor_[0-9a-f]{16}$")
 private val CITATION_ID_PATTERN = Regex("^citation_[0-9a-f]{32}$")
@@ -960,8 +962,24 @@ data class AuthChallengePayload(
     val nonce: String,
     @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("runtime_signature") val runtimeSignature: String? = null,
+    @SerialName("runtime_capabilities") val runtimeCapabilities: List<String> = emptyList(),
     @SerialName("transport_binding") val transportBinding: String? = null,
-)
+) {
+    init {
+        require(runtimeCapabilities.size <= MAX_CLIENT_CAPABILITIES) {
+            "auth.challenge runtime_capabilities must contain at most 64 entries"
+        }
+        runtimeCapabilities.forEach { capability ->
+            requireValidUtf8(capability, "auth.challenge runtime_capabilities entry")
+            require(capability.isNotBlank()) {
+                "auth.challenge runtime_capabilities entries must be nonblank"
+            }
+        }
+        require(runtimeCapabilities.distinct().size == runtimeCapabilities.size) {
+            "auth.challenge runtime_capabilities entries must be unique"
+        }
+    }
+}
 
 @Serializable
 data class AuthResponsePayload(
@@ -3942,6 +3960,7 @@ data class MemorySummaryDraftApprovePayload(
     val enabled: Boolean? = null,
     @SerialName("expected_session_id") val expectedSessionId: String? = null,
     @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int? = null,
+    @SerialName("expected_summary_method") val expectedSummaryMethod: String? = null,
 ) {
     init {
         require(draftId.isNotBlank()) {
@@ -3955,6 +3974,9 @@ data class MemorySummaryDraftApprovePayload(
         }
         require(expectedSourceMessageCount == null || expectedSourceMessageCount > 0) {
             "memory.summary.draft.approve request expected_source_message_count must be positive"
+        }
+        require(expectedSummaryMethod == null || expectedSummaryMethod in MEMORY_SUMMARY_DRAFT_METHODS) {
+            "memory.summary.draft.approve request expected_summary_method must be deterministic_preview or llm_summary_v1"
         }
     }
 }

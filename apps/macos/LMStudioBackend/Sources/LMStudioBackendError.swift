@@ -7,13 +7,14 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
     case httpStatus(endpoint: String, statusCode: Int, body: String?)
     case requestEncoding(endpoint: String, reason: String)
     case badResponse(endpoint: String, reason: String)
+    case unloadNotConfirmed(reason: String)
     case streamDecoding(line: String, reason: String)
     case generationCancelled(generationID: String)
     case generationNotFound(generationID: String)
     case transport(endpoint: String, reason: String)
 
     public var errorDescription: String? {
-        message
+        backendError.message
     }
 
     public var code: String {
@@ -28,6 +29,8 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
             return "lm_studio_request_encoding"
         case .badResponse:
             return "lm_studio_bad_response"
+        case .unloadNotConfirmed:
+            return "lm_studio_unload_not_confirmed"
         case .streamDecoding:
             return "lm_studio_stream_decoding"
         case .generationCancelled:
@@ -52,6 +55,8 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
             return "Could not encode LM Studio request for \(endpoint): \(reason)"
         case .badResponse(let endpoint, let reason):
             return "Could not decode LM Studio response from \(endpoint): \(reason)"
+        case .unloadNotConfirmed(let reason):
+            return "LM Studio did not confirm model unload: \(reason)"
         case .streamDecoding(let line, let reason):
             return "Could not decode LM Studio stream line '\(line)': \(reason)"
         case .generationCancelled(let generationID):
@@ -65,7 +70,7 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
 
     public var retryable: Bool {
         switch self {
-        case .unavailable, .httpStatus, .transport:
+        case .unavailable, .httpStatus, .unloadNotConfirmed, .transport:
             return true
         case .noModels, .requestEncoding, .badResponse, .streamDecoding, .generationCancelled, .generationNotFound:
             return false
@@ -129,6 +134,13 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
                 code: "bad_backend_response",
                 message: "AetherLink Runtime could not decode the LM Studio response.",
                 retryable: false
+            )
+        case .unloadNotConfirmed:
+            return BackendError(
+                provider: .lmStudio,
+                code: "model_unload_not_confirmed",
+                message: "LM Studio did not confirm that the model left provider memory.",
+                retryable: true
             )
         }
     }

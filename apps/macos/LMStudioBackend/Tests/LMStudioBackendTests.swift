@@ -1,5 +1,5 @@
 import Foundation
-import LMStudioBackend
+@testable import LMStudioBackend
 import OllamaBackend
 import XCTest
 
@@ -165,10 +165,16 @@ final class LMStudioBackendTests: XCTestCase {
 
     func testUnloadModelPostsLoadedInstanceID() async throws {
         var paths: [String] = []
+        var postedInstanceIDs: [String] = []
+        var modelRequestCount = 0
         let backend = makeBackend { request in
             paths.append(request.url?.path ?? "")
             switch request.url?.path {
             case "/api/v1/models":
+                modelRequestCount += 1
+                let instances = modelRequestCount == 1
+                    ? #"[{"id":"instance-gemma-a"},{"id":"instance-gemma-b"}]"#
+                    : "[]"
                 return self.response(
                     statusCode: 200,
                     body: """
@@ -178,7 +184,7 @@ final class LMStudioBackendTests: XCTestCase {
                           "type": "llm",
                           "key": "google/gemma-4-26b-a4b",
                           "display_name": "Gemma 4 26B A4B",
-                          "loaded_instances": [{"id": "instance-gemma"}]
+                          "loaded_instances": \(instances)
                         }
                       ]
                     }
@@ -188,8 +194,8 @@ final class LMStudioBackendTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "POST")
                 let body = try self.requestBodyData(from: request)
                 let posted = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
-                XCTAssertEqual(posted.instanceID, "instance-gemma")
-                return self.response(statusCode: 200, body: #"{"instance_id":"instance-gemma"}"#)
+                postedInstanceIDs.append(posted.instanceID)
+                return self.response(statusCode: 200, body: #"{"instance_id":"\#(posted.instanceID)"}"#)
             default:
                 XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
                 return self.response(statusCode: 500, body: "{}")
@@ -198,8 +204,306 @@ final class LMStudioBackendTests: XCTestCase {
 
         let result = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
 
-        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload"])
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload", "/api/v1/models/unload", "/api/v1/models"])
+        XCTAssertEqual(postedInstanceIDs, ["instance-gemma-a", "instance-gemma-b"])
         XCTAssertEqual(result, .unloaded(provider: .lmStudio, modelID: "google/gemma-4-26b-a4b"))
+        XCTAssertEqual(result.outcome, .confirmed)
+        XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelReturnsAlreadyAbsentForMissingModelWithoutRawIDFallback() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: #"{"models":[]}"#)
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
+
+        XCTAssertEqual(paths, ["/api/v1/models"])
+        XCTAssertEqual(result.outcome, .alreadyAbsent)
+        XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelReturnsAlreadyAbsentWhenExactModelHasNoInstances() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(
+                statusCode: 200,
+                body: #"{"models":[{"key":"google/gemma-4-26b-a4b","loaded_instances":[]}]}"#
+            )
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
+
+        XCTAssertEqual(paths, ["/api/v1/models"])
+        XCTAssertEqual(result.outcome, .alreadyAbsent)
+    }
+
+    func testUnloadModelRejectsMissingNullOrDuplicateResidencyAtInitialLookup() async {
+        let malformedBodies = [
+            #"{"models":[{"key":"model-key"}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":null}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[]},{"key":"model-key","loaded_instances":[]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[],"loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}],"loaded_instances":[]}]}"#,
+            #"{"models":[],"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}],"models":[]}"#,
+        ]
+
+        for body in malformedBodies {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(statusCode: 200, body: body)
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "model-key")
+                XCTFail("Expected malformed residency rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(paths, ["/api/v1/models"])
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsMissingNullOrDuplicateResidencyDuringPolling() async {
+        let malformedBodies = [
+            #"{"models":[{"key":"model-key"}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":null}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[]},{"key":"model-key","loaded_instances":[]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[],"loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}],"loaded_instances":[]}]}"#,
+            #"{"models":[],"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}],"models":[]}"#,
+        ]
+
+        for body in malformedBodies {
+            var modelRequestCount = 0
+            let backend = makeBackend { request in
+                switch request.url?.path {
+                case "/api/v1/models":
+                    modelRequestCount += 1
+                    if modelRequestCount == 1 {
+                        return self.response(
+                            statusCode: 200,
+                            body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#
+                        )
+                    }
+                    return self.response(statusCode: 200, body: body)
+                case "/api/v1/models/unload":
+                    return self.response(statusCode: 200, body: #"{"instance_id":"instance-a"}"#)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "model-key")
+                XCTFail("Expected malformed polling residency rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(modelRequestCount, 2)
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelResolvesExactKeyOnly() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(
+                statusCode: 200,
+                body: #"{"models":[{"key":"google/gemma-4-26b-a4b","display_name":"Gemma 4","loaded_instances":[{"id":"instance-gemma"}]}]}"#
+            )
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "Gemma 4")
+
+        XCTAssertEqual(paths, ["/api/v1/models"])
+        XCTAssertEqual(result.outcome, .alreadyAbsent)
+    }
+
+    func testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 404, body: "native API unavailable")
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
+
+        XCTAssertEqual(paths, ["/api/v1/models"])
+        XCTAssertEqual(result.outcome, .unsupported)
+        XCTAssertFalse(result.unloaded)
+    }
+
+    func testUnloadModelDoesNotConfirmWhenNativeStateFallsBackDuringPolling() async {
+        var modelRequestCount = 0
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                modelRequestCount += 1
+                if modelRequestCount == 1 {
+                    return self.response(
+                        statusCode: 200,
+                        body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#
+                    )
+                }
+                return self.response(statusCode: 404, body: "native API unavailable")
+            case "/api/v1/models/unload":
+                return self.response(statusCode: 200, body: #"{"instance_id":"instance-a"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model-key")
+            XCTFail("Expected native-state confirmation failure")
+        } catch let error as LMStudioBackendError {
+            guard case .unloadNotConfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadModelRejectsMalformedAndMismatchedInstanceAcknowledgements() async {
+        let acknowledgements = [
+            "not-json",
+            #"{"instance_id":"different-instance"}"#,
+            #"{"instance_id":"exact-instance","instance_id":"different-instance"}"#,
+            #"{"instance_id":"different-instance","instance_id":"exact-instance"}"#,
+        ]
+        for acknowledgement in acknowledgements {
+            let backend = makeBackend { request in
+                switch request.url?.path {
+                case "/api/v1/models":
+                    return self.response(
+                        statusCode: 200,
+                        body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"exact-instance"}]}]}"#
+                    )
+                case "/api/v1/models/unload":
+                    return self.response(statusCode: 200, body: acknowledgement)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "model-key")
+                XCTFail("Expected acknowledgement rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(error.code, "lm_studio_unload_not_confirmed")
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsPartialMultipleInstanceAcknowledgement() async {
+        var postedInstanceIDs: [String] = []
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"},{"id":"instance-b"},{"id":"instance-c"}]}]}"#
+                )
+            case "/api/v1/models/unload":
+                let posted = try JSONDecoder().decode(PostedUnloadRequest.self, from: self.requestBodyData(from: request))
+                postedInstanceIDs.append(posted.instanceID)
+                let acknowledged = posted.instanceID == "instance-a" ? posted.instanceID : "wrong-instance"
+                return self.response(statusCode: 200, body: #"{"instance_id":"\#(acknowledged)"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model-key")
+            XCTFail("Expected partial acknowledgement failure")
+        } catch let error as LMStudioBackendError {
+            guard case .unloadNotConfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(postedInstanceIDs, ["instance-a", "instance-b"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling() async {
+        var paths: [String] = []
+        let backend = makeBackend(unloadPollAttempts: 3) { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#
+                )
+            case "/api/v1/models/unload":
+                return self.response(statusCode: 200, body: #"{"instance_id":"instance-a"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model-key")
+            XCTFail("Expected persistent residency failure")
+        } catch let error as LMStudioBackendError {
+            guard case .unloadNotConfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload", "/api/v1/models", "/api/v1/models", "/api/v1/models"])
+            XCTAssertEqual(error.backendError.code, "model_unload_not_confirmed")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadModelPollingPropagatesCancellation() async {
+        let backend = makeBackend(
+            unloadPollAttempts: 3,
+            unloadSleeper: { _ in throw CancellationError() }
+        ) { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#
+                )
+            case "/api/v1/models/unload":
+                return self.response(statusCode: 200, body: #"{"instance_id":"instance-a"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model-key")
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testUnloadModelHTTPStatusReturnsStructuredError() async {
@@ -248,6 +552,42 @@ final class LMStudioBackendTests: XCTestCase {
             XCTAssertFalse(error.backendError.message.contains("127.0.0.1"))
             XCTAssertFalse(error.backendError.message.contains("route_token"))
             XCTAssertFalse(error.backendError.message.contains("/api/v1/models/unload"))
+            XCTAssertFalse(error.localizedDescription.contains("127.0.0.1"))
+            XCTAssertFalse(error.localizedDescription.contains("route_token"))
+            XCTAssertFalse(error.localizedDescription.contains("/api/v1/models/unload"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadConfirmationFailureBackendErrorIsSanitized() async {
+        let unsafeInstanceID = "http://127.0.0.1:1234/api/v1/models/unload?route_token=secret"
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#
+                )
+            case "/api/v1/models/unload":
+                return self.response(statusCode: 200, body: #"{"instance_id":"\#(unsafeInstanceID)"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model-key")
+            XCTFail("Expected confirmation failure")
+        } catch let error as LMStudioBackendError {
+            let mapped = error.backendError
+            XCTAssertEqual(mapped.code, "model_unload_not_confirmed")
+            XCTAssertFalse(mapped.message.contains("127.0.0.1"))
+            XCTAssertFalse(mapped.message.contains("route_token"))
+            XCTAssertFalse(mapped.message.contains("/api/v1/models/unload"))
+            XCTAssertFalse(error.localizedDescription.contains("127.0.0.1"))
+            XCTAssertFalse(error.localizedDescription.contains("route_token"))
+            XCTAssertFalse(error.localizedDescription.contains("/api/v1/models/unload"))
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -684,14 +1024,58 @@ final class LMStudioBackendTests: XCTestCase {
         }
     }
 
+    func testLiveLMStudioConfirmedUnload() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AETHERLINK_RUN_LMSTUDIO_LIVE_UNLOAD_TEST"] == "1" else {
+            throw XCTSkip("Set AETHERLINK_RUN_LMSTUDIO_LIVE_UNLOAD_TEST=1 to enable the localhost LM Studio unload test.")
+        }
+        guard let modelID = environment["AETHERLINK_LMSTUDIO_LIVE_UNLOAD_MODEL_ID"], !modelID.isEmpty else {
+            throw XCTSkip("Set AETHERLINK_LMSTUDIO_LIVE_UNLOAD_MODEL_ID to the exact native model key to unload.")
+        }
+
+        let session = URLSession(configuration: .ephemeral)
+        let modelsBefore = try await liveLMStudioModels(session: session)
+        let modelBefore = try XCTUnwrap(modelsBefore.first(where: { $0["key"] as? String == modelID }))
+        let instancesBefore = try XCTUnwrap(modelBefore["loaded_instances"] as? [[String: Any]])
+        guard !instancesBefore.isEmpty else {
+            XCTFail("The explicitly selected LM Studio model must already be running before this test starts.")
+            return
+        }
+
+        let result = try await LMStudioBackend().unloadModel(providerModelID: modelID)
+
+        XCTAssertEqual(result.outcome, .confirmed)
+        let modelsAfter = try await liveLMStudioModels(session: session)
+        let installedAfter = try XCTUnwrap(modelsAfter.first(where: { $0["key"] as? String == modelID }))
+        let instancesAfter = try XCTUnwrap(installedAfter["loaded_instances"] as? [[String: Any]])
+        XCTAssertTrue(instancesAfter.isEmpty)
+    }
+
     private func makeBackend(
+        unloadPollAttempts: Int = 3,
+        unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> LMStudioBackend {
         MockURLProtocol.handler = handler
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        return LMStudioBackend(baseURL: URL(string: "http://127.0.0.1:1234")!, session: session)
+        return LMStudioBackend(
+            baseURL: URL(string: "http://127.0.0.1:1234")!,
+            session: session,
+            unloadPollAttempts: unloadPollAttempts,
+            unloadSleeper: unloadSleeper
+        )
+    }
+
+    private func liveLMStudioModels(session: URLSession) async throws -> [[String: Any]] {
+        let url = LMStudioBackend.defaultBaseURL.appending(path: "api/v1/models")
+        let (data, response) = try await session.data(from: url)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertTrue((200..<300).contains(http.statusCode))
+        let object = try JSONSerialization.jsonObject(with: data)
+        let payload = try XCTUnwrap(object as? [String: Any])
+        return try XCTUnwrap(payload["models"] as? [[String: Any]])
     }
 
     private func response(statusCode: Int, body: String) -> (HTTPURLResponse, Data) {

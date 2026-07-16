@@ -416,6 +416,12 @@
         "nonce": { "$ref": "#/$defs/nonEmptyString" },
         "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
         "runtime_signature": { "$ref": "#/$defs/nonEmptyString" },
+        "runtime_capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonBlankString" },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
         "transport_binding": { "$ref": "#/$defs/transportBinding" }
       },
       "additionalProperties": false
@@ -2173,7 +2179,8 @@
             "content": { "$ref": "#/$defs/nonBlankString" },
             "enabled": { "type": "boolean" },
             "expected_session_id": { "$ref": "#/$defs/nonBlankString" },
-            "expected_source_message_count": { "type": "integer", "minimum": 1 }
+            "expected_source_message_count": { "type": "integer", "minimum": 1 },
+            "expected_summary_method": { "enum": ["deterministic_preview", "llm_summary_v1"] }
           },
           "additionalProperties": false
         },

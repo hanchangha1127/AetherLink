@@ -199,7 +199,8 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
             ]
         ))
 
-        XCTAssertEqual(draft.id, "long-inactivity:draft-session:2408000000:3")
+        XCTAssertTrue(draft.id.hasPrefix("long-inactivity:v2:"))
+        XCTAssertEqual(draft.id.count, "long-inactivity:v2:".count + 64)
         XCTAssertEqual(draft.candidate.sessionID, "draft-session")
         XCTAssertEqual(draft.sourceMessageCount, 2)
         XCTAssertEqual(draft.sourceRangeDescription, "visible messages 2-3 of 3")
@@ -216,6 +217,164 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
         XCTAssertFalse(draft.summaryPreview.contains("Runtime conversation summary"))
         XCTAssertFalse(draft.summaryPreview.contains("private reasoning only"))
         XCTAssertFalse(draft.summaryPreview.contains("reasoning without visible answer"))
+    }
+
+    func testDraftIDBindsSessionMetadataAndVisibleSourceButNotAdvancingInactivity() throws {
+        let lastActivityAt = Date(timeIntervalSince1970: 2_408_000)
+        let messages = [
+            RuntimeChatStoredMessage(
+                role: "user",
+                content: "Remember the exact source identity.",
+                createdAt: Date(timeIntervalSince1970: 2_407_900)
+            ),
+            RuntimeChatStoredMessage(
+                role: "assistant",
+                content: "The source identity remains review-bound.",
+                createdAt: Date(timeIntervalSince1970: 2_407_901)
+            ),
+        ]
+        let policy = RuntimeLongInactivityMemorySummarizationPolicy(
+            minimumInactiveInterval: 0,
+            minimumMessageCount: 1,
+            maxSourceMessageCount: 2
+        )
+        let candidate = RuntimeLongInactivityMemorySummarizationCandidate(
+            sessionID: "source-bound-session",
+            title: "Original title",
+            model: "ollama:llama3.1:8b",
+            lastActivityAt: lastActivityAt,
+            messageCount: 2,
+            inactiveInterval: 10
+        )
+        func makeCandidate(
+            sessionID: String = "source-bound-session",
+            title: String = "Original title",
+            model: String = "ollama:llama3.1:8b",
+            lastActivityAt: Date = lastActivityAt,
+            messageCount: Int = 2,
+            inactiveInterval: TimeInterval = 10
+        ) -> RuntimeLongInactivityMemorySummarizationCandidate {
+            RuntimeLongInactivityMemorySummarizationCandidate(
+                sessionID: sessionID,
+                title: title,
+                model: model,
+                lastActivityAt: lastActivityAt,
+                messageCount: messageCount,
+                inactiveInterval: inactiveInterval
+            )
+        }
+        let baseline = try XCTUnwrap(policy.draft(for: candidate, messages: messages))
+        let laterInactivity = try XCTUnwrap(policy.draft(
+            for: makeCandidate(inactiveInterval: 20),
+            messages: messages
+        ))
+        let renamed = try XCTUnwrap(policy.draft(
+            for: makeCandidate(title: "Renamed title"),
+            messages: messages
+        ))
+        let changedModel = try XCTUnwrap(policy.draft(
+            for: makeCandidate(model: "lm_studio:llama3.1:8b"),
+            messages: messages
+        ))
+        var changedMessages = messages
+        changedMessages[1] = RuntimeChatStoredMessage(
+            role: "assistant",
+            content: "The changed source must receive another identity.",
+            createdAt: messages[1].createdAt
+        )
+        let changedSource = try XCTUnwrap(policy.draft(for: candidate, messages: changedMessages))
+
+        XCTAssertEqual(baseline.id, laterInactivity.id)
+        XCTAssertNotEqual(baseline.id, renamed.id)
+        XCTAssertNotEqual(baseline.id, changedModel.id)
+        XCTAssertNotEqual(baseline.id, changedSource.id)
+        for changedCandidate in [
+            makeCandidate(sessionID: "another-source-bound-session"),
+            makeCandidate(lastActivityAt: lastActivityAt.addingTimeInterval(0.001)),
+            makeCandidate(messageCount: 3),
+        ] {
+            let changedDraft = try XCTUnwrap(policy.draft(
+                for: changedCandidate,
+                messages: messages
+            ))
+            XCTAssertNotEqual(baseline.id, changedDraft.id)
+        }
+
+        var timestampChangedMessages = messages
+        timestampChangedMessages[1] = RuntimeChatStoredMessage(
+            role: messages[1].role,
+            content: messages[1].content,
+            createdAt: messages[1].createdAt?.addingTimeInterval(0.001)
+        )
+        var nilTimestampMessages = messages
+        nilTimestampMessages[1] = RuntimeChatStoredMessage(
+            role: messages[1].role,
+            content: messages[1].content,
+            createdAt: nil
+        )
+        var roleChangedMessages = messages
+        roleChangedMessages[0] = RuntimeChatStoredMessage(
+            role: "assistant",
+            content: messages[0].content,
+            createdAt: messages[0].createdAt
+        )
+        let leadingSourceMessages = [
+            RuntimeChatStoredMessage(
+                role: "user",
+                content: "An older source shifts the selected pointer range.",
+                createdAt: Date(timeIntervalSince1970: 2_407_899)
+            ),
+        ] + messages
+        let sourceVariants = [
+            timestampChangedMessages,
+            nilTimestampMessages,
+            roleChangedMessages,
+            Array(messages.reversed()),
+            leadingSourceMessages,
+        ]
+        for sourceVariant in sourceVariants {
+            let changedDraft = try XCTUnwrap(policy.draft(
+                for: candidate,
+                messages: sourceVariant
+            ))
+            XCTAssertNotEqual(baseline.id, changedDraft.id)
+        }
+        let onePointerDraft = try XCTUnwrap(
+            RuntimeLongInactivityMemorySummarizationPolicy(
+                minimumInactiveInterval: 0,
+                minimumMessageCount: 1,
+                maxSourceMessageCount: 1
+            ).draft(for: candidate, messages: messages)
+        )
+        XCTAssertNotEqual(baseline.id, onePointerDraft.id)
+
+        let sharedExcerptPrefix = String(repeating: "x", count: 180)
+        let previewOnlyMessagesA = [RuntimeChatStoredMessage(
+            role: "user",
+            content: sharedExcerptPrefix + "A",
+            createdAt: Date(timeIntervalSince1970: 2_407_902)
+        )]
+        let previewOnlyMessagesB = [RuntimeChatStoredMessage(
+            role: "user",
+            content: sharedExcerptPrefix + "B",
+            createdAt: Date(timeIntervalSince1970: 2_407_902)
+        )]
+        let previewOnlyCandidate = makeCandidate(messageCount: 1)
+        let previewOnlyDraftA = try XCTUnwrap(policy.draft(
+            for: previewOnlyCandidate,
+            messages: previewOnlyMessagesA
+        ))
+        let previewOnlyDraftB = try XCTUnwrap(policy.draft(
+            for: previewOnlyCandidate,
+            messages: previewOnlyMessagesB
+        ))
+        XCTAssertEqual(previewOnlyDraftA.sourcePointers, previewOnlyDraftB.sourcePointers)
+        XCTAssertNotEqual(previewOnlyDraftA.summaryPreview, previewOnlyDraftB.summaryPreview)
+        XCTAssertNotEqual(previewOnlyDraftA.id, previewOnlyDraftB.id)
+        XCTAssertEqual(
+            baseline.id,
+            "long-inactivity:v2:8b7948073088d0a11a411caee1677acca19aa20443f79462eb1663d5a095abc1"
+        )
     }
 
     func testGeneratedOverlayPreservesCandidateAndSourceMetadata() throws {
@@ -297,7 +456,8 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
     }
 
     func testSQLiteStoreListsLongInactivityDraftsWithoutCrossOwnerOrArchivedSources() throws {
-        let store = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
         let now = Date(timeIntervalSince1970: 6_000_000)
         let day: TimeInterval = 24 * 60 * 60
         let policy = RuntimeLongInactivityMemorySummarizationPolicy(
@@ -347,9 +507,16 @@ final class RuntimeLongInactivityMemorySummarizationPolicyTests: XCTestCase {
             now: now,
             policy: policy
         )
+        let reopenedDrafts = try SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+            .listLongInactivityMemorySummarizationDrafts(
+                ownerDeviceID: "device-a",
+                now: now,
+                policy: policy
+            )
 
         XCTAssertEqual(drafts.map(\.candidate.sessionID), ["device-a-old-active-draft"])
         XCTAssertEqual(repeatedDrafts.map(\.id), drafts.map(\.id))
+        XCTAssertEqual(reopenedDrafts.map(\.id), drafts.map(\.id))
         XCTAssertEqual(drafts.first?.sourceMessageCount, 3)
         XCTAssertEqual(drafts.first?.sourceRangeDescription, "visible messages 2-4 of 4")
         XCTAssertEqual(drafts.first?.sourcePointers.map(\.messageIndex), [2, 3, 4])

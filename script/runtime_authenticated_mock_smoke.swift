@@ -316,6 +316,8 @@ let smokeBackendCredentialCanary = "Authorization: Bearer smoke-backend-credenti
 let smokeBackendAPIKeyCanary = "AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary"
 let smokeBackendURLCanary = "https://provider.example.invalid/v1/chat/completions"
 let smokeEmbeddingSearchHintModelID = "ollama:nomic-embed-text"
+let runtimeCapabilityNegotiationCapability = "auth.challenge.runtime_capabilities.v1"
+let memorySummaryDraftApprovalMethodCapability = "memory.summary.approval_method.v1"
 let primaryClientCapabilities = [
     "chat",
     "streaming",
@@ -326,7 +328,8 @@ let primaryClientCapabilities = [
     "memory.semantic_duplicate_suggestions.v1",
     "memory.semantic_duplicate_clusters.v1",
     "research.notebooks.v1",
-    "research.notebooks.authoritative_sync.v1"
+    "research.notebooks.authoritative_sync.v1",
+    runtimeCapabilityNegotiationCapability
 ]
 let smokeRetrievalDocumentID = "smoke-retrieval-doc"
 let smokeRetrievalDocumentName = "runtime-retrieval-smoke.md"
@@ -2608,6 +2611,15 @@ func trustedHelloNonce(
     try requireType(challenge, "auth.challenge", context: requestID)
     let challengePayload = try payload(challenge, context: requestID)
     let nonce = try requireString(challengePayload, "nonce", context: requestID)
+    if clientCapabilities.contains(runtimeCapabilityNegotiationCapability) {
+        guard challengePayload["runtime_capabilities"] as? [String] == [
+            memorySummaryDraftApprovalMethodCapability
+        ] else {
+            throw SmokeFailure.message("\(requestID) negotiated runtime capabilities mismatch")
+        }
+    } else if challengePayload["runtime_capabilities"] != nil {
+        throw SmokeFailure.message("\(requestID) legacy challenge unexpectedly disclosed runtime capabilities")
+    }
     let transportBinding = challengePayload["transport_binding"] as? String
     guard transportBinding == client.transportBindingID else {
         throw SmokeFailure.message("\(requestID) auth challenge transport binding mismatch")
@@ -4529,6 +4541,8 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "smoke-memory-summary-approve-blank-expected-session",
         "smoke-memory-summary-approve-invalid-expected-count-string",
         "smoke-memory-summary-approve-invalid-expected-count-fraction",
+        "smoke-memory-summary-approve-invalid-expected-method-type",
+        "smoke-memory-summary-approve-invalid-expected-method-value",
         "smoke-memory-summary-approve-blank-draft-id",
         "smoke-memory-summary-approve-stale",
         "smoke-memory-summary-approve",
@@ -4606,6 +4620,7 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "/Users/example/project/notes.md",
         "Edited approved smoke summary keeps source audit metadata.",
         "smoke-memory-summary-dismiss-seed",
+        "smoke-memory-summary-dismiss-title-stabilize",
         "smoke-memory-summary-dismiss-stale",
         "smoke-memory-summary-dismiss",
         "smoke-memory-summary-after-dismiss",
@@ -5462,15 +5477,25 @@ func mockChatRequestAuditEntry(
     fileURL: URL,
     sessionID: String,
     generationID: String? = nil,
+    generationIDPrefix: String? = nil,
     context: String
 ) throws -> [String: Any] {
+    precondition(generationID == nil || generationIDPrefix == nil)
     let entries = try mockChatRequestAuditEntries(fileURL: fileURL)
     let matchingEntries = entries.filter { entry in
         guard entry["session_id"] as? String == sessionID else { return false }
-        return generationID == nil || entry["generation_id"] as? String == generationID
+        if let generationID {
+            return entry["generation_id"] as? String == generationID
+        }
+        if let generationIDPrefix {
+            return (entry["generation_id"] as? String)?.hasPrefix(generationIDPrefix) == true
+        }
+        return true
     }
     guard let entry = matchingEntries.last else {
-        let expectedGeneration = generationID.map { " generation \($0)" } ?? ""
+        let expectedGeneration = generationID.map { " generation \($0)" }
+            ?? generationIDPrefix.map { " generation prefix \($0)" }
+            ?? ""
         throw SmokeFailure.message(
             "\(context) did not record a mock backend request for \(sessionID)\(expectedGeneration): \(entries)"
         )
@@ -5493,12 +5518,14 @@ func mockChatRequestAuditMessages(
     fileURL: URL,
     sessionID: String,
     generationID: String? = nil,
+    generationIDPrefix: String? = nil,
     context: String
 ) throws -> [[String: Any]] {
     let entry = try mockChatRequestAuditEntry(
         fileURL: fileURL,
         sessionID: sessionID,
         generationID: generationID,
+        generationIDPrefix: generationIDPrefix,
         context: context
     )
     guard let messages = entry["messages"] as? [[String: Any]] else {
@@ -7258,6 +7285,26 @@ func runAuthenticatedHistoryAndMemoryChecks(
         throw SmokeFailure.message("memory summary dismiss seed chat did not stream mock text: \(dismissSeedText)")
     }
 
+    let dismissTitleStabilizationResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-memory-summary-dismiss-title-stabilize",
+        payload: [
+            "session_id": smokeSummaryDismissSessionID,
+            "title": "Memory summary dismiss smoke"
+        ]
+    )
+    try requireType(
+        dismissTitleStabilizationResponse,
+        "chat.session.rename",
+        context: "memory summary dismiss title stabilization"
+    )
+    try requireRequestID(
+        dismissTitleStabilizationResponse,
+        "smoke-memory-summary-dismiss-title-stabilize",
+        context: "memory summary dismiss title stabilization"
+    )
+
     let invalidSummaryDraftLimitResponse = try sendAndRead(
         client,
         type: "memory.summary.drafts.list",
@@ -7323,6 +7370,7 @@ func runAuthenticatedHistoryAndMemoryChecks(
     guard dismissDraftSourceMessageCount >= 2,
           let dismissDraftSession = dismissDraft["session"] as? [String: Any],
           dismissDraftSession["session_id"] as? String == smokeSummaryDismissSessionID,
+          dismissDraftSession["title"] as? String == "Memory summary dismiss smoke",
           dismissDraftSession["model"] as? String == "dev-mock",
           dismissDraft["summary_method"] as? String == "deterministic_preview",
           (dismissDraft["summary_preview"] as? String)?.contains("Capture dismiss-only smoke summary.") == true
@@ -7414,7 +7462,7 @@ func runAuthenticatedHistoryAndMemoryChecks(
     let summaryAuditMessages = try mockChatRequestAuditMessages(
         fileURL: chatRequestAuditFile,
         sessionID: smokeSessionID,
-        generationID: "smoke-memory-summary-generate-memory-summary",
+        generationIDPrefix: "memory-summary-generation-",
         context: "memory.summary.draft.generate source isolation"
     )
     let summaryAuditContents = summaryAuditMessages.compactMap { $0["content"] as? String }
@@ -7519,6 +7567,22 @@ func runAuthenticatedHistoryAndMemoryChecks(
                 "expected_source_message_count": Double(summaryDraftSourceMessageCount) + 0.5
             ],
             "memory.summary.draft.approve invalid expected count fraction"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-expected-method-type",
+            [
+                "draft_id": summaryDraftID,
+                "expected_summary_method": 1
+            ],
+            "memory.summary.draft.approve invalid expected summary method type"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-expected-method-value",
+            [
+                "draft_id": summaryDraftID,
+                "expected_summary_method": "manual"
+            ],
+            "memory.summary.draft.approve invalid expected summary method value"
         )
     ]
     for invalidPayload in invalidSummaryApproveAllowedFieldPayloads {
@@ -7578,8 +7642,10 @@ func runAuthenticatedHistoryAndMemoryChecks(
         requestID: "smoke-memory-summary-approve",
         payload: [
             "draft_id": summaryDraftID,
+            "content": approvedSummaryContent,
             "expected_session_id": smokeSessionID,
             "expected_source_message_count": summaryDraftSourceMessageCount,
+            "expected_summary_method": "llm_summary_v1",
             "enabled": true
         ]
     )

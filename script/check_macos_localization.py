@@ -35,6 +35,9 @@ COMPANION_APP_MODEL_SOURCE = (
 LOCALIZATION_TEST_SOURCE = (
     ROOT / "apps" / "macos" / "LocalAgentBridgeApp" / "Tests" / "AetherLinkLocalizationTests.swift"
 )
+RENDER_TEST_SOURCE = (
+    ROOT / "apps" / "macos" / "LocalAgentBridgeApp" / "Tests" / "AetherLinkRenderSmokeTests.swift"
+)
 LOCALES = ("en", "ko", "ja", "zh-Hans", "fr")
 BASE_LOCALE = "en"
 EXPECTED_APP_LANGUAGES = {
@@ -132,6 +135,19 @@ REQUIRED_RUNTIME_HISTORY_KEYS = (
     "Selected",
     "Not selected",
     "Load this runtime-owned transcript preview.",
+)
+REQUIRED_MODEL_IDLE_UNLOAD_KEYS = (
+    "Idle Unload",
+    "%d min",
+    "Choose when an idle resident model is unloaded.",
+    "Wait for the current idle unload policy update to finish.",
+)
+REQUIRED_MODEL_UNLOAD_CONFIRMATION_KEYS = (
+    "Unloading",
+    "Model unload in progress",
+    "Wait for the current model unload to finish.",
+    "%@ %@ is being unloaded by AetherLink Runtime.",
+    "Could not confirm %@ %@ was unloaded. It may still be resident.",
 )
 REQUIRED_RELEASE_COPY_VALUES = {
     "en": {
@@ -1284,6 +1300,108 @@ def check_menu_bar_localization_helpers() -> list[str]:
     ]
 
 
+def check_model_idle_unload_picker() -> list[str]:
+    return [
+        *missing_source_snippets(
+            STATUS_VIEW_SOURCE,
+            (
+                'Label(NSLocalizedString("Idle Unload", comment: ""), systemImage: "timer")',
+                "selection: modelIdleUnloadPolicyBinding",
+                "ForEach(RuntimeModelIdleUnloadPolicy.allCases)",
+                ".tag(policy)",
+                ".pickerStyle(.segmented)",
+                ".controlSize(.small)",
+                ".disabled(!isSupported || model.isModelIdleUnloadPolicyUpdateInFlight)",
+                "model.requestModelIdleUnloadPolicy(policy)",
+                '.accessibilityLabel(Text(NSLocalizedString("Idle Unload", comment: "")))',
+                "let accessibilityValue = modelIdleUnloadPolicyPickerAccessibilityValue(",
+                ".accessibilityValue(Text(accessibilityValue))",
+                ".accessibilityHint(Text(accessibilityHint))",
+                "func modelIdleUnloadPolicyOptionTitle(_ policy: RuntimeModelIdleUnloadPolicy) -> String",
+                'String(format: NSLocalizedString("%d min", comment: ""), policy.minutes)',
+                "func modelIdleUnloadPolicyPickerAccessibilityValue(",
+                "func modelIdleUnloadPolicyPickerAccessibilityHint(",
+                "isUpdating: Bool = false",
+                'NSLocalizedString("Wait for the current idle unload policy update to finish.", comment: "")',
+                'NSLocalizedString("Unavailable", comment: "")',
+                'NSLocalizedString("Model residency is not managed by this provider.", comment: "")',
+            ),
+            "macOS model idle-unload policy picker",
+        ),
+        *missing_source_snippets(
+            LOCALIZATION_TEST_SOURCE,
+            (
+                "testModelIdleUnloadPolicyPickerUsesSelectedLanguage",
+                "XCTAssertEqual(RuntimeModelIdleUnloadPolicy.allCases.map(\\.minutes), [5, 10, 30])",
+                '"유휴 시 언로드"',
+                '"アイドル時アンロード"',
+                '"空闲卸载"',
+                '"Déchargement après inactivité"',
+                "RuntimeModelIdleUnloadPolicy.allCases.map(modelIdleUnloadPolicyOptionTitle)",
+                "modelIdleUnloadPolicyPickerAccessibilityValue(",
+                "modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: true)",
+                "isUpdating: true",
+                "modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: false)",
+            ),
+            "macOS model idle-unload five-language localization test",
+        ),
+    ]
+
+
+def check_model_residency_unload_confirmation_states() -> list[str]:
+    failures = [
+        *missing_source_snippets(
+            STATUS_VIEW_SOURCE,
+            (
+                "localizedModelResidencyStatusValue(model.modelResidency)",
+                "localizedModelResidencyStatusDetail(model.modelResidency)",
+                "modelResidencyStatusTone(model.modelResidency)",
+                "if residency.unloadingModelID != nil",
+                'NSLocalizedString("Unloading", comment: "")',
+                "if residency.lastUnloadFailure != nil",
+                'NSLocalizedString("Needs attention", comment: "")',
+                'NSLocalizedString("%@ %@ is being unloaded by AetherLink Runtime.", comment: "")',
+                'NSLocalizedString("Could not confirm %@ %@ was unloaded. It may still be resident.", comment: "")',
+                "model.modelResidency.unloadingModelID == nil",
+                "isUnloading: isUnloadingResidentModel",
+            ),
+            "macOS provider-confirmed model unload status",
+        ),
+        *missing_source_snippets(
+            COMPANION_CHROME_SOURCE,
+            (
+                "isUnloading: Bool = false",
+                'NSLocalizedString("Model unload in progress", comment: "")',
+                'NSLocalizedString("Wait for the current model unload to finish.", comment: "")',
+            ),
+            "macOS model unload in-progress action state",
+        ),
+        *missing_source_snippets(
+            LOCALIZATION_TEST_SOURCE,
+            (
+                "testModelResidencyUnloadConfirmationStatesUseSelectedLanguage",
+                "localizedModelResidencyStatusValue(unloading)",
+                "localizedModelResidencyStatusDetail(unloading)",
+                "modelResidencyStatusTone(failure)",
+                "isUnloading: true",
+            ),
+            "macOS model unload five-language state regression",
+        ),
+        *missing_source_snippets(
+            RENDER_TEST_SOURCE,
+            (
+                "testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances",
+                "holdsUnloadsOpen: true",
+                "Task.detached",
+                "unloadingModelState.modelResidency.unloadingModelID",
+            ),
+            "macOS model unload state render regression",
+        ),
+    ]
+
+    return failures
+
+
 def check_provider_status_redaction() -> list[str]:
     return missing_source_snippets(
         STATUS_VIEW_SOURCE,
@@ -1791,6 +1909,8 @@ def main() -> int:
             + REQUIRED_CONNECTION_RECOVERY_ACCESSIBILITY_KEYS
             + REQUIRED_RUNTIME_REASONING_KEYS
             + REQUIRED_RUNTIME_HISTORY_KEYS
+            + REQUIRED_MODEL_IDLE_UNLOAD_KEYS
+            + REQUIRED_MODEL_UNLOAD_CONFIRMATION_KEYS
         ):
             if key not in base_key_set:
                 failures.append(f"{strings_path(BASE_LOCALE).relative_to(ROOT)}: missing app key {key!r}")
@@ -1806,6 +1926,8 @@ def main() -> int:
     failures.extend(check_no_parenthetical_plural_resources())
     failures.extend(check_remote_connection_destructive_confirmation())
     failures.extend(check_activity_log_redaction())
+    failures.extend(check_model_idle_unload_picker())
+    failures.extend(check_model_residency_unload_confirmation_states())
     failures.extend(check_menu_bar_localization_helpers())
     failures.extend(check_provider_status_redaction())
     failures.extend(check_trusted_device_identity_display())

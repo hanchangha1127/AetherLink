@@ -12,7 +12,7 @@ production relay protocol has been implemented.
   relay, pairing, protocol, Android, script, and documentation changes.
 - Evidence manifest: `evidence.sha256`
 - Evidence collection SHA-256:
-  `5f930713405d195a18cc5239cbe9ff505a671866864ca45d52a62f330c1e19ce`
+  `7210f0f2f71ce029c8ca32481a39d6fd98307f7322b5d961101d5b238df455a8`
 - Evidence artifacts: 17 source/schema files.
 - Runtime constraint: the Android phone is disconnected. No physical optical QR,
   public relay, or real different-network evidence was used.

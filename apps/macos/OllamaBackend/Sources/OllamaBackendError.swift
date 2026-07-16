@@ -5,13 +5,14 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
     case httpStatus(endpoint: String, statusCode: Int, body: String?)
     case requestEncoding(endpoint: String, reason: String)
     case responseDecoding(endpoint: String, reason: String)
+    case unloadNotConfirmed(reason: String)
     case streamDecoding(line: String, reason: String)
     case generationCancelled(generationID: String)
     case generationNotFound(generationID: String)
     case transport(endpoint: String, reason: String)
 
     public var errorDescription: String? {
-        message
+        backendError.message
     }
 
     public var code: String {
@@ -26,6 +27,8 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return "ollama_request_encoding"
         case .responseDecoding:
             return "ollama_response_decoding"
+        case .unloadNotConfirmed:
+            return "ollama_unload_not_confirmed"
         case .streamDecoding:
             return "ollama_stream_decoding"
         case .generationCancelled:
@@ -48,6 +51,8 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return "Could not encode Ollama request for \(endpoint): \(reason)"
         case .responseDecoding(let endpoint, let reason):
             return "Could not decode Ollama response from \(endpoint): \(reason)"
+        case .unloadNotConfirmed(let reason):
+            return "Ollama did not confirm model unload: \(reason)"
         case .streamDecoding(let line, let reason):
             return "Could not decode Ollama stream line '\(line)': \(reason)"
         case .generationCancelled(let generationID):
@@ -61,7 +66,7 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
 
     public var retryable: Bool {
         switch self {
-        case .unreachable, .httpStatus, .transport:
+        case .unreachable, .httpStatus, .unloadNotConfirmed, .transport:
             return true
         case .requestEncoding, .responseDecoding, .streamDecoding, .generationCancelled, .generationNotFound:
             return false
@@ -125,6 +130,13 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
                 code: "bad_backend_response",
                 message: "AetherLink Runtime could not decode the Ollama response.",
                 retryable: false
+            )
+        case .unloadNotConfirmed:
+            return BackendError(
+                provider: .ollama,
+                code: "model_unload_not_confirmed",
+                message: "Ollama did not confirm that the model left provider memory.",
+                retryable: true
             )
         case .streamDecoding:
             return BackendError(

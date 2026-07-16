@@ -32,8 +32,8 @@ MAXIMUM_MACOS_SOURCE_FILES = 4_096
 MAXIMUM_MACOS_SOURCE_BYTES = 32 * 1024 * 1024
 MAXIMUM_MACOS_SOURCE_MODULES = 128
 
-EXPECTED_REVIEW_SHA256 = "c1968e19f546311e35422aaeeb5b5f5cd0ca3cd0e1dde289403da2cef213c571"
-EXPECTED_MANIFEST_SHA256 = "d8e5f9de86d68aa17e6a6959d5c2b7d0b7e7e89e5b287c51e9aa49b40a2dc6aa"
+EXPECTED_REVIEW_SHA256 = "44db1fd48cf4da9bf777f276fe9acc5df2838e3dcdc83388051222ae101179dd"
+EXPECTED_MANIFEST_SHA256 = "9bff16c06ca8d36dea4b1a0933547f6e46ddb287c6c84de8df1783f53b91e2d5"
 EXPECTED_DOCUMENT_SHA256 = {
     REVIEW_MARKDOWN_RELATIVE: "3e2fc5892120a46522096f700ad4ca7cdb0516aa530f7e3a9ea8a8f6b308fc9a",
     THREAT_MODEL_RELATIVE: "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
@@ -51,7 +51,7 @@ EXPECTED_EVIDENCE = (
     ),
     (
         "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
-        "b7cf2a31f9df0ebdcfde1dcf80e51e7095c1b936bd03489cdd420f7be2ae1d9c",
+        "21f7c02eefd7a93cfdd03b2f51700e373d16c6e76fb1c15fbc663314500e8016",
     ),
     (
         "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift",
@@ -59,7 +59,7 @@ EXPECTED_EVIDENCE = (
     ),
     (
         "packages/protocol-schema/protocol.schema.json",
-        "156023ebf025e361b6ac402d1d30a6203c054a130d381c9916b95557fd574ad4",
+        "24af565baa9a0b73f02600c58ac376b476410f41dcf88117d85ac3c1b2a0a2b0",
     ),
 )
 

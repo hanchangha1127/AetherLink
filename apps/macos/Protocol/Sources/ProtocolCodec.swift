@@ -278,7 +278,7 @@ public struct RelayFrameCipher: Sendable {
         self.init(sessionKeys: sessionKeys, frameIndex: 0)
     }
 
-    init(sessionKeys: RelaySessionKeys, frameIndex: Int64) {
+    package init(sessionKeys: RelaySessionKeys, frameIndex: Int64) {
         precondition(frameIndex >= 0, "Relay frame index must not be negative")
         bindingDigest = sessionKeys.bindingDigest
         clientTrafficSecret = sessionKeys.clientTrafficSecret

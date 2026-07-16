@@ -848,7 +848,10 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
         })
     }
 
-    func activateFrameCipher(sessionKeys: RelaySessionKeys?) throws {
+    func activateFrameCipher(
+        sessionKeys: RelaySessionKeys?,
+        initialFrameIndex: Int64 = 0
+    ) throws {
         guard let relaySecret else {
             guard sessionKeys == nil else {
                 throw RelayPeerSessionError.unexpectedSecurityContext
@@ -858,8 +861,14 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
         guard !relaySecret.isEmpty, let sessionKeys else {
             throw RelayPeerSessionError.missingSecurityContext
         }
-        sendCipher = RelayFrameCipher(sessionKeys: sessionKeys)
-        receiveCipher = RelayFrameCipher(sessionKeys: sessionKeys)
+        sendCipher = RelayFrameCipher(
+            sessionKeys: sessionKeys,
+            frameIndex: initialFrameIndex
+        )
+        receiveCipher = RelayFrameCipher(
+            sessionKeys: sessionKeys,
+            frameIndex: initialFrameIndex
+        )
         transportSecurityContextLock.withLock {
             storedTransportSecurityContext = TransportSecurityContext(
                 bindingID: sessionKeys.bindingID
@@ -876,6 +885,13 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
     }
 
     public func send(_ envelope: ProtocolEnvelope) {
+        send(envelope) { _ in }
+    }
+
+    public func send(
+        _ envelope: ProtocolEnvelope,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
         sendQueue.async { [self] in
             do {
                 var body = try codec.encodeEnvelopeBody(envelope)
@@ -884,30 +900,20 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
                     sendCipher = cipher
                 }
                 let frame = try codec.encodeLengthPrefixedBody(body)
-                connection.send(content: frame, completion: .contentProcessed { _ in })
+                connection.send(content: frame, completion: .contentProcessed { error in
+                    completion(error == nil)
+                })
             } catch {
                 connection.cancel()
+                completion(false)
             }
         }
     }
 
     public func sendAndWait(_ envelope: ProtocolEnvelope) async -> Bool {
         await withCheckedContinuation { continuation in
-            sendQueue.async { [self] in
-                do {
-                    var body = try codec.encodeEnvelopeBody(envelope)
-                    if var cipher = sendCipher {
-                        body = try cipher.encryptRuntimeBody(body)
-                        sendCipher = cipher
-                    }
-                    let frame = try codec.encodeLengthPrefixedBody(body)
-                    connection.send(content: frame, completion: .contentProcessed { error in
-                        continuation.resume(returning: error == nil)
-                    })
-                } catch {
-                    connection.cancel()
-                    continuation.resume(returning: false)
-                }
+            send(envelope) { succeeded in
+                continuation.resume(returning: succeeded)
             }
         }
     }

@@ -4098,6 +4098,7 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
             "nonce",
             "runtime_key_fingerprint",
             "runtime_signature",
+            "runtime_capabilities",
             "transport_binding",
         }
         if not isinstance(properties, dict) or set(properties.keys()) != expected_keys:
@@ -4106,6 +4107,15 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
             )
         elif properties.get("transport_binding", {}).get("$ref") != "#/$defs/transportBinding":
             failures.append("$defs.authChallengePayload transport_binding must use transportBinding")
+        elif properties.get("runtime_capabilities") != {
+            "type": "array",
+            "items": {"$ref": "#/$defs/nonBlankString"},
+            "maxItems": 64,
+            "uniqueItems": True,
+        }:
+            failures.append(
+                "$defs.authChallengePayload runtime_capabilities must be an optional bounded unique nonblank string array"
+            )
         if auth_challenge_payload.get("required") != ["device_id", "nonce"]:
             failures.append("$defs.authChallengePayload must require only device_id and nonce")
         if auth_challenge_payload.get("additionalProperties") is not False:
@@ -6973,7 +6983,7 @@ def require_memory_summary_decision_request_fields(
         "expected_source_message_count",
     }
     if allow_content:
-        allowed_keys.update({"content", "enabled"})
+        allowed_keys.update({"content", "enabled", "expected_summary_method"})
     actual_keys = set(properties.keys())
     if actual_keys != allowed_keys:
         failures.append(f"{label} properties must stay limited to {', '.join(sorted(allowed_keys))}")
@@ -6992,6 +7002,7 @@ def require_memory_summary_decision_request_fields(
         "permission_grant",
         "source_path",
         "source_control_status",
+        "persistence_operation_id",
     }
     leaked_keys = sorted(actual_keys & forbidden_keys)
     if leaked_keys:
@@ -7028,6 +7039,12 @@ def require_memory_summary_decision_request_fields(
             f"{label} enabled",
             properties.get("enabled"),
             {"type": "boolean"},
+        )
+        expect_schema_equal(
+            failures,
+            f"{label} expected_summary_method",
+            properties.get("expected_summary_method"),
+            {"enum": ["deterministic_preview", "llm_summary_v1"]},
         )
 
 

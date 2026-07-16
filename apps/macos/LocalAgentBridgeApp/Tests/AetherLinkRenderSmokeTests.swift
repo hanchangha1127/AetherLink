@@ -292,6 +292,53 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testModelIdleUnloadPolicyPickerRendersAcrossLanguagesAndAppearances() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                for isSupported in [true, false] {
+                    try withStoredPreferences(language: language, appearance: appearance) {
+                        let backend: any LlmBackend
+                        if isSupported {
+                            backend = AggregatingLlmBackend([])
+                        } else {
+                            backend = RenderSmokeBackend(models: [])
+                        }
+                        let model = renderSmokeModel(backend: backend)
+
+                        let bitmap = try render(
+                            ModelIdleUnloadPolicyPicker(model: model)
+                                .padding(12)
+                                .background(Color(nsColor: .windowBackgroundColor))
+                                .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                                .preferredColorScheme(appearance.preferredColorScheme),
+                            size: CGSize(width: 360, height: 96)
+                        )
+
+                        assertMeaningfulRender(
+                            bitmap,
+                            label: "Idle unload policy picker \(isSupported ? "supported" : "unsupported") \(language.rawValue) \(appearance.rawValue)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    func testCompanionAppModelAppliesPersistedPolicyToInjectedAggregate() {
+        let aggregate = AggregatingLlmBackend(
+            [],
+            modelIdleUnloadDelayNanoseconds: 1
+        )
+
+        let model = renderSmokeModel(
+            backend: aggregate,
+            modelIdleUnloadPolicy: .thirtyMinutes
+        )
+
+        XCTAssertEqual(model.modelIdleUnloadPolicy, .thirtyMinutes)
+        XCTAssertEqual(aggregate.modelResidencySnapshot().idleUnloadDelaySeconds, 1_800)
+    }
+
     func testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances() throws {
         let models = [
             ModelInfo(
@@ -394,6 +441,46 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         label: "Compact StatusView active model residency \(language.rawValue) \(appearance.rawValue)"
                     )
 
+                    let unloadingBackend = RenderSmokeResidencyBackend(
+                        provider: .ollama,
+                        models: [activeModel],
+                        holdsUnloadsOpen: true
+                    )
+                    let unloadingAggregate = AggregatingLlmBackend(
+                        [unloadingBackend],
+                        modelIdleUnloadDelayNanoseconds: 60_000_000_000
+                    )
+                    let unloadingModelState = renderSmokeModel(backend: unloadingAggregate)
+                    _ = try await collectRenderSmokeChat(
+                        unloadingAggregate.chat(request: renderSmokeChatRequest(model: "ollama:\(activeModelID)"))
+                    )
+                    let pendingUnload = Task.detached {
+                        await unloadingAggregate.unloadActiveResidencyModelNow()
+                    }
+                    XCTAssertTrue(unloadingBackend.waitForUnloadStart())
+                    unloadingModelState.refreshModelResidencyStatus()
+                    XCTAssertEqual(unloadingModelState.modelResidency.unloadingModelID, activeModelID)
+
+                    let unloadingBitmap: NSBitmapImageRep
+                    do {
+                        unloadingBitmap = try render(
+                            StatusView(model: unloadingModelState)
+                                .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                                .preferredColorScheme(appearance.preferredColorScheme),
+                            size: compactDetailSize
+                        )
+                    } catch {
+                        unloadingBackend.releaseUnloads()
+                        _ = await pendingUnload.value
+                        throw error
+                    }
+                    unloadingBackend.releaseUnloads()
+                    _ = await pendingUnload.value
+                    assertMeaningfulRender(
+                        unloadingBitmap,
+                        label: "Compact StatusView pending model unload \(language.rawValue) \(appearance.rawValue)"
+                    )
+
                     let failingAggregate = AggregatingLlmBackend(
                         [
                             RenderSmokeResidencyBackend(
@@ -405,6 +492,8 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         modelIdleUnloadDelayNanoseconds: 0
                     )
                     let failedUnloadModelState = renderSmokeModel(backend: failingAggregate)
+                    await failingAggregate.updateModelIdleUnloadDelayNanoseconds(0)
+                    failedUnloadModelState.refreshModelResidencyStatus()
                     _ = try await collectRenderSmokeChat(
                         failingAggregate.chat(request: renderSmokeChatRequest(model: "ollama:\(failureModelID)"))
                     )
@@ -628,6 +717,56 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testCompactionCalibrationSheetRendersAcrossLanguagesAndAppearances() throws {
+        let event = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: "render-calibration-request",
+            sessionID: "render-calibration-session",
+            model: "ollama:llama3.1:8b",
+            finishReason: "stop",
+            usage: RuntimeChatStoredUsage(inputTokens: 6_600, outputTokens: 200),
+            compactionResolution: RuntimeChatCompactionResolution(
+                primaryDispatched: true,
+                summaryMethod: "llm_summary_v1",
+                estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                inputBudgetTokens: 7_168,
+                estimatedInputTokensAfter: 6_500,
+                resolvedProviderQualifiedModelID: "ollama:llama3.1:8b",
+                providerUsageCalibration: RuntimeChatProviderUsageCalibration(
+                    provider: "ollama",
+                    providerModelID: "llama3.1:8b",
+                    wireMode: "ollama_chat",
+                    inputTokens: 6_600,
+                    relation: .exceededConservativeEstimateWithinBudget
+                )
+            )
+        )
+        let report = RuntimeChatCompactionCalibrationReport.build(from: [event])
+
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try withStoredPreferences(language: language, appearance: appearance) {
+                    let bitmap = try render(
+                        RuntimeChatCompactionCalibrationSheet(
+                            report: report,
+                            errorMessage: nil,
+                            isRefreshing: false,
+                            onRefresh: {}
+                        )
+                        .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                        .preferredColorScheme(appearance.preferredColorScheme),
+                        size: CGSize(width: 820, height: 620)
+                    )
+
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "RuntimeChatCompactionCalibrationSheet \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
     private func render<Content: View>(_ view: Content, size: CGSize) throws -> NSBitmapImageRep {
         let hostingView = NSHostingView(rootView: view.frame(width: size.width, height: size.height))
         hostingView.frame = NSRect(origin: .zero, size: size)
@@ -750,12 +889,20 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
     private func renderSmokeModel(
         backend: (any LlmBackend)? = nil,
         trustedDeviceStore: TrustedDeviceStore? = nil,
-        runtimeDocumentIndexStore: SQLiteRuntimeDocumentIndexStore? = nil
+        runtimeDocumentIndexStore: SQLiteRuntimeDocumentIndexStore? = nil,
+        modelIdleUnloadPolicy: RuntimeModelIdleUnloadPolicy? = nil
     ) -> CompanionAppModel {
-        CompanionAppModel(
+        let defaults = isolatedDefaults()
+        if let modelIdleUnloadPolicy {
+            defaults.set(
+                modelIdleUnloadPolicy.rawValue,
+                forKey: "runtime.modelResidency.idleUnloadPolicy.v1"
+            )
+        }
+        return CompanionAppModel(
             backend: backend ?? RenderSmokeBackend(models: []),
             environment: isolatedRuntimeIdentityEnvironment(),
-            userDefaults: isolatedDefaults(),
+            userDefaults: defaults,
             trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),
             runtimeDocumentIndexStore: runtimeDocumentIndexStore ?? isolatedRuntimeDocumentIndexStore(),
             runtimeModelPullApprovalPersistence: isolatedRuntimeModelPullApprovalStore(),
@@ -870,11 +1017,22 @@ private final class RenderSmokeResidencyBackend: LlmBackend, @unchecked Sendable
     let provider: ModelProvider
     private let models: [ModelInfo]
     private let unloadErrorMessage: String?
+    private let holdsUnloadsOpen: Bool
+    private let lock = NSLock()
+    private let unloadStarted = DispatchSemaphore(value: 0)
+    private var unloadReleased = false
+    private var unloadReleaseContinuations: [CheckedContinuation<Void, Never>] = []
 
-    init(provider: ModelProvider, models: [ModelInfo], unloadErrorMessage: String? = nil) {
+    init(
+        provider: ModelProvider,
+        models: [ModelInfo],
+        unloadErrorMessage: String? = nil,
+        holdsUnloadsOpen: Bool = false
+    ) {
         self.provider = provider
         self.models = models
         self.unloadErrorMessage = unloadErrorMessage
+        self.holdsUnloadsOpen = holdsUnloadsOpen
     }
 
     func healthCheck() async -> BackendStatus {
@@ -893,6 +1051,18 @@ private final class RenderSmokeResidencyBackend: LlmBackend, @unchecked Sendable
     }
 
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        if holdsUnloadsOpen {
+            unloadStarted.signal()
+            await withCheckedContinuation { continuation in
+                lock.withLock {
+                    if unloadReleased {
+                        continuation.resume()
+                    } else {
+                        unloadReleaseContinuations.append(continuation)
+                    }
+                }
+            }
+        }
         if let unloadErrorMessage {
             throw NSError(
                 domain: "AetherLinkRenderSmokeResidency",
@@ -901,6 +1071,20 @@ private final class RenderSmokeResidencyBackend: LlmBackend, @unchecked Sendable
             )
         }
         return .unloaded(provider: provider, modelID: providerModelID)
+    }
+
+    func waitForUnloadStart(timeout: TimeInterval = 1) -> Bool {
+        unloadStarted.wait(timeout: .now() + timeout) == .success
+    }
+
+    func releaseUnloads() {
+        let continuations = lock.withLock {
+            unloadReleased = true
+            let continuations = unloadReleaseContinuations
+            unloadReleaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
     }
 
     func cancel(generationID: String) -> GenerationCancellationResult {

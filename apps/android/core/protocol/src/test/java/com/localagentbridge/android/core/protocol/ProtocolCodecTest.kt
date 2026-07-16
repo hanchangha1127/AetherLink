@@ -621,6 +621,39 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun authChallengePayloadUsesBoundedOptionalRuntimeCapabilities() {
+        val payload = AuthChallengePayload(
+            deviceId = "client-1",
+            nonce = "nonce-1",
+            runtimeCapabilities = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
+        )
+        val encoded = Json.parseToJsonElement(Json.encodeToString(payload)).jsonObject
+
+        assertEquals(
+            listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
+            encoded["runtime_capabilities"]?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        assertEquals(
+            payload,
+            Json.decodeFromString<AuthChallengePayload>(encoded.toString()),
+        )
+
+        val invalidCapabilities = listOf(
+            listOf(""),
+            listOf("runtime.capability", "runtime.capability"),
+            List(65) { index -> "runtime.capability.$index" },
+        )
+        invalidCapabilities.forEach { capabilities ->
+            assertThrows(IllegalArgumentException::class.java) {
+                AuthChallengePayload(
+                    nonce = "nonce-1",
+                    runtimeCapabilities = capabilities,
+                )
+            }
+        }
+    }
+
+    @Test
     fun protocolSchemaPins64CapabilitiesAndStrictResearchNotebookSyncBranches() {
         val schema = Json.parseToJsonElement(
             sharedRepoFile("packages/protocol-schema/protocol.schema.json"),
@@ -693,6 +726,7 @@ class ProtocolCodecTest {
             nonce = "nonce-1",
             runtimeKeyFingerprint = "fingerprint-1",
             runtimeSignature = "signature-1",
+            runtimeCapabilities = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
             transportBinding = transportBinding,
         )
         val response = AuthResponsePayload(
@@ -716,6 +750,10 @@ class ProtocolCodecTest {
 
         assertEquals(transportBinding, boundHelloJson["transport_binding"]?.jsonPrimitive?.content)
         assertEquals(transportBinding, challengeJson["transport_binding"]?.jsonPrimitive?.content)
+        assertEquals(
+            MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY,
+            challengeJson["runtime_capabilities"]?.jsonArray?.single()?.jsonPrimitive?.content,
+        )
         assertEquals(transportBinding, responseJson["transport_binding"]?.jsonPrimitive?.content)
         assertEquals(challenge, Json.decodeFromString<AuthChallengePayload>(challengeJson.toString()))
         assertEquals(response, Json.decodeFromString<AuthResponsePayload>(responseJson.toString()))
@@ -5003,6 +5041,7 @@ class ProtocolCodecTest {
             enabled = true,
             expectedSessionId = "session-1",
             expectedSourceMessageCount = 6,
+            expectedSummaryMethod = "llm_summary_v1",
         )
         val result = MemorySummaryDraftApproveResultPayload(
             draftId = "long-inactivity:session-1:1000:6",
@@ -5052,6 +5091,7 @@ class ProtocolCodecTest {
         assertEquals(true, requestJson["enabled"]?.jsonPrimitive?.boolean)
         assertEquals("session-1", requestJson["expected_session_id"]?.jsonPrimitive?.content)
         assertEquals("6", requestJson["expected_source_message_count"]?.jsonPrimitive?.content)
+        assertEquals("llm_summary_v1", requestJson["expected_summary_method"]?.jsonPrimitive?.content)
         assertEquals("long-inactivity:session-1:1000:6", resultJson["draft_id"]?.jsonPrimitive?.content)
         assertEquals("approved", resultJson["status"]?.jsonPrimitive?.content)
         val entry = resultJson["entry"]?.jsonObject
@@ -5080,6 +5120,8 @@ class ProtocolCodecTest {
             """{"draft_id":"long-inactivity:session-1:1000:6","expected_session_id":"   "}""" to "expected_session_id",
             """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":0}""" to "expected_source_message_count",
             """{"draft_id":"long-inactivity:session-1:1000:6","expected_source_message_count":-1}""" to "expected_source_message_count",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_summary_method":""}""" to "expected_summary_method",
+            """{"draft_id":"long-inactivity:session-1:1000:6","expected_summary_method":"manual"}""" to "expected_summary_method",
         )
         val invalidDismissRequests = listOf(
             """{"draft_id":""}""" to "draft_id",

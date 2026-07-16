@@ -1450,6 +1450,61 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testCompactionCalibrationCopyLocalizesAcrossSupportedLanguages() {
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(
+                NSLocalizedString("Inspect Compaction Calibration", comment: ""),
+                "Inspect Compaction Calibration"
+            )
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(2), "2 calibration samples")
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(-1), "0 calibration samples")
+            XCTAssertEqual(localizedCompactionCalibrationGroupCount(1), "1 model configuration")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.collecting), "Collecting")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.readyForReview), "Ready for review")
+            XCTAssertEqual(
+                localizedCompactionCalibrationStatus(.inputBudgetExceededObserved),
+                "Input budget exceeded"
+            )
+            XCTAssertEqual(
+                localizedCompactionCalibrationWireMode("lmstudio_openai_compat"),
+                "LM Studio OpenAI-compatible"
+            )
+        }
+
+        withStoredAppLanguage("ko") {
+            XCTAssertEqual(NSLocalizedString("Compaction Calibration", comment: ""), "압축 보정")
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(2), "보정 표본 2개")
+            XCTAssertEqual(localizedCompactionCalibrationGroupCount(1), "모델 구성 1개")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.collecting), "수집 중")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.readyForReview), "검토 준비됨")
+            XCTAssertEqual(
+                localizedCompactionCalibrationStatus(.inputBudgetExceededObserved),
+                "입력 예산 초과"
+            )
+        }
+
+        withStoredAppLanguage("ja") {
+            XCTAssertEqual(NSLocalizedString("Compaction Calibration", comment: ""), "圧縮キャリブレーション")
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(2), "キャリブレーションサンプル2件")
+            XCTAssertEqual(localizedCompactionCalibrationGroupCount(1), "モデル構成1件")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.readyForReview), "レビュー可能")
+        }
+
+        withStoredAppLanguage("zh-Hans") {
+            XCTAssertEqual(NSLocalizedString("Compaction Calibration", comment: ""), "压缩校准")
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(2), "2 个校准样本")
+            XCTAssertEqual(localizedCompactionCalibrationGroupCount(1), "1 个模型配置")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.readyForReview), "可供审核")
+        }
+
+        withStoredAppLanguage("fr") {
+            XCTAssertEqual(NSLocalizedString("Compaction Calibration", comment: ""), "Étalonnage de compression")
+            XCTAssertEqual(localizedCompactionCalibrationSampleCount(2), "2 échantillons d’étalonnage")
+            XCTAssertEqual(localizedCompactionCalibrationGroupCount(1), "1 configuration de modèle")
+            XCTAssertEqual(localizedCompactionCalibrationStatus(.readyForReview), "Prêt pour examen")
+        }
+    }
+
     func testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages() {
         withStoredAppLanguage("en") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "Inspect Runtime History")
@@ -2973,6 +3028,246 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     expectation.inspectMemoryHint,
                     expectation.languageTag
                 )
+            }
+        }
+    }
+
+    func testModelIdleUnloadPolicyPickerUsesSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            label: String,
+            options: [String],
+            hint: String,
+            updatingHint: String,
+            unavailable: String,
+            unsupportedHint: String
+        )] = [
+            (
+                "en",
+                "Idle Unload",
+                ["5 min", "10 min", "30 min"],
+                "Choose when an idle resident model is unloaded.",
+                "Wait for the current idle unload policy update to finish.",
+                "Unavailable",
+                "Model residency is not managed by this provider."
+            ),
+            (
+                "ko",
+                "유휴 시 언로드",
+                ["5분", "10분", "30분"],
+                "유휴 상태인 상주 모델을 언제 언로드할지 선택합니다.",
+                "현재 유휴 언로드 정책 업데이트가 끝날 때까지 기다리세요.",
+                "사용 불가",
+                "이 제공자는 모델 상주 정책을 관리하지 않습니다."
+            ),
+            (
+                "ja",
+                "アイドル時アンロード",
+                ["5分", "10分", "30分"],
+                "アイドル状態の常駐モデルをアンロードするまでの時間を選択します。",
+                "現在のアイドルアンロードポリシーの更新が完了するまでお待ちください。",
+                "利用不可",
+                "このプロバイダーではモデル常駐を管理していません。"
+            ),
+            (
+                "zh-Hans",
+                "空闲卸载",
+                ["5 分", "10 分", "30 分"],
+                "选择何时卸载空闲的驻留模型。",
+                "请等待当前空闲卸载策略更新完成。",
+                "不可用",
+                "此提供方不管理模型驻留。"
+            ),
+            (
+                "fr",
+                "Déchargement après inactivité",
+                ["5 min", "10 min", "30 min"],
+                "Choisissez quand décharger un modèle résident inactif.",
+                "Attendez la fin de la mise à jour de la stratégie de déchargement après inactivité.",
+                "Indisponible",
+                "La résidence du modèle n’est pas gérée par ce fournisseur."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        XCTAssertEqual(RuntimeModelIdleUnloadPolicy.allCases.map(\.minutes), [5, 10, 30])
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    NSLocalizedString("Idle Unload", comment: ""),
+                    expectation.label,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    RuntimeModelIdleUnloadPolicy.allCases.map(modelIdleUnloadPolicyOptionTitle),
+                    expectation.options,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    modelIdleUnloadPolicyPickerAccessibilityValue(
+                        policy: .tenMinutes,
+                        isSupported: true
+                    ),
+                    expectation.options[1],
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: true),
+                    expectation.hint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    modelIdleUnloadPolicyPickerAccessibilityHint(
+                        isSupported: true,
+                        isUpdating: true
+                    ),
+                    expectation.updatingHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    modelIdleUnloadPolicyPickerAccessibilityValue(
+                        policy: .tenMinutes,
+                        isSupported: false
+                    ),
+                    expectation.unavailable,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    modelIdleUnloadPolicyPickerAccessibilityHint(isSupported: false),
+                    expectation.unsupportedHint,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
+    func testModelResidencyUnloadConfirmationStatesUseSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            unloading: String,
+            unloadingDetail: String,
+            unloadingActionValue: String,
+            unloadingActionHint: String,
+            needsAttention: String,
+            failureDetail: String
+        )] = [
+            (
+                "en",
+                "Unloading",
+                "Ollama qwen-local is being unloaded by AetherLink Runtime.",
+                "Model unload in progress",
+                "Wait for the current model unload to finish.",
+                "Needs attention",
+                "Could not confirm Ollama qwen-local was unloaded. It may still be resident."
+            ),
+            (
+                "ko",
+                "언로드 중",
+                "AetherLink Runtime에서 Ollama qwen-local 모델을 언로드하고 있습니다.",
+                "모델 언로드 진행 중",
+                "현재 모델 언로드가 끝날 때까지 기다리세요.",
+                "확인 필요",
+                "Ollama qwen-local 모델이 언로드되었는지 확인할 수 없습니다. 아직 상주 중일 수 있습니다."
+            ),
+            (
+                "ja",
+                "アンロード中",
+                "AetherLink Runtime が Ollama qwen-local をアンロードしています。",
+                "モデルのアンロード中",
+                "現在のモデルのアンロードが完了するまでお待ちください。",
+                "確認が必要",
+                "Ollama qwen-local がアンロードされたことを確認できません。まだ常駐している可能性があります。"
+            ),
+            (
+                "zh-Hans",
+                "正在卸载",
+                "AetherLink Runtime 正在卸载 Ollama qwen-local。",
+                "正在卸载模型",
+                "请等待当前模型卸载完成。",
+                "需要注意",
+                "无法确认 Ollama qwen-local 已卸载。它可能仍驻留在内存中。"
+            ),
+            (
+                "fr",
+                "Déchargement",
+                "AetherLink Runtime décharge Ollama qwen-local.",
+                "Déchargement du modèle en cours",
+                "Attendez la fin du déchargement du modèle actuel.",
+                "Attention requise",
+                "Impossible de confirmer que Ollama qwen-local a été déchargé. Il est peut-être encore en mémoire."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let unloading = CompanionModelResidencyStatus(
+                    activeProvider: .ollama,
+                    activeModelID: "qwen-local",
+                    inFlightGenerations: 0,
+                    idleUnloadDelaySeconds: 600,
+                    unloadingProvider: .ollama,
+                    unloadingModelID: "qwen-local",
+                    unloadingReason: .manual,
+                    lastEvent: nil,
+                    supported: true
+                )
+                XCTAssertEqual(
+                    localizedModelResidencyStatusValue(unloading),
+                    expectation.unloading,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    localizedModelResidencyStatusDetail(unloading),
+                    expectation.unloadingDetail,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(modelResidencyStatusTone(unloading), .neutral, expectation.languageTag)
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityValue(
+                        canUnload: false,
+                        inFlightGenerations: 0,
+                        isUnloading: true
+                    ),
+                    expectation.unloadingActionValue,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityHint(
+                        canUnload: false,
+                        inFlightGenerations: 0,
+                        isUnloading: true
+                    ),
+                    expectation.unloadingActionHint,
+                    expectation.languageTag
+                )
+
+                let failure = CompanionModelResidencyStatus(
+                    activeProvider: .lmStudio,
+                    activeModelID: "new-model",
+                    inFlightGenerations: 0,
+                    idleUnloadDelaySeconds: 600,
+                    lastUnloadFailure: RuntimeModelResidencyUnloadFailure(
+                        provider: .ollama,
+                        modelID: "qwen-local",
+                        reason: .modelSwitch
+                    ),
+                    lastEvent: "Model residency active: LM Studio new-model",
+                    supported: true
+                )
+                XCTAssertEqual(
+                    localizedModelResidencyStatusValue(failure),
+                    expectation.needsAttention,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    localizedModelResidencyStatusDetail(failure),
+                    expectation.failureDetail,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(modelResidencyStatusTone(failure), .warning, expectation.languageTag)
             }
         }
     }

@@ -4,8 +4,14 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     public static let defaultBaseURL = URL(string: "http://127.0.0.1:11434")!
     public let provider = ModelProvider.ollama
 
+    private static let defaultUnloadPollAttempts = 20
+    private static let defaultUnloadPollIntervalNanoseconds: UInt64 = 100_000_000
+
     private let baseURL: URL
     private let session: URLSession
+    private let unloadPollAttempts: Int
+    private let unloadPollIntervalNanoseconds: UInt64
+    private let unloadSleeper: @Sendable (UInt64) async throws -> Void
     private let registry = GenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -13,6 +19,23 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     public init(baseURL: URL = OllamaBackend.defaultBaseURL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
+        self.unloadPollAttempts = Self.defaultUnloadPollAttempts
+        self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
+        self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
+    }
+
+    init(
+        baseURL: URL,
+        session: URLSession,
+        unloadPollAttempts: Int,
+        unloadPollIntervalNanoseconds: UInt64 = 0,
+        unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
+    ) {
+        self.baseURL = baseURL
+        self.session = session
+        self.unloadPollAttempts = max(1, unloadPollAttempts)
+        self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
+        self.unloadSleeper = unloadSleeper
     }
 
     public func healthCheck() async -> BackendStatus {
@@ -73,18 +96,60 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        guard let runningModelID = try await findRunningModelID(matching: providerModelID) else {
+            return .alreadyAbsent(provider: provider, modelID: providerModelID)
+        }
+
         let endpoint = "POST /api/chat"
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/chat"))
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            urlRequest.httpBody = try encoder.encode(OllamaUnloadRequest(model: providerModelID))
+            urlRequest.httpBody = try encoder.encode(OllamaUnloadRequest(model: runningModelID))
         } catch {
             throw OllamaBackendError.requestEncoding(endpoint: endpoint, reason: error.localizedDescription)
         }
 
-        _ = try await performDataRequest(endpoint: endpoint, request: urlRequest)
-        return .unloaded(provider: provider, modelID: providerModelID)
+        let acknowledgementData = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let acknowledgement: OllamaUnloadResponse
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: acknowledgementData)
+            acknowledgement = try decoder.decode(OllamaUnloadResponse.self, from: acknowledgementData)
+        } catch {
+            throw OllamaBackendError.unloadNotConfirmed(reason: "The provider acknowledgement was malformed.")
+        }
+        guard acknowledgement.done == true, acknowledgement.doneReason == "unload" else {
+            throw OllamaBackendError.unloadNotConfirmed(reason: "The provider acknowledgement was not terminal.")
+        }
+
+        for attempt in 0..<unloadPollAttempts {
+            try Task.checkCancellation()
+            if try await findRunningModelID(matching: providerModelID) == nil {
+                return .unloaded(provider: provider, modelID: providerModelID)
+            }
+            if attempt + 1 < unloadPollAttempts {
+                try await unloadSleeper(unloadPollIntervalNanoseconds)
+            }
+        }
+
+        throw OllamaBackendError.unloadNotConfirmed(reason: "The model remained resident after bounded verification.")
+    }
+
+    private func findRunningModelID(matching modelID: String) async throws -> String? {
+        let endpoint = "GET /api/ps"
+        let data = try await performDataRequest(endpoint: endpoint, url: baseURL.appending(path: "api/ps"))
+        let response: OllamaRunningModelsResponse
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            response = try decoder.decode(OllamaRunningModelsResponse.self, from: data)
+        } catch {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+        if let exact = response.models.first(where: { $0.name == modelID }) {
+            return exact.name
+        }
+        let canonicalTarget = Self.canonicalModelName(modelID)
+        return response.models.first(where: { Self.canonicalModelName($0.name) == canonicalTarget })?.name
     }
 
     public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
@@ -267,6 +332,10 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
             return data
         } catch let error as OllamaBackendError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw OllamaBackendError.unreachable(
                 endpoint: endpoint,
@@ -655,6 +724,16 @@ private struct OllamaUnloadRequest: Encodable {
         case model
         case messages
         case keepAlive = "keep_alive"
+    }
+}
+
+private struct OllamaUnloadResponse: Decodable {
+    var done: Bool?
+    var doneReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case done
+        case doneReason = "done_reason"
     }
 }
 

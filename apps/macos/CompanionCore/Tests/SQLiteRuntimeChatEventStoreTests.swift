@@ -1299,7 +1299,7 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             summaryMethod: "deterministic_preview_v1",
             estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
             inputBudgetTokens: 7_168,
-            estimatedInputTokensAfter: 6_600
+            estimatedInputTokensAfter: 6_900
         )
         try JSONLRuntimeChatEventStore(fileURL: fileURL).append(RuntimeChatStoredEvent(
             kind: .done,
@@ -1617,6 +1617,61 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    func testStoresExposeAggregateOnlyCompactionCalibrationReportAfterReopen() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        var resolution = fixture.resolution
+        resolution.resolvedProviderQualifiedModelID = "ollama:llama3.1:8b"
+        resolution.providerUsageCalibration = RuntimeChatProviderUsageCalibration(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            inputTokens: 6_600,
+            relation: .exceededConservativeEstimateWithinBudget
+        )
+        let terminal = RuntimeChatStoredEvent(
+            kind: .done,
+            requestID: fixture.request.requestID,
+            sessionID: fixture.request.sessionID,
+            model: fixture.request.model,
+            finishReason: "stop",
+            usage: RuntimeChatStoredUsage(inputTokens: 6_600, outputTokens: 320),
+            ownerDeviceID: fixture.request.ownerDeviceID,
+            compactionResolution: resolution
+        )
+
+        func appendFixture(to store: any RuntimeChatEventStore) throws {
+            try store.append(fixture.request)
+            try store.append(terminal)
+        }
+        func assertReport(from store: any RuntimeChatEventStore) throws {
+            let report = try store.chatCompactionCalibrationReport()
+            XCTAssertEqual(report.sampledEligibleCount, 1)
+            XCTAssertEqual(report.reportedSampleCount, 1)
+            XCTAssertEqual(report.omittedSampleCount, 0)
+            let group = try XCTUnwrap(report.groups.first)
+            XCTAssertEqual(group.provider, "ollama")
+            XCTAssertEqual(group.providerModelID, "llama3.1:8b")
+            XCTAssertEqual(group.wireMode, "ollama_chat")
+            XCTAssertEqual(
+                group.estimatorIdentifier,
+                "conservative_utf8_bytes_vision_framing_v2"
+            )
+            XCTAssertEqual(group.sampleCount, 1)
+            XCTAssertEqual(group.withinConservativeEstimateCount, 0)
+            XCTAssertEqual(group.exceededConservativeEstimateWithinBudgetCount, 1)
+            XCTAssertEqual(group.exceededInputBudgetCount, 0)
+            XCTAssertEqual(group.status, .collecting)
+        }
+
+        let jsonlURL = try temporaryJSONLURL()
+        try appendFixture(to: JSONLRuntimeChatEventStore(fileURL: jsonlURL))
+        try assertReport(from: JSONLRuntimeChatEventStore(fileURL: jsonlURL))
+
+        let sqliteURL = try temporaryDatabaseURL()
+        try appendFixture(to: SQLiteRuntimeChatEventStore(databaseURL: sqliteURL))
+        try assertReport(from: SQLiteRuntimeChatEventStore(databaseURL: sqliteURL))
+    }
+
     func testStoresRejectInvalidProviderUsageCalibrationShapes() throws {
         func event(
             kind: RuntimeChatStoredEventKind = .done,
@@ -1783,6 +1838,529 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
                     reason: "chat compaction resolution does not match request accounting"
                 )
             }
+        }
+    }
+
+    func testStoresRequireDeterministicPreviewEstimateToMatchBoundRequest() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        var mismatchedResolution = fixture.resolution
+        mismatchedResolution.summaryMethod = "deterministic_preview_v1"
+        mismatchedResolution.estimatedInputTokensAfter = 6_500
+        let mismatchedTerminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: mismatchedResolution,
+            id: "deterministic-mismatch-terminal"
+        )
+        let reason = "deterministic chat compaction resolution does not match request estimate"
+
+        for store in [
+            JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()) as any RuntimeChatEventStore,
+            SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+        ] {
+            try store.append(fixture.request)
+            XCTAssertThrowsError(try store.append(mismatchedTerminal)) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+
+        let llmTerminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "llm-independent-estimate-terminal"
+        )
+        for store in [
+            JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()) as any RuntimeChatEventStore,
+            SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+        ] {
+            try store.append(fixture.request)
+            XCTAssertNoThrow(try store.append(llmTerminal))
+        }
+    }
+
+    func testStoresRejectDeterministicPreviewEstimateMismatchAfterReopenAndReport() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        var validResolution = fixture.resolution
+        validResolution.summaryMethod = "deterministic_preview_v1"
+        validResolution.estimatedInputTokensAfter = 6_900
+        let validTerminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: validResolution,
+            id: "reopen-deterministic-terminal"
+        )
+        var mismatchedTerminal = validTerminal
+        mismatchedTerminal.compactionResolution?.estimatedInputTokensAfter = 6_500
+        let reason = "deterministic chat compaction resolution does not match request estimate"
+
+        let jsonlURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents([fixture.request, mismatchedTerminal], to: jsonlURL)
+        let jsonlStore = JSONLRuntimeChatEventStore(fileURL: jsonlURL)
+        for operation in [
+            { try JSONLRuntimeChatEventStore.events(from: jsonlURL).count },
+            { try jsonlStore.chatCompactionCalibrationReport().sampledEligibleCount },
+        ] {
+            XCTAssertThrowsError(try operation()) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+        }
+
+        let sqliteURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        try sqliteStore.append(fixture.request)
+        try sqliteStore.append(validTerminal)
+        try replaceRawSQLiteEventJSON(mismatchedTerminal, at: sqliteURL)
+        let reopenedSQLiteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        for operation in [
+            {
+                try reopenedSQLiteStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true
+                ).count
+            },
+            { try reopenedSQLiteStore.chatCompactionCalibrationReport().sampledEligibleCount },
+        ] {
+            XCTAssertThrowsError(try operation()) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+        }
+    }
+
+    func testStoresRejectDuplicateCompactionTerminalBindingOnAppend() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        let terminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "unique-compaction-terminal"
+        )
+        var duplicate = terminal
+        duplicate.id = "duplicate-compaction-terminal"
+        duplicate.ownerDeviceID = "  device-a  "
+        let reason = "chat compaction binding has duplicate terminal resolution"
+
+        for store in [
+            JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()) as any RuntimeChatEventStore,
+            SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+        ] {
+            try store.append(fixture.request)
+            try store.append(terminal)
+            XCTAssertThrowsError(try store.append(duplicate)) { error in
+                XCTAssertEqual(
+                    error as? RuntimeChatEventStoreError,
+                    .corruptEventLog(line: 0, reason: reason)
+                )
+            }
+        }
+    }
+
+    func testStoresRejectDuplicateCompactionTerminalBindingAfterReopenAndReport() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        let terminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "reopen-unique-compaction-terminal"
+        )
+        var duplicate = terminal
+        duplicate.id = "reopen-duplicate-compaction-terminal"
+        duplicate.ownerDeviceID = " device-a "
+        let reason = "chat compaction binding has duplicate terminal resolution"
+
+        let jsonlURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents([fixture.request, terminal, duplicate], to: jsonlURL)
+        let jsonlStore = JSONLRuntimeChatEventStore(fileURL: jsonlURL)
+        for operation in [
+            { try JSONLRuntimeChatEventStore.events(from: jsonlURL).count },
+            { try jsonlStore.chatCompactionCalibrationReport().sampledEligibleCount },
+        ] {
+            XCTAssertThrowsError(try operation()) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+        }
+
+        let sqliteURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        try sqliteStore.append(fixture.request)
+        try sqliteStore.append(terminal)
+        var placeholder = duplicate
+        placeholder.compactionResolution = nil
+        placeholder.usage = nil
+        try sqliteStore.append(placeholder)
+        try replaceRawSQLiteEventJSON(duplicate, at: sqliteURL)
+        let reopenedSQLiteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        for operation in [
+            {
+                try reopenedSQLiteStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true
+                ).count
+            },
+            { try reopenedSQLiteStore.chatCompactionCalibrationReport().sampledEligibleCount },
+        ] {
+            XCTAssertThrowsError(try operation()) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+        }
+    }
+
+    func testStoresKeepSessionAndRequestCompactionBindingsExact() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        let terminal = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "exact-compaction-terminal"
+        )
+        let reason = "chat compaction resolution is not bound to an adaptive v3 request"
+
+        for mutate in [
+            { (event: inout RuntimeChatStoredEvent) in
+                event.sessionID = " \(event.sessionID) "
+            },
+            { (event: inout RuntimeChatStoredEvent) in
+                event.requestID = " \(event.requestID) "
+            },
+        ] {
+            for store in [
+                JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL()) as any RuntimeChatEventStore,
+                SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL()),
+            ] {
+                var mismatched = terminal
+                mismatched.id = UUID().uuidString
+                mutate(&mismatched)
+                try store.append(fixture.request)
+                XCTAssertThrowsError(try store.append(mismatched)) { error in
+                    XCTAssertEqual(
+                        error as? RuntimeChatEventStoreError,
+                        .corruptEventLog(line: 0, reason: reason)
+                    )
+                }
+            }
+        }
+    }
+
+    func testCalibrationReportsRejectDuplicateBindingWithUncalibratedTerminal() throws {
+        let fixture = adaptiveV3CompactionFixture()
+        let calibrated = calibratedTerminal(
+            request: fixture.request,
+            resolution: fixture.resolution,
+            id: "duplicate-mixed-calibrated-terminal"
+        )
+        var uncalibrated = calibrated
+        uncalibrated.id = "duplicate-mixed-uncalibrated-terminal"
+        uncalibrated.compactionResolution?.providerUsageCalibration = nil
+        let reason = "chat compaction binding has duplicate terminal resolution"
+
+        for terminals in [
+            [calibrated, uncalibrated],
+            [uncalibrated, calibrated],
+        ] {
+            let jsonlURL = try temporaryJSONLURL()
+            try writeRawLegacyEvents([fixture.request] + terminals, to: jsonlURL)
+            XCTAssertThrowsError(
+                try JSONLRuntimeChatEventStore(fileURL: jsonlURL)
+                    .chatCompactionCalibrationReport()
+            ) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt JSONL event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+
+            let sqliteURL = try temporaryDatabaseURL()
+            let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+            try sqliteStore.append(fixture.request)
+            for terminal in terminals {
+                var placeholder = terminal
+                placeholder.compactionResolution = nil
+                placeholder.usage = nil
+                try sqliteStore.append(placeholder)
+            }
+            try replaceRawSQLiteEventJSONs(terminals, at: sqliteURL)
+            XCTAssertThrowsError(
+                try SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+                    .chatCompactionCalibrationReport()
+            ) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                    return XCTFail("Expected corrupt SQLite event log, got \(error)")
+                }
+                XCTAssertEqual(actualReason, reason)
+            }
+        }
+    }
+
+    func testCalibrationReportStoreLimitsFailClosedOnExhaustion() throws {
+        let production = RuntimeChatCompactionCalibrationStoreLimits.production
+        XCTAssertEqual(production.jsonlByteCeiling, 64 * 1_024 * 1_024)
+        XCTAssertEqual(production.jsonlLineCeiling, 50_000)
+        XCTAssertEqual(production.jsonlLineByteCeiling, 4 * 1_024 * 1_024)
+        XCTAssertEqual(production.sqliteTerminalScanCeiling, 50_000)
+
+        func doneEvent(_ index: Int) -> RuntimeChatStoredEvent {
+            RuntimeChatStoredEvent(
+                id: "calibration-limit-event-\(index)",
+                kind: .done,
+                requestID: "calibration-limit-request-\(index)",
+                sessionID: "calibration-limit-session-\(index)",
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop"
+            )
+        }
+
+        func assertCorruptReason(
+            contains expected: String,
+            operation: () throws -> Void
+        ) {
+            XCTAssertThrowsError(try operation()) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog(_, let reason) = error else {
+                    return XCTFail("Expected corrupt event log, got \(error)")
+                }
+                XCTAssertTrue(reason.contains(expected), "Unexpected reason: \(reason)")
+            }
+        }
+
+        let lineLimits = RuntimeChatCompactionCalibrationStoreLimits(
+            jsonlByteCeiling: 1_024 * 1_024,
+            jsonlLineCeiling: 3,
+            jsonlLineByteCeiling: 4_096,
+            sqliteTerminalScanCeiling: 3
+        )
+        let lineURL = try temporaryJSONLURL()
+        let lineStore = JSONLRuntimeChatEventStore(
+            fileURL: lineURL,
+            calibrationReportStoreLimits: lineLimits
+        )
+        for index in 0..<4 {
+            try lineStore.append(doneEvent(index))
+        }
+        assertCorruptReason(contains: "line ceiling") {
+            _ = try lineStore.chatCompactionCalibrationReport()
+        }
+
+        let byteLimits = RuntimeChatCompactionCalibrationStoreLimits(
+            jsonlByteCeiling: 64,
+            jsonlLineCeiling: 100,
+            jsonlLineByteCeiling: 4_096,
+            sqliteTerminalScanCeiling: 3
+        )
+        let byteStore = JSONLRuntimeChatEventStore(
+            fileURL: try temporaryJSONLURL(),
+            calibrationReportStoreLimits: byteLimits
+        )
+        try byteStore.append(doneEvent(10))
+        assertCorruptReason(contains: "scan ceiling") {
+            _ = try byteStore.chatCompactionCalibrationReport()
+        }
+
+        let recordLimits = RuntimeChatCompactionCalibrationStoreLimits(
+            jsonlByteCeiling: 4_096,
+            jsonlLineCeiling: 100,
+            jsonlLineByteCeiling: 64,
+            sqliteTerminalScanCeiling: 3
+        )
+        let recordStore = JSONLRuntimeChatEventStore(
+            fileURL: try temporaryJSONLURL(),
+            calibrationReportStoreLimits: recordLimits
+        )
+        try recordStore.append(doneEvent(20))
+        assertCorruptReason(contains: "record exceeds the byte ceiling") {
+            _ = try recordStore.chatCompactionCalibrationReport()
+        }
+
+        let sqliteStore = SQLiteRuntimeChatEventStore(
+            databaseURL: try temporaryDatabaseURL(),
+            calibrationReportStoreLimits: lineLimits
+        )
+        for index in 0..<4 {
+            try sqliteStore.append(doneEvent(30 + index))
+        }
+        assertCorruptReason(contains: "SQLite scan exceeds the terminal ceiling") {
+            _ = try sqliteStore.chatCompactionCalibrationReport()
+        }
+    }
+
+    func testCalibrationReportCapCountsFullyEligibleSamplesPastNewerCalibrationShapedRows() throws {
+        let sampleCap = RuntimeChatCompactionCalibrationReport.recentEligibleSampleCap
+        var requests: [RuntimeChatStoredEvent] = []
+        var terminals: [RuntimeChatStoredEvent] = []
+        for index in 0..<sampleCap {
+            let fixture = calibratedCompactionFixture(index: index)
+            requests.append(fixture.request)
+            terminals.append(fixture.terminal)
+        }
+        let newerIneligibleCalibration = (0..<1_100).map { index in
+            RuntimeChatStoredEvent(
+                id: "newer-ineligible-calibration-\(index)",
+                kind: .done,
+                requestID: "newer-ineligible-request-\(index)",
+                sessionID: "newer-ineligible-session-\(index)",
+                model: "ollama:llama3.1:8b",
+                finishReason: "stop",
+                usage: RuntimeChatStoredUsage(inputTokens: 6_000, outputTokens: 100),
+                compactionResolution: RuntimeChatCompactionResolution(
+                    primaryDispatched: true,
+                    summaryMethod: "llm_summary_v1",
+                    estimatorIdentifier: "conservative_utf8_bytes_vision_framing_v2",
+                    inputBudgetTokens: 7_168,
+                    estimatedInputTokensAfter: 6_500,
+                    resolvedProviderQualifiedModelID: "ollama:llama3.1:8b",
+                    providerUsageCalibration: RuntimeChatProviderUsageCalibration(
+                        provider: "ollama",
+                        providerModelID: "llama3.1:8b",
+                        wireMode: "ollama_chat",
+                        inputTokens: 6_000,
+                        relation: .exceededInputBudget
+                    )
+                )
+            )
+        }
+        let sqlitePlaceholders = newerIneligibleCalibration.map { candidate in
+            var placeholder = candidate
+            placeholder.usage = nil
+            placeholder.compactionResolution = nil
+            return placeholder
+        }
+        let validOldUnrelated = RuntimeChatStoredEvent(
+            id: "old-unrelated-event",
+            kind: .request,
+            requestID: "old-unrelated-request",
+            sessionID: "old-unrelated-session",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Old unrelated history.")]
+        )
+        var invalidOldUnrelated = validOldUnrelated
+        invalidOldUnrelated.messages = []
+
+        func assertCappedReport(_ report: RuntimeChatCompactionCalibrationReport) throws {
+            XCTAssertEqual(report.sampledEligibleCount, sampleCap)
+            XCTAssertEqual(report.reportedSampleCount, sampleCap)
+            XCTAssertEqual(report.omittedSampleCount, 0)
+            XCTAssertEqual(try XCTUnwrap(report.groups.first).sampleCount, sampleCap)
+        }
+
+        let jsonlURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents(
+            [invalidOldUnrelated] + requests + terminals + newerIneligibleCalibration,
+            to: jsonlURL
+        )
+        try assertCappedReport(
+            JSONLRuntimeChatEventStore(fileURL: jsonlURL).chatCompactionCalibrationReport()
+        )
+
+        let sqliteURL = try temporaryDatabaseURL()
+        let legacyURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents(
+            [validOldUnrelated] + requests + terminals + sqlitePlaceholders,
+            to: legacyURL
+        )
+        _ = try SQLiteRuntimeChatEventStore(
+            databaseURL: sqliteURL,
+            legacyJSONLFileURL: legacyURL
+        ).listSessions(limit: 1)
+        try replaceRawSQLiteEventJSONs(
+            [invalidOldUnrelated] + newerIneligibleCalibration,
+            at: sqliteURL
+        )
+        try assertCappedReport(
+            SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+                .chatCompactionCalibrationReport()
+        )
+    }
+
+    func testCalibrationReportsRejectMalformedOrWrongTypeCalibrationPayloads() throws {
+        let fixture = calibratedCompactionFixture(index: 0)
+        let payloads: [(name: String, value: Any)] = [
+            ("wrong-type", "tampered-calibration"),
+            ("malformed-object", ["provider": "ollama"]),
+        ]
+
+        for payload in payloads {
+            let tamperedJSON = try rawEventJSON(
+                fixture.terminal,
+                replacingCalibrationPayloadWith: payload.value
+            )
+
+            let jsonlURL = try temporaryJSONLURL()
+            try writeRawLegacyEvents([fixture.request], to: jsonlURL)
+            try appendRawLine(tamperedJSON, to: jsonlURL)
+            XCTAssertThrowsError(
+                try JSONLRuntimeChatEventStore(fileURL: jsonlURL)
+                    .chatCompactionCalibrationReport(),
+                payload.name
+            ) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog = error else {
+                    return XCTFail("Expected corrupt JSONL event log, got \(error)")
+                }
+            }
+
+            let sqliteURL = try temporaryDatabaseURL()
+            let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+            try sqliteStore.append(fixture.request)
+            try sqliteStore.append(fixture.terminal)
+            try replaceRawSQLiteEventJSONString(
+                eventID: fixture.terminal.id,
+                eventJSON: tamperedJSON,
+                at: sqliteURL
+            )
+            XCTAssertThrowsError(
+                try SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+                    .chatCompactionCalibrationReport(),
+                payload.name
+            ) { error in
+                guard case RuntimeChatEventStoreError.corruptEventLog = error else {
+                    return XCTFail("Expected corrupt SQLite event log, got \(error)")
+                }
+            }
+        }
+    }
+
+    func testCalibrationReportsRequireSelectedRequestBinding() throws {
+        let fixture = calibratedCompactionFixture(index: 0)
+        let reason = "chat compaction resolution is not bound to an adaptive v3 request"
+
+        let jsonlURL = try temporaryJSONLURL()
+        try writeRawLegacyEvents([fixture.terminal], to: jsonlURL)
+        XCTAssertThrowsError(
+            try JSONLRuntimeChatEventStore(fileURL: jsonlURL).chatCompactionCalibrationReport()
+        ) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                return XCTFail("Expected corrupt event log, got \(error)")
+            }
+            XCTAssertEqual(
+                actualReason,
+                "chat compaction calibration request binding is outside the bounded JSONL tail"
+            )
+        }
+
+        let sqliteURL = try temporaryDatabaseURL()
+        let sqliteStore = SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+        try sqliteStore.append(fixture.request)
+        try sqliteStore.append(fixture.terminal)
+        try executeRawSQLite(
+            "DELETE FROM runtime_chat_events WHERE event_id = '\(fixture.request.id)'",
+            at: sqliteURL
+        )
+        XCTAssertThrowsError(
+            try SQLiteRuntimeChatEventStore(databaseURL: sqliteURL)
+                .chatCompactionCalibrationReport()
+        ) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog(_, let actualReason) = error else {
+                return XCTFail("Expected corrupt event log, got \(error)")
+            }
+            XCTAssertEqual(actualReason, reason)
         }
     }
 
@@ -4646,6 +5224,72 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    private func calibratedTerminal(
+        request: RuntimeChatStoredEvent,
+        resolution: RuntimeChatCompactionResolution,
+        id: String
+    ) -> RuntimeChatStoredEvent {
+        var calibratedResolution = resolution
+        calibratedResolution.resolvedProviderQualifiedModelID = "ollama:llama3.1:8b"
+        let inputTokens = min(6_000, calibratedResolution.estimatedInputTokensAfter ?? 6_000)
+        calibratedResolution.providerUsageCalibration = RuntimeChatProviderUsageCalibration(
+            provider: "ollama",
+            providerModelID: "llama3.1:8b",
+            wireMode: "ollama_chat",
+            inputTokens: inputTokens,
+            relation: .withinConservativeEstimate
+        )
+        return RuntimeChatStoredEvent(
+            id: id,
+            kind: .done,
+            requestID: request.requestID,
+            sessionID: request.sessionID,
+            model: request.model,
+            finishReason: "stop",
+            usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: 320),
+            ownerDeviceID: request.ownerDeviceID,
+            compactionResolution: calibratedResolution
+        )
+    }
+
+    private func calibratedCompactionFixture(
+        index: Int
+    ) -> (request: RuntimeChatStoredEvent, terminal: RuntimeChatStoredEvent) {
+        let fixture = adaptiveV3CompactionFixture()
+        let requestID = "capped-calibration-request-\(index)"
+        let sessionID = "capped-calibration-session-\(index)"
+        var request = fixture.request
+        request.id = "capped-calibration-request-event-\(index)"
+        request.requestID = requestID
+        request.sessionID = sessionID
+        var metadata = request.compactionMetadata!
+        var pointer = metadata.sourcePointers[0]
+        pointer.requestID = requestID
+        pointer.sessionID = sessionID
+        let messages = request.messages ?? []
+        let fingerprint = RuntimeChatCompactionSourceFingerprinter.fingerprint(
+            pointer: pointer,
+            messages: Array(messages.prefix(pointer.compactedTurnCount))
+        )
+        pointer.sourceFingerprintAlgorithm = fingerprint.algorithm
+        pointer.sourceFingerprint = fingerprint.digest
+        pointer.sourceCanonicalByteCount = fingerprint.canonicalByteCount
+        metadata.sourcePointers = [pointer]
+        request.compactionMetadata = metadata
+
+        var resolution = fixture.resolution
+        resolution.summaryMethod = "deterministic_preview_v1"
+        resolution.estimatedInputTokensAfter = metadata.estimatedInputTokensAfter
+        return (
+            request,
+            calibratedTerminal(
+                request: request,
+                resolution: resolution,
+                id: "capped-calibration-terminal-\(index)"
+            )
+        )
+    }
+
     private func appendDeletedSession(
         to store: any RuntimeChatEventStore,
         ownerDeviceID: String?,
@@ -4802,8 +5446,13 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         _ event: RuntimeChatStoredEvent,
         at databaseURL: URL
     ) throws {
-        let data = try legacyJSONLEncoder.encode(event)
-        let eventJSON = try XCTUnwrap(String(data: data, encoding: .utf8))
+        try replaceRawSQLiteEventJSONs([event], at: databaseURL)
+    }
+
+    private func replaceRawSQLiteEventJSONs(
+        _ events: [RuntimeChatStoredEvent],
+        at databaseURL: URL
+    ) throws {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
               let database else {
@@ -4822,6 +5471,65 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 21)
         }
         defer { sqlite3_finalize(statement) }
+        guard sqlite3_exec(database, "BEGIN", nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 22)
+        }
+        do {
+            for event in events {
+                let data = try legacyJSONLEncoder.encode(event)
+                let eventJSON = try XCTUnwrap(String(data: data, encoding: .utf8))
+                guard sqlite3_reset(statement) == SQLITE_OK,
+                      sqlite3_clear_bindings(statement) == SQLITE_OK,
+                      sqlite3_bind_text(
+                        statement,
+                        1,
+                        eventJSON,
+                        -1,
+                        sqliteRuntimeChatTestTransient
+                      ) == SQLITE_OK,
+                      sqlite3_bind_text(
+                        statement,
+                        2,
+                        event.id,
+                        -1,
+                        sqliteRuntimeChatTestTransient
+                      ) == SQLITE_OK,
+                      sqlite3_step(statement) == SQLITE_DONE else {
+                    throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 23)
+                }
+            }
+            guard sqlite3_exec(database, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+                throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 24)
+            }
+        } catch {
+            _ = sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
+
+    private func replaceRawSQLiteEventJSONString(
+        eventID: String,
+        eventJSON: String,
+        at databaseURL: URL
+    ) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 25)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "UPDATE runtime_chat_events SET event_json = ? WHERE event_id = ?",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK,
+              let statement else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 26)
+        }
+        defer { sqlite3_finalize(statement) }
         guard sqlite3_bind_text(
             statement,
             1,
@@ -4832,12 +5540,12 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
               sqlite3_bind_text(
                 statement,
                 2,
-                event.id,
+                eventID,
                 -1,
                 sqliteRuntimeChatTestTransient
               ) == SQLITE_OK,
               sqlite3_step(statement) == SQLITE_DONE else {
-            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 22)
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 27)
         }
     }
 
@@ -4956,6 +5664,26 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         }
         .joined(separator: "\n")
         try (lines + "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    private func rawEventJSON(
+        _ event: RuntimeChatStoredEvent,
+        replacingCalibrationPayloadWith payload: Any
+    ) throws -> String {
+        let data = try legacyJSONLEncoder.encode(event)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        var resolution = try XCTUnwrap(
+            object["compaction_resolution"] as? [String: Any]
+        )
+        resolution["provider_usage_calibration"] = payload
+        object["compaction_resolution"] = resolution
+        let tamperedData = try JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        )
+        return try XCTUnwrap(String(data: tamperedData, encoding: .utf8))
     }
 
     private func appendRawLine(_ line: String, to fileURL: URL) throws {

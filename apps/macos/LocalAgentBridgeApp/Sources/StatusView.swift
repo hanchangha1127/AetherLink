@@ -1,3 +1,4 @@
+import AppKit
 import CompanionCore
 import Foundation
 import OllamaBackend
@@ -8,6 +9,7 @@ struct StatusView: View {
     var onGenerateRelayQRCode: (() -> Void)?
     @State private var isRuntimeHistoryInspectorPresented = false
     @State private var isRuntimeMemoryInspectorPresented = false
+    @State private var isRuntimeChatCompactionCalibrationPresented = false
     @State private var isRuntimeDocumentSourcesInspectorPresented = false
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12)]
 
@@ -111,6 +113,10 @@ struct StatusView: View {
                         onInspectRuntimeMemory: {
                             model.refreshRuntimeMemoryEntries()
                             isRuntimeMemoryInspectorPresented = true
+                        },
+                        onInspectRuntimeChatCompactionCalibration: {
+                            isRuntimeChatCompactionCalibrationPresented = true
+                            Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
                         },
                         onManageRuntimeDocumentSources: {
                             isRuntimeDocumentSourcesInspectorPresented = true
@@ -219,6 +225,16 @@ struct StatusView: View {
                 entries: model.runtimeMemoryEntries,
                 errorMessage: model.runtimeMemoryEntriesError,
                 onRefresh: model.refreshRuntimeMemoryEntries
+            )
+        }
+        .sheet(isPresented: $isRuntimeChatCompactionCalibrationPresented) {
+            RuntimeChatCompactionCalibrationSheet(
+                report: model.runtimeChatCompactionCalibrationReport,
+                errorMessage: model.runtimeChatCompactionCalibrationReportError,
+                isRefreshing: model.isRuntimeChatCompactionCalibrationReportRefreshing,
+                onRefresh: {
+                    Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
+                }
             )
         }
         .sheet(isPresented: $isRuntimeDocumentSourcesInspectorPresented) {
@@ -334,37 +350,15 @@ struct StatusView: View {
     }
 
     private var modelResidencyValue: String {
-        guard model.modelResidency.supported else {
-            return NSLocalizedString("Not managed", comment: "")
-        }
-        return model.modelResidency.activeModelID == nil
-            ? NSLocalizedString("Idle", comment: "")
-            : NSLocalizedString("Active", comment: "")
+        localizedModelResidencyStatusValue(model.modelResidency)
     }
 
     private var modelResidencyDetail: String {
-        guard model.modelResidency.supported else {
-            return NSLocalizedString("Model residency is not managed by this provider.", comment: "")
-        }
-        if let activeModelID = model.modelResidency.activeModelID,
-           let activeProvider = model.modelResidency.activeProvider {
-            let minutes = max(1, model.modelResidency.idleUnloadDelaySeconds / 60)
-            return localizedModelResidencyActiveDetail(
-                providerName: localizedProviderName(activeProvider),
-                modelID: activeModelID,
-                idleUnloadMinutes: minutes
-            )
-        }
-        return model.modelResidency.lastEvent
-            .map(modelResidencyEventSummary)
-            ?? NSLocalizedString("No active model is resident through the runtime policy.", comment: "")
+        localizedModelResidencyStatusDetail(model.modelResidency)
     }
 
     private var modelResidencyTone: StatusTone {
-        guard model.modelResidency.supported else {
-            return .inactive
-        }
-        return model.modelResidency.activeModelID == nil ? .neutral : .ready
+        modelResidencyStatusTone(model.modelResidency)
     }
 
     private var modelPullApprovalValue: String {
@@ -446,17 +440,6 @@ struct StatusView: View {
             return .warning
         }
         return model.runtimeDocumentSources.isEmpty ? .inactive : .ready
-    }
-
-    private func localizedProviderName(_ provider: ModelProvider) -> String {
-        switch provider {
-        case .ollama:
-            return NSLocalizedString("Ollama", comment: "")
-        case .lmStudio:
-            return NSLocalizedString("LM Studio", comment: "")
-        case .aggregate:
-            return NSLocalizedString("AetherLink Runtime", comment: "")
-        }
     }
 
     private var readinessItems: [ReadinessItem] {
@@ -625,12 +608,85 @@ func runtimeMemoryCardDetail(enabledCount: Int, pausedCount: Int) -> String {
     )
 }
 
+func localizedModelResidencyProviderName(_ provider: ModelProvider) -> String {
+    switch provider {
+    case .ollama:
+        return NSLocalizedString("Ollama", comment: "")
+    case .lmStudio:
+        return NSLocalizedString("LM Studio", comment: "")
+    case .aggregate:
+        return NSLocalizedString("AetherLink Runtime", comment: "")
+    }
+}
+
+func localizedModelResidencyStatusValue(_ residency: CompanionModelResidencyStatus) -> String {
+    guard residency.supported else {
+        return NSLocalizedString("Not managed", comment: "")
+    }
+    if residency.unloadingModelID != nil {
+        return NSLocalizedString("Unloading", comment: "")
+    }
+    if residency.lastUnloadFailure != nil {
+        return NSLocalizedString("Needs attention", comment: "")
+    }
+    return residency.activeModelID == nil
+        ? NSLocalizedString("Idle", comment: "")
+        : NSLocalizedString("Active", comment: "")
+}
+
+func localizedModelResidencyStatusDetail(_ residency: CompanionModelResidencyStatus) -> String {
+    guard residency.supported else {
+        return NSLocalizedString("Model residency is not managed by this provider.", comment: "")
+    }
+    if let unloadingModelID = residency.unloadingModelID,
+       let unloadingProvider = residency.unloadingProvider {
+        return String(
+            format: NSLocalizedString("%@ %@ is being unloaded by AetherLink Runtime.", comment: ""),
+            localizedModelResidencyProviderName(unloadingProvider),
+            unloadingModelID
+        )
+    }
+    if let failure = residency.lastUnloadFailure {
+        return String(
+            format: NSLocalizedString("Could not confirm %@ %@ was unloaded. It may still be resident.", comment: ""),
+            localizedModelResidencyProviderName(failure.provider),
+            failure.modelID
+        )
+    }
+    if let activeModelID = residency.activeModelID,
+       let activeProvider = residency.activeProvider {
+        let minutes = max(1, residency.idleUnloadDelaySeconds / 60)
+        return localizedModelResidencyActiveDetail(
+            providerName: localizedModelResidencyProviderName(activeProvider),
+            modelID: activeModelID,
+            idleUnloadMinutes: minutes
+        )
+    }
+    return residency.lastEvent
+        .map(modelResidencyEventSummary)
+        ?? NSLocalizedString("No active model is resident through the runtime policy.", comment: "")
+}
+
+func modelResidencyStatusTone(_ residency: CompanionModelResidencyStatus) -> StatusTone {
+    guard residency.supported else {
+        return .inactive
+    }
+    if residency.lastUnloadFailure != nil {
+        return .warning
+    }
+    if residency.unloadingModelID != nil {
+        return .neutral
+    }
+    return residency.activeModelID == nil ? .neutral : .ready
+}
+
 private struct StatusQuickActions: View {
     @ObservedObject var model: CompanionAppModel
     let canGeneratePairingQR: Bool
     let onGenerateRelayQRCode: (() -> Void)?
     let onInspectRuntimeHistory: () -> Void
     let onInspectRuntimeMemory: () -> Void
+    let onInspectRuntimeChatCompactionCalibration: () -> Void
     let onManageRuntimeDocumentSources: () -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 10, alignment: .leading)]
@@ -644,10 +700,13 @@ private struct StatusQuickActions: View {
             )
             let canUnloadResidentModel = model.modelResidency.supported &&
                 model.modelResidency.activeModelID != nil &&
+                model.modelResidency.unloadingModelID == nil &&
                 model.modelResidency.inFlightGenerations == 0
+            let isUnloadingResidentModel = model.modelResidency.unloadingModelID != nil
             let unloadResidentModelActionHint = unloadResidentModelActionAccessibilityHint(
                 canUnload: canUnloadResidentModel,
-                inFlightGenerations: model.modelResidency.inFlightGenerations
+                inFlightGenerations: model.modelResidency.inFlightGenerations,
+                isUnloading: isUnloadingResidentModel
             )
             Button {
                 onGenerateRelayQRCode?()
@@ -716,6 +775,8 @@ private struct StatusQuickActions: View {
             .accessibilityHint(Text(refreshModelResidencyActionAccessibilityHint()))
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            ModelIdleUnloadPolicyPicker(model: model)
+
             Button {
                 Task { await model.unloadResidentModelNow() }
             } label: {
@@ -728,7 +789,8 @@ private struct StatusQuickActions: View {
                 Text(
                     unloadResidentModelActionAccessibilityValue(
                         canUnload: canUnloadResidentModel,
-                        inFlightGenerations: model.modelResidency.inFlightGenerations
+                        inFlightGenerations: model.modelResidency.inFlightGenerations,
+                        isUnloading: isUnloadingResidentModel
                     )
                 )
             )
@@ -758,6 +820,17 @@ private struct StatusQuickActions: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
+                onInspectRuntimeChatCompactionCalibration()
+            } label: {
+                Label(NSLocalizedString("Inspect Compaction Calibration", comment: ""), systemImage: "chart.bar")
+            }
+            .buttonStyle(.bordered)
+            .help(compactionCalibrationActionAccessibilityHint())
+            .accessibilityValue(Text(compactionCalibrationActionAccessibilityValue()))
+            .accessibilityHint(Text(compactionCalibrationActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
                 onManageRuntimeDocumentSources()
             } label: {
                 Label(NSLocalizedString("Manage Document Sources", comment: ""), systemImage: "doc.text.magnifyingglass")
@@ -769,6 +842,82 @@ private struct StatusQuickActions: View {
         }
         .controlSize(.regular)
     }
+
+}
+
+struct ModelIdleUnloadPolicyPicker: View {
+    @ObservedObject var model: CompanionAppModel
+
+    var body: some View {
+        let isSupported = model.modelResidency.supported
+        let accessibilityHint = modelIdleUnloadPolicyPickerAccessibilityHint(
+            isSupported: isSupported,
+            isUpdating: model.isModelIdleUnloadPolicyUpdateInFlight
+        )
+        let accessibilityValue = modelIdleUnloadPolicyPickerAccessibilityValue(
+            policy: model.modelIdleUnloadPolicy,
+            isSupported: isSupported
+        )
+        VStack(alignment: .leading, spacing: 6) {
+            Label(NSLocalizedString("Idle Unload", comment: ""), systemImage: "timer")
+                .font(.subheadline.weight(.medium))
+                .accessibilityHidden(true)
+
+            Picker(
+                NSLocalizedString("Idle Unload", comment: ""),
+                selection: modelIdleUnloadPolicyBinding
+            ) {
+                ForEach(RuntimeModelIdleUnloadPolicy.allCases) { policy in
+                    Text(modelIdleUnloadPolicyOptionTitle(policy))
+                        .tag(policy)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .disabled(!isSupported || model.isModelIdleUnloadPolicyUpdateInFlight)
+            .help(accessibilityHint)
+            .accessibilityLabel(Text(NSLocalizedString("Idle Unload", comment: "")))
+            .accessibilityValue(Text(accessibilityValue))
+            .accessibilityHint(Text(accessibilityHint))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var modelIdleUnloadPolicyBinding: Binding<RuntimeModelIdleUnloadPolicy> {
+        Binding(
+            get: { model.modelIdleUnloadPolicy },
+            set: { policy in
+                model.requestModelIdleUnloadPolicy(policy)
+            }
+        )
+    }
+}
+
+func modelIdleUnloadPolicyOptionTitle(_ policy: RuntimeModelIdleUnloadPolicy) -> String {
+    String(format: NSLocalizedString("%d min", comment: ""), policy.minutes)
+}
+
+func modelIdleUnloadPolicyPickerAccessibilityValue(
+    policy: RuntimeModelIdleUnloadPolicy,
+    isSupported: Bool
+) -> String {
+    isSupported
+        ? modelIdleUnloadPolicyOptionTitle(policy)
+        : NSLocalizedString("Unavailable", comment: "")
+}
+
+func modelIdleUnloadPolicyPickerAccessibilityHint(
+    isSupported: Bool,
+    isUpdating: Bool = false
+) -> String {
+    guard isSupported else {
+        return NSLocalizedString("Model residency is not managed by this provider.", comment: "")
+    }
+    if isUpdating {
+        return NSLocalizedString("Wait for the current idle unload policy update to finish.", comment: "")
+    }
+    return NSLocalizedString("Choose when an idle resident model is unloaded.", comment: "")
 }
 
 func modelResidencyEventSummary(_ event: String) -> String {
@@ -973,6 +1122,285 @@ func statusCardAccessibilityLabel(title: String, value: String, detail: String) 
         normalizedValue,
         normalizedDetail
     )
+}
+
+func compactionCalibrationActionAccessibilityValue() -> String {
+    NSLocalizedString("Available", comment: "")
+}
+
+func compactionCalibrationActionAccessibilityHint() -> String {
+    NSLocalizedString("Review aggregate provider token usage for compacted runtime chats.", comment: "")
+}
+
+func localizedCompactionCalibrationSampleCount(_ count: Int) -> String {
+    let cleanCount = max(0, count)
+    if cleanCount == 1 {
+        return NSLocalizedString("1 calibration sample", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("%d calibration samples", comment: ""),
+        cleanCount
+    )
+}
+
+func localizedCompactionCalibrationGroupCount(_ count: Int) -> String {
+    let cleanCount = max(0, count)
+    if cleanCount == 1 {
+        return NSLocalizedString("1 model configuration", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("%d model configurations", comment: ""),
+        cleanCount
+    )
+}
+
+func localizedCompactionCalibrationStatus(
+    _ status: RuntimeChatCompactionCalibrationStatus
+) -> String {
+    switch status {
+    case .collecting:
+        return NSLocalizedString("Collecting", comment: "")
+    case .readyForReview:
+        return NSLocalizedString("Ready for review", comment: "")
+    case .inputBudgetExceededObserved:
+        return NSLocalizedString("Input budget exceeded", comment: "")
+    }
+}
+
+func compactionCalibrationStatusTone(
+    _ status: RuntimeChatCompactionCalibrationStatus
+) -> StatusTone {
+    switch status {
+    case .collecting:
+        return .neutral
+    case .readyForReview:
+        return .ready
+    case .inputBudgetExceededObserved:
+        return .warning
+    }
+}
+
+func localizedCompactionCalibrationProvider(_ provider: String) -> String {
+    switch provider {
+    case ModelProvider.ollama.rawValue:
+        return NSLocalizedString("Ollama", comment: "")
+    case ModelProvider.lmStudio.rawValue:
+        return NSLocalizedString("LM Studio", comment: "")
+    default:
+        return provider
+    }
+}
+
+func localizedCompactionCalibrationWireMode(_ wireMode: String) -> String {
+    switch wireMode {
+    case "ollama_chat":
+        return NSLocalizedString("Ollama chat", comment: "")
+    case "lmstudio_native":
+        return NSLocalizedString("LM Studio native", comment: "")
+    case "lmstudio_openai_compat":
+        return NSLocalizedString("LM Studio OpenAI-compatible", comment: "")
+    default:
+        return wireMode
+    }
+}
+
+struct RuntimeChatCompactionCalibrationSheet: View {
+    let report: RuntimeChatCompactionCalibrationReport
+    let errorMessage: String?
+    let isRefreshing: Bool
+    let onRefresh: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                Label(NSLocalizedString("Compaction Calibration", comment: ""), systemImage: "chart.bar")
+                    .font(.title2.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button {
+                    onRefresh()
+                } label: {
+                    Label(NSLocalizedString("Refresh", comment: ""), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .help(NSLocalizedString("Refresh aggregate compaction calibration from AetherLink Runtime.", comment: ""))
+                .accessibilityLabel(Text(NSLocalizedString("Refresh Compaction Calibration", comment: "")))
+                .accessibilityHint(Text(NSLocalizedString("Refresh aggregate compaction calibration from AetherLink Runtime.", comment: "")))
+                .disabled(isRefreshing)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text(NSLocalizedString("Close", comment: ""))
+                }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel(Text(NSLocalizedString("Close Compaction Calibration", comment: "")))
+            }
+
+            Text(NSLocalizedString("Provider token usage by exact model, wire mode, and estimator revision.", comment: ""))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if isRefreshing {
+                ProgressView()
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                    .accessibilityLabel(
+                        Text(NSLocalizedString("Refresh Compaction Calibration", comment: ""))
+                    )
+            } else if let cleanError = trimmedNonEmpty(errorMessage ?? "") {
+                Label(cleanError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel(
+                        Text(
+                            String(
+                                format: NSLocalizedString("Compaction calibration warning. %@", comment: ""),
+                                cleanError
+                            )
+                        )
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            } else if report.groups.isEmpty {
+                let emptyTitle = NSLocalizedString("No calibration samples", comment: "")
+                let emptyDescription = NSLocalizedString(
+                    "Provider token usage has not been reported for compacted chats.",
+                    comment: ""
+                )
+                ContentUnavailableView(
+                    emptyTitle,
+                    systemImage: "chart.bar",
+                    description: Text(emptyDescription)
+                )
+                .frame(maxWidth: .infinity, minHeight: 260)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    Text(
+                        companionEmptyStateAccessibilityLabel(
+                            title: emptyTitle,
+                            description: emptyDescription
+                        )
+                    )
+                )
+            } else {
+                HStack(spacing: 16) {
+                    Label(
+                        localizedCompactionCalibrationSampleCount(report.reportedSampleCount),
+                        systemImage: "number"
+                    )
+                    Label(
+                        localizedCompactionCalibrationGroupCount(report.groups.count),
+                        systemImage: "square.stack.3d.up"
+                    )
+                    if report.omittedSampleCount > 0 {
+                        Label(
+                            String(
+                                format: NSLocalizedString("%d samples omitted by the group limit", comment: ""),
+                                report.omittedSampleCount
+                            ),
+                            systemImage: "ellipsis.circle"
+                        )
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(report.groups.enumerated()), id: \.offset) { index, group in
+                            RuntimeChatCompactionCalibrationRow(group: group)
+                            if index < report.groups.count - 1 {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 720, idealWidth: 820, minHeight: 520, idealHeight: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct RuntimeChatCompactionCalibrationRow: View {
+    let group: RuntimeChatCompactionCalibrationGroup
+    private let metricColumns = [GridItem(.adaptive(minimum: 190), alignment: .leading)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: group.providerModelID)
+                        .font(.headline)
+                        .textSelection(.enabled)
+                    Text(verbatim:
+                        "\(localizedCompactionCalibrationProvider(group.provider)) · " +
+                            localizedCompactionCalibrationWireMode(group.wireMode)
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                StatusPill(
+                    text: localizedCompactionCalibrationStatus(group.status),
+                    tone: compactionCalibrationStatusTone(group.status)
+                )
+            }
+
+            Text(verbatim: group.estimatorIdentifier)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 6) {
+                calibrationMetric(
+                    NSLocalizedString("Samples", comment: ""),
+                    count: group.sampleCount
+                )
+                calibrationMetric(
+                    NSLocalizedString("Within estimate", comment: ""),
+                    count: group.withinConservativeEstimateCount
+                )
+                calibrationMetric(
+                    NSLocalizedString("Above estimate, within budget", comment: ""),
+                    count: group.exceededConservativeEstimateWithinBudgetCount
+                )
+                calibrationMetric(
+                    NSLocalizedString("Above input budget", comment: ""),
+                    count: group.exceededInputBudgetCount
+                )
+            }
+        }
+        .padding(12)
+        .background(
+            compactionCalibrationStatusTone(group.status).color.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(
+                    compactionCalibrationStatusTone(group.status).color.opacity(0.18),
+                    lineWidth: 1
+                )
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func calibrationMetric(_ title: String, count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(verbatim: title)
+                .foregroundStyle(.secondary)
+            Text(verbatim: max(0, count).formatted())
+                .fontWeight(.semibold)
+        }
+        .font(.caption)
+    }
 }
 
 struct RuntimeHistoryInspectorSheet: View {

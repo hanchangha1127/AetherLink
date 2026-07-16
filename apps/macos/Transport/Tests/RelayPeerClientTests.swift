@@ -2,10 +2,165 @@ import Darwin
 import BridgeProtocol
 import CryptoKit
 import Foundation
+import Network
 import XCTest
 @testable import Transport
 
 final class RelayPeerClientTests: XCTestCase {
+    func testRelayPeerConnectionCompletionReportsSuccessfulEncryptedContentProcessing() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let relayID = "relay-peer-callback-success"
+        let relaySecret = "relay-peer-callback-secret"
+        let relayNonce = "relay-peer-callback-route-nonce"
+        let (connection, stateRecorder) = Self.startLoopbackConnection(port: server.port)
+        defer { connection.cancel() }
+        XCTAssertTrue(stateRecorder.waitUntilReady())
+
+        let codec = ProtocolCodec()
+        let peer = RelayPeerConnection(
+            connection: connection,
+            codec: codec,
+            relaySecret: relaySecret,
+            relayNonce: relayNonce
+        )
+        peer.sendRelayHandshake(relayID: relayID, runtimeIdentity: nil)
+        let runtime = try parseStrictRuntimeHandshake(
+            try XCTUnwrap(server.waitForHandshake()),
+            relayID: relayID
+        )
+        let clientSessionNonce = "00112233445566778899aabbccddeeff"
+        let clientEphemeralKey = RelaySessionEphemeralKey()
+        let runtimeSessionKeys = try peer.prepareRelaySession(
+            relayID: relayID,
+            clientSessionNonce: clientSessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex
+        )
+        let clientSessionKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .client,
+            localEphemeralKey: clientEphemeralKey,
+            relayID: relayID,
+            routeNonce: relayNonce,
+            relaySecret: relaySecret,
+            clientSessionNonce: clientSessionNonce,
+            runtimeSessionNonce: runtime.sessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex,
+            runtimeEphemeralKey: runtime.ephemeralKey
+        )
+        XCTAssertEqual(runtimeSessionKeys.bindingID, clientSessionKeys.bindingID)
+        try peer.activateFrameCipher(sessionKeys: runtimeSessionKeys)
+
+        let completion = RelayPeerSendCompletionRecorder()
+        let envelope = ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "relay-peer-callback-success",
+            timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+            payload: ["status": .string("encrypted-ready")]
+        )
+        let plaintextBody = try codec.encodeEnvelopeBody(envelope)
+
+        peer.send(envelope) { succeeded in
+            completion.append(succeeded)
+        }
+
+        XCTAssertEqual(completion.waitForValue(), true)
+        let encryptedBody = try XCTUnwrap(server.waitForFrameBody())
+        XCTAssertNotEqual(encryptedBody, plaintextBody)
+        var clientCipher = RelayFrameCipher(sessionKeys: clientSessionKeys)
+        let decodedBody = try clientCipher.decryptRuntimeBody(encryptedBody)
+        XCTAssertEqual(try codec.decodeEnvelope(decodedBody), envelope)
+        XCTAssertFalse(completion.waitForAdditionalValue())
+    }
+
+    func testRelayPeerConnectionCompletionReportsEncodingFailure() {
+        let connection = NWConnection(host: "127.0.0.1", port: 1, using: .tcp)
+        let peer = RelayPeerConnection(
+            connection: connection,
+            codec: ProtocolCodec(),
+            relaySecret: nil,
+            relayNonce: nil
+        )
+        let completion = RelayPeerSendCompletionRecorder()
+        let unencodableEnvelope = ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "relay-peer-callback-encoding-failure",
+            payload: ["invalid_number": .number(.nan)]
+        )
+
+        peer.send(unencodableEnvelope) { succeeded in
+            completion.append(succeeded)
+        }
+
+        XCTAssertEqual(completion.waitForValue(), false)
+        XCTAssertFalse(completion.waitForAdditionalValue())
+    }
+
+    func testRelayPeerConnectionCompletionReportsEncryptionFailure() throws {
+        let relayID = "relay-peer-callback-encryption-failure"
+        let relaySecret = "relay-peer-callback-encryption-secret"
+        let relayNonce = "relay-peer-callback-encryption-nonce"
+        let runtimeSessionNonce = "ffeeddccbbaa99887766554433221100"
+        let clientSessionNonce = "00112233445566778899aabbccddeeff"
+        let runtimeEphemeralKey = RelaySessionEphemeralKey()
+        let clientEphemeralKey = RelaySessionEphemeralKey()
+        let sessionKeys = try RelaySessionCrypto.deriveKeys(
+            localRole: .runtime,
+            localEphemeralKey: runtimeEphemeralKey,
+            relayID: relayID,
+            routeNonce: relayNonce,
+            relaySecret: relaySecret,
+            clientSessionNonce: clientSessionNonce,
+            runtimeSessionNonce: runtimeSessionNonce,
+            clientEphemeralKey: clientEphemeralKey.publicKeyHex,
+            runtimeEphemeralKey: runtimeEphemeralKey.publicKeyHex
+        )
+        let connection = NWConnection(host: "127.0.0.1", port: 1, using: .tcp)
+        let peer = RelayPeerConnection(
+            connection: connection,
+            codec: ProtocolCodec(),
+            relaySecret: relaySecret,
+            relayNonce: relayNonce
+        )
+        try peer.activateFrameCipher(
+            sessionKeys: sessionKeys,
+            initialFrameIndex: Int64.max
+        )
+        let completion = RelayPeerSendCompletionRecorder()
+
+        peer.send(ProtocolEnvelope(type: MessageType.runtimeHealth)) { succeeded in
+            completion.append(succeeded)
+        }
+
+        XCTAssertEqual(completion.waitForValue(), false)
+        XCTAssertFalse(completion.waitForAdditionalValue())
+    }
+
+    func testRelayPeerConnectionCompletionReportsContentProcessedErrorAfterCancellation() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let (connection, stateRecorder) = Self.startLoopbackConnection(port: server.port)
+        XCTAssertTrue(stateRecorder.waitUntilReady())
+        let peer = RelayPeerConnection(
+            connection: connection,
+            codec: ProtocolCodec(),
+            relaySecret: nil,
+            relayNonce: nil
+        )
+
+        connection.cancel()
+        XCTAssertTrue(stateRecorder.waitUntilCancelled())
+
+        let completion = RelayPeerSendCompletionRecorder()
+        peer.send(ProtocolEnvelope(type: MessageType.runtimeHealth)) { succeeded in
+            completion.append(succeeded)
+        }
+
+        XCTAssertEqual(completion.waitForValue(), false)
+        XCTAssertFalse(completion.waitForAdditionalValue())
+    }
+
     func testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup() {
         let configuration = RelayPeerConfiguration(
             host: "127.0.0.1",
@@ -829,6 +984,22 @@ final class RelayPeerClientTests: XCTestCase {
         return (challenge, signature)
     }
 
+    private static func startLoopbackConnection(
+        port: UInt16
+    ) -> (connection: NWConnection, stateRecorder: RelayPeerNWConnectionStateRecorder) {
+        let connection = NWConnection(
+            host: "127.0.0.1",
+            port: NWEndpoint.Port(rawValue: port)!,
+            using: .tcp
+        )
+        let stateRecorder = RelayPeerNWConnectionStateRecorder()
+        connection.stateUpdateHandler = { state in
+            stateRecorder.append(state)
+        }
+        connection.start(queue: DispatchQueue(label: "relay-peer-connection-test"))
+        return (connection, stateRecorder)
+    }
+
     private func parseIdentityBoundStrictRuntimeHandshake(
         _ line: String,
         relayID: String,
@@ -1212,6 +1383,60 @@ private final class TransportSecurityContextRecorder: @unchecked Sendable {
         lock.withLock {
             self.context = context
         }
+    }
+}
+
+private final class RelayPeerSendCompletionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var values = [Bool]()
+
+    func append(_ value: Bool) {
+        lock.withLock {
+            values.append(value)
+        }
+        semaphore.signal()
+    }
+
+    func waitForValue(timeout: DispatchTime = .now() + 2) -> Bool? {
+        guard semaphore.wait(timeout: timeout) == .success else { return nil }
+        return lock.withLock { values.first }
+    }
+
+    func waitForAdditionalValue(timeout: DispatchTime = .now() + 0.05) -> Bool {
+        semaphore.wait(timeout: timeout) == .success
+    }
+}
+
+private final class RelayPeerNWConnectionStateRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let readyOrFailed = DispatchSemaphore(value: 0)
+    private let cancelled = DispatchSemaphore(value: 0)
+    private var becameReady = false
+
+    func append(_ state: NWConnection.State) {
+        switch state {
+        case .ready:
+            lock.withLock {
+                becameReady = true
+            }
+            readyOrFailed.signal()
+        case .failed:
+            readyOrFailed.signal()
+        case .cancelled:
+            cancelled.signal()
+        default:
+            break
+        }
+    }
+
+    func waitUntilReady(timeout: DispatchTime = .now() + 2) -> Bool {
+        guard readyOrFailed.wait(timeout: timeout) == .success else { return false }
+        return lock.withLock { becameReady }
+    }
+
+    func waitUntilCancelled(timeout: DispatchTime = .now() + 2) -> Bool {
+        cancelled.wait(timeout: timeout) == .success
     }
 }
 

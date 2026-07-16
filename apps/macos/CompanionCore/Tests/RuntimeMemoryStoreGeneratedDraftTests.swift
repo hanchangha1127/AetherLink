@@ -42,12 +42,225 @@ final class RuntimeMemoryStoreGeneratedDraftTests: XCTestCase {
         try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: original)
         try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: replacement)
 
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 2)
         XCTAssertEqual(try store.generatedMemorySummaryDrafts(ownerDeviceID: "device-a"), [replacement])
         XCTAssertEqual(
             try JSONLRuntimeMemoryStore(fileURL: fileURL)
                 .generatedMemorySummaryDraft(ownerDeviceID: "device-a", draftID: replacement.draftID),
             replacement
         )
+    }
+
+    func testGeneratedDraftCacheDoesNotAppendExactDuplicate() throws {
+        let fileURL = try temporaryStoreURL()
+        let store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let draft = generatedDraft(content: "Stable summary", generatedAt: 225)
+
+        let first = try store.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: draft,
+            if: { true }
+        )
+        let second = try store.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: draft,
+            if: { true }
+        )
+
+        XCTAssertEqual(first, draft)
+        XCTAssertEqual(second, draft)
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 1)
+    }
+
+    func testGeneratedDraftCacheDeduplicatesConcurrentCrossInstanceWrites() async throws {
+        let fileURL = try temporaryStoreURL()
+        let firstStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let secondStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let draft = generatedDraft(
+            content: "Cross-instance stable summary",
+            generatedAt: 230,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000031"
+        )
+        let ready = DispatchSemaphore(value: 0)
+        let start = DispatchSemaphore(value: 0)
+
+        async let firstResult = Self.cacheGeneratedDraft(
+            in: firstStore,
+            draft: draft,
+            ready: ready,
+            start: start
+        )
+        async let secondResult = Self.cacheGeneratedDraft(
+            in: secondStore,
+            draft: draft,
+            ready: ready,
+            start: start
+        )
+        XCTAssertEqual(ready.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(ready.wait(timeout: .now() + 1), .success)
+        start.signal()
+        start.signal()
+
+        let first = try await firstResult
+        let second = try await secondResult
+        XCTAssertEqual(first, draft)
+        XCTAssertEqual(second, draft)
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 1)
+        XCTAssertEqual(
+            try JSONLRuntimeMemoryStore(fileURL: fileURL)
+                .generatedMemorySummaryDraft(ownerDeviceID: "device-a", draftID: draft.draftID),
+            draft
+        )
+    }
+
+    func testGeneratedDraftCacheDoesNotReappendHistoricalExactDraftAfterReplacement() throws {
+        let fileURL = try temporaryStoreURL()
+        let firstStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let secondStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let original = generatedDraft(
+            content: "Original retry candidate",
+            generatedAt: 232,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000001"
+        )
+        let replacement = generatedDraft(
+            content: "Current replacement",
+            generatedAt: 233,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000002"
+        )
+
+        try firstStore.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: original
+        )
+        try secondStore.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: replacement
+        )
+        let retried = try firstStore.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: original,
+            if: { true }
+        )
+
+        XCTAssertEqual(retried, original)
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 2)
+        XCTAssertEqual(
+            try JSONLRuntimeMemoryStore(fileURL: fileURL)
+                .generatedMemorySummaryDraft(ownerDeviceID: "device-a", draftID: original.draftID),
+            replacement
+        )
+    }
+
+    func testGeneratedDraftCacheAppendsNewIdenticalValueWithDistinctOperationID() throws {
+        let fileURL = try temporaryStoreURL()
+        let store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let original = generatedDraft(
+            content: "Identical generated value",
+            generatedAt: 234,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000011"
+        )
+        let replacement = generatedDraft(
+            content: "Replacement between identical values",
+            generatedAt: 234,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000012"
+        )
+        let regenerated = generatedDraft(
+            content: original.content,
+            generatedAt: original.generatedAt.timeIntervalSince1970,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000013"
+        )
+
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: original)
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: replacement)
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: regenerated)
+
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 3)
+        XCTAssertEqual(
+            try JSONLRuntimeMemoryStore(fileURL: fileURL)
+                .generatedMemorySummaryDraft(ownerDeviceID: "device-a", draftID: original.draftID),
+            regenerated
+        )
+    }
+
+    func testGeneratedDraftCacheRejectsConflictingValueForSameOperationID() throws {
+        let fileURL = try temporaryStoreURL()
+        let store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let operationID = "00000000-0000-4000-8000-000000000021"
+        let original = generatedDraft(
+            content: "Original operation value",
+            generatedAt: 236,
+            persistenceOperationID: operationID
+        )
+        let conflicting = generatedDraft(
+            content: "Conflicting operation value",
+            generatedAt: 236,
+            persistenceOperationID: operationID
+        )
+
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: original)
+
+        XCTAssertThrowsError(
+            try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: conflicting)
+        ) { error in
+            XCTAssertEqual(
+                error as? RuntimeMemoryStoreError,
+                .generatedMemorySummaryDraftPersistenceConflict
+            )
+        }
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 1)
+    }
+
+    func testGeneratedDraftCacheUsesPhysicalAppendOrderWhenClockMovesBackward() throws {
+        let fileURL = try temporaryStoreURL()
+        let store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let first = generatedDraft(
+            content: "First generated value",
+            generatedAt: 300,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000041"
+        )
+        let second = generatedDraft(
+            content: "Second generated value",
+            generatedAt: 301,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000042"
+        )
+        let appendedAfterClockRollback = generatedDraft(
+            content: "Current value after clock rollback",
+            generatedAt: 299,
+            persistenceOperationID: "00000000-0000-4000-8000-000000000043"
+        )
+
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: first)
+        try store.cacheGeneratedMemorySummaryDraft(ownerDeviceID: "device-a", draft: second)
+        try store.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: appendedAfterClockRollback
+        )
+
+        XCTAssertEqual(try nonEmptyJSONLLines(at: fileURL).count, 3)
+        XCTAssertEqual(
+            try JSONLRuntimeMemoryStore(fileURL: fileURL)
+                .generatedMemorySummaryDraft(
+                    ownerDeviceID: "device-a",
+                    draftID: appendedAfterClockRollback.draftID
+                ),
+            appendedAfterClockRollback
+        )
+    }
+
+    func testGeneratedDraftConditionalCacheRechecksInsideFileLock() throws {
+        let fileURL = try temporaryStoreURL()
+        let store = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let commitGate = GeneratedDraftCommitGate()
+
+        let result = try store.cacheGeneratedMemorySummaryDraft(
+            ownerDeviceID: "device-a",
+            draft: generatedDraft(content: "Revoked before file commit", generatedAt: 240),
+            if: { commitGate.allowNextCheck() }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(commitGate.checkCount, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
     func testGeneratedDraftCachePersistsBindingWithoutPromptBody() throws {
@@ -222,6 +435,7 @@ final class RuntimeMemoryStoreGeneratedDraftTests: XCTestCase {
         generatedAt: TimeInterval,
         modelID: String = "GPT-5.6 Sol",
         providerQualifiedModelID: String? = nil,
+        persistenceOperationID: String? = nil,
         promptSkillBinding: RuntimePromptSkillBinding =
             RuntimePromptSkillRegistry.memorySummaryDraftBinding
     ) -> RuntimeGeneratedMemorySummaryDraft {
@@ -232,6 +446,7 @@ final class RuntimeMemoryStoreGeneratedDraftTests: XCTestCase {
             content: content,
             modelID: modelID,
             providerQualifiedModelID: providerQualifiedModelID,
+            persistenceOperationID: persistenceOperationID,
             promptSkillBinding: promptSkillBinding,
             generatedAt: Date(timeIntervalSince1970: generatedAt)
         )
@@ -245,5 +460,52 @@ final class RuntimeMemoryStoreGeneratedDraftTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory.appendingPathComponent("runtime-memory-events.jsonl")
+    }
+
+    private func nonEmptyJSONLLines(at fileURL: URL) throws -> [Substring] {
+        try String(contentsOf: fileURL, encoding: .utf8)
+            .split(whereSeparator: { $0.isNewline })
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private static func cacheGeneratedDraft(
+        in store: JSONLRuntimeMemoryStore,
+        draft: RuntimeGeneratedMemorySummaryDraft,
+        ready: DispatchSemaphore,
+        start: DispatchSemaphore
+    ) async throws -> RuntimeGeneratedMemorySummaryDraft? {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                ready.signal()
+                start.wait()
+                do {
+                    continuation.resume(returning: try store.cacheGeneratedMemorySummaryDraft(
+                        ownerDeviceID: "device-a",
+                        draft: draft,
+                        if: { true }
+                    ))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
+private final class GeneratedDraftCommitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var checks = 0
+
+    var checkCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return checks
+    }
+
+    func allowNextCheck() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        checks += 1
+        return checks == 1
     }
 }

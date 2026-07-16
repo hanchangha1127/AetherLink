@@ -34,6 +34,7 @@ import com.localagentbridge.android.core.protocol.IndexDocumentsQualityCountsPay
 import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
+import com.localagentbridge.android.core.protocol.MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
 import com.localagentbridge.android.core.protocol.MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY
 import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY
@@ -82,6 +83,7 @@ import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeDocumentIndexDocumentPayload
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.protocol.RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
@@ -15585,7 +15587,11 @@ class RuntimeClientViewModelTest {
             assertEquals(model.id, payload.model)
             assertEquals(setOf("draft-generate"), fixture.viewModel.state.value.generatingMemorySummaryDraftIds)
 
-            val generatedDraft = memorySummaryDraftPayload("draft-generate").copy(
+            val generatedDraftSource = memorySummaryDraftPayload("draft-generate")
+            val generatedDraft = generatedDraftSource.copy(
+                session = generatedDraftSource.session.copy(
+                    inactiveSeconds = generatedDraftSource.session.inactiveSeconds + 37,
+                ),
                 summaryPreview = "Generated summary stays runtime-transient.",
                 summaryMethod = "llm_summary_v1",
                 generatedAt = "2026-06-25T00:02:00Z",
@@ -15607,6 +15613,7 @@ class RuntimeClientViewModelTest {
             assertEquals("llm_summary_v1", state.memorySummaryDrafts.single().summaryMethod)
             assertEquals(model.id, state.memorySummaryDrafts.single().generatedModelId)
             assertEquals(1_782_345_720_000L, state.memorySummaryDrafts.single().generatedAtMillis)
+            assertEquals(1_209_637L, state.memorySummaryDrafts.single().session.inactiveSeconds)
             val persistedSnapshot = json.encodeToString(fixture.localStore.data)
             assertFalse(persistedSnapshot.contains("Generated summary stays runtime-transient."))
             assertFalse(persistedSnapshot.contains("llm_summary_v1"))
@@ -16035,6 +16042,624 @@ class RuntimeClientViewModelTest {
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
             )
         } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryGenerationAcceptsResultAfterControlDeadlineBeforeHostAlignedDeadline() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var fixture: RuntimeClientFixture? = null
+        try {
+            val model = textChatModel()
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(model),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            )
+            val activeFixture = requireNotNull(fixture)
+            completePendingMemorySummaryDraftsList(
+                fixture = activeFixture,
+                drafts = listOf(memorySummaryDraftPayload("draft-host-aligned-generate")),
+            )
+
+            activeFixture.viewModel.generateMemorySummaryDraft("draft-host-aligned-generate")
+            runCurrent()
+            val request = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            val timeoutJob = requireNotNull(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty()[request.requestId],
+            )
+
+            advanceTimeBy(MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS)
+            runCurrent()
+            assertEquals(
+                setOf("draft-host-aligned-generate"),
+                activeFixture.viewModel.state.value.generatingMemorySummaryDraftIds,
+            )
+            assertNull(activeFixture.viewModel.state.value.error)
+            assertFalse(timeoutJob.isCancelled)
+
+            advanceTimeBy(60_000L - MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS - 1L)
+            runCurrent()
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftGenerate,
+                    serializer = MemorySummaryDraftGenerateResultPayload.serializer(),
+                    payload = MemorySummaryDraftGenerateResultPayload(
+                        memorySummaryDraftPayload("draft-host-aligned-generate").copy(
+                            summaryPreview = "Host-aligned generated summary.",
+                            summaryMethod = "llm_summary_v1",
+                            generatedAt = "2026-06-25T00:02:00Z",
+                            generatedModelId = model.id,
+                        ),
+                    ),
+                    requestId = request.requestId,
+                ),
+            )
+            runCurrent()
+
+            val state = activeFixture.viewModel.state.value
+            assertTrue(state.generatingMemorySummaryDraftIds.isEmpty())
+            assertNull(state.error)
+            assertEquals("Host-aligned generated summary.", state.memorySummaryDrafts.single().summaryPreview)
+            assertEquals("llm_summary_v1", state.memorySummaryDrafts.single().summaryMethod)
+            assertTrue(timeoutJob.isCancelled)
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryProtocolErrorMalformedResultAndSendFailureCancelExactTimeoutJobs() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            )
+            val activeFixture = requireNotNull(fixture)
+            completePendingMemorySummaryDraftsList(
+                fixture = activeFixture,
+                drafts = listOf(
+                    memorySummaryDraftPayload("draft-terminal-error"),
+                    memorySummaryDraftPayload("draft-terminal-malformed"),
+                    memorySummaryDraftPayload("draft-terminal-send-failure"),
+                ),
+            )
+
+            activeFixture.viewModel.generateMemorySummaryDraft("draft-terminal-error")
+            runCurrent()
+            val errorRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            val errorTimeoutJob = requireNotNull(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty()[errorRequest.requestId],
+            )
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_summary_draft_generation_failed",
+                        message = "Synthetic generation terminal error.",
+                        retryable = true,
+                    ),
+                    requestId = errorRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(errorTimeoutJob.isCancelled)
+            assertTrue(activeFixture.viewModel.state.value.generatingMemorySummaryDraftIds.isEmpty())
+            assertEquals(
+                "memory_summary_draft_generation_failed",
+                activeFixture.viewModel.state.value.error?.code,
+            )
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            activeFixture.viewModel.approveMemorySummaryDraft("draft-terminal-malformed")
+            runCurrent()
+            val malformedRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftApprove
+            }
+            val malformedTimeoutJob = requireNotNull(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty()[malformedRequest.requestId],
+            )
+            activeFixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.MemorySummaryDraftApprove,
+                    requestId = malformedRequest.requestId,
+                    payload = buildJsonObject {
+                        put("draft_id", "draft-terminal-malformed")
+                        put("status", "approved")
+                    },
+                ),
+            )
+            runCurrent()
+
+            assertTrue(malformedTimeoutJob.isCancelled)
+            assertTrue(activeFixture.viewModel.state.value.approvingMemorySummaryDraftIds.isEmpty())
+            assertEquals("invalid_payload", activeFixture.viewModel.state.value.error?.code)
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            activeFixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.MemorySummaryDraftDismiss) {
+                    afterSend = null
+                    throw IllegalStateException("synthetic memory-summary dismissal send failure")
+                }
+            }
+            activeFixture.viewModel.dismissMemorySummaryDraft("draft-terminal-send-failure")
+            val sendFailureTimeoutEntry = requireNotNull(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().entries.singleOrNull(),
+            )
+            assertFalse(sendFailureTimeoutEntry.value.isCancelled)
+            runCurrent()
+
+            val sendFailureRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftDismiss
+            }
+            assertEquals(sendFailureTimeoutEntry.key, sendFailureRequest.requestId)
+            assertTrue(sendFailureTimeoutEntry.value.isCancelled)
+            assertTrue(activeFixture.viewModel.state.value.dismissingMemorySummaryDraftIds.isEmpty())
+            assertEquals(
+                "memory_summary_draft_dismiss_failed",
+                activeFixture.viewModel.state.value.error?.code,
+            )
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryListAndActionsTimeoutClosePendingAndAllowRetry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var fixture: RuntimeClientFixture? = null
+        try {
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            )
+            val activeFixture = requireNotNull(fixture)
+            val initialListCount = activeFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            advanceTimeBy(MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS - 1L)
+            runCurrent()
+            assertNotNull(activeFixture.viewModel.privateField<Any>("pendingMemorySummaryDraftsRequest"))
+
+            advanceTimeBy(1L)
+            runCurrent()
+
+            assertNull(activeFixture.viewModel.privateField<Any>("pendingMemorySummaryDraftsRequest"))
+            assertEquals("memory_summary_drafts_load_failed", activeFixture.viewModel.state.value.error?.code)
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            activeFixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            runCurrent()
+            assertEquals(
+                initialListCount + 1,
+                activeFixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            completePendingMemorySummaryDraftsList(
+                fixture = activeFixture,
+                drafts = listOf(
+                    memorySummaryDraftPayload("draft-timeout-generate"),
+                    memorySummaryDraftPayload("draft-timeout-approve"),
+                    memorySummaryDraftPayload("draft-timeout-dismiss"),
+                ),
+            )
+
+            activeFixture.viewModel.generateMemorySummaryDraft("draft-timeout-generate")
+            activeFixture.viewModel.approveMemorySummaryDraft("draft-timeout-approve")
+            activeFixture.viewModel.dismissMemorySummaryDraft("draft-timeout-dismiss")
+            runCurrent()
+
+            assertEquals(
+                setOf("draft-timeout-generate"),
+                activeFixture.viewModel.state.value.generatingMemorySummaryDraftIds,
+            )
+            assertEquals(
+                setOf("draft-timeout-approve"),
+                activeFixture.viewModel.state.value.approvingMemorySummaryDraftIds,
+            )
+            assertEquals(
+                setOf("draft-timeout-dismiss"),
+                activeFixture.viewModel.state.value.dismissingMemorySummaryDraftIds,
+            )
+            assertEquals(
+                3,
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().size,
+            )
+
+            advanceTimeBy(MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS)
+            runCurrent()
+
+            val controlTimedOutState = activeFixture.viewModel.state.value
+            assertEquals(
+                setOf("draft-timeout-generate"),
+                controlTimedOutState.generatingMemorySummaryDraftIds,
+            )
+            assertTrue(controlTimedOutState.approvingMemorySummaryDraftIds.isEmpty())
+            assertTrue(controlTimedOutState.dismissingMemorySummaryDraftIds.isEmpty())
+            assertTrue(
+                controlTimedOutState.error?.code in setOf(
+                    "memory_summary_draft_approval_failed",
+                    "memory_summary_draft_dismiss_failed",
+                ),
+            )
+            assertEquals(
+                1,
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().size,
+            )
+
+            advanceTimeBy(
+                MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS -
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+            )
+            runCurrent()
+
+            val generationTimedOutState = activeFixture.viewModel.state.value
+            assertTrue(generationTimedOutState.generatingMemorySummaryDraftIds.isEmpty())
+            assertEquals(
+                "memory_summary_draft_generation_failed",
+                generationTimedOutState.error?.code,
+            )
+            assertTrue(
+                activeFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            activeFixture.viewModel.generateMemorySummaryDraft("draft-timeout-generate")
+            activeFixture.viewModel.approveMemorySummaryDraft("draft-timeout-approve")
+            activeFixture.viewModel.dismissMemorySummaryDraft("draft-timeout-dismiss")
+            runCurrent()
+
+            assertEquals(
+                2,
+                activeFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.MemorySummaryDraftGenerate
+                },
+            )
+            assertEquals(
+                2,
+                activeFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.MemorySummaryDraftApprove
+                },
+            )
+            assertEquals(
+                2,
+                activeFixture.channel.sentEnvelopes.count {
+                    it.type == MessageType.MemorySummaryDraftDismiss
+                },
+            )
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryActionTimeoutDrainsDeferredRefreshOnceAndIgnoresLateTerminals() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var fixture: RuntimeClientFixture? = null
+        try {
+            val model = textChatModel()
+            fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(model),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            )
+            val activeFixture = requireNotNull(fixture)
+            val drafts = listOf(
+                memorySummaryDraftPayload("draft-late-generate"),
+                memorySummaryDraftPayload("draft-late-approve"),
+                memorySummaryDraftPayload("draft-late-dismiss"),
+            )
+            completePendingMemorySummaryDraftsList(fixture = activeFixture, drafts = drafts)
+            val listCountBeforeActions = activeFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            activeFixture.viewModel.generateMemorySummaryDraft("draft-late-generate")
+            activeFixture.viewModel.approveMemorySummaryDraft("draft-late-approve")
+            activeFixture.viewModel.dismissMemorySummaryDraft("draft-late-dismiss")
+            activeFixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            runCurrent()
+            val generateRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            val approveRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftApprove
+            }
+            val dismissRequest = activeFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftDismiss
+            }
+            assertTrue(activeFixture.viewModel.privateField<Boolean>("memorySummaryDraftsRefreshDeferred") == true)
+
+            advanceTimeBy(MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS)
+            runCurrent()
+
+            assertEquals(
+                listCountBeforeActions,
+                activeFixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            assertTrue(
+                activeFixture.viewModel.privateField<Boolean>("memorySummaryDraftsRefreshDeferred") == true,
+            )
+            assertEquals(
+                setOf("draft-late-generate"),
+                activeFixture.viewModel.state.value.generatingMemorySummaryDraftIds,
+            )
+
+            advanceTimeBy(
+                MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS -
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+            )
+            runCurrent()
+
+            assertEquals(
+                listCountBeforeActions + 1,
+                activeFixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            assertFalse(
+                activeFixture.viewModel.privateField<Boolean>("memorySummaryDraftsRefreshDeferred") ?: true,
+            )
+            val timeoutError = requireNotNull(activeFixture.viewModel.state.value.error)
+            assertEquals("memory_summary_draft_generation_failed", timeoutError.code)
+
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftGenerate,
+                    serializer = MemorySummaryDraftGenerateResultPayload.serializer(),
+                    payload = MemorySummaryDraftGenerateResultPayload(
+                        memorySummaryDraftPayload("draft-late-generate").copy(
+                            summaryPreview = "Late generated summary must stay inert.",
+                            summaryMethod = "llm_summary_v1",
+                            generatedAt = "2026-06-25T00:02:00Z",
+                            generatedModelId = model.id,
+                        ),
+                    ),
+                    requestId = generateRequest.requestId,
+                ),
+            )
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftApprove,
+                    serializer = MemorySummaryDraftApproveResultPayload.serializer(),
+                    payload = MemorySummaryDraftApproveResultPayload(
+                        draftId = "draft-late-approve",
+                        status = "approved",
+                        entry = memorySummaryDraftApprovedEntryPayload(
+                            draftId = "draft-late-approve",
+                            memoryId = "memory-summary:draft-late-approve",
+                            content = "Prefer concise Korean release-note summaries.",
+                        ),
+                    ),
+                    requestId = approveRequest.requestId,
+                ),
+            )
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftDismiss,
+                    serializer = MemorySummaryDraftDismissResultPayload.serializer(),
+                    payload = MemorySummaryDraftDismissResultPayload(
+                        draftId = "draft-late-dismiss",
+                        status = "dismissed",
+                        dismissedAt = "2026-06-25T00:03:00Z",
+                    ),
+                    requestId = dismissRequest.requestId,
+                ),
+            )
+            activeFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Late timeout error must not revoke current authority.",
+                        retryable = false,
+                    ),
+                    requestId = approveRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            val afterLateTerminals = activeFixture.viewModel.state.value
+            assertTrue(activeFixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(timeoutError, afterLateTerminals.error)
+            assertEquals(drafts.map { it.id }, afterLateTerminals.memorySummaryDrafts.map { it.id })
+            assertTrue(afterLateTerminals.memorySummaryDrafts.all { it.summaryMethod == "deterministic_preview" })
+            assertTrue(afterLateTerminals.memoryEntries.isEmpty())
+            assertTrue(activeFixture.localStore.data.memoryEntries.isEmpty())
+            assertEquals(
+                listCountBeforeActions + 1,
+                activeFixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+
+            completePendingMemorySummaryDraftsList(fixture = activeFixture, drafts = drafts)
+            assertNull(activeFixture.viewModel.state.value.error)
+        } finally {
+            fixture?.viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryTimeoutJobsStayAuthorityBoundAndCancelOnDisconnectAndClear() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        val fixtures = mutableListOf<RuntimeClientFixture>()
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            ).also(fixtures::add)
+            completePendingMemorySummaryDraftsList(
+                fixture = fixture,
+                drafts = listOf(memorySummaryDraftPayload("draft-authority-timeout")),
+            )
+            fixture.viewModel.generateMemorySummaryDraft("draft-authority-timeout")
+            runCurrent()
+            val oldRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            val oldTimeoutJob = requireNotNull(
+                fixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty()[oldRequest.requestId],
+            )
+
+            advanceTimeBy(MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS / 2L)
+            runCurrent()
+            val pendingMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Replace the memory-summary authority generation.",
+                        retryable = false,
+                    ),
+                    requestId = pendingMemoryRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertTrue(oldTimeoutJob.isCancelled)
+            assertTrue(
+                fixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "memory-summary-timeout-reauth",
+            )
+            runCurrent()
+            completePendingMemorySummaryDraftsList(
+                fixture = fixture,
+                drafts = listOf(memorySummaryDraftPayload("draft-authority-timeout")),
+            )
+            fixture.viewModel.generateMemorySummaryDraft("draft-authority-timeout")
+            runCurrent()
+            val replacementRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftGenerate
+            }
+            assertNotEquals(oldRequest.requestId, replacementRequest.requestId)
+            val replacementTimeoutJob = requireNotNull(
+                fixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty()[replacementRequest.requestId],
+            )
+
+            advanceTimeBy(MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS / 2L)
+            runCurrent()
+
+            assertEquals(
+                setOf("draft-authority-timeout"),
+                fixture.viewModel.state.value.generatingMemorySummaryDraftIds,
+            )
+            assertFalse(replacementTimeoutJob.isCancelled)
+            fixture.viewModel.disconnect()
+            runCurrent()
+            assertTrue(replacementTimeoutJob.isCancelled)
+            assertTrue(
+                fixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+
+            val clearFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memorySummaryControlRequestTimeoutMillis =
+                    MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    MEMORY_SUMMARY_GENERATION_REQUEST_TIMEOUT_MS,
+            ).also(fixtures::add)
+            val jobsBeforeClear = clearFixture.viewModel.privateField<Map<String, Job>>(
+                "memorySummaryRequestTimeoutJobsByRequestId",
+            ).orEmpty().values.toList()
+            assertTrue(jobsBeforeClear.isNotEmpty())
+            clearFixture.viewModel.clearForTest()
+            fixtures.remove(clearFixture)
+            assertTrue(jobsBeforeClear.all(Job::isCancelled))
+            assertTrue(
+                clearFixture.viewModel.privateField<Map<String, Job>>(
+                    "memorySummaryRequestTimeoutJobsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+        } finally {
+            fixtures.forEach { it.viewModel.clearForTest() }
             Dispatchers.resetMain()
         }
     }
@@ -16783,6 +17408,355 @@ class RuntimeClientViewModelTest {
         }
     }
 
+    @Test
+    fun memorySummarySourceIdentityRejectsEveryAuthoritativeFieldMutationExceptInactivity() {
+        val expected = RuntimeMemorySummaryDraft(
+            id = "draft-source-identity",
+            session = RuntimeMemorySummaryDraftSession(
+                sessionId = "runtime-session",
+                title = "Long idle planning chat",
+                modelId = "ollama:qwen3:8b",
+                lastActivityAtMillis = Instant.parse("2026-06-01T00:00:00Z").toEpochMilli(),
+                messageCount = 6,
+                inactiveSeconds = 1_209_600L,
+            ),
+            sourceMessageCount = 6,
+            sourceRange = "visible messages 1-6 of 6",
+            sourcePointers = listOf(
+                RuntimeMemorySummaryDraftSourcePointer(
+                    sessionId = "runtime-session",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAtMillis = Instant.parse("2026-06-01T00:00:00Z").toEpochMilli(),
+                    excerpt = "Use concise Korean summaries for release notes.",
+                ),
+                RuntimeMemorySummaryDraftSourcePointer(
+                    sessionId = "runtime-session",
+                    messageIndex = 2,
+                    role = "assistant",
+                    createdAtMillis = Instant.parse("2026-06-01T00:01:00Z").toEpochMilli(),
+                    excerpt = "Keep source identity attached to the summary.",
+                ),
+            ),
+            summaryPreview = "Generated summary awaiting approval.",
+            summaryMethod = "llm_summary_v1",
+            generatedAtMillis = Instant.parse("2026-06-25T00:02:00Z").toEpochMilli(),
+            generatedModelId = "ollama:llama3.1:8b",
+        )
+        val naturallyAgedWithDifferentOutputMetadata = expected.copy(
+            session = expected.session.copy(inactiveSeconds = expected.session.inactiveSeconds + 37),
+            summaryPreview = "Different generated output metadata.",
+            summaryMethod = "deterministic_preview",
+            generatedAtMillis = null,
+            generatedModelId = null,
+        )
+        assertTrue(naturallyAgedWithDifferentOutputMetadata.hasSameMemorySummarySourceAs(expected))
+
+        val runtimeMutations = listOf<(RuntimeMemorySummaryDraft) -> RuntimeMemorySummaryDraft>(
+            { it.copy(id = "different-draft") },
+            { it.copy(session = it.session.copy(sessionId = "different-session")) },
+            { it.copy(session = it.session.copy(title = "Different title")) },
+            { it.copy(session = it.session.copy(modelId = "ollama:different:8b")) },
+            { it.copy(session = it.session.copy(lastActivityAtMillis = it.session.lastActivityAtMillis?.plus(1))) },
+            { it.copy(session = it.session.copy(messageCount = it.session.messageCount + 1)) },
+            { it.copy(sourceMessageCount = it.sourceMessageCount + 1) },
+            { it.copy(sourceRange = "visible messages 2-6 of 6") },
+            { it.copy(sourcePointers = it.sourcePointers.dropLast(1)) },
+            { it.copy(sourcePointers = it.sourcePointers.reversed()) },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(sessionId = "different-session"),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(messageIndex = 3),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(role = "assistant"),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(createdAtMillis = it.sourcePointers[0].createdAtMillis?.plus(1)),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(excerpt = "Different excerpt."),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+        )
+        runtimeMutations.forEachIndexed { index, mutation ->
+            assertFalse("runtime source mutation $index must be rejected", mutation(expected).hasSameMemorySummarySourceAs(expected))
+        }
+
+        val source = MemoryEntrySourcePayload(
+            kind = "long_inactivity_summary_draft",
+            draftId = expected.id,
+            summaryMethod = expected.summaryMethod,
+            session = MemorySummaryDraftSessionPayload(
+                sessionId = expected.session.sessionId,
+                title = expected.session.title,
+                model = expected.session.modelId,
+                lastActivityAt = "2026-06-01T00:00:00Z",
+                messageCount = expected.session.messageCount,
+                inactiveSeconds = expected.session.inactiveSeconds,
+            ),
+            sourceMessageCount = expected.sourceMessageCount,
+            sourceRange = expected.sourceRange,
+            sourcePointers = listOf(
+                MemorySummaryDraftSourcePointerPayload(
+                    sessionId = "runtime-session",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAt = "2026-06-01T00:00:00Z",
+                    excerpt = "Use concise Korean summaries for release notes.",
+                ),
+                MemorySummaryDraftSourcePointerPayload(
+                    sessionId = "runtime-session",
+                    messageIndex = 2,
+                    role = "assistant",
+                    createdAt = "2026-06-01T00:01:00Z",
+                    excerpt = "Keep source identity attached to the summary.",
+                ),
+            ),
+        )
+        assertTrue(source.hasSameMemorySummarySourceAs(expected))
+        assertTrue(
+            source.copy(
+                session = source.session.copy(inactiveSeconds = source.session.inactiveSeconds + 37),
+            ).hasSameMemorySummarySourceAs(expected),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            source.copy(kind = "future_source_kind")
+        }
+
+        val approvedSourceMutations = listOf<(MemoryEntrySourcePayload) -> MemoryEntrySourcePayload>(
+            { it.copy(draftId = "different-draft") },
+            { it.copy(summaryMethod = "deterministic_preview") },
+            { it.copy(session = it.session.copy(sessionId = "different-session")) },
+            { it.copy(session = it.session.copy(title = "Different title")) },
+            { it.copy(session = it.session.copy(model = "ollama:different:8b")) },
+            { it.copy(session = it.session.copy(lastActivityAt = "2026-06-01T00:00:01Z")) },
+            { it.copy(session = it.session.copy(messageCount = it.session.messageCount + 1)) },
+            { it.copy(sourceMessageCount = it.sourceMessageCount + 1) },
+            { it.copy(sourceRange = "visible messages 2-6 of 6") },
+            { it.copy(sourcePointers = it.sourcePointers.dropLast(1)) },
+            { it.copy(sourcePointers = it.sourcePointers.reversed()) },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(sessionId = "different-session"),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(messageIndex = 3),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(role = "assistant"),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(createdAt = "2026-06-01T00:00:01Z"),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+            {
+                it.copy(
+                    sourcePointers = listOf(
+                        it.sourcePointers[0].copy(excerpt = "Different excerpt."),
+                        it.sourcePointers[1],
+                    ),
+                )
+            },
+        )
+        approvedSourceMutations.forEachIndexed { index, mutation ->
+            assertFalse("approved source mutation $index must be rejected", mutation(source).hasSameMemorySummarySourceAs(expected))
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memorySummaryDecisionFramesRequireExactChannelAndIgnoreLateDuplicates() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(models = listOf(textChatModel()))
+            val approveDraft = memorySummaryDraftPayload("draft-channel-approve")
+            val dismissDraft = memorySummaryDraftPayload("draft-channel-dismiss")
+            completePendingMemorySummaryDraftsList(
+                fixture = fixture,
+                drafts = listOf(approveDraft, dismissDraft),
+            )
+
+            fixture.viewModel.approveMemorySummaryDraft(approveDraft.id)
+            fixture.viewModel.dismissMemorySummaryDraft(dismissDraft.id)
+            advanceUntilIdle()
+
+            val approveRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftApprove
+            }
+            val dismissRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftDismiss
+            }
+            val approveResult = envelope(
+                type = MessageType.MemorySummaryDraftApprove,
+                serializer = MemorySummaryDraftApproveResultPayload.serializer(),
+                payload = MemorySummaryDraftApproveResultPayload(
+                    draftId = approveDraft.id,
+                    status = "approved",
+                    entry = memorySummaryDraftApprovedEntryPayload(
+                        draftId = approveDraft.id,
+                        memoryId = "memory-summary:${approveDraft.id}",
+                        content = approveDraft.summaryPreview,
+                    ),
+                ),
+                requestId = approveRequest.requestId,
+            )
+            val dismissResult = envelope(
+                type = MessageType.MemorySummaryDraftDismiss,
+                serializer = MemorySummaryDraftDismissResultPayload.serializer(),
+                payload = MemorySummaryDraftDismissResultPayload(
+                    draftId = dismissDraft.id,
+                    status = "dismissed",
+                    dismissedAt = "2026-06-25T00:03:00Z",
+                ),
+                requestId = dismissRequest.requestId,
+            )
+            val authenticationError: (String) -> ProtocolEnvelope = { requestId ->
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Terminal from the wrong or closed authority",
+                        retryable = false,
+                    ),
+                    requestId = requestId,
+                )
+            }
+            val currentConnectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val wrongChannel = ScriptedRuntimeProtocolChannel()
+            val persistedBeforeWrongChannel = json.encodeToString(fixture.localStore.data)
+
+            fixture.viewModel.handleMemorySummaryDecisionForTest(
+                methodName = "handleMemorySummaryDraftApprove",
+                envelope = approveResult,
+                sourceChannel = wrongChannel,
+                sourceConnectionGeneration = currentConnectionGeneration,
+            )
+            fixture.viewModel.handleMemorySummaryDecisionForTest(
+                methodName = "handleMemorySummaryDraftDismiss",
+                envelope = dismissResult,
+                sourceChannel = wrongChannel,
+                sourceConnectionGeneration = currentConnectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError(approveRequest.requestId),
+                wrongChannel,
+                currentConnectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError(dismissRequest.requestId),
+                wrongChannel,
+                currentConnectionGeneration,
+            )
+
+            val pendingState = fixture.viewModel.state.value
+            assertEquals(setOf(approveDraft.id), pendingState.approvingMemorySummaryDraftIds)
+            assertEquals(setOf(dismissDraft.id), pendingState.dismissingMemorySummaryDraftIds)
+            assertEquals(listOf(approveDraft.id, dismissDraft.id), pendingState.memorySummaryDrafts.map { it.id })
+            assertTrue(pendingState.memoryEntries.isEmpty())
+            assertNull(pendingState.error)
+            assertEquals(persistedBeforeWrongChannel, json.encodeToString(fixture.localStore.data))
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.channel.enqueue(approveResult)
+            fixture.channel.enqueue(dismissResult)
+            advanceUntilIdle()
+
+            val canonicalState = fixture.viewModel.state.value
+            assertTrue(canonicalState.approvingMemorySummaryDraftIds.isEmpty())
+            assertTrue(canonicalState.dismissingMemorySummaryDraftIds.isEmpty())
+            assertTrue(canonicalState.memorySummaryDrafts.isEmpty())
+            assertEquals(listOf("memory-summary:${approveDraft.id}"), canonicalState.memoryEntries.map { it.id })
+            assertEquals(listOf(approveDraft.summaryPreview), canonicalState.memoryEntries.map { it.content })
+            assertNull(canonicalState.error)
+            assertEquals(1, fixture.localStore.data.memoryEntries.size)
+            val persistedAfterCanonicalTerminals = json.encodeToString(fixture.localStore.data)
+            val listRequestCountAfterCanonicalTerminals = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+
+            fixture.viewModel.handleMemorySummaryDecisionForTest(
+                methodName = "handleMemorySummaryDraftApprove",
+                envelope = approveResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = currentConnectionGeneration,
+            )
+            fixture.viewModel.handleMemorySummaryDecisionForTest(
+                methodName = "handleMemorySummaryDraftDismiss",
+                envelope = dismissResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = currentConnectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError(approveRequest.requestId),
+                fixture.channel,
+                currentConnectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError(dismissRequest.requestId),
+                fixture.channel,
+                currentConnectionGeneration,
+            )
+
+            assertEquals(canonicalState, fixture.viewModel.state.value)
+            assertEquals(persistedAfterCanonicalTerminals, json.encodeToString(fixture.localStore.data))
+            assertEquals(
+                listRequestCountAfterCanonicalTerminals,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly() = runTest {
@@ -16843,9 +17817,14 @@ class RuntimeClientViewModelTest {
                 approvalRequest.payload,
             )
             assertEquals("draft-runtime-memory", approvalPayload.draftId)
+            assertEquals(
+                "Prefer concise Korean release-note summaries.",
+                approvalPayload.content,
+            )
             assertTrue(approvalPayload.enabled == true)
             assertEquals("runtime-session", approvalPayload.expectedSessionId)
             assertEquals(6, approvalPayload.expectedSourceMessageCount)
+            assertEquals("deterministic_preview", approvalPayload.expectedSummaryMethod)
             assertEquals(setOf("draft-runtime-memory"), fixture.viewModel.state.value.approvingMemorySummaryDraftIds)
 
             fixture.channel.enqueue(
@@ -16908,6 +17887,72 @@ class RuntimeClientViewModelTest {
             assertTrue(fixture.viewModel.state.value.memorySummaryDrafts.isEmpty())
             assertTrue(fixture.viewModel.state.value.approvingMemorySummaryDraftIds.isEmpty())
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun approveMemorySummaryDraftOmitsExpectedMethodForLegacyRuntime() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                runtimeCapabilities = emptyList(),
+            )
+            val initialDraftRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(
+                        drafts = listOf(
+                            MemorySummaryDraftPayload(
+                                id = "draft-legacy-runtime",
+                                session = MemorySummaryDraftSessionPayload(
+                                    sessionId = "legacy-runtime-session",
+                                    title = "Legacy runtime review",
+                                    model = "ollama:qwen3:8b",
+                                    lastActivityAt = "2026-06-01T00:00:00Z",
+                                    messageCount = 6,
+                                    inactiveSeconds = 1_209_600L,
+                                ),
+                                sourceMessageCount = 6,
+                                sourceRange = "visible messages 1-6 of 6",
+                                sourcePointers = listOf(
+                                    MemorySummaryDraftSourcePointerPayload(
+                                        sessionId = "legacy-runtime-session",
+                                        messageIndex = 1,
+                                        role = "user",
+                                        createdAt = "2026-06-01T00:00:00Z",
+                                        excerpt = "Keep approval compatible with the legacy runtime.",
+                                    ),
+                                ),
+                                summaryPreview = "Legacy runtime compatible summary.",
+                            ),
+                        ),
+                    ),
+                    requestId = initialDraftRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.approveMemorySummaryDraft("draft-legacy-runtime")
+            advanceUntilIdle()
+
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemorySummaryDraftApprove
+            }
+            val payload = json.decodeFromJsonElement(
+                MemorySummaryDraftApprovePayload.serializer(),
+                request.payload,
+            )
+            assertNull(payload.expectedSummaryMethod)
+            assertFalse(request.payload.containsKey("expected_summary_method"))
         } finally {
             Dispatchers.resetMain()
         }
@@ -17076,6 +18121,11 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val listRequestCountBeforeApproval = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
             fixture.viewModel.approveMemorySummaryDraft("draft-approve-guard")
             advanceUntilIdle()
             val approvalRequest = fixture.channel.sentEnvelopes.last {
@@ -17139,7 +18189,17 @@ class RuntimeClientViewModelTest {
                     .contains("entry.source.source_pointers[0].backend_url"),
             )
             assertEquals(listOf("draft-approve-guard"), rejectedState.memorySummaryDrafts.map { it.id })
-            assertEquals(setOf("draft-approve-guard"), rejectedState.approvingMemorySummaryDraftIds)
+            assertTrue(rejectedState.approvingMemorySummaryDraftIds.isEmpty())
+            assertTrue(
+                fixture.viewModel.privateField<Map<*, *>>(
+                    "pendingMemorySummaryDraftApprovalDraftIdsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+            assertFalse(fixture.viewModel.privateField<Boolean>("memorySummaryDraftsRefreshDeferred") ?: true)
+            assertEquals(
+                listRequestCountBeforeApproval + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
             assertTrue(rejectedState.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             val rejectedPersistedSnapshot = json.encodeToString(fixture.localStore.data)
@@ -17164,13 +18224,14 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
-            val acceptedState = fixture.viewModel.state.value
-            assertNull(acceptedState.error)
-            assertTrue(acceptedState.memorySummaryDrafts.isEmpty())
-            assertTrue(acceptedState.approvingMemorySummaryDraftIds.isEmpty())
+            val lateResultIgnoredState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", lateResultIgnoredState.error?.code)
+            assertEquals(listOf("draft-approve-guard"), lateResultIgnoredState.memorySummaryDrafts.map { it.id })
+            assertTrue(lateResultIgnoredState.approvingMemorySummaryDraftIds.isEmpty())
+            assertTrue(lateResultIgnoredState.memoryEntries.isEmpty())
             assertEquals(
-                listOf("Prefer concise Korean release-note summaries."),
-                acceptedState.memoryEntries.map { it.content },
+                listRequestCountBeforeApproval + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
             )
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
         } finally {
@@ -17481,6 +18542,11 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
+            fixture.viewModel.refreshRuntimeMemorySummaryDrafts()
+            advanceUntilIdle()
+            val listRequestCountBeforeDismiss = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
             fixture.viewModel.dismissMemorySummaryDraft("draft-dismiss-guard")
             advanceUntilIdle()
             val dismissRequest = fixture.channel.sentEnvelopes.last {
@@ -17511,7 +18577,17 @@ class RuntimeClientViewModelTest {
             assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("memory.summary.draft.dismiss"))
             assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("workspace_id"))
             assertEquals(listOf("draft-dismiss-guard"), rejectedState.memorySummaryDrafts.map { it.id })
-            assertEquals(setOf("draft-dismiss-guard"), rejectedState.dismissingMemorySummaryDraftIds)
+            assertTrue(rejectedState.dismissingMemorySummaryDraftIds.isEmpty())
+            assertTrue(
+                fixture.viewModel.privateField<Map<*, *>>(
+                    "pendingMemorySummaryDraftDismissalDraftIdsByRequestId",
+                ).orEmpty().isEmpty(),
+            )
+            assertFalse(fixture.viewModel.privateField<Boolean>("memorySummaryDraftsRefreshDeferred") ?: true)
+            assertEquals(
+                listRequestCountBeforeDismiss + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
             assertTrue(rejectedState.memoryEntries.isEmpty())
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
             val rejectedPersistedSnapshot = json.encodeToString(fixture.localStore.data)
@@ -17531,11 +18607,15 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
-            val acceptedState = fixture.viewModel.state.value
-            assertNull(acceptedState.error)
-            assertTrue(acceptedState.memorySummaryDrafts.isEmpty())
-            assertTrue(acceptedState.dismissingMemorySummaryDraftIds.isEmpty())
-            assertTrue(acceptedState.memoryEntries.isEmpty())
+            val lateResultIgnoredState = fixture.viewModel.state.value
+            assertEquals("invalid_payload", lateResultIgnoredState.error?.code)
+            assertEquals(listOf("draft-dismiss-guard"), lateResultIgnoredState.memorySummaryDrafts.map { it.id })
+            assertTrue(lateResultIgnoredState.dismissingMemorySummaryDraftIds.isEmpty())
+            assertTrue(lateResultIgnoredState.memoryEntries.isEmpty())
+            assertEquals(
+                listRequestCountBeforeDismiss + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
             assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
         } finally {
             Dispatchers.resetMain()
@@ -30472,6 +31552,7 @@ class RuntimeClientViewModelTest {
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTIONS_CAPABILITY))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SOURCE_ATTRIBUTION_RESOLVE_CAPABILITY))
         assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(CHAT_SESSIONS_SYNC_CAPABILITY))
+        assertTrue(RUNTIME_CLIENT_CAPABILITIES.contains(RUNTIME_CAPABILITY_NEGOTIATION_CAPABILITY))
     }
 
     @Test
@@ -36838,7 +37919,14 @@ class RuntimeClientViewModelTest {
         initialData: PersistedRuntimeData? = null,
         replacementChannel: ScriptedRuntimeProtocolChannel? = null,
         leaveResearchNotebooksPending: Boolean = false,
+        runtimeCapabilities: List<String> = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
+        memorySummaryControlRequestTimeoutMillis: Long? = null,
+        memorySummaryGenerationRequestTimeoutMillis: Long? = null,
     ): RuntimeClientFixture {
+        val leaveScheduledTimeoutsPending =
+            leaveResearchNotebooksPending ||
+                memorySummaryControlRequestTimeoutMillis != null ||
+                memorySummaryGenerationRequestTimeoutMillis != null
         val channel = ScriptedRuntimeProtocolChannel()
         var relayConnectionCount = 0
         val localStore = FakeRuntimeLocalDataStore(
@@ -36868,6 +37956,10 @@ class RuntimeClientViewModelTest {
                 lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = attachmentReader,
                 attachmentPromptHeaderProvider = ::testAttachmentOnlyPromptHeader,
+                memorySummaryControlRequestTimeoutMillis =
+                    memorySummaryControlRequestTimeoutMillis,
+                memorySummaryGenerationRequestTimeoutMillis =
+                    memorySummaryGenerationRequestTimeoutMillis,
                 currentTimeMillis = { 1_000L },
             ),
         )
@@ -36878,6 +37970,7 @@ class RuntimeClientViewModelTest {
         completeRuntimeAuthentication(
             viewModel = viewModel,
             channel = channel,
+            runtimeCapabilities = runtimeCapabilities,
         )
         if (!leaveResearchNotebooksPending) {
             val researchNotebooksRequest = channel.sentEnvelopes.lastOrNull {
@@ -36897,7 +37990,7 @@ class RuntimeClientViewModelTest {
                 )
             }
         }
-        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
+        if (leaveScheduledTimeoutsPending) runCurrent() else advanceUntilIdle()
         channel.enqueue(
             envelope(
                 type = MessageType.RuntimeHealth,
@@ -36906,7 +37999,7 @@ class RuntimeClientViewModelTest {
                 requestId = "runtime-health",
             ),
         )
-        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
+        if (leaveScheduledTimeoutsPending) runCurrent() else advanceUntilIdle()
         val modelsRequest = channel.sentEnvelopes.last { it.type == MessageType.ModelsList }
         channel.enqueue(
             envelope(
@@ -36918,7 +38011,7 @@ class RuntimeClientViewModelTest {
                 requestId = modelsRequest.requestId,
             ),
         )
-        if (leaveResearchNotebooksPending) runCurrent() else advanceUntilIdle()
+        if (leaveScheduledTimeoutsPending) runCurrent() else advanceUntilIdle()
 
         return RuntimeClientFixture(
             viewModel = viewModel,
@@ -37045,6 +38138,22 @@ class RuntimeClientViewModelTest {
     ) {
         val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
             "handleError",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.handleMemorySummaryDecisionForTest(
+        methodName: String,
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            methodName,
             ProtocolEnvelope::class.java,
             RuntimeProtocolChannel::class.java,
             Long::class.javaPrimitiveType,
@@ -37208,6 +38317,7 @@ class RuntimeClientViewModelTest {
         keyPair: KeyPair,
         nonce: String,
         transportBinding: String?,
+        runtimeCapabilities: List<String> = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
     ): ProtocolEnvelope {
         val signature = Signature.getInstance("SHA256withECDSA").run {
             initSign(keyPair.private)
@@ -37227,6 +38337,7 @@ class RuntimeClientViewModelTest {
                 deviceId = "client-1",
                 nonce = nonce,
                 runtimeSignature = signature,
+                runtimeCapabilities = runtimeCapabilities,
                 transportBinding = transportBinding,
             ),
             requestId = "auth-$nonce",
@@ -37239,6 +38350,7 @@ class RuntimeClientViewModelTest {
         channel: ScriptedRuntimeProtocolChannel,
         requestId: String = "auth-accepted",
         transportBinding: String? = channel.transportSecurityContext?.bindingId,
+        runtimeCapabilities: List<String> = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
     ) {
         val trustedBeforeAuthentication = viewModel.state.value.trustedRuntime
         if (trustedBeforeAuthentication != null) {
@@ -37257,6 +38369,7 @@ class RuntimeClientViewModelTest {
                 keyPair = initialPairingRuntimeKeyPair,
                 nonce = "nonce-$requestId",
                 transportBinding = transportBinding,
+                runtimeCapabilities = runtimeCapabilities,
             ).copy(requestId = requestId),
         )
         runCurrent()

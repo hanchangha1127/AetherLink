@@ -64,15 +64,18 @@ struct LocalAgentBridgeApp: App {
             .disabled(!canUnloadResidentModel)
             .help(unloadResidentModelActionAccessibilityHint(
                 canUnload: canUnloadResidentModel,
-                inFlightGenerations: model.modelResidency.inFlightGenerations
+                inFlightGenerations: model.modelResidency.inFlightGenerations,
+                isUnloading: model.modelResidency.unloadingModelID != nil
             ))
             .accessibilityValue(Text(unloadResidentModelActionAccessibilityValue(
                 canUnload: canUnloadResidentModel,
-                inFlightGenerations: model.modelResidency.inFlightGenerations
+                inFlightGenerations: model.modelResidency.inFlightGenerations,
+                isUnloading: model.modelResidency.unloadingModelID != nil
             )))
             .accessibilityHint(Text(unloadResidentModelActionAccessibilityHint(
                 canUnload: canUnloadResidentModel,
-                inFlightGenerations: model.modelResidency.inFlightGenerations
+                inFlightGenerations: model.modelResidency.inFlightGenerations,
+                isUnloading: model.modelResidency.unloadingModelID != nil
             )))
             Divider()
             Button(commandTitles.quit) {
@@ -101,6 +104,7 @@ struct LocalAgentBridgeApp: App {
     private var canUnloadResidentModel: Bool {
         model.modelResidency.supported &&
             model.modelResidency.activeModelID != nil &&
+            model.modelResidency.unloadingModelID == nil &&
             model.modelResidency.inFlightGenerations == 0
     }
 

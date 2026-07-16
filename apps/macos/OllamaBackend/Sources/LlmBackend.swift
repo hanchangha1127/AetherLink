@@ -180,24 +180,52 @@ public struct ModelPullResult: Equatable, Sendable {
 }
 
 public struct ModelUnloadResult: Equatable, Sendable {
+    public enum Outcome: String, Equatable, Sendable {
+        case confirmed
+        case alreadyAbsent = "already_absent"
+        case unsupported
+    }
+
     public var provider: ModelProvider
     public var modelID: String
-    public var unloaded: Bool
+    public var outcome: Outcome
     public var message: String
 
-    public init(provider: ModelProvider, modelID: String, unloaded: Bool, message: String) {
+    public var unloaded: Bool {
+        outcome == .confirmed || outcome == .alreadyAbsent
+    }
+
+    public init(provider: ModelProvider, modelID: String, outcome: Outcome, message: String) {
         self.provider = provider
         self.modelID = modelID
-        self.unloaded = unloaded
+        self.outcome = outcome
         self.message = message
+    }
+
+    public init(provider: ModelProvider, modelID: String, unloaded: Bool, message: String) {
+        self.init(
+            provider: provider,
+            modelID: modelID,
+            outcome: unloaded ? .confirmed : .unsupported,
+            message: message
+        )
     }
 
     public static func unloaded(provider: ModelProvider, modelID: String) -> ModelUnloadResult {
         ModelUnloadResult(
             provider: provider,
             modelID: modelID,
-            unloaded: true,
+            outcome: .confirmed,
             message: "Model unloaded."
+        )
+    }
+
+    public static func alreadyAbsent(provider: ModelProvider, modelID: String) -> ModelUnloadResult {
+        ModelUnloadResult(
+            provider: provider,
+            modelID: modelID,
+            outcome: .alreadyAbsent,
+            message: "Model was already unloaded."
         )
     }
 
@@ -205,7 +233,7 @@ public struct ModelUnloadResult: Equatable, Sendable {
         ModelUnloadResult(
             provider: provider,
             modelID: modelID,
-            unloaded: false,
+            outcome: .unsupported,
             message: "\(provider.displayName) does not support runtime-managed model unload."
         )
     }

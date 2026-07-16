@@ -708,6 +708,8 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var modelPullApprovalErrorLocalizationKey: String?
     @Published public private(set) var isModelPullDecisionInFlight = false
     @Published public private(set) var modelResidency: CompanionModelResidencyStatus = .inactive
+    @Published public private(set) var modelIdleUnloadPolicy: RuntimeModelIdleUnloadPolicy
+    @Published public private(set) var isModelIdleUnloadPolicyUpdateInFlight = false
     @Published public private(set) var runtimeDataSummary = CompanionRuntimeDataSummary()
     @Published public private(set) var runtimeChatRetentionStatus = CompanionRuntimeChatRetentionStatus()
     @Published public private(set) var runtimeChatSessions: [RuntimeChatStoredSession] = []
@@ -758,6 +760,7 @@ public final class CompanionAppModel: ObservableObject {
     private var isRuntimeStarted = false
     private var hasScheduledRuntimeChatRetentionMaintenance = false
     private var runtimeChatRetentionMaintenanceTask: Task<Void, Never>?
+    private let modelIdleUnloadPolicyUpdateQueue = RuntimeModelIdleUnloadPolicyUpdateQueue()
     private var shouldGenerateRemotePairingQRCodeWhenRelayReady = false
 
     private static let runtimeChatRetentionMaintenanceIntervalNanoseconds: UInt64 = 24 * 60 * 60 * 1_000_000_000
@@ -814,7 +817,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public init(
-        backend: any LlmBackend = AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend()),
+        backend: (any LlmBackend)? = nil,
         peerServer: any RuntimeTransport = LocalPeerServer(),
         advertiser: any RuntimeAdvertiser = BonjourAdvertiser(),
         relayClient: any RelayPeerTransport = RelayPeerClient(),
@@ -840,12 +843,24 @@ public final class CompanionAppModel: ObservableObject {
         runtimeRouteHostProvider: (() -> String?)? = nil,
         allowsAuthenticatedRouteRefresh: Bool = false
     ) {
+        let modelIdleUnloadPolicyStore = RuntimeModelIdleUnloadPolicyStore(defaults: userDefaults)
+        let loadedModelIdleUnloadPolicy = modelIdleUnloadPolicyStore.load()
+        let resolvedBackend = backend ?? AggregatingLlmBackend(
+            [OllamaBackend(), LMStudioBackend()],
+            modelIdleUnloadDelayNanoseconds: loadedModelIdleUnloadPolicy.idleUnloadDelayNanoseconds
+        )
+        if let aggregate = resolvedBackend as? AggregatingLlmBackend {
+            aggregate.configureModelIdleUnloadDelayNanoseconds(
+                loadedModelIdleUnloadPolicy.idleUnloadDelayNanoseconds
+            )
+        }
         let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
         )
-        self.backend = backend
-        self.providerStatuses = Self.initialProviderStatuses(for: backend)
+        self.backend = resolvedBackend
+        self.providerStatuses = Self.initialProviderStatuses(for: resolvedBackend)
+        self.modelIdleUnloadPolicy = loadedModelIdleUnloadPolicy
         self.relayServiceRouteAllocator = relayServiceRouteAllocator
         self.environment = environment
         self.userDefaults = userDefaults
@@ -900,7 +915,7 @@ public final class CompanionAppModel: ObservableObject {
             endpoint: relaySettings.endpointLabel
         )
         self.runtimeModelPullApprovalBroker = RuntimeModelPullApprovalBroker(
-            dispatcher: backend,
+            dispatcher: resolvedBackend,
             persistence: runtimeModelPullApprovalPersistence,
             permissionPolicyRegistry: runtimePermissionPolicyRegistry,
             onStateChange: { [weak self] in
@@ -911,7 +926,7 @@ public final class CompanionAppModel: ObservableObject {
         )
         let runtimeModelPullApprovalBroker = self.runtimeModelPullApprovalBroker!
         self.runtimeRouter = LocalRuntimeMessageRouter(
-            backend: backend,
+            backend: resolvedBackend,
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
@@ -1466,6 +1481,48 @@ public final class CompanionAppModel: ObservableObject {
     public func refreshModelResidencyStatus() {
         guard let aggregate = backend as? AggregatingLlmBackend else {
             modelResidency = .unsupported
+            return
+        }
+        modelResidency = CompanionModelResidencyStatus(
+            snapshot: aggregate.modelResidencySnapshot(),
+            lastEvent: modelResidency.lastEvent
+        )
+    }
+
+    public func setModelIdleUnloadPolicy(_ policy: RuntimeModelIdleUnloadPolicy) async {
+        RuntimeModelIdleUnloadPolicyStore(defaults: userDefaults).save(policy)
+        modelIdleUnloadPolicy = policy
+        await applyModelIdleUnloadPolicy(policy)
+    }
+
+    @discardableResult
+    public func requestModelIdleUnloadPolicy(_ policy: RuntimeModelIdleUnloadPolicy) -> Bool {
+        guard !isModelIdleUnloadPolicyUpdateInFlight,
+              policy != modelIdleUnloadPolicy
+        else {
+            return false
+        }
+        RuntimeModelIdleUnloadPolicyStore(defaults: userDefaults).save(policy)
+        modelIdleUnloadPolicy = policy
+        isModelIdleUnloadPolicyUpdateInFlight = true
+        Task { [weak self] in
+            guard let self else { return }
+            await self.applyModelIdleUnloadPolicy(policy)
+            self.isModelIdleUnloadPolicyUpdateInFlight = false
+        }
+        return true
+    }
+
+    private func applyModelIdleUnloadPolicy(_ policy: RuntimeModelIdleUnloadPolicy) async {
+        guard let aggregate = backend as? AggregatingLlmBackend else {
+            modelResidency = .unsupported
+            return
+        }
+        let delayNanoseconds = policy.idleUnloadDelayNanoseconds
+        let isLatestUpdate = await modelIdleUnloadPolicyUpdateQueue.enqueue {
+            await aggregate.updateModelIdleUnloadDelayNanoseconds(delayNanoseconds)
+        }
+        guard isLatestUpdate else {
             return
         }
         modelResidency = CompanionModelResidencyStatus(
@@ -2450,13 +2507,16 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private func handleResidencyEvent(_ event: RuntimeModelResidencyEvent) {
+        let logMessage = event.logMessage
         if let aggregate = backend as? AggregatingLlmBackend {
             modelResidency = CompanionModelResidencyStatus(
                 snapshot: aggregate.modelResidencySnapshot(),
-                lastEvent: event.logMessage
+                lastEvent: logMessage ?? modelResidency.lastEvent
             )
         }
-        log(event.logMessage)
+        if let logMessage {
+            log(logMessage)
+        }
     }
 
     private var macFingerprint: String {
@@ -3036,6 +3096,11 @@ public final class CompanionAppModel: ObservableObject {
         return true
     }
 
+    @Published public private(set) var runtimeChatCompactionCalibrationReport =
+        RuntimeChatCompactionCalibrationReport()
+    @Published public private(set) var runtimeChatCompactionCalibrationReportError: String?
+    @Published public private(set) var isRuntimeChatCompactionCalibrationReportRefreshing = false
+
 }
 
 private func isRelayRouteLeaseFreshForPairingQRCode(_ lease: CompanionRemoteRouteLease) -> Bool {
@@ -3241,6 +3306,44 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
             .activationRequested = true
         reconcilePendingPairActivation(fingerprint: pendingActivation.clientKeyFingerprint)
     }
+
+    public func refreshRuntimeChatCompactionCalibrationReport() async {
+        guard !isRuntimeChatCompactionCalibrationReportRefreshing else { return }
+        isRuntimeChatCompactionCalibrationReportRefreshing = true
+        runtimeChatCompactionCalibrationReport = RuntimeChatCompactionCalibrationReport()
+        runtimeChatCompactionCalibrationReportError = nil
+        defer { isRuntimeChatCompactionCalibrationReportRefreshing = false }
+
+        let store = runtimeChatEventStore
+        do {
+            runtimeChatCompactionCalibrationReport = try await Self.loadRuntimeChatCompactionCalibrationReport(
+                from: store
+            )
+        } catch is CancellationError {
+            runtimeChatCompactionCalibrationReport = RuntimeChatCompactionCalibrationReport()
+        } catch {
+            let message = error.localizedDescription
+            runtimeChatCompactionCalibrationReport = RuntimeChatCompactionCalibrationReport()
+            runtimeChatCompactionCalibrationReportError = message
+            log("Runtime chat compaction calibration report failed: \(message)")
+        }
+    }
+
+    nonisolated private static func loadRuntimeChatCompactionCalibrationReport(
+        from store: any RuntimeChatEventStore
+    ) async throws -> RuntimeChatCompactionCalibrationReport {
+        try await withThrowingTaskGroup(of: RuntimeChatCompactionCalibrationReport.self) { group in
+            group.addTask(priority: .utility) {
+                try Task.checkCancellation()
+                return try store.chatCompactionCalibrationReport()
+            }
+            guard let report = try await group.next() else {
+                throw CancellationError()
+            }
+            group.cancelAll()
+            return report
+        }
+    }
 }
 
 public struct CompanionModelResidencyStatus: Equatable, Sendable {
@@ -3248,6 +3351,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
     public var activeModelID: String?
     public var inFlightGenerations: Int
     public var idleUnloadDelaySeconds: Int
+    public var unloadingProvider: ModelProvider?
+    public var unloadingModelID: String?
+    public var unloadingReason: RuntimeModelResidencyUnloadReason?
+    public var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
     public var lastEvent: String?
     public var supported: Bool
 
@@ -3256,6 +3363,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
         activeModelID: nil,
         inFlightGenerations: 0,
         idleUnloadDelaySeconds: 600,
+        unloadingProvider: nil,
+        unloadingModelID: nil,
+        unloadingReason: nil,
+        lastUnloadFailure: nil,
         lastEvent: nil,
         supported: true
     )
@@ -3265,6 +3376,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
         activeModelID: nil,
         inFlightGenerations: 0,
         idleUnloadDelaySeconds: 0,
+        unloadingProvider: nil,
+        unloadingModelID: nil,
+        unloadingReason: nil,
+        lastUnloadFailure: nil,
         lastEvent: nil,
         supported: false
     )
@@ -3274,6 +3389,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
         activeModelID: String?,
         inFlightGenerations: Int,
         idleUnloadDelaySeconds: Int,
+        unloadingProvider: ModelProvider? = nil,
+        unloadingModelID: String? = nil,
+        unloadingReason: RuntimeModelResidencyUnloadReason? = nil,
+        lastUnloadFailure: RuntimeModelResidencyUnloadFailure? = nil,
         lastEvent: String?,
         supported: Bool
     ) {
@@ -3281,6 +3400,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
         self.activeModelID = activeModelID
         self.inFlightGenerations = inFlightGenerations
         self.idleUnloadDelaySeconds = idleUnloadDelaySeconds
+        self.unloadingProvider = unloadingProvider
+        self.unloadingModelID = unloadingModelID
+        self.unloadingReason = unloadingReason
+        self.lastUnloadFailure = lastUnloadFailure
         self.lastEvent = lastEvent
         self.supported = supported
     }
@@ -3291,6 +3414,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
             activeModelID: snapshot.activeModelID,
             inFlightGenerations: snapshot.inFlightGenerations,
             idleUnloadDelaySeconds: snapshot.idleUnloadDelaySeconds,
+            unloadingProvider: snapshot.unloadingProvider,
+            unloadingModelID: snapshot.unloadingModelID,
+            unloadingReason: snapshot.unloadingReason,
+            lastUnloadFailure: snapshot.lastUnloadFailure,
             lastEvent: lastEvent,
             supported: true
         )
@@ -3298,8 +3425,10 @@ public struct CompanionModelResidencyStatus: Equatable, Sendable {
 }
 
 private extension RuntimeModelResidencyEvent {
-    var logMessage: String {
+    var logMessage: String? {
         switch self {
+        case .stateChanged:
+            return nil
         case .activeModelChanged(let provider, let modelID):
             return "Model residency active: \(provider.displayName) \(modelID)"
         case .unloadRequested(let provider, let modelID, let reason):

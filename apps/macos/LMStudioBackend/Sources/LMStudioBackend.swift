@@ -5,8 +5,14 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     public static let defaultBaseURL = URL(string: "http://127.0.0.1:1234")!
     public let provider = ModelProvider.lmStudio
 
+    private static let defaultUnloadPollAttempts = 20
+    private static let defaultUnloadPollIntervalNanoseconds: UInt64 = 100_000_000
+
     private let baseURL: URL
     private let session: URLSession
+    private let unloadPollAttempts: Int
+    private let unloadPollIntervalNanoseconds: UInt64
+    private let unloadSleeper: @Sendable (UInt64) async throws -> Void
     private let registry = LMStudioGenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -14,6 +20,23 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     public init(baseURL: URL = LMStudioBackend.defaultBaseURL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
+        self.unloadPollAttempts = Self.defaultUnloadPollAttempts
+        self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
+        self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
+    }
+
+    init(
+        baseURL: URL,
+        session: URLSession,
+        unloadPollAttempts: Int,
+        unloadPollIntervalNanoseconds: UInt64 = 0,
+        unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
+    ) {
+        self.baseURL = baseURL
+        self.session = session
+        self.unloadPollAttempts = max(1, unloadPollAttempts)
+        self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
+        self.unloadSleeper = unloadSleeper
     }
 
     public func healthCheck() async -> BackendStatus {
@@ -71,12 +94,46 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     }
 
     public func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
-        let instanceIDs = try await loadedInstanceIDs(for: providerModelID)
-        let unloadIDs = instanceIDs.isEmpty ? [providerModelID] : instanceIDs
-        for instanceID in unloadIDs {
+        let initialLookup = try await nativeModelLookup(for: providerModelID)
+        let instanceIDs: [String]
+        switch initialLookup {
+        case .unsupported:
+            return .unsupported(provider: provider, modelID: providerModelID)
+        case .model(nil):
+            return .alreadyAbsent(provider: provider, modelID: providerModelID)
+        case .model(let model?):
+            instanceIDs = model.loadedInstances.map(\.id)
+        }
+        guard !instanceIDs.isEmpty else {
+            return .alreadyAbsent(provider: provider, modelID: providerModelID)
+        }
+        guard instanceIDs.allSatisfy({ !$0.isEmpty }) else {
+            throw LMStudioBackendError.unloadNotConfirmed(reason: "The provider reported an invalid loaded instance identifier.")
+        }
+
+        for instanceID in instanceIDs {
+            try Task.checkCancellation()
             try await unloadInstance(instanceID)
         }
-        return .unloaded(provider: provider, modelID: providerModelID)
+
+        for attempt in 0..<unloadPollAttempts {
+            try Task.checkCancellation()
+            switch try await nativeModelLookup(for: providerModelID) {
+            case .unsupported:
+                throw LMStudioBackendError.unloadNotConfirmed(reason: "Native model state became unavailable before verification completed.")
+            case .model(nil):
+                return .unloaded(provider: provider, modelID: providerModelID)
+            case .model(let model?) where model.loadedInstances.isEmpty:
+                return .unloaded(provider: provider, modelID: providerModelID)
+            case .model:
+                break
+            }
+            if attempt + 1 < unloadPollAttempts {
+                try await unloadSleeper(unloadPollIntervalNanoseconds)
+            }
+        }
+
+        throw LMStudioBackendError.unloadNotConfirmed(reason: "The model remained resident after bounded verification.")
     }
 
     public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
@@ -211,18 +268,28 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
-    private func loadedInstanceIDs(for modelID: String) async throws -> [String] {
+    private func nativeModelLookup(for modelID: String) async throws -> LMStudioNativeModelLookup {
         do {
             let data = try await performDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
-            let response = try decoder.decode(LMStudioNativeModelsResponse.self, from: data)
-            guard let model = response.models.first(where: { $0.key == modelID || $0.displayName == modelID }) else {
-                return []
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            let response = try decoder.decode(LMStudioUnloadModelsResponse.self, from: data)
+            let matches = response.models.filter { $0.key == modelID }
+            guard matches.count <= 1 else {
+                throw LMStudioBackendError.unloadNotConfirmed(
+                    reason: "Native model state contained an ambiguous model key."
+                )
             }
-            return model.loadedInstances.map(\.id)
+            return .model(matches.first)
         } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
-            return []
-        } catch let error as DecodingError {
-            throw LMStudioBackendError.badResponse(endpoint: "GET /api/v1/models", reason: error.localizedDescription)
+            return .unsupported
+        } catch is DecodingError {
+            throw LMStudioBackendError.unloadNotConfirmed(
+                reason: "Native model residency state was malformed."
+            )
+        } catch is StrictJSONValidationError {
+            throw LMStudioBackendError.unloadNotConfirmed(
+                reason: "Native model residency state was malformed."
+            )
         }
     }
 
@@ -236,7 +303,17 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             encoder: encoder,
             endpoint: endpoint
         )
-        _ = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let acknowledgement: LMStudioUnloadResponse
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            acknowledgement = try decoder.decode(LMStudioUnloadResponse.self, from: data)
+        } catch {
+            throw LMStudioBackendError.unloadNotConfirmed(reason: "The provider acknowledgement was malformed.")
+        }
+        guard acknowledgement.instanceID == instanceID else {
+            throw LMStudioBackendError.unloadNotConfirmed(reason: "The provider acknowledgement did not match the requested instance.")
+        }
     }
 
     private func performDataRequest(endpoint: String, url: URL) async throws -> Data {
@@ -250,6 +327,10 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             return data
         } catch let error as LMStudioBackendError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw LMStudioBackendError.unavailable(endpoint: endpoint, reason: error.localizedDescription)
         } catch {
@@ -547,7 +628,7 @@ private extension LMStudioBackendError {
             return statusCode == 400 || statusCode == 404 || statusCode == 405 || statusCode == 422
         case .badResponse, .streamDecoding:
             return true
-        case .unavailable, .noModels, .requestEncoding, .generationCancelled, .generationNotFound, .transport:
+        case .unavailable, .noModels, .requestEncoding, .unloadNotConfirmed, .generationCancelled, .generationNotFound, .transport:
             return false
         }
     }
@@ -682,6 +763,25 @@ private struct LMStudioLoadedInstance: Decodable {
     var id: String
 }
 
+private struct LMStudioUnloadModelsResponse: Decodable {
+    var models: [LMStudioUnloadModel]
+}
+
+private struct LMStudioUnloadModel: Decodable {
+    var key: String
+    var loadedInstances: [LMStudioLoadedInstance]
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case loadedInstances = "loaded_instances"
+    }
+}
+
+private enum LMStudioNativeModelLookup {
+    case unsupported
+    case model(LMStudioUnloadModel?)
+}
+
 private struct OpenAIModelsResponse: Decodable {
     var data: [OpenAIModel]
 }
@@ -728,6 +828,14 @@ private struct OpenAIModel: Decodable {
 }
 
 private struct LMStudioUnloadRequest: Encodable {
+    var instanceID: String
+
+    enum CodingKeys: String, CodingKey {
+        case instanceID = "instance_id"
+    }
+}
+
+private struct LMStudioUnloadResponse: Decodable {
     var instanceID: String
 
     enum CodingKeys: String, CodingKey {

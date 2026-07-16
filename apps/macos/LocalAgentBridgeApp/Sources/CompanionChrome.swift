@@ -317,8 +317,12 @@ func refreshModelResidencyActionAccessibilityHint() -> String {
 
 func unloadResidentModelActionAccessibilityValue(
     canUnload: Bool,
-    inFlightGenerations: Int
+    inFlightGenerations: Int,
+    isUnloading: Bool = false
 ) -> String {
+    if isUnloading {
+        return NSLocalizedString("Model unload in progress", comment: "")
+    }
     if inFlightGenerations > 0 {
         return NSLocalizedString("Generation in progress", comment: "")
     }
@@ -329,8 +333,12 @@ func unloadResidentModelActionAccessibilityValue(
 
 func unloadResidentModelActionAccessibilityHint(
     canUnload: Bool,
-    inFlightGenerations: Int
+    inFlightGenerations: Int,
+    isUnloading: Bool = false
 ) -> String {
+    if isUnloading {
+        return NSLocalizedString("Wait for the current model unload to finish.", comment: "")
+    }
     if inFlightGenerations > 0 {
         return NSLocalizedString("Wait for the active generation to finish before unloading the resident model.", comment: "")
     }

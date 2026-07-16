@@ -1,10 +1,23 @@
 import Foundation
-import OllamaBackend
+@testable import OllamaBackend
 import XCTest
 
 final class OllamaBackendTests: XCTestCase {
     func testOllamaChatUsageWireModeRawValue() {
         XCTAssertEqual(ChatProviderWireMode.ollamaChat.rawValue, "ollama_chat")
+    }
+
+    func testModelUnloadResultOutcomesPreserveBooleanGuard() {
+        let confirmed = ModelUnloadResult.unloaded(provider: .ollama, modelID: "model")
+        let absent = ModelUnloadResult.alreadyAbsent(provider: .ollama, modelID: "model")
+        let unsupported = ModelUnloadResult.unsupported(provider: .ollama, modelID: "model")
+
+        XCTAssertEqual(confirmed.outcome, .confirmed)
+        XCTAssertEqual(absent.outcome, .alreadyAbsent)
+        XCTAssertEqual(unsupported.outcome, .unsupported)
+        XCTAssertTrue(confirmed.unloaded)
+        XCTAssertTrue(absent.unloaded)
+        XCTAssertFalse(unsupported.unloaded)
     }
 
     override func tearDown() {
@@ -347,33 +360,249 @@ final class OllamaBackendTests: XCTestCase {
     }
 
     func testUnloadModelPostsEmptyChatWithKeepAliveZero() async throws {
+        var paths: [String] = []
+        var psRequestCount = 0
         let backend = makeBackend { request in
-            XCTAssertEqual(request.url?.path, "/api/chat")
-            XCTAssertEqual(request.httpMethod, "POST")
-            let body = try self.requestBodyData(from: request)
-            let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
-            XCTAssertEqual(postedRequest.model, "llama3.1:8b")
-            XCTAssertTrue(postedRequest.messages.isEmpty)
-            XCTAssertEqual(postedRequest.keepAlive, 0)
-            return self.response(statusCode: 200, body: #"{"done":true}"#)
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/ps":
+                psRequestCount += 1
+                let body = psRequestCount == 1
+                    ? #"{"models":[{"name":"llama3.1:8b"}]}"#
+                    : #"{"models":[]}"#
+                return self.response(statusCode: 200, body: body)
+            case "/api/chat":
+                XCTAssertEqual(request.httpMethod, "POST")
+                let body = try self.requestBodyData(from: request)
+                let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+                XCTAssertEqual(postedRequest.model, "llama3.1:8b")
+                XCTAssertTrue(postedRequest.messages.isEmpty)
+                XCTAssertEqual(postedRequest.keepAlive, 0)
+                return self.response(statusCode: 200, body: #"{"done":true,"done_reason":"unload"}"#)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
         }
 
         let result = try await backend.unloadModel(providerModelID: "llama3.1:8b")
 
+        XCTAssertEqual(paths, ["/api/ps", "/api/chat", "/api/ps"])
         XCTAssertEqual(result, .unloaded(provider: .ollama, modelID: "llama3.1:8b"))
+        XCTAssertEqual(result.outcome, .confirmed)
+        XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelUsesCanonicalRunningTarget() async throws {
+        var psRequestCount = 0
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/ps":
+                psRequestCount += 1
+                return self.response(
+                    statusCode: 200,
+                    body: psRequestCount == 1 ? #"{"models":[{"name":"gemma3:latest"}]}"# : #"{"models":[]}"#
+                )
+            case "/api/chat":
+                let posted = try JSONDecoder().decode(PostedUnloadRequest.self, from: self.requestBodyData(from: request))
+                XCTAssertEqual(posted.model, "gemma3:latest")
+                return self.response(statusCode: 200, body: #"{"done":true,"done_reason":"unload"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "gemma3")
+
+        XCTAssertEqual(result.outcome, .confirmed)
+    }
+
+    func testUnloadModelReturnsAlreadyAbsentWithoutPosting() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: #"{"models":[{"name":"other:latest"}]}"#)
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+
+        XCTAssertEqual(paths, ["/api/ps"])
+        XCTAssertEqual(result.outcome, .alreadyAbsent)
+        XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup() async {
+        let malformedBodies = [
+            #"{"models":[],"models":[{"name":"llama3.1:8b"}]}"#,
+            #"{"models":[{"name":"llama3.1:8b"}],"models":[]}"#,
+            #"{"models":[],"m\u006fdels":[{"name":"llama3.1:8b"}]}"#,
+        ]
+
+        for body in malformedBodies {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(statusCode: 200, body: body)
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+                XCTFail("Expected duplicate running-state key rejection")
+            } catch let error as OllamaBackendError {
+                guard case .responseDecoding = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(paths, ["/api/ps"])
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsDuplicateRunningStateKeysDuringPolling() async {
+        let malformedBodies = [
+            #"{"models":[],"models":[{"name":"llama3.1:8b"}]}"#,
+            #"{"models":[{"name":"llama3.1:8b"}],"models":[]}"#,
+            #"{"models":[],"m\u006fdels":[{"name":"llama3.1:8b"}]}"#,
+        ]
+
+        for body in malformedBodies {
+            var psRequestCount = 0
+            let backend = makeBackend { request in
+                switch request.url?.path {
+                case "/api/ps":
+                    psRequestCount += 1
+                    return self.response(
+                        statusCode: 200,
+                        body: psRequestCount == 1
+                            ? #"{"models":[{"name":"llama3.1:8b"}]}"#
+                            : body
+                    )
+                case "/api/chat":
+                    return self.response(statusCode: 200, body: #"{"done":true,"done_reason":"unload"}"#)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+                XCTFail("Expected duplicate polling-state key rejection")
+            } catch let error as OllamaBackendError {
+                guard case .responseDecoding = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(psRequestCount, 2)
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsMalformedAndFalseAcknowledgements() async {
+        let acknowledgementBodies = [
+            "not-json",
+            #"{"done":false,"done_reason":"unload"}"#,
+            #"{"done":true,"done_reason":"stop"}"#,
+            #"{"done":true,"done":false,"done_reason":"unload"}"#,
+            #"{"done":false,"done":true,"done_reason":"unload"}"#,
+        ]
+
+        for acknowledgementBody in acknowledgementBodies {
+            let backend = makeBackend { request in
+                switch request.url?.path {
+                case "/api/ps":
+                    return self.response(statusCode: 200, body: #"{"models":[{"name":"llama3.1:8b"}]}"#)
+                case "/api/chat":
+                    return self.response(statusCode: 200, body: acknowledgementBody)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+                XCTFail("Expected acknowledgement rejection")
+            } catch let error as OllamaBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(error.code, "ollama_unload_not_confirmed")
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling() async {
+        var paths: [String] = []
+        let backend = makeBackend(unloadPollAttempts: 3) { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"llama3.1:8b"}]}"#)
+            case "/api/chat":
+                return self.response(statusCode: 200, body: #"{"done":true,"done_reason":"unload"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+            XCTFail("Expected persistent residency failure")
+        } catch let error as OllamaBackendError {
+            guard case .unloadNotConfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(paths, ["/api/ps", "/api/chat", "/api/ps", "/api/ps", "/api/ps"])
+            XCTAssertEqual(error.backendError.code, "model_unload_not_confirmed")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadModelPollingPropagatesCancellation() async {
+        let backend = makeBackend(
+            unloadPollAttempts: 3,
+            unloadSleeper: { _ in throw CancellationError() }
+        ) { request in
+            switch request.url?.path {
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"llama3.1:8b"}]}"#)
+            case "/api/chat":
+                return self.response(statusCode: 200, body: #"{"done":true,"done_reason":"unload"}"#)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testUnloadModelHTTPStatusReturnsStructuredError() async {
         let unsafeBody = "unload denied http://127.0.0.1:11434/api/chat route_token=secret"
         let backend = makeBackend { request in
-            XCTAssertEqual(request.url?.path, "/api/chat")
-            XCTAssertEqual(request.httpMethod, "POST")
-            let body = try self.requestBodyData(from: request)
-            let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
-            XCTAssertEqual(postedRequest.model, "llama3.1:8b")
-            XCTAssertTrue(postedRequest.messages.isEmpty)
-            XCTAssertEqual(postedRequest.keepAlive, 0)
-            return self.response(statusCode: 503, body: unsafeBody)
+            switch request.url?.path {
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"llama3.1:8b"}]}"#)
+            case "/api/chat":
+                XCTAssertEqual(request.httpMethod, "POST")
+                let body = try self.requestBodyData(from: request)
+                let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+                XCTAssertEqual(postedRequest.model, "llama3.1:8b")
+                XCTAssertTrue(postedRequest.messages.isEmpty)
+                XCTAssertEqual(postedRequest.keepAlive, 0)
+                return self.response(statusCode: 503, body: unsafeBody)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
         }
 
         do {
@@ -387,6 +616,39 @@ final class OllamaBackendTests: XCTestCase {
             XCTAssertFalse(error.backendError.message.contains("127.0.0.1"))
             XCTAssertFalse(error.backendError.message.contains("route_token"))
             XCTAssertFalse(error.backendError.message.contains("/api/chat"))
+            XCTAssertFalse(error.localizedDescription.contains("127.0.0.1"))
+            XCTAssertFalse(error.localizedDescription.contains("route_token"))
+            XCTAssertFalse(error.localizedDescription.contains("/api/chat"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testUnloadConfirmationFailureBackendErrorIsSanitized() async {
+        let unsafeAcknowledgement = #"{"done":false,"done_reason":"http://127.0.0.1:11434/api/chat?route_token=secret"}"#
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"llama3.1:8b"}]}"#)
+            case "/api/chat":
+                return self.response(statusCode: 200, body: unsafeAcknowledgement)
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+            XCTFail("Expected confirmation failure")
+        } catch let error as OllamaBackendError {
+            let mapped = error.backendError
+            XCTAssertEqual(mapped.code, "model_unload_not_confirmed")
+            XCTAssertFalse(mapped.message.contains("127.0.0.1"))
+            XCTAssertFalse(mapped.message.contains("route_token"))
+            XCTAssertFalse(mapped.message.contains("/api/chat"))
+            XCTAssertFalse(error.localizedDescription.contains("127.0.0.1"))
+            XCTAssertFalse(error.localizedDescription.contains("route_token"))
+            XCTAssertFalse(error.localizedDescription.contains("/api/chat"))
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
@@ -617,14 +879,64 @@ final class OllamaBackendTests: XCTestCase {
         await fulfillment(of: [loadingStopped], timeout: 1)
     }
 
+    func testLiveOllamaConfirmedUnload() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["AETHERLINK_RUN_OLLAMA_LIVE_UNLOAD_TEST"] == "1" else {
+            throw XCTSkip("Set AETHERLINK_RUN_OLLAMA_LIVE_UNLOAD_TEST=1 to enable the localhost Ollama unload test.")
+        }
+        guard let modelID = environment["AETHERLINK_OLLAMA_LIVE_UNLOAD_MODEL_ID"], !modelID.isEmpty else {
+            throw XCTSkip("Set AETHERLINK_OLLAMA_LIVE_UNLOAD_MODEL_ID to the exact model to unload.")
+        }
+
+        let session = URLSession(configuration: .ephemeral)
+        let runningBefore = try await liveOllamaModelNames(path: "api/ps", session: session)
+        guard runningBefore.contains(where: { Self.sameOllamaModel($0, modelID) }) else {
+            XCTFail("The explicitly selected Ollama model must already be running before this test starts.")
+            return
+        }
+
+        let result = try await OllamaBackend().unloadModel(providerModelID: modelID)
+
+        XCTAssertEqual(result.outcome, .confirmed)
+        let installedAfter = try await liveOllamaModelNames(path: "api/tags", session: session)
+        let runningAfter = try await liveOllamaModelNames(path: "api/ps", session: session)
+        XCTAssertTrue(installedAfter.contains(where: { Self.sameOllamaModel($0, modelID) }))
+        XCTAssertFalse(runningAfter.contains(where: { Self.sameOllamaModel($0, modelID) }))
+    }
+
     private func makeBackend(
+        unloadPollAttempts: Int = 3,
+        unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> OllamaBackend {
         MockURLProtocol.handler = handler
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: configuration)
-        return OllamaBackend(baseURL: URL(string: "http://127.0.0.1:11434")!, session: session)
+        return OllamaBackend(
+            baseURL: URL(string: "http://127.0.0.1:11434")!,
+            session: session,
+            unloadPollAttempts: unloadPollAttempts,
+            unloadSleeper: unloadSleeper
+        )
+    }
+
+    private func liveOllamaModelNames(path: String, session: URLSession) async throws -> [String] {
+        let url = OllamaBackend.defaultBaseURL.appending(path: path)
+        let (data, response) = try await session.data(from: url)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertTrue((200..<300).contains(http.statusCode))
+        let object = try JSONSerialization.jsonObject(with: data)
+        let payload = try XCTUnwrap(object as? [String: Any])
+        let models = try XCTUnwrap(payload["models"] as? [[String: Any]])
+        return models.compactMap { ($0["name"] as? String) ?? ($0["model"] as? String) }
+    }
+
+    private static func sameOllamaModel(_ lhs: String, _ rhs: String) -> Bool {
+        func canonical(_ value: String) -> String {
+            value.hasSuffix(":latest") ? String(value.dropLast(":latest".count)) : value
+        }
+        return lhs == rhs || canonical(lhs) == canonical(rhs)
     }
 
     private func response(statusCode: Int, body: String) -> (HTTPURLResponse, Data) {

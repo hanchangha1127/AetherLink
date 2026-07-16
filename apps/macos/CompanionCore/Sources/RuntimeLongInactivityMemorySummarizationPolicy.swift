@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct RuntimeLongInactivityMemorySummarizationPolicy: Equatable, Sendable {
@@ -70,38 +71,99 @@ public struct RuntimeLongInactivityMemorySummarizationPolicy: Equatable, Sendabl
         let selectedMessages = Array(visibleMessages.suffix(maxSourceMessageCount))
         guard !selectedMessages.isEmpty else { return nil }
 
+        let sourceRangeDescription = sourceRangeDescription(
+            selectedMessages: selectedMessages,
+            totalMessageCount: visibleMessages.count
+        )
+        let sourcePointers = selectedMessages.map { message in
+            RuntimeLongInactivityMemorySummarizationSourcePointer(
+                sessionID: candidate.sessionID,
+                messageIndex: message.ordinal,
+                role: message.role,
+                createdAt: message.createdAt,
+                excerpt: message.content.truncated(to: maxSourceExcerptCharacters)
+            )
+        }
+        let summaryPreview = summaryPreview(from: selectedMessages)
+
         return RuntimeLongInactivityMemorySummarizationDraft(
             candidate: candidate,
-            id: draftID(for: candidate, visibleMessageCount: visibleMessages.count),
-            sourceMessageCount: selectedMessages.count,
-            sourceRangeDescription: sourceRangeDescription(
-                selectedMessages: selectedMessages,
-                totalMessageCount: visibleMessages.count
+            id: sourceBoundDraftID(
+                for: candidate,
+                sourceMessageCount: selectedMessages.count,
+                sourceRangeDescription: sourceRangeDescription,
+                sourcePointers: sourcePointers,
+                summaryPreview: summaryPreview
             ),
-            sourcePointers: selectedMessages.map { message in
-                RuntimeLongInactivityMemorySummarizationSourcePointer(
-                    sessionID: candidate.sessionID,
-                    messageIndex: message.ordinal,
-                    role: message.role,
-                    createdAt: message.createdAt,
-                    excerpt: message.content.truncated(to: maxSourceExcerptCharacters)
-                )
-            },
-            summaryPreview: summaryPreview(from: selectedMessages)
+            sourceMessageCount: selectedMessages.count,
+            sourceRangeDescription: sourceRangeDescription,
+            sourcePointers: sourcePointers,
+            summaryPreview: summaryPreview
         )
     }
 
-    private func draftID(
+    private func sourceBoundDraftID(
         for candidate: RuntimeLongInactivityMemorySummarizationCandidate,
-        visibleMessageCount: Int
+        sourceMessageCount: Int,
+        sourceRangeDescription: String,
+        sourcePointers: [RuntimeLongInactivityMemorySummarizationSourcePointer],
+        summaryPreview: String
     ) -> String {
-        let lastActivityMillis = Int(candidate.lastActivityAt.timeIntervalSince1970 * 1_000)
-        return [
-            "long-inactivity",
-            candidate.sessionID,
-            String(lastActivityMillis),
-            String(visibleMessageCount)
-        ].joined(separator: ":")
+        var hasher = SHA256()
+
+        func append(_ data: Data) {
+            hasher.update(data: data)
+        }
+
+        func appendByte(_ value: UInt8) {
+            append(Data([value]))
+        }
+
+        func appendCount(_ value: Int) {
+            var encoded = UInt64(value).bigEndian
+            append(withUnsafeBytes(of: &encoded) { Data($0) })
+        }
+
+        func appendDate(_ value: Date) {
+            var encoded = value.timeIntervalSinceReferenceDate.bitPattern.bigEndian
+            append(withUnsafeBytes(of: &encoded) { Data($0) })
+        }
+
+        func appendOptionalDate(_ value: Date?) {
+            guard let value else {
+                appendByte(0)
+                return
+            }
+            appendByte(1)
+            appendDate(value)
+        }
+
+        func appendString(_ value: String) {
+            let data = Data(value.utf8)
+            appendCount(data.count)
+            append(data)
+        }
+
+        append(Data("AetherLink long-inactivity memory-summary source v2\0".utf8))
+        appendString(candidate.sessionID)
+        appendString(candidate.title)
+        appendString(candidate.model)
+        appendDate(candidate.lastActivityAt)
+        appendCount(candidate.messageCount)
+        appendCount(sourceMessageCount)
+        appendString(sourceRangeDescription)
+        appendCount(sourcePointers.count)
+        for pointer in sourcePointers {
+            appendString(pointer.sessionID)
+            appendCount(pointer.messageIndex)
+            appendString(pointer.role)
+            appendOptionalDate(pointer.createdAt)
+            appendString(pointer.excerpt)
+        }
+        appendString(summaryPreview)
+
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return "long-inactivity:v2:\(digest)"
     }
 
     private func visibleSourceMessages(
@@ -262,6 +324,7 @@ public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable
             sourcePointers == other.sourcePointers &&
             summaryPreview == other.summaryPreview
     }
+
 }
 
 public extension RuntimeLongInactivityMemorySummarizationPolicy {
