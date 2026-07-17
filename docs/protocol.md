@@ -1,5 +1,11 @@
 # AetherLink Client-Runtime JSON Protocol
 
+## Production P2P/NAT Networking-Library Failure Boundary
+
+The selected libjuice v1.7.2 candidate failed its mandatory Phase A source audit before compilation. Regular nomination and RFC 7675 cadence mechanisms exist, but the source fails the profile's authenticated role/error handling, entropy, redirect, pre-I/O numeric authorization, teardown, parser strictness, logging, and pre-identity payload boundaries. No library behavior was executed to make that determination.
+
+No P2P/NAT wire message, capability, candidate exchange, ICE/STUN/TURN runtime path, socket, or application payload route is activated. The fallback `libnice-0.1.23-glib-c-abi` remains `proposed_not_selected`, and no source or dependency was acquired. A later explicit acquisition decision may open only bounded read-only source audit; compiler, runtime network, Phase B, and production authority remain separate and closed.
+
 ## Android Persistent-Memory Mutation Current-Request Authority
 
 Android namespaces each authenticated persistent-memory mutation as `memory-upsert-<UUID>` or `memory-delete-<UUID>`. Before dispatch, the ViewModel records the exact operation (`memory.upsert` or `memory.delete`), logical target (`NewEntry` with exact trimmed content, or `ExistingEntry` with exact entry id), expected result fields (`entry.id` when known plus exact `entry.content` and `entry.enabled` for upsert, or exact `id` for delete), exact channel object, connection generation, and authenticated runtime-authority generation. The transmitted outbound upsert/delete payload is built from those same request-bound values. A result, request-specific `error`, or request-bound send failure may act only while every recorded value and the authenticated session remain current.

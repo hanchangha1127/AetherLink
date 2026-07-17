@@ -47130,6 +47130,11 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "spike_review_tests": ROOT / "script/test_p2p_nat_controlled_spike_review.py",
         "progress_validator": ROOT / "script/check_p2p_nat_phase_a_progress.py",
         "progress_tests": ROOT / "script/test_p2p_nat_phase_a_progress.py",
+        "acquisition_validator": ROOT / "script/check_p2p_nat_phase_a_acquisition_authority.py",
+        "acquisition_tests": ROOT / "script/test_p2p_nat_phase_a_acquisition_authority.py",
+        "source_audit_validator": ROOT / "script/check_p2p_nat_libjuice_source_audit.py",
+        "source_audit_tests": ROOT / "script/test_p2p_nat_libjuice_source_audit.py",
+        "source_manifest_recorder": ROOT / "script/record_p2p_nat_libjuice_source_manifest.py",
         "session_crypto_validator": ROOT / "script/check_p2p_nat_session_crypto_vectors.py",
         "session_crypto_tests": ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
         "harness_egress_validator": ROOT / "script/check_p2p_nat_phase_a_harness_egress.py",
@@ -47151,6 +47156,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "handoff_v2": design_root / "implementation/handoff-v2.json",
         "handoff_v3": design_root / "implementation/handoff-v3.json",
         "handoff_v4": design_root / "implementation/handoff-v4.json",
+        "handoff_v5": design_root / "implementation/handoff-v5.json",
+        "handoff_v6": design_root / "implementation/handoff-v6.json",
         "pre_network_review_json": design_root / "pre-network/review-v1.json",
         "pre_network_review_md": design_root / "pre-network/review-v1.md",
         "pre_network_decision_json": design_root / "pre-network/decision-v1.json",
@@ -47159,6 +47166,12 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "spike_review_md": design_root / "controlled-network-spike/review-v1.md",
         "spike_decision_json": design_root / "controlled-network-spike/decision-v1.json",
         "spike_decision_md": design_root / "controlled-network-spike/decision-v1.md",
+        "acquisition_decision_json": design_root / "controlled-network-spike/decision-v2.json",
+        "acquisition_decision_md": design_root / "controlled-network-spike/decision-v2.md",
+        "fallback_review_json": design_root / "controlled-network-spike/review-v2.json",
+        "fallback_review_md": design_root / "controlled-network-spike/review-v2.md",
+        "rejection_decision_json": design_root / "controlled-network-spike/decision-v3.json",
+        "rejection_decision_md": design_root / "controlled-network-spike/decision-v3.md",
         "session_crypto_vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-session-crypto-vectors.json",
         "harness_egress_json": design_root / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.json",
         "harness_egress_md": design_root / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.md",
@@ -47167,6 +47180,13 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "compile_only_json": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json",
         "compile_only_md": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.md",
         "phase_a_progress": design_root / "controlled-network-spike/phase-a/progress-v1.json",
+        "phase_a_acquisition_progress": design_root / "controlled-network-spike/phase-a/progress-v2.json",
+        "source_manifest": design_root / "controlled-network-spike/phase-a/libjuice-source-manifest-v1.json",
+        "source_audit_json": design_root / "controlled-network-spike/phase-a/libjuice-source-audit-v1.json",
+        "source_audit_md": design_root / "controlled-network-spike/phase-a/libjuice-source-audit-v1.md",
+        "completed_intake_json": design_root / "controlled-network-spike/phase-a/offline-source-intake-v2.json",
+        "completed_intake_md": design_root / "controlled-network-spike/phase-a/offline-source-intake-v2.md",
+        "phase_a_rejection_progress": design_root / "controlled-network-spike/phase-a/progress-v3.json",
         "vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-vectors.json",
         "manifest": design_root / "evidence.sha256",
         "roadmap": ROOT / "docs/roadmap.md",
@@ -47193,12 +47213,13 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "reject_duplicate_names",
             "object_pairs_hook=reject_duplicate_names",
             "validate_current_pre_network_handoff",
-            "validate_current_controlled_spike_handoff",
-            "validate_current_phase_a_progress",
+            "validate_historical_phase_a_approval_handoff",
+            "validate_historical_phase_a_progress",
+            "validate_current_rejection_authority",
             "validate_phase_a_static_evidence_preflight",
             "validate_phase_a_static_python_ast",
             "PHASE_A_STATIC_EVIDENCE_SHA256",
-            "EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 22",
+            "EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 44",
             "allowed_from_imports",
             "check_p2p_nat_session_crypto_vectors.py",
             "check_p2p_nat_phase_a_harness_egress.py",
@@ -47206,6 +47227,11 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "check_p2p_nat_libjuice_compile_only.py",
             "check_p2p_nat_phase_a_progress.py",
             "test_p2p_nat_phase_a_progress.py",
+            "check_p2p_nat_phase_a_acquisition_authority.py",
+            "test_p2p_nat_phase_a_acquisition_authority.py",
+            "check_p2p_nat_libjuice_source_audit.py",
+            "test_p2p_nat_libjuice_source_audit.py",
+            "record_p2p_nat_libjuice_source_manifest.py",
             "EXPECTED_PRE_NETWORK_DECISION_RESOLUTIONS",
             '"controlled-network-spike"',
             'DESIGN_ROOT / "implementation"',
@@ -47282,6 +47308,36 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "test_every_execution_gate_phase_b_measurement_and_immutability_drift_fail",
             "test_central_validator_independently_rejects_progress_authority_drift",
             "test_owned_ast_rejects_process_network_dynamic_and_file_write_capabilities",
+        ),
+        "acquisition_validator": (
+            "production_p2p_nat_v1_controlled_network_spike_decision_v2",
+            "production_p2p_nat_v1_handoff_v5",
+            "production_p2p_nat_v1_controlled_spike_phase_a_progress_v2",
+            "P2P/NAT Phase A acquisition authority passed",
+        ),
+        "acquisition_tests": (
+            "test_canonical_chain_passes",
+            "test_compile_source_execution_socket_and_phase_b_escalation_fail",
+            "test_markdown_and_current_hashes_are_pinned",
+        ),
+        "source_audit_validator": (
+            "production_p2p_nat_v1_libjuice_source_manifest_v1",
+            "P2P/NAT libjuice source-audit rejection validation passed",
+            "passedEvidenceUnitCount",
+            "EXPECTED_SHA256",
+        ),
+        "source_audit_tests": (
+            "test_canonical_documents_ast_and_hashes_pass",
+            "test_audit_topics_findings_rejection_and_execution_drift_fail",
+            "test_handoff_rejects_any_open_gate_execution_or_next_handoff",
+            "test_owned_ast_rejects_process_network_dynamic_and_write_capabilities",
+        ),
+        "source_manifest_recorder": (
+            "EXPECTED_ARCHIVE_SHA256",
+            "EXPECTED_NDK_ARCHIVE_SHA256",
+            "production_p2p_nat_v1_libjuice_source_manifest_v1",
+            '"--verify"',
+            "without writing either manifest",
         ),
         "session_crypto_validator": (
             "production-p2p-nat-v1-session-crypto-vectors.json",
@@ -47385,13 +47441,21 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "script/check_p2p_nat_security_design.py",
             "script/check_p2p_nat_phase_a_progress.py",
             "script/test_p2p_nat_phase_a_progress.py",
+            "script/check_p2p_nat_phase_a_acquisition_authority.py",
+            "script/test_p2p_nat_phase_a_acquisition_authority.py",
+            "script/check_p2p_nat_libjuice_source_audit.py",
+            "script/test_p2p_nat_libjuice_source_audit.py",
+            "script/record_p2p_nat_libjuice_source_manifest.py",
+            "script/record_p2p_nat_libjuice_source_manifest.py --verify",
             "Covered production P2P/NAT bounded no-network handoff addendum:",
             "Covered production P2P/NAT pre-network approval addendum:",
             "Covered production P2P/NAT controlled-spike review addendum:",
             "Covered production P2P/NAT controlled-spike phase A approval addendum:",
-            "Covered production P2P/NAT controlled-spike phase A crypto and static-policy addendum:",
-            "Covered production P2P/NAT controlled-spike phase A offline-source and compile-boundary addendum:",
-            "Covered production P2P/NAT controlled-spike phase A progress addendum:",
+            "Covered historical production P2P/NAT controlled-spike Phase A crypto and static-policy checkpoint:",
+            "Covered historical production P2P/NAT Phase A offline-source and compile-boundary checkpoint:",
+            "Covered historical production P2P/NAT controlled-spike Phase A progress checkpoint:",
+            "Covered production P2P/NAT Phase A exact acquisition receipt addendum:",
+            "Covered production P2P/NAT libjuice source-audit rejection addendum:",
             "Handoff-v2 records canonical-contracts and no-network-conformance completed",
             "controlled-network-spike remains blocked",
             "decision-v1 resolves all seven",
@@ -47404,8 +47468,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "the security-design validator directly verifies canonical handoff closure",
             "10-test mutation suite",
             "17-test mutation suite",
-            "22-file SHA-256 preflight",
-            "7-test progress mutation suite",
+            "44-file SHA-256 preflight",
+            "7-test historical mutation suite",
             "librarySelectionAuthorized, harnessImplementationAuthorized, networkIOAllowed",
             "sourceAcquisitionNetworkIOAllowed",
             "controlledSpikeNetworkIOAllowed, controlledSpikeSocketExecutionAuthorized",
@@ -47417,16 +47481,16 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "paired long-term endpoint identities",
             "Consent freshness",
             '"selectionProfileStatus": "approved_for_bounded_handoff"',
-            '"implementationAuthorized": true',
+            '"implementationAuthorized": false',
             '"networkIOAllowed": false',
             '"librarySelectionAuthorized": false',
             '"productionDeploymentAuthorized": false',
             '"controlledNetworkSpikeSocketExecutionAuthorized": false',
-            '"conditionalLibrarySelectionAuthorized": true',
-            '"controlledSpikePhaseAAuthorized": true',
-            '"offlineSourceInspectionAuthorized": true',
+            '"conditionalLibrarySelectionAuthorized": false',
+            '"controlledSpikePhaseAAuthorized": false',
+            '"offlineSourceInspectionAuthorized": false',
             '"sourceAcquisitionNetworkIOAllowed": false',
-            '"handoffPath": "implementation/handoff-v4.json"',
+            '"handoffPath": "implementation/handoff-v6.json"',
         ),
         "selection_profile": (
             "explicitly approved for a bounded handoff",
@@ -47440,7 +47504,10 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         ),
         "selection_profile_json": (
             '"status": "approved_for_bounded_handoff"',
-            '"implementationAuthorized": true',
+            '"implementationAuthorized": false',
+            '"initialBoundedHandoffAuthorized": true',
+            '"currentExecutionAuthority"',
+            '"handoffPath": "implementation/handoff-v6.json"',
             '"networkIOAllowed": false',
             '"explicitSelectionRequired": false',
             '"requiredPreNetworkDecisions"',
@@ -47489,6 +47556,19 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"productionNetworkIOAllowed": false',
             '"productionDeploymentAuthorized": false',
             '"approved_for_bounded_phase_a_evidence"',
+        ),
+        "handoff_v5": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v5"',
+            '"officialLibjuiceSourceAcquisitionAuthorized": true',
+            '"compilerInvocationAuthorized": false',
+            '"socketCreationAllowed": false',
+        ),
+        "handoff_v6": (
+            '"handoffId": "production_p2p_nat_v1_handoff_v6"',
+            '"status": "closed_libjuice_rejected_no_fallback_authority"',
+            '"fallbackStatus": "proposed_not_selected"',
+            '"compilerInvocationPerformed": false',
+            '"runtimeOrHarnessNetworkIOPerformed": false',
         ),
         "pre_network_review_json": (
             '"reviewId": "production_p2p_nat_v1_pre_network_review_v1"',
@@ -47570,6 +47650,23 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "controlledSpikeSocketExecutionAuthorized=false",
             "phaseBExecutionAuthorized=false",
             "separate versioned decision",
+        ),
+        "acquisition_decision_json": (
+            '"decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v2"',
+            '"releaseTag": "v1.7.2"',
+            '"packageId": "ndk;28.2.13676358"',
+            '"compilerInvocationAuthorizedBeforeReviewedManifest": false',
+        ),
+        "fallback_review_json": (
+            '"optionId": "libnice-0.1.23-glib-c-abi"',
+            '"status": "proposed_not_selected"',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+        ),
+        "rejection_decision_json": (
+            '"decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v3"',
+            '"resolution": "rejected_before_compile"',
+            '"fallbackSelectionAuthorized": false',
+            '"compilerInvocationPerformed": false',
         ),
         "session_crypto_vectors": (
             '"schema": "aetherlink-production-p2p-nat-v1-session-crypto-vectors"',
@@ -47659,10 +47756,39 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             '"phaseBDecisionEligible": false',
             '"recordState": "closed"',
         ),
+        "phase_a_acquisition_progress": (
+            '"artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v2"',
+            '"officialLibjuiceSourceAcquisitionAuthorized": true',
+            '"compilerInvocationAuthorized": false',
+        ),
+        "source_manifest": (
+            '"manifestId": "production_p2p_nat_v1_libjuice_source_manifest_v1"',
+            '"regularFileCount": 81',
+            '"annotatedTagObjectSha1": "0f823d8210ea9dfe62a1c248da2b3219f6d8568d"',
+            '"compilerInvocationPerformed": false',
+        ),
+        "source_audit_json": (
+            '"auditId": "production_p2p_nat_v1_libjuice_source_audit_v1"',
+            '"outcome": "rejected_before_compile"',
+            '"findingId": "LJ172-P1-ENTROPY"',
+            '"compilerInvocationPerformed": false',
+        ),
+        "completed_intake_json": (
+            '"artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v2"',
+            '"artifactStatus": "closed_source_present_audit_rejected"',
+            '"compilerInvocationPerformed": false',
+        ),
+        "phase_a_rejection_progress": (
+            '"artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v3"',
+            '"status": "complete_rejected"',
+            '"status": "not_run_candidate_rejected_before_compile"',
+            '"wholePhaseASecurityReview": "blocked_on_fallback_selection_and_evidence"',
+        ),
         "context": (
-            "progress-v1.json",
-            "current versioned Phase A evidence-status authority",
-            "blocked_on_source_and_compile_evidence",
+            "progress-v3.json",
+            "implementation/handoff-v6.json",
+            "rejected libjuice before any compiler",
+            "proposed_not_selected",
         ),
         "vectors": (
             '"schema": "aetherlink-production-p2p-nat-v1-vectors"',
@@ -47690,7 +47816,13 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "transport-neutral identity-bound secure session",
             "approved_for_bounded_handoff",
             "selection-profile.json",
-            "handoff-v4",
+            "initialBoundedHandoffAuthorized=true",
+            "implementationAuthorized=false",
+            "authority is closed by `handoff-v6`",
+            "six closed versioned handoff pairs",
+            "handoff-v5",
+            "handoff-v6",
+            "rejected libjuice before compilation",
         ),
     }
     for name, snippets in required_snippets.items():
@@ -47703,10 +47835,11 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "run python3 script/check_p2p_nat_security_design.py",
         "run python3 script/check_p2p_nat_phase_a_progress.py",
         "run python3 -m unittest script/test_p2p_nat_phase_a_progress.py",
-        "run python3 script/check_p2p_nat_libjuice_offline_source.py",
-        "run python3 -m unittest script/test_p2p_nat_libjuice_offline_source.py",
-        "run python3 script/check_p2p_nat_libjuice_compile_only.py",
-        "run python3 -m unittest script/test_p2p_nat_libjuice_compile_only.py",
+        "run python3 script/check_p2p_nat_phase_a_acquisition_authority.py",
+        "run python3 -m unittest script/test_p2p_nat_phase_a_acquisition_authority.py",
+        "run python3 script/record_p2p_nat_libjuice_source_manifest.py --verify",
+        "run python3 script/check_p2p_nat_libjuice_source_audit.py",
+        "run python3 -m unittest script/test_p2p_nat_libjuice_source_audit.py",
         "run python3 script/check_p2p_nat_session_crypto_vectors.py",
         "run python3 -m unittest script/test_p2p_nat_session_crypto_vectors.py",
         "run python3 script/check_p2p_nat_phase_a_harness_egress.py",
@@ -47736,8 +47869,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         or phase_a_gate_positions != sorted(phase_a_gate_positions)
     ):
         failures.append(
-            "Default no-device gate must run the P2P/NAT security-design and Phase A progress "
-            "preflight before the offline-source, compile-only, crypto, and static harness validators/tests."
+            "Default no-device gate must run the P2P/NAT security-design, historical progress, "
+            "acquisition, and source-audit preflights before the crypto and static harness validators/tests."
         )
 
     manifest_lines = [line for line in texts.get("manifest", "").splitlines() if line]
@@ -47945,9 +48078,9 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
                     f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
                 )
     phase_a_progress_sections = {
-        "roadmap": "Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
-        "progress": "2026-07-17 Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
-        "qa": "2026-07-17 Production P2P/NAT Phase A Progress V1 No-Device Checklist",
+        "roadmap": "Historical Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
+        "progress": "Historical 2026-07-17 Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
+        "qa": "Historical 2026-07-17 Production P2P/NAT Phase A Progress V1 No-Device Checklist",
     }
     phase_a_progress_summary = (
         "Phase A progress: 4 recommendations are approved for bounded Phase A; "
@@ -47968,6 +48101,29 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "no-device",
         ):
             if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    phase_a_rejection_sections = {
+        "roadmap": "Production P2P/NAT Phase A libjuice Source Audit Rejected (No Compilation)",
+        "progress": "2026-07-17 Production P2P/NAT libjuice Source Audit Rejection (No Compilation)",
+        "qa": "2026-07-17 Production P2P/NAT libjuice Source Audit Rejection No-Device Checklist",
+    }
+    for name, heading in phase_a_rejection_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            "progress-v3",
+            "decision-v3",
+            "handoff-v6",
+            "libjuice-source-audit-v1.json",
+            "Five independent P1" if name != "qa" else "five independent P1",
+            "not_run_candidate_rejected_before_compile",
+            "libnice-0.1.23-glib-c-abi",
+            "proposed_not_selected",
+            "no-device",
+            "check-no-device-quality-p2p-libjuice-source-audit-rejection-final-20260717.log",
+        ):
+            if snippet.lower() not in section.lower():
                 failures.append(
                     f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
                 )

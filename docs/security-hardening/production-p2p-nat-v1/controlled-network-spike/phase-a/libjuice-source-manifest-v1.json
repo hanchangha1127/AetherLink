@@ -1,0 +1,720 @@
+{
+  "documentType": "aetherlink.p2p-nat-libjuice-source-manifest",
+  "schemaVersion": 1,
+  "manifestId": "production_p2p_nat_v1_libjuice_source_manifest_v1",
+  "recordedDate": "2026-07-17",
+  "status": "complete_audit_input_rejected_for_compile",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "candidate": {
+    "candidateId": "libjuice-1.7.2-static-c-abi",
+    "repository": "https://github.com/paullouisageneau/libjuice",
+    "repositoryMetadataUrl": "https://github.com/paullouisageneau/libjuice.git",
+    "archiveUrl": "https://codeload.github.com/paullouisageneau/libjuice/tar.gz/refs/tags/v1.7.2",
+    "releaseTag": "v1.7.2",
+    "annotatedTagObjectSha1": "0f823d8210ea9dfe62a1c248da2b3219f6d8568d",
+    "commitSha1": "3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6"
+  },
+  "acquisition": {
+    "authorityDecision": "../decision-v2.json",
+    "authorityHandoff": "../../implementation/handoff-v5.json",
+    "transport": "https_only_no_redirect_no_environment_proxy",
+    "archive": {
+      "path": "build/offline-source/libjuice-1.7.2/original/libjuice-1.7.2.tar.gz",
+      "sizeBytes": 108235,
+      "sha256": "75159867c4a5a689a6559e11aa0d30c9eba12ce73a4ae3d898b521467e1f635d"
+    }
+  },
+  "extraction": {
+    "path": "build/offline-source/libjuice-1.7.2/source",
+    "archiveRoot": "libjuice-1.7.2",
+    "regularFileCount": 81,
+    "totalRegularFileBytes": 550494,
+    "symlinkCount": 0,
+    "hardlinkCount": 0,
+    "specialFileCount": 0,
+    "pathTraversalCount": 0,
+    "archiveMatchesExtractedFiles": true
+  },
+  "sourceTree": {
+    "digestAlgorithm": "sha256(path_utf8_nul_size_ascii_nul_file_sha256_ascii_lf)_sorted_by_path_utf8",
+    "sha256": "c17e0d6d3855e9584718584ab644f030939448d0e8f6a8bf5ca9883da719a330",
+    "fileDigestSetSha256": "c17e0d6d3855e9584718584ab644f030939448d0e8f6a8bf5ca9883da719a330",
+    "files": [
+      {
+        "path": ".clang-format",
+        "sizeBytes": 91,
+        "sha256": "44b1031089c298195bf5eda97a9b8ea3f393176ae458d4113df9c34302b71908"
+      },
+      {
+        "path": ".clang-tidy",
+        "sizeBytes": 3897,
+        "sha256": "5c0becf34ffe0c1d23f827ecd5d3c29cf16c0d7792a29e10b96ea1031e18535c"
+      },
+      {
+        "path": ".editorconfig",
+        "sizeBytes": 167,
+        "sha256": "607291d40d3b5494af4bd8688283d4dd7de45eedf17893a0d47c51f1e3b3192a"
+      },
+      {
+        "path": ".github/FUNDING.yml",
+        "sizeBytes": 77,
+        "sha256": "9b06c476f22aedf27c8d740601b0bf06ec2abdf3239af7b26b8c838d52a00a78"
+      },
+      {
+        "path": ".github/workflows/build.yml",
+        "sizeBytes": 1043,
+        "sha256": "c56e4dc0fe780cb7ab607446fb08d40069c68821c3b68657108689c7027afa78"
+      },
+      {
+        "path": ".gitignore",
+        "sizeBytes": 53,
+        "sha256": "5e8c75f18ab911bd16ef58852cb0909a89a493b2df68a1a7748ddddec90192d3"
+      },
+      {
+        "path": "CMakeLists.txt",
+        "sizeBytes": 9206,
+        "sha256": "a99ee41473e51f27207b736f17faf04a4fdc3c31170c0dc9ed436e77a844704c"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "sizeBytes": 1668,
+        "sha256": "ab02d3e030e4af719fb7d315d92716355af449943cbf8293a36732b8d39968c9"
+      },
+      {
+        "path": "LICENSE",
+        "sizeBytes": 16726,
+        "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+      },
+      {
+        "path": "Makefile",
+        "sizeBytes": 1444,
+        "sha256": "b707e57e69f2344cbf52962bd6088c2d3993515bdeafaab5e77c499367f610be"
+      },
+      {
+        "path": "README.md",
+        "sizeBytes": 5353,
+        "sha256": "d90489761acbfee4a9bd923a48d6749fdc0595dc40ab8576d9c9926fe6faf8ca"
+      },
+      {
+        "path": "cmake/LibJuiceConfig.cmake.in",
+        "sizeBytes": 76,
+        "sha256": "702a5cbb202e5bb5c4f8b1d3e3092ed7f3bddf385158c16878fe9bb16ff4416e"
+      },
+      {
+        "path": "cmake/Modules/FindNettle.cmake",
+        "sizeBytes": 4421,
+        "sha256": "486ba464d528963340afb6950e9791d1558d5a03ca7dac77c25880602c94cd06"
+      },
+      {
+        "path": "fuzzer/README.md",
+        "sizeBytes": 491,
+        "sha256": "0c4918e274f01b45eab958c643503c94ce19b3dbc6a53fa4b6a863475d516828"
+      },
+      {
+        "path": "fuzzer/fuzzer.c",
+        "sizeBytes": 1306,
+        "sha256": "640728f79a3bc8571aeeab95af716737e83e49cf3fa5693cc0ebb70b1ce66a0a"
+      },
+      {
+        "path": "fuzzer/input/message1.raw",
+        "sizeBytes": 108,
+        "sha256": "b4d80e931289ed2b4f6c289d8e8278286b80d9baaff3d504cfbdc6b6e6ed5899"
+      },
+      {
+        "path": "fuzzer/input/message2.raw",
+        "sizeBytes": 164,
+        "sha256": "63a083dc7ffe435a210d92306ee2c9334062cc90a345157431a14a2cf8c1a22f"
+      },
+      {
+        "path": "include/juice/juice.h",
+        "sizeBytes": 6479,
+        "sha256": "eb53b351bd3ae21ce9046daab3cd2e66b8b7bd7d329ed0c2a338c1b3d0dc2e2a"
+      },
+      {
+        "path": "src/addr.c",
+        "sizeBytes": 8488,
+        "sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4"
+      },
+      {
+        "path": "src/addr.h",
+        "sizeBytes": 1765,
+        "sha256": "506ec1f0d17c242a0667062e778cbe33f0f31886092469df3a3d2102985ec811"
+      },
+      {
+        "path": "src/agent.c",
+        "sizeBytes": 97283,
+        "sha256": "be0e772b55f548eee6a0a6d1519458456ef2be191f2050c20467e445cb81fb52"
+      },
+      {
+        "path": "src/agent.h",
+        "sizeBytes": 11213,
+        "sha256": "8b2cfef38864a2046a29432909720822e7edf99283198b350e0cca6b25fbf2a3"
+      },
+      {
+        "path": "src/base64.c",
+        "sizeBytes": 2098,
+        "sha256": "4d4822ebc7a190e097063f49ebf8ddf8837c67c42c05ab4002021e0fd196330b"
+      },
+      {
+        "path": "src/base64.h",
+        "sizeBytes": 797,
+        "sha256": "537a6d1d85db6f0e72c1c4367a5cef5360d9e991a0c51d9fb8b442df9b6b1e71"
+      },
+      {
+        "path": "src/conn.c",
+        "sizeBytes": 8529,
+        "sha256": "1e20e6267ac274360b496449a9ab5bd443608075756278ef8aeb6faf60d5c170"
+      },
+      {
+        "path": "src/conn.h",
+        "sizeBytes": 2446,
+        "sha256": "61c84bedfe85175ddcc08ddf7de1e52f3837bfe161b78ceb6c52044a949154f9"
+      },
+      {
+        "path": "src/conn_mux.c",
+        "sizeBytes": 19591,
+        "sha256": "b85ceb9cce35ca56fadb50fb0f81a375dc14a816b2776372cdeeaaee6fb995ab"
+      },
+      {
+        "path": "src/conn_mux.h",
+        "sizeBytes": 1352,
+        "sha256": "522a1bcc2dfa92ca8bc53c32bd9e52b5328565eecc25550aaf91a7860136367b"
+      },
+      {
+        "path": "src/conn_poll.c",
+        "sizeBytes": 18685,
+        "sha256": "0070d5366b2197a05cf5e7c2f25734c9fc24b5d4c38abb7e8bb50c35255dfce1"
+      },
+      {
+        "path": "src/conn_poll.h",
+        "sizeBytes": 1155,
+        "sha256": "f8ceb987fa0b293f2f1dcbf2c1c56259aab3b7c26ec2ad5d3b86176dad421561"
+      },
+      {
+        "path": "src/conn_thread.c",
+        "sizeBytes": 7441,
+        "sha256": "81740985793cc442d71561725f810d58580e15ee3105da615d2cff61ccce0377"
+      },
+      {
+        "path": "src/conn_thread.h",
+        "sizeBytes": 1098,
+        "sha256": "c3d752a67e3f42141248d78ff86b85b1ef531cbe9745eb3c60bb3d15fca513f2"
+      },
+      {
+        "path": "src/const_time.c",
+        "sizeBytes": 742,
+        "sha256": "971de2714371b8239b764567d557cbfc51e20123866cbef4a8dfa3b09ee69606"
+      },
+      {
+        "path": "src/const_time.h",
+        "sizeBytes": 478,
+        "sha256": "10cd132063f869c6bcdf9300e62dd7c4a7b633e8cdadbdb6eb17a8d1fa7fd29d"
+      },
+      {
+        "path": "src/crc32.c",
+        "sizeBytes": 990,
+        "sha256": "4e70432a52895f49d944cbd80e3072cd696983216913c8b50abece08d4b43230"
+      },
+      {
+        "path": "src/crc32.h",
+        "sizeBytes": 504,
+        "sha256": "4fa26e3ff40b214367bbc82d581d267cd901b795dc8da394207bbd3d61fd087a"
+      },
+      {
+        "path": "src/hash.c",
+        "sizeBytes": 1665,
+        "sha256": "3baeb02750853bbc9f90278bc3afdfe4f8b165ba7e415dd71f118e16064df52c"
+      },
+      {
+        "path": "src/hash.h",
+        "sizeBytes": 639,
+        "sha256": "075c14903e467a71b38a3eca719771e2829950f2ca5d3b7d233777edca1d09d0"
+      },
+      {
+        "path": "src/hmac.c",
+        "sizeBytes": 1426,
+        "sha256": "287c69b494f6fc60209da2a6c96b64ce2cae2ae478207d536619a6691a2140d2"
+      },
+      {
+        "path": "src/hmac.h",
+        "sizeBytes": 601,
+        "sha256": "f96b5554d6452ec99fd08aa3f7eee072b460db121eee417cb432f34a8334e6a2"
+      },
+      {
+        "path": "src/ice.c",
+        "sizeBytes": 16054,
+        "sha256": "beefe58548fbefd269536ce2d11c5eba72e504e71fe68b69e416ca87ffca08be"
+      },
+      {
+        "path": "src/ice.h",
+        "sizeBytes": 4232,
+        "sha256": "04a04ea9e85dea9468faebb2c6f1a2b23edf7a4583a3fc50510fc0515d97468c"
+      },
+      {
+        "path": "src/juice.c",
+        "sizeBytes": 5984,
+        "sha256": "596f407b39a7a52ddd5ed197b8f383c7473c0bbaaa3626162904355e3076a5f9"
+      },
+      {
+        "path": "src/log.c",
+        "sizeBytes": 3058,
+        "sha256": "d118191f86d3d602cdaa432e697ace0000f7623302ce4fbb3348d983cbf14ed9"
+      },
+      {
+        "path": "src/log.h",
+        "sizeBytes": 1514,
+        "sha256": "fff4912224e90118eac8245188976f5e6c63b4e9b3a342825ec13047bd1d0ef5"
+      },
+      {
+        "path": "src/picohash.h",
+        "sizeBytes": 28329,
+        "sha256": "f83c92a9c4f896dc0d966c6be3389da384bcae954d009e08d3d680c1dd29c093"
+      },
+      {
+        "path": "src/random.c",
+        "sizeBytes": 2998,
+        "sha256": "6d5cd3305d0e6eb1d5388d7287f9c2f1d7efeec4dc4f5b8e12312814cbf0ef7f"
+      },
+      {
+        "path": "src/random.h",
+        "sizeBytes": 521,
+        "sha256": "af3a5ee6320aeb2cfba9ad3a8eb10e6b03e7b7944b1d2637664faf890a70a15a"
+      },
+      {
+        "path": "src/server.c",
+        "sizeBytes": 38685,
+        "sha256": "62c7ff155650c6d699d6176fe905307555c3512248cd91cbced29622642099ab"
+      },
+      {
+        "path": "src/server.h",
+        "sizeBytes": 5103,
+        "sha256": "18b14498524062595aa99dd795549427189c98ba9ebc663ef64d44d637b1280f"
+      },
+      {
+        "path": "src/socket.h",
+        "sizeBytes": 3354,
+        "sha256": "2f2f5a1e5c98f6ebc3548c1132c093c33640915f3f7f633dbe29ef2d9958b506"
+      },
+      {
+        "path": "src/stun.c",
+        "sizeBytes": 42999,
+        "sha256": "89920a1938207cc4695628c183082fca572c9c8e636305482738c0442f690a73"
+      },
+      {
+        "path": "src/stun.h",
+        "sizeBytes": 13304,
+        "sha256": "3d86179baf5679ebc743e900e459ee650a1c172e3a7ec682f445597d2901f3fd"
+      },
+      {
+        "path": "src/tcp.c",
+        "sizeBytes": 4066,
+        "sha256": "300a3ca18befd6c2138f8ff27e3d17ea10cca77b74c92e64e1b6f1fed8ea057d"
+      },
+      {
+        "path": "src/tcp.h",
+        "sizeBytes": 1322,
+        "sha256": "e98b8cdb5a66f64cad8f4b83c89bf604e9abb32d04c828d30579ae43781b231e"
+      },
+      {
+        "path": "src/thread.h",
+        "sizeBytes": 4164,
+        "sha256": "4e649b50f5ff96be9350530db72fcaadfcb35cf9e23d67164e412d0e8aa2421b"
+      },
+      {
+        "path": "src/timestamp.c",
+        "sizeBytes": 1126,
+        "sha256": "16b03b9679240ae611056ee8a5a764f6e65505990e1776dc6dbf4839efc1b415"
+      },
+      {
+        "path": "src/timestamp.h",
+        "sizeBytes": 453,
+        "sha256": "4a8fc753ab70b9d813ccfc79a398f21d8a9e261908de7be03c296a7fa49c4871"
+      },
+      {
+        "path": "src/turn.c",
+        "sizeBytes": 16738,
+        "sha256": "ae03e2dd73ae147b60971694327633ad84a84e32bea209d0fb62438cb7d62d7a"
+      },
+      {
+        "path": "src/turn.h",
+        "sizeBytes": 4306,
+        "sha256": "f11d6033727f120da8b0c0f526a6f524e00cda9d53ba2c2264fc056124b8c14c"
+      },
+      {
+        "path": "src/udp.c",
+        "sizeBytes": 18845,
+        "sha256": "cc25eadba294839c67b29873f21dad505afe092e149aca3cc3d12ce928daf22b"
+      },
+      {
+        "path": "src/udp.h",
+        "sizeBytes": 1124,
+        "sha256": "fc2ac4c7c620c5f733ad2c34218838a2983bd68b5b9f7801ad0d3733c5d087c9"
+      },
+      {
+        "path": "test/base64.c",
+        "sizeBytes": 1505,
+        "sha256": "6d8932cb8a7cf6ba142436f845dc29c076993527189a5945a52506d0fdec56a8"
+      },
+      {
+        "path": "test/bind.c",
+        "sizeBytes": 7150,
+        "sha256": "0a2cf7d05db4d2f99ad3f2a7d1ce5e2ccb3b41858cf7de00a38da1deb8d8a4a3"
+      },
+      {
+        "path": "test/conflict.c",
+        "sizeBytes": 6593,
+        "sha256": "3ac8b5b3314ebd462604aec68d958e889c4e3e718491e186d3e4fa2e7e67ded9"
+      },
+      {
+        "path": "test/connectivity.c",
+        "sizeBytes": 7488,
+        "sha256": "7b4099c2a17082e4052a6efd288ca36321d1a5d80682ddd77f42ae2a30a7cc41"
+      },
+      {
+        "path": "test/crc32.c",
+        "sizeBytes": 509,
+        "sha256": "bdbcb61e882b62ac38ac7a3674da1a74c9b4b474eb235eb680c7e7c04f41ac94"
+      },
+      {
+        "path": "test/gathering.c",
+        "sizeBytes": 2363,
+        "sha256": "ebdaf544103bb253f19c7d5904ac00c590e5de5df88860eeb53781eecd6379fe"
+      },
+      {
+        "path": "test/main.c",
+        "sizeBytes": 4101,
+        "sha256": "e25e1659ca62e6a1e54524f98be5a1126dfce647861e224a404c24e884a8a19c"
+      },
+      {
+        "path": "test/mux.c",
+        "sizeBytes": 7707,
+        "sha256": "c09c5dd14939f390a52a4134c9355e98cc2519fe48e86c7009a822cb04a1aa4d"
+      },
+      {
+        "path": "test/notrickle.c",
+        "sizeBytes": 6543,
+        "sha256": "de525c06b90b123e732e2db08b4ae8fdf9293bd28006ad7f25ce4bb2f7befbff"
+      },
+      {
+        "path": "test/server.c",
+        "sizeBytes": 8064,
+        "sha256": "f664133ed3a9af4694e49d262c38d27039edb91fefdbd708484e6e1c75d9b424"
+      },
+      {
+        "path": "test/stun-unhandled-multiple.c",
+        "sizeBytes": 2665,
+        "sha256": "43abbec7c23f6d061b20b4e5cf3e0c35538176b2d2d4373a390542211b97d07f"
+      },
+      {
+        "path": "test/stun-unhandled-no-host.c",
+        "sizeBytes": 2422,
+        "sha256": "63b3b550edeea3e885ba7b61b403b62eae95e81d49cc3f3af79e76e0df49f705"
+      },
+      {
+        "path": "test/stun-unhandled-unhandle.c",
+        "sizeBytes": 3123,
+        "sha256": "9796bc6bcceb724b9d021c05ab75ea9fed0fbd403751ab3e2d6c3b65cc104137"
+      },
+      {
+        "path": "test/stun-unhandled.c",
+        "sizeBytes": 2037,
+        "sha256": "855200d0ee1ea032174c18ddbe04f4e86048519cd430781fb2e2e1eddc0c8d6e"
+      },
+      {
+        "path": "test/stun.c",
+        "sizeBytes": 4858,
+        "sha256": "487ef4442aef58142341bb4d842422bccb40d39dca67a72531b7832728170b00"
+      },
+      {
+        "path": "test/tcp.c",
+        "sizeBytes": 6108,
+        "sha256": "24c691472ecd57ae9315db9793596c3abc946f25da43056295141629f57197f4"
+      },
+      {
+        "path": "test/thread.c",
+        "sizeBytes": 7498,
+        "sha256": "abef1caed1e0b451daa0a31e35e105fed37af1e227299b9f68d439c8c9de7ce7"
+      },
+      {
+        "path": "test/turn.c",
+        "sizeBytes": 7758,
+        "sha256": "f4b84f71589932738851f082099ed09046b53202cb6915dcc1930ddc3711c11e"
+      },
+      {
+        "path": "test/ufrag.c",
+        "sizeBytes": 1967,
+        "sha256": "0e98e9b89205e7b7585e35ece4d98a351b9c9ebc0faadf22f58c8f068e24c90e"
+      }
+    ]
+  },
+  "licenseReview": {
+    "result": "complete_mixed_notices_recorded",
+    "projectLicense": {
+      "path": "LICENSE",
+      "spdx": "MPL-2.0",
+      "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+    },
+    "embeddedNotices": [
+      {
+        "path": "src/picohash.h",
+        "classification": "public_domain_with_upstream_attributions",
+        "sha256": "f83c92a9c4f896dc0d966c6be3389da384bcae954d009e08d3d680c1dd29c093",
+        "archiveRole": "compiled_when_USE_NETTLE_is_0"
+      },
+      {
+        "path": "cmake/Modules/FindNettle.cmake",
+        "classification": "bsd_3_clause_style_notice",
+        "sha256": "486ba464d528963340afb6950e9791d1558d5a03ca7dac77c25880602c94cd06",
+        "archiveRole": "not_compiled"
+      },
+      {
+        "path": "fuzzer/fuzzer.c",
+        "classification": "LGPL-2.1-or-later_notice_no_bundled_license_copy",
+        "sha256": "640728f79a3bc8571aeeab95af716737e83e49cf3fa5693cc0ebb70b1ce66a0a",
+        "archiveRole": "excluded"
+      }
+    ]
+  },
+  "generatedFileReview": {
+    "result": "complete",
+    "generatedCOrHeaderFiles": [],
+    "cmakeGeneratedPackageFilesCompiled": false,
+    "makeGeneratedObjectsArchivesSharedLibrariesOrTestsAccepted": false
+  },
+  "buildInputReview": {
+    "authoritativeCMakeSourceLines": "CMakeLists.txt:38-60",
+    "librarySources": [
+      "src/addr.c",
+      "src/agent.c",
+      "src/crc32.c",
+      "src/const_time.c",
+      "src/conn.c",
+      "src/conn_poll.c",
+      "src/conn_thread.c",
+      "src/conn_mux.c",
+      "src/base64.c",
+      "src/hash.c",
+      "src/hmac.c",
+      "src/ice.c",
+      "src/juice.c",
+      "src/log.c",
+      "src/random.c",
+      "src/server.c",
+      "src/stun.c",
+      "src/timestamp.c",
+      "src/tcp.c",
+      "src/turn.c",
+      "src/udp.c"
+    ],
+    "publicHeaders": [
+      "include/juice/juice.h"
+    ],
+    "privateHeaders": [
+      "src/addr.h",
+      "src/agent.h",
+      "src/base64.h",
+      "src/conn.h",
+      "src/conn_mux.h",
+      "src/conn_poll.h",
+      "src/conn_thread.h",
+      "src/const_time.h",
+      "src/crc32.h",
+      "src/hash.h",
+      "src/hmac.h",
+      "src/ice.h",
+      "src/log.h",
+      "src/picohash.h",
+      "src/random.h",
+      "src/server.h",
+      "src/socket.h",
+      "src/stun.h",
+      "src/tcp.h",
+      "src/thread.h",
+      "src/timestamp.h",
+      "src/turn.h",
+      "src/udp.h"
+    ],
+    "excludedCSources": [
+      "fuzzer/fuzzer.c",
+      "test/base64.c",
+      "test/bind.c",
+      "test/conflict.c",
+      "test/connectivity.c",
+      "test/crc32.c",
+      "test/gathering.c",
+      "test/main.c",
+      "test/mux.c",
+      "test/notrickle.c",
+      "test/server.c",
+      "test/stun-unhandled-multiple.c",
+      "test/stun-unhandled-no-host.c",
+      "test/stun-unhandled-unhandle.c",
+      "test/stun-unhandled.c",
+      "test/stun.c",
+      "test/tcp.c",
+      "test/thread.c",
+      "test/turn.c",
+      "test/ufrag.c"
+    ],
+    "minimalClientOnlySourcesIfCandidateHadPassed": [
+      "src/addr.c",
+      "src/agent.c",
+      "src/crc32.c",
+      "src/const_time.c",
+      "src/conn.c",
+      "src/conn_poll.c",
+      "src/conn_thread.c",
+      "src/conn_mux.c",
+      "src/base64.c",
+      "src/hash.c",
+      "src/hmac.c",
+      "src/ice.c",
+      "src/juice.c",
+      "src/log.c",
+      "src/random.c",
+      "src/stun.c",
+      "src/timestamp.c",
+      "src/tcp.c",
+      "src/turn.c",
+      "src/udp.c"
+    ],
+    "requiredDefinesIfCandidateHadPassed": [
+      "USE_NETTLE=0",
+      "NO_SERVER=1",
+      "JUICE_STATIC=1",
+      "RELEASE=1"
+    ],
+    "requiredCommonFlagsIfCandidateHadPassed": [
+      "-std=c11",
+      "-fPIC",
+      "-fvisibility=hidden",
+      "-pthread",
+      "-Wall",
+      "-Wextra",
+      "-Wno-address-of-packed-member",
+      "-c"
+    ],
+    "cmakeExecutionAllowed": false,
+    "makeExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "compilerInvocationAllowedByThisManifest": false,
+    "archiveInvocationAllowedByThisManifest": false
+  },
+  "dependencyReview": {
+    "result": "complete_for_unmodified_source_tree",
+    "bundled": [
+      {
+        "name": "picohash",
+        "path": "src/picohash.h",
+        "selectedWhen": "USE_NETTLE=0"
+      }
+    ],
+    "optionalExternal": [
+      {
+        "name": "nettle",
+        "selectedWhen": "USE_NETTLE=1",
+        "allowedForBoundedCandidate": false
+      }
+    ],
+    "system": [
+      "c_runtime",
+      "posix_sockets_and_dns",
+      "pthreads",
+      "polling",
+      "monotonic_and_realtime_clocks",
+      "platform_interface_and_route_apis"
+    ],
+    "ambientIncludeOrPkgConfigAllowed": false
+  },
+  "toolchainReceipt": {
+    "android": {
+      "selectionBasis": "agp_9_2_1_embedded_default",
+      "agpJarSha256": "582e85078b60eb80669223b34b58200ba034654b2edb1cf9621e62fde7dfc0a3",
+      "packageId": "ndk;28.2.13676358",
+      "releaseName": "r28c",
+      "archive": {
+        "path": "build/toolchain-intake/android-ndk-r28c-darwin.zip",
+        "sizeBytes": 952495160,
+        "sha256": "0d4599e8bbf1a1668a0d51a541729b2246360f350018a2081d0b302dbb594f2a"
+      },
+      "installPath": "$ANDROID_SDK_ROOT/ndk/28.2.13676358",
+      "clangVersion": "Android 13624864 clang 19.0.1",
+      "tools": [
+        {
+          "path": "source.properties",
+          "sizeBytes": 108,
+          "sha256": "c00aa236fdb205e9be9edd9e2169763e48aca52735efff4e16f34205d49783b5"
+        },
+        {
+          "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/clang",
+          "sizeBytes": 172733264,
+          "sha256": "df85444b66234bf4cae267e22bde45ea8fef596d30ca2991b2091a27e6ea7718"
+        },
+        {
+          "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang",
+          "sizeBytes": 201,
+          "sha256": "c9ec0ccdc82aede75e6724738b833603707c0990061e05a1484860249f7520d5"
+        },
+        {
+          "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/x86_64-linux-android26-clang",
+          "sizeBytes": 200,
+          "sha256": "176e679fe06dd5660a95fd35ee5a95084263b7d2d47bd6a0f58aa254e65d165e"
+        },
+        {
+          "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar",
+          "sizeBytes": 27160192,
+          "sha256": "3705c4237aab47a369b999f5b0af572a6ea56488df7174aaab29e5fc4b082ea3"
+        },
+        {
+          "path": "toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-nm",
+          "sizeBytes": 28941296,
+          "sha256": "709c3ec8bf09b68ac535275b1bb5bb511b7809413817036e3605f187809e7b81"
+        }
+      ],
+      "sysrootTreeDigest": null,
+      "sysrootDigestDisposition": "not_computed_candidate_rejected_before_compile_contract"
+    },
+    "macos": {
+      "xcodeVersion": "26.6",
+      "xcodeBuild": "17F113",
+      "clangVersion": "Apple clang 21.0.0",
+      "sdkVersion": "26.5",
+      "sdkBuild": "25F70",
+      "tools": [
+        {
+          "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+          "sizeBytes": 141373024,
+          "sha256": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a"
+        },
+        {
+          "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar",
+          "sizeBytes": 73520,
+          "sha256": "e49ffad64ad1cee722540fc5ecb00a230fd8071680682c60d9c851029d20e814"
+        },
+        {
+          "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/nm",
+          "sizeBytes": 16380560,
+          "sha256": "d910f3acb104791e5475254000ede2aa129aa1a42eafcc7f5bdb27afffc642dc"
+        },
+        {
+          "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/SDKSettings.json",
+          "sizeBytes": 7774,
+          "sha256": "f8d005f09381389167f9e0aeaa169bc9e7dff162ef22ca2fd8e98df7ff1acafe"
+        }
+      ],
+      "sdkTreeDigest": null,
+      "sdkDigestDisposition": "not_computed_candidate_rejected_before_compile_contract"
+    }
+  },
+  "authorityBoundary": {
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "archiveInvocationPerformed": false,
+    "sourceLinkedOrLoaded": false,
+    "socketCreationPerformed": false,
+    "runtimeNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-phase-a-progress",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v3",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "blocked_networking_candidate_rejected",
+  "supersedes": {
+    "path": "progress-v2.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v2",
+    "sha256": "af626c5dfe3c4b8d9263fe5464c1a0ee5fa98c78ea8be75ddf9356120207795b"
+  },
+  "currentAuthority": {
+    "decision": {
+      "path": "../decision-v3.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v3",
+      "sha256": "ae129fc214ac96abb3e1393b895cf03ddf284004ce9a1d3ac2005b4cb5d2022d"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v6.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v6",
+      "sha256": "87af07548bfeb17b54642bb16c00fab2652006ba9401a05ccce8d134bba894e5"
+    },
+    "fallbackReview": {
+      "path": "../review-v2.json",
+      "reviewId": "production_p2p_nat_v1_controlled_network_spike_fallback_review_v2",
+      "sha256": "d20c9ddcf572edbfeb8df3bf899cb32f0f61c684974ea074f7ed841332c4122b"
+    }
+  },
+  "summary": {
+    "originalBoundedPhaseAApprovalCount": 4,
+    "passedEvidenceUnitCount": 2,
+    "rejectedEvidenceUnitCount": 1,
+    "notRunEvidenceUnitCount": 1,
+    "wholePhaseASecurityReview": "blocked_on_fallback_selection_and_evidence",
+    "networkingCandidate": "libjuice-1.7.2-static-c-abi",
+    "networkingCandidateDisposition": "rejected_before_compile",
+    "fallbackCandidate": "libnice-0.1.23-glib-c-abi",
+    "fallbackDisposition": "proposed_not_selected"
+  },
+  "evidenceUnits": {
+    "libjuice_supply_chain_and_source_audit": {
+      "status": "complete_rejected",
+      "proofScope": "exact_acquisition_manifest_license_dependency_build_input_and_line_referenced_static_audit",
+      "evidence": [
+        {
+          "path": "libjuice-source-manifest-v1.json",
+          "sha256": "55209e8629c25e0a0158233e47dee8537250a5b44af8a841e0cff07f0af41046"
+        },
+        {
+          "path": "libjuice-source-audit-v1.json",
+          "sha256": "614adb3ff5d87623b5e9db0f143ce82e3618316b3310ad70750b2806517e8145"
+        },
+        {
+          "path": "offline-source-intake-v2.json",
+          "sha256": "1c1b5ebc47ce15456b3855c008db2aaf5289d38635a78a566cfabc25e2cd8fa0"
+        }
+      ],
+      "blocker": "five_independent_p1_profile_failures"
+    },
+    "android_macos_compile_only_integration": {
+      "status": "not_run_candidate_rejected_before_compile",
+      "proofScope": "none",
+      "historicalContract": {
+        "path": "libjuice-compile-only-contract-v1.json",
+        "sha256": "2664736c7b783d650eabcd8bc4ad5391babd456d3b7df596dff2171eba7d84b4"
+      },
+      "blocker": "source_audit_failure_prevented_new_compile_contract_and_compiler_invocation"
+    },
+    "cross_platform_session_crypto_vectors": {
+      "status": "complete",
+      "proofScope": "no_device_fixed_vectors_and_static_platform_contract_only",
+      "changedByThisProgress": false
+    },
+    "static_harness_and_egress_policy": {
+      "status": "complete_static_only",
+      "proofScope": "non_executable_no_socket_no_network_policy_evidence_only",
+      "changedByThisProgress": false
+    }
+  },
+  "acquisitionAndToolReceipt": {
+    "libjuiceArchiveAcquired": true,
+    "libjuiceArchiveSha256": "75159867c4a5a689a6559e11aa0d30c9eba12ce73a4ae3d898b521467e1f635d",
+    "libjuiceTreeSha256": "c17e0d6d3855e9584718584ab644f030939448d0e8f6a8bf5ca9883da719a330",
+    "androidNdkPackageId": "ndk;28.2.13676358",
+    "androidNdkArchiveSha256": "0d4599e8bbf1a1668a0d51a541729b2246360f350018a2081d0b302dbb594f2a",
+    "androidNdkInstalled": true,
+    "androidNdkUsedForCompilation": false,
+    "exactAcquisitionAuthorityConsumed": true,
+    "additionalAcquisitionAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "archiveInvocationPerformed": false,
+    "linkOrLoadPerformed": false,
+    "symbolInspectionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeNetworkIOPerformed": false,
+    "harnessNetworkIOPerformed": false,
+    "controlledSpikeNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionNetworkIOPerformed": false,
+    "productionDeploymentPerformed": false,
+    "measurements": []
+  },
+  "authorization": {
+    "implementationAuthorized": false,
+    "fallbackSelectionAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "toolchainAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "archiveInvocationAuthorized": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "phaseBExternalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": {
+    "state": "waiting_for_explicit_user_decision",
+    "decisionScope": "exact_official_libnice_0_1_23_and_required_dependency_acquisition_for_read_only_audit",
+    "fallbackMayBeImplicitlySelected": false,
+    "compilerMayBeAuthorizedByThatDecision": false,
+    "socketRuntimePhaseBOrProductionAuthorityMayBeOpened": false
+  },
+  "evidenceBoundary": {
+    "proves": "exact_acquisition_and_static_source_audit_rejection",
+    "doesNotProve": "android_macos_compile_abi_runtime_socket_network_ice_stun_turn_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_progress_only"
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "documentType": "aetherlink.p2p-nat-phase-a-progress",
+  "schemaVersion": "1.0",
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v2",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedAt": "2026-07-17",
+  "sourceDecision": {
+    "path": "../decision-v2.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v2",
+    "sha256": "a23f4020a8d450248e4fb26a2697f9294626166d3166dc1f13971361094d074c"
+  },
+  "sourceHandoff": {
+    "path": "../../implementation/handoff-v5.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v5",
+    "sha256": "af3fbf3f7ee3018a7dfcff6713471247db454bc5740a7893558ec57769e8f249"
+  },
+  "approvalSnapshot": {
+    "count": 4,
+    "approvalSource": "explicit_user_instruction",
+    "decisionOrder": [
+      "networking_library_selection",
+      "session_cryptography_library_selection",
+      "isolated_harness_design",
+      "socket_destination_and_egress_controls"
+    ],
+    "resolutions": {
+      "networking_library_selection": "libjuice-1.7.2-static-c-abi",
+      "session_cryptography_library_selection": "platform-native-p256-hkdf-sha256-aes256gcm",
+      "isolated_harness_design": "linux-netns-twin-agent-local-services",
+      "socket_destination_and_egress_controls": "numeric-endpoint-allowlist-plus-os-egress-witness"
+    }
+  },
+  "overallStatus": "acquisition_authorized_incomplete_phase_a",
+  "statusSummary": {
+    "requiredBoundedEvidenceGroupCount": 4,
+    "boundedEvidenceCompletedCount": 2,
+    "blockedBoundedEvidenceCount": 2,
+    "phaseASecurityReviewStatus": "blocked_on_source_and_compile_evidence"
+  },
+  "evidenceStatus": {
+    "libjuice_supply_chain_and_source_audit": {
+      "status": "authorized_pending_official_source_acquisition",
+      "proofScope": "authorization_only_no_source_present_or_consumed",
+      "artifacts": [
+        {
+          "path": "offline-source-intake-v1.json",
+          "sha256": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850"
+        },
+        {
+          "path": "offline-source-intake-v1.md",
+          "sha256": "c186c4bed45a6edd9d270062ac9927839ab1f5c8f5c66eab966dfc9a61c0d2ee"
+        },
+        {
+          "path": "../decision-v2.json",
+          "sha256": "a23f4020a8d450248e4fb26a2697f9294626166d3166dc1f13971361094d074c"
+        },
+        {
+          "path": "../../implementation/handoff-v5.json",
+          "sha256": "af3fbf3f7ee3018a7dfcff6713471247db454bc5740a7893558ec57769e8f249"
+        }
+      ]
+    },
+    "android_macos_compile_only_integration": {
+      "status": "blocked_pending_reviewed_source_and_toolchain",
+      "proofScope": "blocked_contract_only_no_compiler_archive_or_native_wiring",
+      "artifacts": [
+        {
+          "path": "libjuice-compile-only-contract-v1.json",
+          "sha256": "2664736c7b783d650eabcd8bc4ad5391babd456d3b7df596dff2171eba7d84b4"
+        },
+        {
+          "path": "libjuice-compile-only-contract-v1.md",
+          "sha256": "6e181de962f961ccf1b35f020e83e2cceb3829e13bf824c7fa68f17677d09420"
+        }
+      ]
+    },
+    "cross_platform_session_crypto_vectors": {
+      "status": "completed_bounded_no_device_vectors",
+      "proofScope": "bounded_no_device_fixed_vector_interoperability_only",
+      "artifacts": [
+        {
+          "path": "../../../../../apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift",
+          "sha256": "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb"
+        },
+        {
+          "path": "../../../../../apps/macos/P2PNATContracts/Tests/P2PNATSessionCryptoVectorTests.swift",
+          "sha256": "c39c4e37a3f022698d9994804972a0bafd14000d010baa99bc6928066ef87acd"
+        },
+        {
+          "path": "../../../../../apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCrypto.kt",
+          "sha256": "a7222474e0b38e061a1d04ba5993af844f8f1cebaed36496403ae3bf47bd5b93"
+        },
+        {
+          "path": "../../../../../apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCryptoVectorTest.kt",
+          "sha256": "3a28cef4d942dac397bd443ec3b7e0f9c96e2a0c9ccda836ec3c49f178367bf4"
+        },
+        {
+          "path": "../../../../../shared/protocol/fixtures/production-p2p-nat-v1-session-crypto-vectors.json",
+          "sha256": "4693f71330b5f40f9b99b4445c24fba8fa0939c4ae76f8b9bf3c9644b08f29c9"
+        },
+        {
+          "path": "../../../../../script/check_p2p_nat_session_crypto_vectors.py",
+          "sha256": "c8f51de5a77599617eb24df3f767569e778e3ac327a8eae7e3fdad6fcad949ee"
+        },
+        {
+          "path": "../../../../../script/test_p2p_nat_session_crypto_vectors.py",
+          "sha256": "37ba5844a7822d65bca27b312718c7a43c30febc2c0ca83976b91a246e09b526"
+        }
+      ]
+    },
+    "static_harness_and_egress_policy": {
+      "status": "static_design_complete",
+      "proofScope": "non_executable_static_design_only",
+      "artifacts": [
+        {
+          "path": "static-harness-egress-policy-v1.json",
+          "sha256": "6934995f310449fa675348c0314ea5bac2991693f1e1d080aa469d7d856ec9f5"
+        },
+        {
+          "path": "static-harness-egress-policy-v1.md",
+          "sha256": "0578c5f6b89bc3db5cb1ce6ed24f62bad32898b923411759dbf55f946d2fb61b"
+        }
+      ]
+    },
+    "phase_a_security_review": {
+      "status": "blocked_on_source_and_compile_evidence",
+      "proofScope": "whole_phase_a_review_not_started",
+      "artifacts": []
+    }
+  },
+  "boundedPhaseAAuthority": {
+    "offlineSourceInspectionAuthorized": true,
+    "compileOnlyIntegrationAuthorized": true,
+    "sessionCryptoVectorImplementationAuthorized": true,
+    "staticHarnessImplementationAuthorized": true,
+    "officialLibjuiceSourceAcquisitionAuthorized": true,
+    "sourceAcquisitionNetworkIOAllowed": true,
+    "androidNdkInstallationAuthorized": true,
+    "androidNdkPackageAcquisitionNetworkIOAllowed": true
+  },
+  "executionAuthority": {
+    "sourceAcquisitionNetworkIOAllowed": true,
+    "sourceExecutionAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "archiveInvocationAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "externalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false,
+    "androidNdkPackageAcquisitionNetworkIOAllowed": true
+  },
+  "phaseBDecisionEligible": false,
+  "measurementStatus": "not_started",
+  "nextStep": "acquire_exact_official_libjuice_and_android_ndk_artifacts_then_publish_new_versioned_reviewed_intake_and_compile_contract",
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_progress"
+  },
+  "acquisitionState": {
+    "status": "authorized_not_started",
+    "libjuiceArchivePresent": false,
+    "libjuiceSourcePresent": false,
+    "androidNdkArchivePresent": false,
+    "androidNdkInstalled": false,
+    "policy": {
+      "networkPurpose": "bounded_phase_a_artifact_acquisition_only",
+      "networkIOAllowed": true,
+      "sourceAcquisitionNetworkIOAllowed": true,
+      "androidNdkAcquisitionNetworkIOAllowed": true,
+      "httpsOnly": true,
+      "redirectFollowingAllowed": false,
+      "environmentProxyAllowed": false,
+      "allowedHosts": [
+        "github.com",
+        "codeload.github.com",
+        "dl.google.com"
+      ],
+      "dnsAllowedOnlyForExactHosts": true,
+      "packageManagerAcquisitionAllowed": false,
+      "archiveExtractionAllowed": true,
+      "manifestGenerationAllowed": true,
+      "libjuice": {
+        "candidateId": "libjuice-1.7.2-static-c-abi",
+        "releaseTag": "v1.7.2",
+        "repositoryMetadataUrl": "https://github.com/paullouisageneau/libjuice.git",
+        "archiveUrl": "https://codeload.github.com/paullouisageneau/libjuice/tar.gz/refs/tags/v1.7.2",
+        "archiveRelativePath": "build/offline-source/libjuice-1.7.2/original/libjuice-1.7.2.tar.gz",
+        "extractedSourceRelativePath": "build/offline-source/libjuice-1.7.2/source",
+        "maximumArchiveBytes": 16777216,
+        "maximumExtractedBytes": 67108864
+      },
+      "androidNdk": {
+        "release": "r28c",
+        "version": "28.2.13676358",
+        "packageId": "ndk;28.2.13676358",
+        "selectionReason": "agp_9_2_1_embedded_default_version",
+        "agpJarRelativePath": ".gradle/caches/modules-2/files-2.1/com.android.tools.build/gradle/9.2.1/db4cfe640e5a8f1de9d71ec67b5a90ac541fafc5/gradle-9.2.1.jar",
+        "agpJarSha256": "582e85078b60eb80669223b34b58200ba034654b2edb1cf9621e62fde7dfc0a3",
+        "officialDocumentationUrl": "https://developer.android.com/studio/projects/configure-agp-ndk",
+        "archiveUrl": "https://dl.google.com/android/repository/android-ndk-r28c-darwin.zip",
+        "archiveRelativePath": "build/toolchain-intake/android-ndk-r28c-darwin.zip",
+        "installRelativeToHome": "Library/Android/sdk/ndk/28.2.13676358",
+        "maximumArchiveBytes": 1258291200,
+        "maximumInstalledBytes": 5368709120
+      }
+    }
+  },
+  "supersedes": {
+    "path": "progress-v1.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v1",
+    "sha256": "3e0d98c2c03e97f7f16e63cca9c545553234ab05ff7d233bae607e09f13738a3"
+  }
+}

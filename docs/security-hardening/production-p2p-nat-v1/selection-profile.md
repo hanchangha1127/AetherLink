@@ -6,12 +6,23 @@ This profile is explicitly approved for a bounded handoff, not implemented as a
 production design. Its machine-readable source is
 [selection-profile.json](selection-profile.json), and the immutable approval is
 recorded in [selection-decision.json](selection-decision.json). `status` is
-`approved_for_bounded_handoff`, `implementationAuthorized` is `true`, and
+`approved_for_bounded_handoff`, `initialBoundedHandoffAuthorized` is `true`,
+current `implementationAuthorized` is `false`, and
 `explicitSelectionRequired` is `false`. The initial closed
 [handoff v1](implementation/handoff-v1.md) is superseded by the closed
 [handoff v2](implementation/handoff-v2.md), which records the two no-network
 packages as completed. `route.refresh` remains the only active traversal-related
 protocol message.
+
+The profile status and `initialBoundedHandoffAuthorized` preserve the original
+bounded design approval; they are not a current execution grant. The structured
+`currentExecutionAuthority` object and top-level `implementationAuthorized=false`
+fail closed for machine readers. The latest controlled-spike decision is
+[decision v3](controlled-network-spike/decision-v3.md), and the current handoff
+is [handoff v6](implementation/handoff-v6.md). They reject libjuice v1.7.2 at
+the mandatory source-audit stage before compilation. libnice 0.1.23 is
+`proposed_not_selected`, with no acquisition, compile, socket, runtime-network,
+Phase B, or production authority.
 
 ## Approved Choice
 
@@ -55,12 +66,14 @@ library, QUIC, decentralized rendezvous, relay-first promotion, or any physical
 Android, optical QR, live-network, performance, battery, or interoperability
 claim.
 
-The handoff state is closed and bounded: `canonical-contracts` and
-`no-network-conformance` are completed, while `handoff-v4` records
-`controlled-network-spike` as `executionAuthorized=true` only for offline
-Phase A inspection, compile-only, cryptographic-vector, and static-policy work.
-Source acquisition, runtime, harness, and production network I/O remain false;
-Phase B and socket execution require a separate versioned decision.
+The handoff history is closed and bounded: `canonical-contracts` and
+`no-network-conformance` are completed, while historical `handoff-v4` records
+the original Phase A approval and historical `handoff-v5` records the consumed
+one-shot source and NDK acquisition authority. Current `handoff-v6` records the
+mandatory libjuice rejection and closes implementation, replacement
+acquisition, compiler, source-fork, runtime, harness, socket, Phase B, and
+production authority. Any libnice source or dependency acquisition requires a
+separate explicit versioned decision.
 
 ## Security Floors
 
@@ -118,9 +131,13 @@ proposes concrete library, cryptography, harness, and egress choices and retains
 zero decisions. The separate immutable [phase A approval decision](controlled-network-spike/decision-v1.md)
 conditionally selects all four recommendations for source audit, compile-only,
 cryptographic-vector, and static-harness evidence. `handoff-v4` authorizes that
-bounded work from user-provided or pre-existing workspace source while source
-acquisition, runtime/harness network I/O, sockets, phase B, measurement, and
-deployment remain separately gated by a later explicit versioned decision.
+historical bounded work. The exact acquisition decision and handoff were then
+closed as `decision-v2` and `handoff-v5`. The resulting source audit rejected
+libjuice, so [fallback review v2](controlled-network-spike/review-v2.md) proposes
+libnice 0.1.23 without selecting it, and `decision-v3` plus `handoff-v6` close
+all current implementation and execution authority. Source or dependency
+acquisition, compilation, runtime/harness network I/O, sockets, Phase B,
+measurement, and deployment require a later explicit versioned decision.
 
 ## Evidence Boundary
 
@@ -128,4 +145,6 @@ This approved bounded handoff refines the existing 13-artifact static design
 portfolio. It does not add production P2P code, activate a new protocol namespace, execute the conditionally selected library, open
 network sockets, exercise STUN/TURN, prove NAT traversal, or provide physical
 Android, optical QR, different-network, latency, memory, battery, or production
-evidence.
+evidence. The latest records prove only exact libjuice and NDK acquisition plus
+static source-audit rejection; they do not prove compilation, ABI compatibility,
+library execution, or network behavior.

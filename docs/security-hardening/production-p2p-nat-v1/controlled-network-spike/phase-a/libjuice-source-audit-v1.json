@@ -1,0 +1,287 @@
+{
+  "documentType": "aetherlink.p2p-nat-libjuice-source-audit",
+  "schemaVersion": 1,
+  "auditId": "production_p2p_nat_v1_libjuice_source_audit_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_rejected",
+  "scope": "read_only_source_supply_chain_protocol_and_boundary_audit_no_compile_no_execution",
+  "sourceManifest": {
+    "path": "libjuice-source-manifest-v1.json",
+    "manifestId": "production_p2p_nat_v1_libjuice_source_manifest_v1",
+    "sha256": "55209e8629c25e0a0158233e47dee8537250a5b44af8a841e0cff07f0af41046"
+  },
+  "approvalChain": {
+    "acquisitionDecision": {
+      "path": "../decision-v2.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v2",
+      "sha256": "a23f4020a8d450248e4fb26a2697f9294626166d3166dc1f13971361094d074c"
+    },
+    "acquisitionHandoff": {
+      "path": "../../implementation/handoff-v5.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v5",
+      "sha256": "af3fbf3f7ee3018a7dfcff6713471247db454bc5740a7893558ec57769e8f249"
+    }
+  },
+  "governingContracts": {
+    "selectionReview": {
+      "path": "../review-v1.json",
+      "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+      "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62"
+    },
+    "blockedIntake": {
+      "path": "offline-source-intake-v1.json",
+      "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v1",
+      "sha256": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850"
+    },
+    "blockedCompileContract": {
+      "path": "libjuice-compile-only-contract-v1.json",
+      "contractId": "production_p2p_nat_v1_libjuice_compile_only_contract_v1",
+      "sha256": "2664736c7b783d650eabcd8bc4ad5391babd456d3b7df596dff2171eba7d84b4"
+    }
+  },
+  "method": {
+    "sourceExecution": false,
+    "compilerInvocation": false,
+    "archiveCreation": false,
+    "linkOrLoad": false,
+    "socketCreation": false,
+    "runtimeNetworkIO": false,
+    "phaseBExecution": false,
+    "reviewMode": "line_referenced_static_read_only",
+    "independentReviewCount": 2,
+    "independentReviewModel": "gpt-5.6-sol"
+  },
+  "requiredTopicResults": [
+    {
+      "topic": "regular_nomination",
+      "result": "mechanism_pass_profile_gate_fail",
+      "evidence": [
+        "src/agent.c:1198-1213 schedules a separate nomination check after pair selection",
+        "src/agent.c:1730-1735 adds USE-CANDIDATE only for requested nomination",
+        "src/agent.c:1589-1599 confirms nomination after a successful response",
+        "src/agent.c:1132-1147 exposes selected_entry before nomination"
+      ]
+    },
+    {
+      "topic": "role_handling_and_tie_breaker",
+      "result": "fail",
+      "evidence": [
+        "src/agent.c:1440 accepts both role attributes when their values differ",
+        "src/agent.c:1474-1484 compares the controlled-role request against ice_controlling instead of ice_controlled",
+        "src/agent.c:1615-1637 implements 487 role switching but regenerates the tie-breaker through the rejected entropy path"
+      ]
+    },
+    {
+      "topic": "rfc7675_consent_freshness",
+      "result": "conditional_mechanism_pass_profile_gate_fail",
+      "evidence": [
+        "src/agent.h:45-54 fixes 30-second expiry and a randomized 4-to-6-second cadence",
+        "src/agent.c:1001-1010 fails the pair when consent expires",
+        "src/agent.c:1045-1051 sends Binding requests for consent",
+        "src/agent.c:1589-1590 extends expiry on success",
+        "src/agent.c:2544-2549 permits compile-time disable and uses the rejected random source for scheduling"
+      ]
+    },
+    {
+      "topic": "turn_authentication_nonce_and_redirect",
+      "result": "fail",
+      "evidence": [
+        "src/agent.c:1319-1325 bypasses integrity verification for every non-400 TURN error",
+        "src/agent.c:1870-1905 accepts and stores 401 or 438 realm and nonce values",
+        "src/agent.c:1907-1945 accepts an unauthenticated 300 ALTERNATE-SERVER tuple",
+        "src/agent.c:2006-2008 sends the next request to that replacement tuple"
+      ]
+    },
+    {
+      "topic": "stun_turn_parser_limits",
+      "result": "fail_strict_encoding",
+      "evidence": [
+        "src/stun.c:500-509 and 621-634 bound the message and attribute memory ranges",
+        "src/stun.c:906-909 and 1007-1010 accept nonzero-length flag attributes",
+        "src/stun.c:931-940, 981-989, and 991-1005 accept oversized fixed-format attributes"
+      ]
+    },
+    {
+      "topic": "cancellation_shutdown_and_callbacks",
+      "result": "fail",
+      "evidence": [
+        "src/juice.c:28-31 exposes destroy without a separate cancellation operation",
+        "src/conn_thread.c:176 permits callback reentry on a recursive mutex",
+        "src/conn_thread.c:193-209 joins and frees connection state",
+        "src/thread.h:102-103 discards pthread_join errors, including a callback-thread self-join failure"
+      ]
+    },
+    {
+      "topic": "content_free_diagnostics",
+      "result": "fail",
+      "evidence": [
+        "src/log.c:34-36 defaults logging to WARN",
+        "src/agent.c:1302-1310 logs the selected ICE password on integrity failure",
+        "src/agent.c:518-520 logs the full remote SDP",
+        "src/ice.c:141-142 and 172-173 format ICE credentials into diagnostics"
+      ]
+    },
+    {
+      "topic": "numeric_endpoint_pre_io_policy",
+      "result": "fail",
+      "evidence": [
+        "include/juice/juice.h:80-119 accepts string STUN TURN and bind endpoints",
+        "src/addr.c:253-266 resolves with getaddrinfo and no AI_NUMERICHOST",
+        "src/udp.c:145-155 resolves bind input with getaddrinfo",
+        "src/agent.c:219-247 creates the connection and gathers host candidates before an external candidate authorization boundary"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "findingId": "LJ172-P1-ENTROPY",
+      "severity": "P1",
+      "title": "Predictable ICE and STUN TURN security randomness on both target platforms",
+      "evidence": [
+        "src/random.c:17-18 excludes Android from getrandom",
+        "src/random.c:52-57 provides no secure macOS entropy source",
+        "src/random.c:60-101 falls back to realtime-seeded random",
+        "src/ice.c:165-168 uses it for ICE ufrag and password",
+        "src/agent.c:143-151 uses it for the ICE tie-breaker"
+      ],
+      "disposition": "independent_rejection_blocker_requires_reviewed_source_fork_not_wrapper_only"
+    },
+    {
+      "findingId": "LJ172-P1-SECRET-LOG",
+      "severity": "P1",
+      "title": "Remote input can trigger plaintext ICE password logging at the default log level",
+      "evidence": [
+        "src/log.c:34-36 defaults to WARN",
+        "src/agent.c:1302-1310 writes the ICE password in a WARN diagnostic"
+      ],
+      "disposition": "independent_rejection_blocker_content_free_log_floor_failed"
+    },
+    {
+      "findingId": "LJ172-P1-UNAUTH-STUN-ERROR",
+      "severity": "P1",
+      "title": "Unauthenticated Binding error responses can change role or fail a pair",
+      "evidence": [
+        "src/agent.c:1265-1271 bypasses binding integrity for error responses",
+        "src/agent.c:1366-1373 dispatches responses by transaction ID",
+        "src/agent.c:1605-1652 applies unauthenticated error outcomes"
+      ],
+      "disposition": "independent_rejection_blocker_authenticated_protocol_handling_failed"
+    },
+    {
+      "findingId": "LJ172-P1-TURN-REDIRECT",
+      "severity": "P1",
+      "title": "Unauthenticated TURN error handling can replace the destination tuple",
+      "evidence": [
+        "src/agent.c:1319-1325 bypasses integrity for non-400 errors",
+        "src/agent.c:1907-1945 applies ALTERNATE-SERVER",
+        "src/agent.c:2006-2008 transmits to the replacement"
+      ],
+      "disposition": "independent_rejection_blocker_no_redirect_and_immutable_allowlist_floors_failed"
+    },
+    {
+      "findingId": "LJ172-P1-PRE-IO-POLICY",
+      "severity": "P1",
+      "title": "Public and internal APIs cannot enforce numeric-only authorization before socket and DNS boundaries",
+      "evidence": [
+        "include/juice/juice.h:80-119 exposes string endpoints",
+        "src/addr.c:253-266 permits DNS",
+        "src/agent.c:219-247 enters connection setup before a caller-enforced per-tuple authorization hook"
+      ],
+      "disposition": "independent_rejection_blocker_requires_source_api_change"
+    },
+    {
+      "findingId": "LJ172-P2-ROLE-FIELD",
+      "severity": "P2",
+      "title": "Controlled-role conflict compares the wrong role attribute",
+      "evidence": [
+        "src/agent.c:1474-1484 branches on ice_controlled but compares ice_controlling"
+      ],
+      "disposition": "rejection_supporting_protocol_correctness_failure"
+    },
+    {
+      "findingId": "LJ172-P2-TEARDOWN",
+      "severity": "P2",
+      "title": "Callback-thread destroy can self-join and free live state",
+      "evidence": [
+        "src/conn_thread.c:176 permits callback reentry",
+        "src/conn_thread.c:193-209 joins then frees",
+        "src/thread.h:102-103 discards join failures"
+      ],
+      "disposition": "rejection_supporting_bounded_cancellation_failure"
+    },
+    {
+      "findingId": "LJ172-P2-PRE-NOMINATION-PAYLOAD",
+      "severity": "P2",
+      "title": "Application traffic is admitted before regular nomination and profile key confirmation",
+      "evidence": [
+        "src/agent.c:1132-1147 publishes a selected entry before nomination",
+        "src/agent.c:670-685 allows send through the selected entry",
+        "src/agent.c:834-855 forwards registered-entry payload to cb_recv"
+      ],
+      "disposition": "rejection_supporting_application_readiness_floor_failure"
+    }
+  ],
+  "rejectionDecision": {
+    "candidateId": "libjuice-1.7.2-static-c-abi",
+    "outcome": "rejected_before_compile",
+    "failurePolicy": "reject_libjuice_and_open_new_versioned_fallback_review",
+    "failurePolicySources": [
+      "../review-v1.json: networking_library_selection.fallbackRule",
+      "offline-source-intake-v1.json: failurePolicy.onAuditFailure",
+      "../decision-v1.json: failurePolicy"
+    ],
+    "wrapperOnlyMitigationSufficient": false,
+    "sourceForkRequiredForRemediation": true,
+    "sourceForkAuthorized": false,
+    "fallbackCandidate": "libnice-0.1.23-glib-c-abi",
+    "fallbackSelected": false,
+    "fallbackAcquisitionAuthorized": false
+  },
+  "compileBoundary": {
+    "compilerInvocationAuthorized": false,
+    "compilerInvocationPerformed": false,
+    "archiveInvocationAuthorized": false,
+    "archiveInvocationPerformed": false,
+    "symbolInspectionPerformed": false,
+    "androidCompilePerformed": false,
+    "macosCompilePerformed": false,
+    "newCompileContractCreated": false,
+    "reason": "candidate_rejected_by_source_audit_before_compile_contract"
+  },
+  "networkBoundary": {
+    "additionalSourceAcquisitionAuthorized": false,
+    "libniceAcquisitionAuthorized": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "evidenceBoundary": {
+    "proves": [
+      "exact_libjuice_archive_and_extracted_tree_identity",
+      "license_generated_file_dependency_and_build_input_inventory",
+      "read_only_line_referenced_source_audit",
+      "candidate_rejection_before_compilation"
+    ],
+    "doesNotProve": [
+      "successful_android_or_macos_compilation",
+      "abi_or_symbol_compatibility",
+      "source_or_library_runtime_behavior",
+      "socket_or_network_behavior",
+      "ice_stun_turn_interoperability",
+      "nat_traversal",
+      "physical_android_behavior",
+      "phase_b",
+      "production_readiness"
+    ]
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_audit_only",
+    "sourceTreeModified": false
+  }
+}

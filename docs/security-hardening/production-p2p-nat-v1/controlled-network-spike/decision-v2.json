@@ -1,0 +1,123 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-network-spike-acquisition-decision",
+  "schemaVersion": "1.0",
+  "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v2",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "supersedes": {
+    "path": "decision-v1.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+    "sha256": "1fd24be7252e25381552d1732c5282f141ef0e9b02118f8c65b246b81a055228"
+  },
+  "sourceReview": {
+    "path": "review-v1.json",
+    "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+    "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62"
+  },
+  "sourceHandoff": {
+    "path": "../implementation/handoff-v4.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v4",
+    "sha256": "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd"
+  },
+  "status": "closed",
+  "approvalSource": "explicit_user_instruction",
+  "recordedAt": "2026-07-17",
+  "decisionScope": "bounded_phase_a_official_source_and_android_ndk_acquisition",
+  "retainedApprovals": [
+    {
+      "decisionId": "networking_library_selection",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "resolution": "libjuice-1.7.2-static-c-abi"
+    },
+    {
+      "decisionId": "session_cryptography_library_selection",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "resolution": "platform-native-p256-hkdf-sha256-aes256gcm"
+    },
+    {
+      "decisionId": "isolated_harness_design",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "resolution": "linux-netns-twin-agent-local-services"
+    },
+    {
+      "decisionId": "socket_destination_and_egress_controls",
+      "status": "approved_for_bounded_phase_a_evidence",
+      "resolution": "numeric-endpoint-allowlist-plus-os-egress-witness"
+    }
+  ],
+  "acquisitionAuthorization": {
+    "networkPurpose": "bounded_phase_a_artifact_acquisition_only",
+    "networkIOAllowed": true,
+    "sourceAcquisitionNetworkIOAllowed": true,
+    "androidNdkAcquisitionNetworkIOAllowed": true,
+    "httpsOnly": true,
+    "redirectFollowingAllowed": false,
+    "environmentProxyAllowed": false,
+    "allowedHosts": [
+      "github.com",
+      "codeload.github.com",
+      "dl.google.com"
+    ],
+    "dnsAllowedOnlyForExactHosts": true,
+    "packageManagerAcquisitionAllowed": false,
+    "archiveExtractionAllowed": true,
+    "manifestGenerationAllowed": true,
+    "libjuice": {
+      "candidateId": "libjuice-1.7.2-static-c-abi",
+      "releaseTag": "v1.7.2",
+      "repositoryMetadataUrl": "https://github.com/paullouisageneau/libjuice.git",
+      "archiveUrl": "https://codeload.github.com/paullouisageneau/libjuice/tar.gz/refs/tags/v1.7.2",
+      "archiveRelativePath": "build/offline-source/libjuice-1.7.2/original/libjuice-1.7.2.tar.gz",
+      "extractedSourceRelativePath": "build/offline-source/libjuice-1.7.2/source",
+      "maximumArchiveBytes": 16777216,
+      "maximumExtractedBytes": 67108864
+    },
+    "androidNdk": {
+      "release": "r28c",
+      "version": "28.2.13676358",
+      "packageId": "ndk;28.2.13676358",
+      "selectionReason": "agp_9_2_1_embedded_default_version",
+      "agpJarRelativePath": ".gradle/caches/modules-2/files-2.1/com.android.tools.build/gradle/9.2.1/db4cfe640e5a8f1de9d71ec67b5a90ac541fafc5/gradle-9.2.1.jar",
+      "agpJarSha256": "582e85078b60eb80669223b34b58200ba034654b2edb1cf9621e62fde7dfc0a3",
+      "officialDocumentationUrl": "https://developer.android.com/studio/projects/configure-agp-ndk",
+      "archiveUrl": "https://dl.google.com/android/repository/android-ndk-r28c-darwin.zip",
+      "archiveRelativePath": "build/toolchain-intake/android-ndk-r28c-darwin.zip",
+      "installRelativeToHome": "Library/Android/sdk/ndk/28.2.13676358",
+      "maximumArchiveBytes": 1258291200,
+      "maximumInstalledBytes": 5368709120
+    }
+  },
+  "executionAuthority": {
+    "offlineSourceInspectionAuthorized": true,
+    "toolchainInspectionAuthorized": true,
+    "sourceExecutionAllowed": false,
+    "compilerInvocationAuthorizedBeforeReviewedManifest": false,
+    "archiveInvocationAuthorizedBeforeReviewedManifest": false,
+    "configureExecutionAllowed": false,
+    "testExecutableBuildAllowed": false,
+    "testExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false,
+    "handoffV5CreationAuthorized": true
+  },
+  "requiredBeforeCompilation": [
+    "completed_versioned_source_intake",
+    "exact_source_and_supply_chain_manifest",
+    "independent_source_security_review",
+    "exact_android_ndk_archive_package_and_tool_digests",
+    "exact_macos_sdk_and_tool_digests",
+    "new_versioned_compile_only_contract"
+  ],
+  "failurePolicy": "fail_closed_without_fallback_download_execution_socket_or_phase_b_authority",
+  "nextStep": "create_handoff_v5_then_acquire_exact_artifacts_and_publish_reviewed_manifests_before_compilation",
+  "immutability": {
+    "recordState": "closed",
+    "amendmentPolicy": "supersede_with_new_versioned_decision"
+  }
+}

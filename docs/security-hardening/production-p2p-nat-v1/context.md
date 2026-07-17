@@ -20,37 +20,58 @@ deployment unauthorized. The closed
 The separate closed `controlled-network-spike/decision-v1` and
 `implementation/handoff-v4` select all four recommendations only for offline
 Phase A inspection, compile-only, cryptographic-vector, and static-policy work.
-They keep source-acquisition network I/O, runtime and harness network I/O,
-socket execution, Phase B, measurement, and production deployment unauthorized.
+The later `controlled-network-spike/decision-v2` and `implementation/handoff-v5`
+authorized one exact acquisition of the official libjuice v1.7.2 source and
+Android NDK r28c. That authority was consumed. The mandatory source audit then
+rejected libjuice before compilation, and the closed
+`controlled-network-spike/decision-v3` plus `implementation/handoff-v6` now keep
+all replacement acquisition, compiler, socket, runtime and harness network I/O,
+Phase B, measurement, and production deployment unauthorized.
 `route.refresh` remains the only active
 traversal-related namespace.
 
 ## Current Phase A Progress Authority
 
-`implementation/handoff-v4.json` is the immutable approval-time snapshot for
-the four bounded Phase A recommendations. The closed, versioned
-`controlled-network-spike/phase-a/progress-v1.json` is the current versioned Phase A evidence-status authority; later evidence status does not rewrite `handoff-v4`.
+`implementation/handoff-v4.json` remains the immutable four-recommendation
+approval snapshot, and `implementation/handoff-v5.json` remains the consumed
+one-shot acquisition snapshot. The current authority is the closed
+`implementation/handoff-v6.json`; current evidence status is recorded by
+`controlled-network-spike/phase-a/progress-v3.json`. Neither record rewrites its
+predecessors.
 
-Phase A progress: 4 recommendations are approved for bounded Phase A; 2 bounded evidence groups are complete (cross_platform_session_crypto_vectors and static_harness_and_egress_policy); 2 are blocked (libjuice_supply_chain_and_source_audit=blocked_missing_offline_source and android_macos_compile_only_integration=blocked_missing_reviewed_source); the final Phase A security review is blocked_on_source_and_compile_evidence.
+The exact official libjuice v1.7.2 archive and Android NDK r28c were acquired,
+and the NDK was installed. Read-only source inspection then found five P1
+profile failures: predictable credential and transaction entropy on Android and
+macOS, plaintext ICE-password logging, unauthenticated STUN Binding error
+handling, unauthenticated TURN error and alternate-server handling, and no
+pre-resolution numeric-only destination-policy boundary. The canonical failure
+policy therefore rejected libjuice before any compiler, archiver, linker,
+loader, symbol inspection, or source execution. The proposed libnice 0.1.23
+fallback is `proposed_not_selected` and has not been acquired.
 
-The new current static contract extends the execution-before-import SHA-256
-preflight to 22 files and adds a 7-test progress mutation suite. The final
-no-device aggregate log
-`build/qa/check-no-device-quality-p2p-phase-a-progress-v1-final-reviewed-20260717.log`
-exits 0 across 12,108 lines with one overall success marker, one Phase A
-progress addendum, two successful progress validator runs, 88 local
-development-relay match lines, freshness across 56 authenticated relay
-connections, and 905 encrypted frame bodies. The 2026-07-13 aggregate remains
-an actual 19-file preflight result and is not retroactively changed.
+The current static contract applies an execution-before-import SHA-256 preflight
+to 44 files, including the acquisition and rejection records. The earlier
+22-file `progress-v1` result remains historical and is not retroactively
+changed.
 
-Source acquisition and source execution, compiler/archive invocation, socket
-creation, runtime/harness/controlled-spike network I/O, Phase B
+The final aggregate log
+`build/qa/check-no-device-quality-p2p-libjuice-source-audit-rejection-final-20260717.log`
+exits 0 with exactly one overall success marker. It includes a
+read-only rehash of the retained libjuice archive, byte-equivalent 81-file
+source tree, NDK archive, installed NDK tools, Apple tools, and both manifest
+copies. Existing development-relay loopback checks in that aggregate are a
+separate regression surface; they do not execute libjuice or establish P2P
+Phase A runtime or live-network evidence.
+
+The one-shot source and toolchain acquisition authority is consumed; additional
+acquisition, source execution, compiler/archive invocation, socket creation,
+runtime/harness/controlled-spike network I/O, Phase B
 execution/network/socket authority, external egress, production network I/O,
 and production deployment are all `false`. This is current no-device static and
-local regression evidence only, not physical Android or live-network proof; it
-establishes no source acquisition, compilation, library execution, sockets,
-ICE/STUN/TURN traffic, NAT traversal, Phase B, external egress, production
-networking, or deployment.
+local regression evidence only, not physical Android or live-network proof. It
+establishes exact acquisition and static rejection, not compilation, ABI,
+library execution, sockets, ICE/STUN/TURN traffic, NAT traversal, Phase B,
+external egress, production networking, or deployment.
 
 ## Source Identity
 

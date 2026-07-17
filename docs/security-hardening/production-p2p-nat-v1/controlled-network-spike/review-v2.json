@@ -1,0 +1,113 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-fallback-review",
+  "schemaVersion": 1,
+  "reviewId": "production_p2p_nat_v1_controlled_network_spike_fallback_review_v2",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "proposed_not_selected",
+  "reviewOutcome": "libjuice_rejected_fallback_review_open",
+  "supersedes": {
+    "path": "review-v1.json",
+    "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+    "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62",
+    "scope": "networking_library_unit_only_other_three_phase_a_recommendations_unchanged"
+  },
+  "triggerEvidence": {
+    "sourceManifest": {
+      "path": "phase-a/libjuice-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_libjuice_source_manifest_v1",
+      "sha256": "55209e8629c25e0a0158233e47dee8537250a5b44af8a841e0cff07f0af41046"
+    },
+    "sourceAudit": {
+      "path": "phase-a/libjuice-source-audit-v1.json",
+      "auditId": "production_p2p_nat_v1_libjuice_source_audit_v1",
+      "sha256": "614adb3ff5d87623b5e9db0f143ce82e3618316b3310ad70750b2806517e8145"
+    },
+    "completedIntake": {
+      "path": "phase-a/offline-source-intake-v2.json",
+      "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v2",
+      "sha256": "1c1b5ebc47ce15456b3855c008db2aaf5289d38635a78a566cfabc25e2cd8fa0"
+    },
+    "trigger": "mandatory_fallback_after_libjuice_source_audit_failure"
+  },
+  "rejectedCandidate": {
+    "optionId": "libjuice-1.7.2-static-c-abi",
+    "disposition": "rejected_before_compile",
+    "wrapperOnlyRemediationSufficient": false,
+    "reviewedSourceForkAuthorized": false,
+    "reselectionAllowedWithoutNewReview": false
+  },
+  "fallbackCandidate": {
+    "optionId": "libnice-0.1.23-glib-c-abi",
+    "disposition": "recommended_for_separate_bounded_evaluation",
+    "selection": null,
+    "acquisition": null,
+    "implementation": null,
+    "knownReason": "the_existing_review_identified_documented_regular_nomination_and_consent_freshness_controls",
+    "knownTradeoff": "glib_dependency_lifecycle_packaging_and_android_macos_c_abi_complexity_require_exact_source_and_compile_only_review",
+    "officialSourceReferencesInheritedWithoutFetch": [
+      "https://libnice.freedesktop.org/",
+      "https://libnice.freedesktop.org/libnice/NiceAgent.html"
+    ]
+  },
+  "requiredBeforeSelection": [
+    "explicit_user_approval_for_exact_official_libnice_0_1_23_and_dependency_acquisition",
+    "new_versioned_exact_host_url_transport_size_and_digest_acquisition_policy",
+    "exact_release_tag_commit_archive_and_extracted_tree_provenance",
+    "complete_license_generated_file_direct_and_transitive_dependency_manifest",
+    "android_min_sdk_26_and_macos_static_c_abi_compile_only_contract",
+    "line_referenced_role_nomination_consent_turn_parser_shutdown_entropy_and_logging_audit",
+    "numeric_endpoint_only_no_dns_no_redirect_pre_io_policy_design",
+    "callback_allocator_cancellation_error_and_symbol_boundary_review",
+    "independent_review_before_any_compiler_invocation"
+  ],
+  "rejectionConditions": [
+    "exact_source_or_dependency_closure_cannot_be_pinned",
+    "android_or_macos_requires_unreviewed_platform_fork_or_ambient_dependency",
+    "entropy_authentication_parser_consent_shutdown_or_logging_floor_fails",
+    "hostname_dns_redirect_proxy_or_destination_change_can_bypass_immutable_numeric_tuple_authorization",
+    "application_payload_can_cross_before_profile_identity_and_key_confirmation",
+    "bounded_c_abi_cancellation_and_symbol_contract_cannot_be_established"
+  ],
+  "authorization": {
+    "fallbackSelectionAuthorized": false,
+    "libniceSourceAcquisitionAuthorized": false,
+    "libniceDependencyAcquisitionAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "archiveInvocationAuthorized": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "measurementStatus": {
+    "sourceAcquired": false,
+    "sourceAudited": false,
+    "compiled": false,
+    "linkedOrLoaded": false,
+    "socketExecuted": false,
+    "networkExecuted": false,
+    "measurements": []
+  },
+  "unchangedApprovedPhaseAUnits": [
+    "platform-native-p256-hkdf-sha256-aes256gcm",
+    "linux-netns-twin-agent-local-services_static_design_only",
+    "numeric-endpoint-allowlist-plus-os-egress-witness_static_design_only"
+  ],
+  "nextDecision": {
+    "required": true,
+    "decisionScope": "libnice_exact_acquisition_and_bounded_phase_a_source_audit_authority_only",
+    "implicitApprovalAllowed": false,
+    "networkSocketPhaseBOrProductionAuthorityAllowed": false
+  },
+  "immutability": {
+    "recordStatus": "proposed_append_only",
+    "supersessionRule": "new_versioned_review_only"
+  }
+}

@@ -27,6 +27,16 @@ is explicitly approved only for the bounded handoff recorded in
 protocol behavior is not implemented, and no networking library, network I/O,
 or deployment is authorized.
 
+The controlled-spike history has since advanced without activating the design.
+`decision-v2` and `handoff-v5` authorized and consumed one exact acquisition of
+official libjuice v1.7.2 and Android NDK r28c. The mandatory read-only source
+audit rejected libjuice before compilation for five P1 profile failures.
+`decision-v3` and `handoff-v6` are now the current execution boundary:
+implementation, replacement-library acquisition, compiler and archiver use,
+source execution, sockets, runtime or harness network I/O, Phase B, and
+production remain unauthorized. libnice 0.1.23 is only a proposed fallback and
+requires a new explicit acquisition decision.
+
 ## Constraints
 
 - Preserve `Android client -> trusted macOS runtime -> Ollama/LM Studio`; no P2P,
@@ -43,7 +53,9 @@ or deployment is authorized.
   A QUIC spike is contingent and must not make QUIC a prerequisite.
 - Keep `route.refresh` as the only active traversal-related protocol namespace
   until a selected profile defines and reviews additional message families.
-- Do not select a concrete ICE, TURN, TLS, HPKE, or QUIC library in this phase.
+- Do not select or acquire a replacement ICE, TURN, TLS, HPKE, or QUIC library
+  without a new versioned decision. The rejected libjuice choice grants no
+  fallback or source-fork authority.
 - Use a balanced security, reliability, latency, battery, and operability profile.
   No measured performance or capacity budget was supplied.
 - Treat [RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html),
@@ -183,22 +195,28 @@ boundary in [selection-profile.json](selection-profile.json). The selected
 combination is `authenticated-encrypted-ice-turn` plus
 `transport-neutral-identity-session`, with `relay-only-sealed-signaling` as the
 mandatory rollback. It is `approved_for_bounded_handoff`, with
-`implementationAuthorized=true` and `explicitSelectionRequired=false`, while all
-three handoff packages stay at `networkIOAllowed=false`. The selection scope
-covers canonical contracts and dependency-gated no-network conformance;
+`initialBoundedHandoffAuthorized=true`, current
+`implementationAuthorized=false`, and `explicitSelectionRequired=false`, while
+all three original handoff packages stay at `networkIOAllowed=false`. The
+historical selection scope covered canonical contracts and dependency-gated
+no-network conformance;
 `handoff-v1` initially authorized execution of canonical contracts only;
 `handoff-v2` records canonical contracts and no-network conformance as completed.
 The immutable [pre-network approval decision](pre-network/decision-v1.md)
 selects all seven recommended policies, and `handoff-v3` supersedes
 `handoff-v2` to record that selection. It does not select a production library,
 authorize sockets or deployment, or provide network implementation evidence.
-The separate controlled-spike decision and `handoff-v4` conditionally select
-the four phase A candidates without claiming required evidence or opening any
-runtime, harness, socket, phase B, measurement, or production network gate.
+The historical controlled-spike decision-v1 and `handoff-v4` conditionally
+selected the four Phase A candidates. The one-shot decision-v2 and `handoff-v5`
+then authorized exact libjuice and NDK acquisition. That authority is consumed;
+decision-v3 and `handoff-v6` reject libjuice before compilation and close
+replacement acquisition, implementation, compiler, runtime, harness, socket,
+Phase B, measurement, and production authority.
 
-No recommendation closes a security gap until the selected protocol is
-implemented and revalidated on real networks and devices.
-The explicit selection authorizes only the bounded handoff scope.
+No recommendation closes a security gap until a future selected implementation
+is revalidated on real networks and devices. The original explicit selection
+authorized only its bounded historical handoff scope; current execution
+authority is closed by `handoff-v6`.
 
 ## Next Decisions
 
@@ -208,9 +226,12 @@ the immutable source packet; it proposes four recommendations and selects zero.
 The separate [phase A approval decision](controlled-network-spike/decision-v1.md)
 and `handoff-v4` conditionally select all four for offline inspection of
 user-provided or pre-existing workspace source, compile-only,
-session-cryptography vector, and static harness/egress evidence. They authorize
-no source-acquisition network I/O, inspected-code execution, socket, runtime or
-harness network I/O, phase B, measurement, or production deployment.
+session-cryptography vector, and static harness/egress evidence. The later
+one-shot acquisition authority in decision-v2 and `handoff-v5` is consumed.
+Current decision-v3 and `handoff-v6` reject libjuice and authorize no additional
+source acquisition, inspected-code execution, compiler, socket, runtime or
+harness network I/O, Phase B, measurement, or production deployment. libnice
+remains `proposed_not_selected` pending a new explicit acquisition decision.
 
 The [pre-network review v1](pre-network/review-v1.md) remains the immutable
 `proposed_not_selected` source packet. The separate closed approval decision
@@ -238,7 +259,9 @@ keeps network, library, socket, and deployment authorization false.
   restrictive NAT, carrier NAT, VPN, IPv4, IPv6, NAT64, Wi-Fi/cellular changes,
   suspend/resume, consent loss, TURN outage, signaling replay, and service
   compromise simulations.
-- Keep `implementation/` limited to the four closed versioned handoff pairs:
+- Keep `implementation/` limited to the six closed versioned handoff pairs:
   `handoff-v1`, its `handoff-v2` completion record, and the policy-selected
-  `handoff-v3`, plus the phase-A-only `handoff-v4`. Do not execute the
-  conditionally selected library or add socket-capable implementation code under that directory.
+  `handoff-v3`, the historical Phase-A-only `handoff-v4`, the consumed exact
+  acquisition record `handoff-v5`, and the current rejection record
+  `handoff-v6`. Do not execute the rejected library or add socket-capable
+  implementation code under that directory.

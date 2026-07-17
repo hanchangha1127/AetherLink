@@ -1,0 +1,140 @@
+{
+  "documentType": "aetherlink.p2p-nat-libjuice-offline-source-intake",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v2",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "artifactStatus": "closed_source_present_audit_rejected",
+  "supersedes": {
+    "path": "offline-source-intake-v1.json",
+    "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v1",
+    "sha256": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850"
+  },
+  "authority": {
+    "decision": {
+      "path": "../decision-v2.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v2",
+      "sha256": "a23f4020a8d450248e4fb26a2697f9294626166d3166dc1f13971361094d074c"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v5.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v5",
+      "sha256": "af3fbf3f7ee3018a7dfcff6713471247db454bc5740a7893558ec57769e8f249"
+    },
+    "authorizationWasExactOneShotAcquisition": true,
+    "authorizationConsumed": true,
+    "additionalAcquisitionAuthorized": false
+  },
+  "candidate": {
+    "candidateId": "libjuice-1.7.2-static-c-abi",
+    "releaseTag": "v1.7.2",
+    "annotatedTagObjectSha1": "0f823d8210ea9dfe62a1c248da2b3219f6d8568d",
+    "commitSha1": "3c40a3545b6b1b62c7adee7f8f2bd58aa290afd6",
+    "archiveCommitCryptographicBindingClaimed": false,
+    "repository": "https://github.com/paullouisageneau/libjuice",
+    "archiveUrl": "https://codeload.github.com/paullouisageneau/libjuice/tar.gz/refs/tags/v1.7.2"
+  },
+  "intake": {
+    "root": "build/offline-source/libjuice-1.7.2",
+    "originalArchive": {
+      "path": "original/libjuice-1.7.2.tar.gz",
+      "sizeBytes": 108235,
+      "sha256": "75159867c4a5a689a6559e11aa0d30c9eba12ce73a4ae3d898b521467e1f635d"
+    },
+    "extractedSource": {
+      "path": "source",
+      "regularFileCount": 81,
+      "totalRegularFileBytes": 550494,
+      "treeSha256": "c17e0d6d3855e9584718584ab644f030939448d0e8f6a8bf5ca9883da719a330",
+      "archiveMatchesExtractedFiles": true,
+      "unsafeEntryCount": 0
+    },
+    "localSourceProvenance": {
+      "path": "source-provenance.json",
+      "sha256": "55209e8629c25e0a0158233e47dee8537250a5b44af8a841e0cff07f0af41046",
+      "committedTwinPath": "libjuice-source-manifest-v1.json"
+    }
+  },
+  "reviewedArtifacts": {
+    "sourceManifest": {
+      "path": "libjuice-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_libjuice_source_manifest_v1",
+      "sha256": "55209e8629c25e0a0158233e47dee8537250a5b44af8a841e0cff07f0af41046"
+    },
+    "sourceAudit": {
+      "path": "libjuice-source-audit-v1.json",
+      "auditId": "production_p2p_nat_v1_libjuice_source_audit_v1",
+      "sha256": "614adb3ff5d87623b5e9db0f143ce82e3618316b3310ad70750b2806517e8145"
+    }
+  },
+  "reviewResults": {
+    "provenance": "complete_with_no_archive_commit_cryptographic_binding_claim",
+    "archiveExtractionEquivalence": "complete",
+    "license": "complete_mixed_notices_recorded",
+    "generatedFiles": "complete_no_generated_c_or_header_inputs",
+    "dependencyClosure": "complete_for_unmodified_source_tree",
+    "buildInputs": "complete_direct_compile_plan_recorded_but_not_authorized",
+    "sourceSecurityAudit": "failed_rejected_before_compile"
+  },
+  "toolchainReceipt": {
+    "androidNdkPackageId": "ndk;28.2.13676358",
+    "androidNdkReleaseName": "r28c",
+    "androidNdkArchiveSha256": "0d4599e8bbf1a1668a0d51a541729b2246360f350018a2081d0b302dbb594f2a",
+    "androidNdkInstalled": true,
+    "androidNdkUsedForCompilation": false,
+    "macosXcodeVersion": "26.6",
+    "macosXcodeBuild": "17F113",
+    "macosToolsUsedForCompilation": false
+  },
+  "auditFailure": {
+    "candidateRejected": true,
+    "independentP1BlockerCount": 5,
+    "primaryFindingIds": [
+      "LJ172-P1-ENTROPY",
+      "LJ172-P1-SECRET-LOG",
+      "LJ172-P1-UNAUTH-STUN-ERROR",
+      "LJ172-P1-TURN-REDIRECT",
+      "LJ172-P1-PRE-IO-POLICY"
+    ],
+    "compileSkipped": true,
+    "fallbackReviewRequired": true,
+    "fallbackCandidate": "libnice-0.1.23-glib-c-abi",
+    "fallbackSelected": false,
+    "fallbackAcquisitionAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "archiveReadAndExtractionPerformed": true,
+    "archiveCreationPerformed": false,
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticArchiveInvocationPerformed": false,
+    "linkOrLoadPerformed": false,
+    "symbolInspectionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false
+  },
+  "currentAuthorization": {
+    "additionalSourceAcquisitionNetworkIOAllowed": false,
+    "libniceAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "archiveInvocationAuthorized": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": "open_versioned_libnice_fallback_review_without_selection_acquisition_compile_or_network_authority",
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_intake_only",
+    "sourceTreeModified": false
+  }
+}
