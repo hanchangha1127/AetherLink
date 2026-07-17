@@ -1810,6 +1810,8 @@ class RuntimeClientViewModel internal constructor(
     private var pendingMemoryListChannel: RuntimeProtocolChannel? = null
     private var pendingMemoryListConnectionGeneration: Long? = null
     private var pendingMemoryListAuthorityGeneration: Long? = null
+    private var pendingMemoryListIsMutationReconciliation = false
+    private var memoryMutationReconciliationDeferred = false
     private val pendingMemoryMutationsByRequestId = mutableMapOf<String, PendingMemoryMutation>()
     private val memoryMutationRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()
     private var pendingMemoryDuplicateSuggestionsRequest: PendingMemoryDuplicateSuggestionsRequest? = null
@@ -2515,6 +2517,7 @@ class RuntimeClientViewModel internal constructor(
         val channel = activeChannel ?: return
         val target = PendingMemoryMutationTarget.NewEntry(cleanContent)
         if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        invalidatePendingMemoryListForMutationBoundary()
         val requestId = MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()
         val pending = PendingMemoryMutation(
             requestId = requestId,
@@ -2559,6 +2562,7 @@ class RuntimeClientViewModel internal constructor(
         val channel = activeChannel ?: return
         val target = PendingMemoryMutationTarget.ExistingEntry(cleanId)
         if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        invalidatePendingMemoryListForMutationBoundary()
         val requestId = MEMORY_DELETE_REQUEST_ID_PREFIX + UUID.randomUUID()
         val pending = PendingMemoryMutation(
             requestId = requestId,
@@ -2599,6 +2603,7 @@ class RuntimeClientViewModel internal constructor(
         val channel = activeChannel ?: return
         val target = PendingMemoryMutationTarget.ExistingEntry(entry.id)
         if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        invalidatePendingMemoryListForMutationBoundary()
         val requestId = MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()
         val pending = PendingMemoryMutation(
             requestId = requestId,
@@ -4247,7 +4252,11 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
-    private fun requestRuntimeMemory(query: String? = null, allowEmbeddingModel: Boolean = true) {
+    private fun requestRuntimeMemory(
+        query: String? = null,
+        allowEmbeddingModel: Boolean = true,
+        mutationReconciliation: Boolean = false,
+    ) {
         val channel = activeChannel
         if (!isSessionAuthenticated || channel?.isConnected != true) return
         if (pendingMemoryListRequestId != null) return
@@ -4272,6 +4281,7 @@ class RuntimeClientViewModel internal constructor(
         pendingMemoryListChannel = channel
         pendingMemoryListConnectionGeneration = activeConnectionGeneration
         pendingMemoryListAuthorityGeneration = runtimeSessionAuthorityGeneration
+        pendingMemoryListIsMutationReconciliation = mutationReconciliation
         pendingMemoryListQuery = normalizedQuery
         val embeddingModelId = normalizedQuery
             ?.takeIf { allowEmbeddingModel }
@@ -10971,18 +10981,45 @@ class RuntimeClientViewModel internal constructor(
         pendingMemoryListChannel = null
         pendingMemoryListConnectionGeneration = null
         pendingMemoryListAuthorityGeneration = null
+        pendingMemoryListIsMutationReconciliation = false
     }
 
     private fun clearPendingMemoryMutations() {
         memoryMutationRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)
         memoryMutationRequestTimeoutJobsByRequestId.clear()
         pendingMemoryMutationsByRequestId.clear()
+        memoryMutationReconciliationDeferred = false
     }
 
-    private fun closePendingMemoryMutation(pending: PendingMemoryMutation): Boolean {
+    private fun invalidatePendingMemoryListForMutationBoundary() {
+        if (pendingMemoryListIsMutationReconciliation) {
+            memoryMutationReconciliationDeferred = true
+        }
+        clearPendingMemoryListRequest()
+    }
+
+    private fun drainDeferredMemoryMutationReconciliation() {
+        if (!memoryMutationReconciliationDeferred) return
+        if (pendingMemoryMutationsByRequestId.isNotEmpty()) return
+        val channel = activeChannel
+        if (!isSessionAuthenticated || channel?.isConnected != true) return
+        if (pendingMemoryListRequestId != null) return
+        memoryMutationReconciliationDeferred = false
+        requestRuntimeMemory(mutationReconciliation = true)
+    }
+
+    private fun closePendingMemoryMutation(
+        pending: PendingMemoryMutation,
+        requireReconciliation: Boolean = false,
+    ): Boolean {
         if (pendingMemoryMutationsByRequestId[pending.requestId] !== pending) return false
         pendingMemoryMutationsByRequestId.remove(pending.requestId)
         memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()
+        if (requireReconciliation) {
+            memoryMutationReconciliationDeferred = true
+        }
+        invalidatePendingMemoryListForMutationBoundary()
+        drainDeferredMemoryMutationReconciliation()
         return true
     }
 
@@ -11004,10 +11041,8 @@ class RuntimeClientViewModel internal constructor(
                 }
                 return@launch
             }
-            if (!closePendingMemoryMutation(pending)) return@launch
+            if (!closePendingMemoryMutation(pending, requireReconciliation = true)) return@launch
             showError("runtime_error", "Memory mutation timed out")
-            clearPendingMemoryListRequest()
-            requestRuntimeMemory()
         }
     }
 

@@ -54158,6 +54158,8 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             "data class ExistingEntry(val entryId: String) : PendingMemoryMutationTarget",
             "private val pendingMemoryMutationsByRequestId = mutableMapOf<String, PendingMemoryMutation>()",
             "private val memoryMutationRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()",
+            "private var pendingMemoryListIsMutationReconciliation = false",
+            "private var memoryMutationReconciliationDeferred = false",
             'private const val MEMORY_UPSERT_REQUEST_ID_PREFIX = "memory-upsert-"',
             'private const val MEMORY_DELETE_REQUEST_ID_PREFIX = "memory-delete-"',
             "internal const val MEMORY_MUTATION_REQUEST_TIMEOUT_MS = 15_000L",
@@ -54203,6 +54205,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         "memory add": (
             "PendingMemoryMutationTarget.NewEntry(cleanContent)",
             "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "invalidatePendingMemoryListForMutationBoundary()",
             "MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()",
             "type = MessageType.MemoryUpsert",
             "expectedEntryId = null",
@@ -54219,6 +54222,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         "memory delete": (
             "PendingMemoryMutationTarget.ExistingEntry(cleanId)",
             "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "invalidatePendingMemoryListForMutationBoundary()",
             "MEMORY_DELETE_REQUEST_ID_PREFIX + UUID.randomUUID()",
             "type = MessageType.MemoryDelete",
             "expectedEntryId = cleanId",
@@ -54235,6 +54239,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         "memory enabled update": (
             "PendingMemoryMutationTarget.ExistingEntry(entry.id)",
             "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "invalidatePendingMemoryListForMutationBoundary()",
             "MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()",
             "type = MessageType.MemoryUpsert",
             "expectedEntryId = entry.id",
@@ -54251,6 +54256,16 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
     }
     for description, section in command_sections.items():
         require_snippets(section, command_requirements[description], description)
+        require_order(
+            section,
+            (
+                "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+                "invalidatePendingMemoryListForMutationBoundary()",
+                "val requestId =",
+                "pendingMemoryMutationsByRequestId[requestId] = pending",
+            ),
+            f"{description} memory.list invalidation",
+        )
 
     matcher = bounded_section(
         viewmodel,
@@ -54273,7 +54288,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
 
     close_helper = bounded_section(
         viewmodel,
-        "private fun closePendingMemoryMutation(pending: PendingMemoryMutation): Boolean",
+        "private fun closePendingMemoryMutation(",
         "\n    private fun scheduleMemoryMutationTimeout(",
         "memory mutation exact-close helper",
     )
@@ -54283,9 +54298,65 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             "pendingMemoryMutationsByRequestId[pending.requestId] !== pending",
             "pendingMemoryMutationsByRequestId.remove(pending.requestId)",
             "memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()",
+            "if (requireReconciliation)",
+            "memoryMutationReconciliationDeferred = true",
+            "invalidatePendingMemoryListForMutationBoundary()",
+            "drainDeferredMemoryMutationReconciliation()",
             "return true",
         ),
         "memory mutation exact-close helper",
+    )
+
+    memory_list_request = bounded_section(
+        viewmodel,
+        "private fun requestRuntimeMemory(",
+        "\n    private fun requestRuntimeMemorySummaryDrafts(",
+        "memory list request",
+    )
+    require_order(
+        memory_list_request,
+        (
+            "mutationReconciliation: Boolean = false",
+            "pendingMemoryListAuthorityGeneration = runtimeSessionAuthorityGeneration",
+            "pendingMemoryListIsMutationReconciliation = mutationReconciliation",
+            "sendEnvelope(",
+        ),
+        "memory list reconciliation correlation",
+    )
+
+    list_invalidation = bounded_section(
+        viewmodel,
+        "private fun invalidatePendingMemoryListForMutationBoundary()",
+        "\n    private fun drainDeferredMemoryMutationReconciliation()",
+        "memory list mutation-boundary invalidation",
+    )
+    require_order(
+        list_invalidation,
+        (
+            "if (pendingMemoryListIsMutationReconciliation)",
+            "memoryMutationReconciliationDeferred = true",
+            "clearPendingMemoryListRequest()",
+        ),
+        "memory list mutation-boundary invalidation",
+    )
+
+    reconciliation_drain = bounded_section(
+        viewmodel,
+        "private fun drainDeferredMemoryMutationReconciliation()",
+        "\n    private fun closePendingMemoryMutation(",
+        "deferred memory mutation reconciliation",
+    )
+    require_order(
+        reconciliation_drain,
+        (
+            "if (!memoryMutationReconciliationDeferred) return",
+            "if (pendingMemoryMutationsByRequestId.isNotEmpty()) return",
+            "if (!isSessionAuthenticated || channel?.isConnected != true) return",
+            "if (pendingMemoryListRequestId != null) return",
+            "memoryMutationReconciliationDeferred = false",
+            "requestRuntimeMemory(mutationReconciliation = true)",
+        ),
+        "deferred memory mutation reconciliation",
     )
 
     handlers = {
@@ -54426,7 +54497,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
     clear_helper = bounded_section(
         viewmodel,
         "private fun clearPendingMemoryMutations()",
-        "\n    private fun closePendingMemoryMutation(",
+        "\n    private fun invalidatePendingMemoryListForMutationBoundary()",
         "memory mutation lifecycle clear helper",
     )
     require_order(
@@ -54435,6 +54506,7 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             "memoryMutationRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)",
             "memoryMutationRequestTimeoutJobsByRequestId.clear()",
             "pendingMemoryMutationsByRequestId.clear()",
+            "memoryMutationReconciliationDeferred = false",
         ),
         "memory mutation lifecycle clear helper",
     )
@@ -54471,8 +54543,47 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
     )
     require_snippets(
         read_loop,
-        (".onFailure { error ->", "revokeAuthenticatedRuntimeSessionState()"),
+        (
+            "handleEnvelope(envelope, channel, connectionGeneration)",
+            ".onFailure { error ->",
+            "revokeAuthenticatedRuntimeSessionState()",
+        ),
         "receive-failure memory mutation cleanup",
+    )
+    envelope_dispatch = bounded_section(
+        viewmodel,
+        "private suspend fun handleEnvelope(",
+        "\n    private suspend fun handleAuthChallenge(",
+        "runtime envelope dispatch",
+    )
+    require_snippets(
+        envelope_dispatch,
+        (
+            "MessageType.MemoryUpsert -> handleMemoryUpsert(",
+            "MessageType.MemoryDelete -> handleMemoryDelete(",
+            "MessageType.Error -> handleError(",
+            "sourceChannel",
+            "sourceConnectionGeneration",
+        ),
+        "receive-loop memory mutation source propagation",
+    )
+    require_order(
+        envelope_dispatch,
+        (
+            "MessageType.MemoryUpsert -> handleMemoryUpsert(",
+            "envelope,",
+            "sourceChannel,",
+            "sourceConnectionGeneration,",
+            "MessageType.MemoryDelete -> handleMemoryDelete(",
+            "envelope,",
+            "sourceChannel,",
+            "sourceConnectionGeneration,",
+            "MessageType.Error -> handleError(",
+            "envelope,",
+            "sourceChannel,",
+            "sourceConnectionGeneration,",
+        ),
+        "receive-loop memory mutation source propagation",
     )
     on_cleared = bounded_section(
         viewmodel,
@@ -54501,10 +54612,8 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             "delay(timeoutMillis)",
             "memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)",
             "pending.matchesCurrentMemoryMutationAuthority(",
-            "closePendingMemoryMutation(pending)",
+            "closePendingMemoryMutation(pending, requireReconciliation = true)",
             'showError("runtime_error", "Memory mutation timed out")',
-            "clearPendingMemoryListRequest()",
-            "requestRuntimeMemory()",
         ),
         "memory mutation timeout handler",
     )
@@ -54602,9 +54711,31 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         ),
         test_names[2]: (
             'assertTrue(request.requestId.startsWith("memory-upsert-"))',
+            "MemoryUpsertPayload.serializer(),",
+            "assertNull(addRequestPayload.id)",
+            'assertEquals("Authority-bound memory", addRequestPayload.content)',
+            "assertEquals(true, addRequestPayload.enabled)",
             "sourceChannel = ScriptedRuntimeProtocolChannel()",
             "authorityGeneration + 1L",
             "assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())",
+            "preMutationMemoryListRequest",
+            "wrongToggleIdRequest",
+            "wrongToggleContentRequest",
+            "wrongToggleEnabledRequest",
+            'assertEquals("authority-memory", exactTogglePayload.id)',
+            'assertEquals("Authority-bound memory", exactTogglePayload.content)',
+            "assertEquals(false, exactTogglePayload.enabled)",
+            "duringToggleMemoryListRequest",
+            "preToggleMemoryListRequest.requestId,",
+            "duringToggleMemoryListRequest.requestId,",
+            "MemoryDeletePayload.serializer(),",
+            'assertEquals("existing-memory", firstDeletePayload.id)',
+            "preFinalDeleteMemoryListRequest",
+            "val ingressChannel = ScriptedRuntimeProtocolChannel()",
+            'setPrivateField("activeChannel", ingressChannel)',
+            "fixture.channel.enqueue(",
+            "sourceChannel = ingressChannel",
+            "sourceConnectionGeneration = ingressConnectionGeneration",
         ),
         test_names[3]: (
             'runtimeError(request.requestId, "authentication_required")',
@@ -54617,9 +54748,18 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             'throw IllegalStateException("stale upsert send failure")',
             'throw IllegalStateException("stale delete send failure")',
             'privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")',
-            "advanceTimeBy(1_000L)",
+            'id = "timeout-sibling"',
+            'id = "timeout-invalidator"',
+            "advanceTimeBy(500L)",
+            "timeoutSiblingDeleteRequest",
+            "timeoutInvalidatingDeleteRequest",
+            'privateField<Boolean>("memoryMutationReconciliationDeferred")',
+            "timeoutReconciliationRequest",
+            "timeoutReplacementReconciliationRequest",
             "memoryListCountBeforeTimeout + 1",
+            "memoryListCountBeforeTimeout + 2",
             "upsertCountBeforeTimeout",
+            'assertNull(timeoutFixture.viewModel.privateField<String>("pendingMemoryListRequestId"))',
             "receiveFailureFixture.channel.failReceive(",
             "clearedFixture.viewModel.clearForTest()",
         ),
@@ -54631,6 +54771,61 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             f"memory mutation regression {test_name}",
             path_label="tests",
         )
+    require_order(
+        test_sections[test_names[2]],
+        (
+            "val preToggleMemoryListRequest =",
+            "val exactToggleRequest =",
+            "requestId = preToggleMemoryListRequest.requestId",
+            "enabled = false",
+            "assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())",
+            "fixture.viewModel.refreshRuntimeMemory()",
+            "val duringToggleMemoryListRequest =",
+            "assertNotEquals(",
+            "envelope = upsertResult(",
+            "requestId = exactToggleRequest.requestId",
+            "requestId = duringToggleMemoryListRequest.requestId",
+        ),
+        "memory mutation stale-list behavioral ordering",
+    )
+    require_order(
+        test_sections[test_names[2]],
+        (
+            "val ingressChannel = ScriptedRuntimeProtocolChannel()",
+            'setPrivateField("activeChannel", ingressChannel)',
+            'addMemoryEntry("Ingress-bound memory")',
+            "val ingressRequest = ingressChannel.sentEnvelopes.last",
+            "fixture.channel.enqueue(",
+            "assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())",
+            "sourceChannel = ingressChannel",
+            "sourceConnectionGeneration = ingressConnectionGeneration",
+            "assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())",
+        ),
+        "memory mutation production-ingress authority regression",
+    )
+    require_order(
+        test_sections[test_names[4]],
+        (
+            "val timedOutRequest =",
+            "advanceTimeBy(500L)",
+            'removeMemoryEntry("timeout-sibling")',
+            "val timeoutSiblingDeleteRequest =",
+            "advanceTimeBy(500L)",
+            'privateField<Boolean>("memoryMutationReconciliationDeferred")',
+            "requestId = timedOutRequest.requestId",
+            "requestId = timeoutSiblingDeleteRequest.requestId",
+            "memoryListCountBeforeTimeout + 1",
+            "val timeoutReconciliationRequest =",
+            'removeMemoryEntry("timeout-invalidator")',
+            "val timeoutInvalidatingDeleteRequest =",
+            "requestId = timeoutReconciliationRequest.requestId",
+            "requestId = timeoutInvalidatingDeleteRequest.requestId",
+            "memoryListCountBeforeTimeout + 2",
+            "val timeoutReplacementReconciliationRequest =",
+            "requestId = timeoutReplacementReconciliationRequest.requestId",
+        ),
+        "memory mutation deferred timeout reconciliation regression",
+    )
     for helper in (
         "private fun RuntimeClientViewModel.handleMemoryMutationForTest(",
         "private fun RuntimeClientViewModel.pendingMemoryMutationCountForTest()",
@@ -54659,6 +54854,11 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
             'case.get("name") == expected_name',
             '("skipped", "failure", "error")',
             "5 executed tests, 0 skipped, 0 failures, 0 errors.",
+            "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest.xml",
+            'deadline_test_name = "productionFactoryEnablesHostAlignedMemorySummaryDeadlines"',
+            'case.get("classname") == deadline_classname',
+            'case.get("name") == deadline_test_name',
+            "1 executed test, 0 skipped, 0 failures, 0 errors.",
         ),
         "memory mutation authority JUnit execution guard",
         path_label="no_device",
@@ -54694,13 +54894,18 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
     marker = (
         "Covered v0.2 addendum: Android persistent-memory mutation current-request authority. "
         "memory.upsert and memory.delete use namespaced request ids bound to the exact operation, "
-        "target, expected result fields, channel, connection generation, and authenticated authority "
-        "generation. Only one exact-current result, error, or send failure may close a mutation or "
+        "target, transmitted payload and expected result fields, channel, connection generation, and "
+        "authenticated authority generation. Receive-loop-captured source authority is forwarded "
+        "unchanged. Only one exact-current result, error, or send failure may close a mutation or "
         "change device memory state; unsolicited, mismatched, stale, duplicate, and delayed terminals "
-        "are inert. Same-target mutations serialize while different targets remain independent. The "
-        "15-second local timeout closes only the exact current request, never automatically retries the "
-        "mutation, and forces fresh memory.list reconciliation; reauthentication, revocation, "
-        "disconnect, receive failure, and ViewModel clear cancel pending authority and timeout jobs. "
+        "are inert. Same-target mutations serialize while different targets remain independent. "
+        "Any memory.list authority that predates mutation dispatch or remains pending when an exact "
+        "mutation terminal closes is invalidated, so a stale full-list response cannot undo a completed "
+        "add, enable change, or delete. The 15-second local timeout closes only the exact current request, "
+        "never automatically retries the mutation, and requires fresh memory.list reconciliation; "
+        "independent sibling mutations defer it, while invalidating an in-flight required reconciliation "
+        "preserves and reissues it after the final sibling closes. Reauthentication, revocation, disconnect, "
+        "receive failure, and ViewModel clear cancel pending authority and timeout jobs. "
         "This is Android JVM no-device proof, not physical-device, optical QR, peer receipt or "
         "exactly-once host mutation, real lost-response recovery beyond the deterministic timeout, "
         "live-provider, external-network, production-relay/P2P/NAT, Phase B, or deployment proof."
@@ -54735,7 +54940,9 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         (r"NewEntry", "new-entry target"),
         (r"ExistingEntry", "existing-entry target"),
         (r"expected", "expected-result binding"),
+        (r"transmitted|outbound", "transmitted-payload binding"),
         (r"channel", "channel authority"),
+        (r"receive.loop|receive-loop|ingress", "receive-loop source authority"),
         (r"connection generation", "connection-generation authority"),
         (r"authenticat(?:ed|ion).*authority|authority generation", "authentication authority"),
         (r"exact-current", "exact-current terminal"),
@@ -54743,8 +54950,11 @@ def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
         (r"send.failure|send failure", "send-failure terminal"),
         (r"same(?: logical)?[- ]target", "same-target serialization"),
         (r"independent|different targets", "independent-target boundary"),
+        (r"stale full-list|full-list response", "stale full-list mutation ordering boundary"),
         (r"15[- ]second", "production timeout"),
         (r"memory\.list", "authoritative reconciliation"),
+        (r"defer", "independent-sibling reconciliation deferral"),
+        (r"reissue|re-issue", "required reconciliation reissue"),
         (r"does not automatically|no automatic|never automatically", "no automatic mutation retry"),
         (r"reauthentication", "reauthentication cleanup"),
         (r"revocation", "authentication-revocation cleanup"),

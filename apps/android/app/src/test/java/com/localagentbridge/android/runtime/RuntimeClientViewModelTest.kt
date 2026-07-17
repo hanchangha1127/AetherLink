@@ -35,6 +35,7 @@ import com.localagentbridge.android.core.protocol.IndexDocumentsSummaryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.protocol.MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY
+import com.localagentbridge.android.core.protocol.MemoryDeletePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
 import com.localagentbridge.android.core.protocol.MEMORY_DUPLICATE_SUGGESTIONS_CAPABILITY
 import com.localagentbridge.android.core.protocol.MEMORY_SEMANTIC_DUPLICATE_SUGGESTIONS_CAPABILITY
@@ -59,6 +60,7 @@ import com.localagentbridge.android.core.protocol.MemorySummaryDraftPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSessionPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftSourcePointerPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListResultPayload
+import com.localagentbridge.android.core.protocol.MemoryUpsertPayload
 import com.localagentbridge.android.core.protocol.MemoryUpsertResultPayload
 import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ModelInfoPayload
@@ -20809,23 +20811,49 @@ class RuntimeClientViewModelTest {
             val authorityGeneration = requireNotNull(
                 fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
             )
+            val preMutationMemoryListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fun memoryEntry(
+                id: String,
+                content: String,
+                enabled: Boolean = true,
+            ): MemoryEntryPayload {
+                return MemoryEntryPayload(
+                    id = id,
+                    content = content,
+                    enabled = enabled,
+                    createdAt = "2026-06-25T00:00:00Z",
+                    updatedAt = "2026-06-25T00:01:00Z",
+                )
+            }
             fun upsertResult(
                 requestId: String,
                 content: String,
                 id: String = "authority-memory",
+                enabled: Boolean = true,
             ): ProtocolEnvelope {
                 return envelope(
                     type = MessageType.MemoryUpsert,
                     serializer = MemoryUpsertResultPayload.serializer(),
                     payload = MemoryUpsertResultPayload(
-                        entry = MemoryEntryPayload(
+                        entry = memoryEntry(
                             id = id,
                             content = content,
-                            enabled = true,
-                            createdAt = "2026-06-25T00:00:00Z",
-                            updatedAt = "2026-06-25T00:01:00Z",
+                            enabled = enabled,
                         ),
                     ),
+                    requestId = requestId,
+                )
+            }
+            fun memoryListResult(
+                requestId: String,
+                entries: List<MemoryEntryPayload>,
+            ): ProtocolEnvelope {
+                return envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = entries),
                     requestId = requestId,
                 )
             }
@@ -20851,8 +20879,15 @@ class RuntimeClientViewModelTest {
             fixture.viewModel.addMemoryEntry("Authority-bound memory")
             runCurrent()
             val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryUpsert }
+            val addRequestPayload = json.decodeFromJsonElement(
+                MemoryUpsertPayload.serializer(),
+                request.payload,
+            )
             val requestCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert }
             assertTrue(request.requestId.startsWith("memory-upsert-"))
+            assertNull(addRequestPayload.id)
+            assertEquals("Authority-bound memory", addRequestPayload.content)
+            assertEquals(true, addRequestPayload.enabled)
             assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
 
             fixture.viewModel.addMemoryEntry("Authority-bound memory")
@@ -20947,6 +20982,154 @@ class RuntimeClientViewModelTest {
                 fixture.localStore.data.memoryEntries.count { it.id == "authority-memory" },
             )
 
+            fixture.channel.enqueue(
+                memoryListResult(
+                    requestId = preMutationMemoryListRequest.requestId,
+                    entries = listOf(memoryEntry("existing-memory", "Existing memory")),
+                ),
+            )
+            runCurrent()
+            assertEquals(
+                setOf("authority-memory", "existing-memory"),
+                fixture.localStore.data.memoryEntries.map { it.id }.toSet(),
+            )
+
+            fixture.viewModel.setMemoryEntryEnabled("authority-memory", enabled = false)
+            runCurrent()
+            val wrongToggleIdRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = wrongToggleIdRequest.requestId,
+                    content = "Authority-bound memory",
+                    id = "wrong-authority-memory",
+                    enabled = false,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+
+            fixture.viewModel.setMemoryEntryEnabled("authority-memory", enabled = false)
+            runCurrent()
+            val wrongToggleContentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = wrongToggleContentRequest.requestId,
+                    content = "Tampered authority memory",
+                    enabled = false,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+
+            fixture.viewModel.setMemoryEntryEnabled("authority-memory", enabled = false)
+            runCurrent()
+            val wrongToggleEnabledRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = wrongToggleEnabledRequest.requestId,
+                    content = "Authority-bound memory",
+                    enabled = true,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+
+            fixture.viewModel.refreshRuntimeMemory()
+            runCurrent()
+            val preToggleMemoryListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            fixture.viewModel.setMemoryEntryEnabled("authority-memory", enabled = false)
+            runCurrent()
+            val exactToggleRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            val exactTogglePayload = json.decodeFromJsonElement(
+                MemoryUpsertPayload.serializer(),
+                exactToggleRequest.payload,
+            )
+            assertEquals("authority-memory", exactTogglePayload.id)
+            assertEquals("Authority-bound memory", exactTogglePayload.content)
+            assertEquals(false, exactTogglePayload.enabled)
+            fixture.channel.enqueue(
+                memoryListResult(
+                    requestId = preToggleMemoryListRequest.requestId,
+                    entries = listOf(
+                        memoryEntry(
+                            "authority-memory",
+                            "Authority-bound memory",
+                            enabled = false,
+                        ),
+                        memoryEntry("existing-memory", "Existing memory"),
+                    ),
+                ),
+            )
+            runCurrent()
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+            fixture.viewModel.refreshRuntimeMemory()
+            runCurrent()
+            val duringToggleMemoryListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            assertNotEquals(
+                preToggleMemoryListRequest.requestId,
+                duringToggleMemoryListRequest.requestId,
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = exactToggleRequest.requestId,
+                    content = "Authority-bound memory",
+                    enabled = false,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertNull(fixture.viewModel.state.value.error)
+            assertFalse(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+            fixture.channel.enqueue(
+                memoryListResult(
+                    requestId = duringToggleMemoryListRequest.requestId,
+                    entries = listOf(
+                        memoryEntry("authority-memory", "Authority-bound memory"),
+                        memoryEntry("existing-memory", "Existing memory"),
+                    ),
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
+
             fun deleteResult(requestId: String, id: String = "existing-memory"): ProtocolEnvelope {
                 return envelope(
                     type = MessageType.MemoryDelete,
@@ -20978,6 +21161,11 @@ class RuntimeClientViewModelTest {
             val firstDeleteRequest = fixture.channel.sentEnvelopes.last {
                 it.type == MessageType.MemoryDelete
             }
+            val firstDeletePayload = json.decodeFromJsonElement(
+                MemoryDeletePayload.serializer(),
+                firstDeleteRequest.payload,
+            )
+            assertEquals("existing-memory", firstDeletePayload.id)
             fixture.viewModel.setMemoryEntryEnabled("existing-memory", enabled = false)
             fixture.viewModel.removeMemoryEntry("existing-memory")
             runCurrent()
@@ -21075,6 +21263,11 @@ class RuntimeClientViewModelTest {
             assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
             assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
 
+            fixture.viewModel.refreshRuntimeMemory()
+            runCurrent()
+            val preFinalDeleteMemoryListRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
             fixture.viewModel.removeMemoryEntry("existing-memory")
             runCurrent()
             val finalDeleteRequest = fixture.channel.sentEnvelopes.last {
@@ -21089,6 +21282,21 @@ class RuntimeClientViewModelTest {
             )
             assertNull(fixture.viewModel.state.value.error)
             assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+            fixture.channel.enqueue(
+                memoryListResult(
+                    requestId = preFinalDeleteMemoryListRequest.requestId,
+                    entries = listOf(
+                        memoryEntry("authority-memory", "Authority-bound memory", enabled = false),
+                        memoryEntry("existing-memory", "Existing memory"),
+                        memoryEntry("independent-memory", "Independent target memory"),
+                    ),
+                ),
+            )
+            runCurrent()
+            assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+            assertFalse(fixture.localStore.data.memoryEntries.single {
+                it.id == "authority-memory"
+            }.enabled)
             fixture.viewModel.handleMemoryMutationForTest(
                 methodName = "handleMemoryDelete",
                 envelope = finalDeleteResult,
@@ -21096,6 +21304,41 @@ class RuntimeClientViewModelTest {
                 sourceConnectionGeneration = connectionGeneration,
             )
             assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+
+            val ingressChannel = ScriptedRuntimeProtocolChannel()
+            val ingressConnectionGeneration = connectionGeneration + 1L
+            fixture.viewModel.setPrivateField("activeChannel", ingressChannel)
+            fixture.viewModel.setPrivateField(
+                "activeConnectionGeneration",
+                ingressConnectionGeneration,
+            )
+            fixture.viewModel.addMemoryEntry("Ingress-bound memory")
+            runCurrent()
+            val ingressRequest = ingressChannel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            fixture.channel.enqueue(
+                upsertResult(
+                    requestId = ingressRequest.requestId,
+                    content = "Ingress-bound memory",
+                    id = "ingress-memory",
+                ),
+            )
+            runCurrent()
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "ingress-memory" })
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = ingressRequest.requestId,
+                    content = "Ingress-bound memory",
+                    id = "ingress-memory",
+                ),
+                sourceChannel = ingressChannel,
+                sourceConnectionGeneration = ingressConnectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "ingress-memory" })
         } finally {
             Dispatchers.resetMain()
         }
@@ -21569,6 +21812,20 @@ class RuntimeClientViewModelTest {
                             createdAtMillis = 100L,
                             updatedAtMillis = 200L,
                         ),
+                        PersistedMemoryEntry(
+                            id = "timeout-sibling",
+                            content = "Timeout sibling memory",
+                            enabled = true,
+                            createdAtMillis = 300L,
+                            updatedAtMillis = 400L,
+                        ),
+                        PersistedMemoryEntry(
+                            id = "timeout-invalidator",
+                            content = "Timeout reconciliation invalidator",
+                            enabled = true,
+                            createdAtMillis = 500L,
+                            updatedAtMillis = 600L,
+                        ),
                     ),
                 ),
                 memoryMutationRequestTimeoutMillis = 1_000L,
@@ -21605,14 +21862,26 @@ class RuntimeClientViewModelTest {
                 deleteCountBeforeTimeout,
                 timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryDelete },
             )
-            advanceTimeBy(1_000L)
+            advanceTimeBy(500L)
+            timeoutFixture.viewModel.removeMemoryEntry("timeout-sibling")
             runCurrent()
-            assertEquals(0, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
-            assertTrue(
+            val timeoutSiblingDeleteRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertEquals(2, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            advanceTimeBy(500L)
+            runCurrent()
+            assertEquals(1, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
                 timeoutFixture.viewModel
                     .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
                     .orEmpty()
-                    .isEmpty(),
+                    .size,
+            )
+            assertTrue(
+                timeoutFixture.viewModel
+                    .privateField<Boolean>("memoryMutationReconciliationDeferred") == true,
             )
             assertEquals("runtime_error", timeoutFixture.viewModel.state.value.error?.code)
             assertEquals(
@@ -21620,7 +21889,7 @@ class RuntimeClientViewModelTest {
                 timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert },
             )
             assertEquals(
-                memoryListCountBeforeTimeout + 1,
+                memoryListCountBeforeTimeout,
                 timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
             )
 
@@ -21641,7 +21910,143 @@ class RuntimeClientViewModelTest {
                 sourceChannel = timeoutFixture.channel,
                 sourceConnectionGeneration = timeoutConnectionGeneration,
             )
-            assertTrue(timeoutFixture.localStore.data.memoryEntries.single().enabled)
+            assertTrue(timeoutFixture.localStore.data.memoryEntries.single {
+                it.id == "timeout-target"
+            }.enabled)
+
+            timeoutFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "timeout-sibling",
+                        deletedAt = "2026-06-25T00:02:30Z",
+                    ),
+                    requestId = timeoutSiblingDeleteRequest.requestId,
+                ),
+                sourceChannel = timeoutFixture.channel,
+                sourceConnectionGeneration = timeoutConnectionGeneration,
+            )
+            runCurrent()
+            assertEquals(0, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                timeoutFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertFalse(
+                timeoutFixture.viewModel
+                    .privateField<Boolean>("memoryMutationReconciliationDeferred") == true,
+            )
+            assertFalse(
+                timeoutFixture.localStore.data.memoryEntries.any { it.id == "timeout-sibling" },
+            )
+            assertEquals(
+                memoryListCountBeforeTimeout + 1,
+                timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+            val timeoutReconciliationRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            timeoutFixture.viewModel.removeMemoryEntry("timeout-invalidator")
+            runCurrent()
+            val timeoutInvalidatingDeleteRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertEquals(1, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                timeoutFixture.viewModel
+                    .privateField<Boolean>("memoryMutationReconciliationDeferred") == true,
+            )
+            assertNull(timeoutFixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
+            timeoutFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "timeout-target",
+                                content = "Timeout target memory",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                            ),
+                            MemoryEntryPayload(
+                                id = "timeout-sibling",
+                                content = "Timeout sibling memory",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = timeoutReconciliationRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertEquals(1, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertFalse(
+                timeoutFixture.localStore.data.memoryEntries.any { it.id == "timeout-sibling" },
+            )
+            assertTrue(
+                timeoutFixture.localStore.data.memoryEntries.any { it.id == "timeout-invalidator" },
+            )
+            timeoutFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "timeout-invalidator",
+                        deletedAt = "2026-06-25T00:02:45Z",
+                    ),
+                    requestId = timeoutInvalidatingDeleteRequest.requestId,
+                ),
+                sourceChannel = timeoutFixture.channel,
+                sourceConnectionGeneration = timeoutConnectionGeneration,
+            )
+            runCurrent()
+            assertEquals(0, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertFalse(
+                timeoutFixture.localStore.data.memoryEntries.any { it.id == "timeout-invalidator" },
+            )
+            assertEquals(
+                memoryListCountBeforeTimeout + 2,
+                timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+            val timeoutReplacementReconciliationRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            assertNotEquals(
+                timeoutReconciliationRequest.requestId,
+                timeoutReplacementReconciliationRequest.requestId,
+            )
+            timeoutFixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "timeout-target",
+                                content = "Timeout target memory",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = timeoutReplacementReconciliationRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertNull(timeoutFixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
+            assertTrue(timeoutFixture.localStore.data.memoryEntries.single {
+                it.id == "timeout-target"
+            }.enabled)
 
             timeoutFixture.viewModel.removeMemoryEntry("timeout-target")
             runCurrent()

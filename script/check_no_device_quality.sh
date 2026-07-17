@@ -253,6 +253,48 @@ print(
     "Android memory mutation authority JUnit proof verified: "
     "5 executed tests, 0 skipped, 0 failures, 0 errors."
 )
+
+deadline_report_path = Path(
+    "apps/android/app/build/test-results/testDebugUnitTest/"
+    "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest.xml"
+)
+deadline_classname = (
+    "com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest"
+)
+deadline_test_name = "productionFactoryEnablesHostAlignedMemorySummaryDeadlines"
+
+try:
+    deadline_root = ET.parse(deadline_report_path).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(
+        f"Production memory mutation deadline JUnit report is unavailable: {error}"
+    ) from error
+
+deadline_matches = [
+    case
+    for case in deadline_root.findall("testcase")
+    if case.get("classname") == deadline_classname
+    and case.get("name") == deadline_test_name
+]
+if len(deadline_matches) != 1:
+    raise SystemExit(
+        f"{deadline_test_name}: expected one executed production deadline testcase, "
+        f"found {len(deadline_matches)}"
+    )
+deadline_terminal_tags = [
+    tag
+    for tag in ("skipped", "failure", "error")
+    if deadline_matches[0].find(tag) is not None
+]
+if deadline_terminal_tags:
+    raise SystemExit(
+        f"{deadline_test_name}: has {','.join(deadline_terminal_tags)}"
+    )
+
+print(
+    "Android production memory mutation deadline JUnit proof verified: "
+    "1 executed test, 0 skipped, 0 failures, 0 errors."
+)
 PY
 }
 
@@ -5742,7 +5784,7 @@ echo "Covered v0.2 addendum: Android runtime.health current-request authority. E
 echo "Covered v0.2 addendum: Android authenticated transcript and document read current-request authority. chat.messages.list, index.documents.list, and retrieval.query results, errors, and send failures require the exact request id, channel, connection generation, and authenticated authority generation before pending state, transient document state, transcript publication, or device persistence can change. Wrong-channel, old-connection, prior-auth, duplicate, superseded, and delayed terminals are inert; reauthentication, disconnect, revocation, and ViewModel clear remove old authority. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
 echo "Covered v0.2 addendum: Android authenticated read rollover and chat.sessions.list receive authority. chat.sessions.list results and pagination require the exact request id, receiving channel, connection generation, and authenticated authority generation before any accumulator, terminal, history, search, or bulk-lifecycle state can change. Successful same-channel reauthentication replaces pending memory.list and research.notebooks.list authority, authentication revocation clears pending memory.list authority, stale results, errors, and canceled timeouts are inert, and current replacements remain usable. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
 echo "Covered v0.2 addendum: Android chat.sessions bulk terminal authority. Runtime-authoritative archive-all and delete-all success results, malformed errors, ordinary errors, and asynchronous send failures require the exact pending request id, operation type where applicable, receiving or dispatch channel, connection generation, and authenticated authority generation before bulk state, local session persistence, reconciliation, error publication, or authentication state can change. Wrong-channel, old-connection, prior-authentication, duplicate, and stale terminals are inert. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
-echo "Covered v0.2 addendum: Android persistent-memory mutation current-request authority. memory.upsert and memory.delete use namespaced request ids bound to the exact operation, target, expected result fields, channel, connection generation, and authenticated authority generation. Only one exact-current result, error, or send failure may close a mutation or change device memory state; unsolicited, mismatched, stale, duplicate, and delayed terminals are inert. Same-target mutations serialize while different targets remain independent. The 15-second local timeout closes only the exact current request, never automatically retries the mutation, and forces fresh memory.list reconciliation; reauthentication, revocation, disconnect, receive failure, and ViewModel clear cancel pending authority and timeout jobs. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt or exactly-once host mutation, real lost-response recovery beyond the deterministic timeout, live-provider, external-network, production-relay/P2P/NAT, Phase B, or deployment proof."
+echo "Covered v0.2 addendum: Android persistent-memory mutation current-request authority. memory.upsert and memory.delete use namespaced request ids bound to the exact operation, target, transmitted payload and expected result fields, channel, connection generation, and authenticated authority generation. Receive-loop-captured source authority is forwarded unchanged. Only one exact-current result, error, or send failure may close a mutation or change device memory state; unsolicited, mismatched, stale, duplicate, and delayed terminals are inert. Same-target mutations serialize while different targets remain independent. Any memory.list authority that predates mutation dispatch or remains pending when an exact mutation terminal closes is invalidated, so a stale full-list response cannot undo a completed add, enable change, or delete. The 15-second local timeout closes only the exact current request, never automatically retries the mutation, and requires fresh memory.list reconciliation; independent sibling mutations defer it, while invalidating an in-flight required reconciliation preserves and reissues it after the final sibling closes. Reauthentication, revocation, disconnect, receive failure, and ViewModel clear cancel pending authority and timeout jobs. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt or exactly-once host mutation, real lost-response recovery beyond the deterministic timeout, live-provider, external-network, production-relay/P2P/NAT, Phase B, or deployment proof."
 echo "Covered adaptive context compaction budget and pre-dispatch rejection addendum: the planner enforces byte- and decoded-image-aware input accounting across multilingual text and attachments, emits fixed provenance plus untrusted summaries with request-matching contiguous source pointers, rejects an oversized newest request before backend dispatch, preserves runtime-memory separation, validates SQLite accounting metadata, pins chat_context_window_exceeded in Android and the shared schema, and keeps localized Android error layout bounded."
 echo "Covered backend-only LLM chat compaction summary addendum: focused Swift regressions require a bounded same-model summary prepass, reasoning isolation, deterministic fallback on oversized output, durable cancellation intent across the prepass-to-primary handoff, atomic primary backend registration with connection-owned cancellation, one global primary-and-derived generation-id reservation namespace, and absence of generated summary text after SQLite reopen and session search."
 echo "Covered durable chat compaction summary cache addendum: an owner-only SQLite sidecar keys exact bounded prepass input by owner, session, dedicated source fingerprint, actual resolved provider model, and summary policy; successful primary completion enables reopen reuse without another prepass, while cancellation/error/non-fitting output does not commit, corrupt rows miss, row count is bounded, session deletion purges derived rows, and summary text remains outside chat history and FTS."
