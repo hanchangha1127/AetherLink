@@ -34,6 +34,228 @@ run() {
   "$@"
 }
 
+check_android_authenticated_read_authority_junit() {
+  python3 - <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+report_path = Path(
+    "apps/android/app/build/test-results/testDebugUnitTest/"
+    "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml"
+)
+expected_names = (
+    "runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce",
+    "runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce",
+    "delayedOldDocumentSendFailureCannotCloseReplacementRequest",
+    "pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear",
+    "chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce",
+    "sameChannelReauthenticationTombstonesOldChatMessagesAuthority",
+    "runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert",
+    "runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert",
+    "delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest",
+    "pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear",
+)
+
+try:
+    root = ET.parse(report_path).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Authenticated read authority JUnit report is unavailable: {error}") from error
+
+failures = []
+test_cases = root.findall("testcase")
+for expected_name in expected_names:
+    matches = [
+        case
+        for case in test_cases
+        if case.get("classname") == "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"
+        and case.get("name") == expected_name
+    ]
+    if len(matches) != 1:
+        failures.append(f"{expected_name}: expected one executed testcase, found {len(matches)}")
+        continue
+    case = matches[0]
+    terminal_tags = [tag for tag in ("skipped", "failure", "error") if case.find(tag) is not None]
+    if terminal_tags:
+        failures.append(f"{expected_name}: unexpected {','.join(terminal_tags)} result")
+
+if failures:
+    print("Authenticated read authority JUnit proof failed:", file=sys.stderr)
+    for failure in failures:
+        print(f"- {failure}", file=sys.stderr)
+    raise SystemExit(1)
+
+print(
+    "Android authenticated read authority JUnit proof verified: "
+    "10 executed tests, 0 skipped, 0 failures, 0 errors."
+)
+PY
+}
+
+check_android_authenticated_read_rollover_authority_junit() {
+  python3 - <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+report_path = Path(
+    "apps/android/app/build/test-results/testDebugUnitTest/"
+    "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml"
+)
+expected_names = (
+    "chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce",
+    "chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure",
+    "sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority",
+    "siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority",
+)
+
+try:
+    root = ET.parse(report_path).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Authenticated read rollover authority JUnit report is unavailable: {error}") from error
+
+failures = []
+test_cases = root.findall("testcase")
+for expected_name in expected_names:
+    matches = [
+        case
+        for case in test_cases
+        if case.get("classname") == "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"
+        and case.get("name") == expected_name
+    ]
+    if len(matches) != 1:
+        failures.append(f"{expected_name}: expected one executed testcase, found {len(matches)}")
+        continue
+    case = matches[0]
+    terminal_tags = [tag for tag in ("skipped", "failure", "error") if case.find(tag) is not None]
+    if terminal_tags:
+        failures.append(f"{expected_name}: unexpected {','.join(terminal_tags)} result")
+
+if failures:
+    print("Authenticated read rollover authority JUnit proof failed:", file=sys.stderr)
+    for failure in failures:
+        print(f"- {failure}", file=sys.stderr)
+    raise SystemExit(1)
+
+print(
+    "Android authenticated read rollover authority JUnit proof verified: "
+    "4 executed tests, 0 skipped, 0 failures, 0 errors."
+)
+PY
+}
+
+check_android_chat_sessions_bulk_terminal_authority_junit() {
+  python3 - <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+report_path = Path(
+    "apps/android/app/build/test-results/testDebugUnitTest/"
+    "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml"
+)
+expected_names = (
+    "chatSessionsBulkLifecycleRequiresExactTerminalAuthority",
+    "chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority",
+    "chatSessionsBulkSendFailureRequiresExactDispatchAuthority",
+)
+
+try:
+    root = ET.parse(report_path).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Chat sessions bulk terminal authority JUnit report is unavailable: {error}") from error
+
+failures = []
+test_cases = root.findall("testcase")
+for expected_name in expected_names:
+    matches = [
+        case
+        for case in test_cases
+        if case.get("classname") == "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"
+        and case.get("name") == expected_name
+    ]
+    if len(matches) != 1:
+        failures.append(
+            f"{expected_name}: expected one executed testcase, found {len(matches)}"
+        )
+        continue
+    terminal_tags = [
+        tag
+        for tag in ("skipped", "failure", "error")
+        if matches[0].find(tag) is not None
+    ]
+    if terminal_tags:
+        failures.append(f"{expected_name}: has {','.join(terminal_tags)}")
+
+if failures:
+    print("Chat sessions bulk terminal authority JUnit proof failed:", file=sys.stderr)
+    for failure in failures:
+        print(f"- {failure}", file=sys.stderr)
+    raise SystemExit(1)
+
+print(
+    "Android chat sessions bulk terminal authority JUnit proof verified: "
+    "3 executed tests, 0 skipped, 0 failures, 0 errors."
+)
+PY
+}
+
+check_android_memory_mutation_authority_junit() {
+  python3 - <<'PY'
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+report_path = Path(
+    "apps/android/app/build/test-results/testDebugUnitTest/"
+    "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml"
+)
+expected_names = (
+    "memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation",
+    "memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation",
+    "memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload",
+    "memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce",
+    "memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority",
+)
+
+try:
+    root = ET.parse(report_path).getroot()
+except (OSError, ET.ParseError) as error:
+    raise SystemExit(f"Memory mutation authority JUnit report is unavailable: {error}") from error
+
+failures = []
+test_cases = root.findall("testcase")
+for expected_name in expected_names:
+    matches = [
+        case
+        for case in test_cases
+        if case.get("classname") == "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"
+        and case.get("name") == expected_name
+    ]
+    if len(matches) != 1:
+        failures.append(f"{expected_name}: expected one executed testcase, found {len(matches)}")
+        continue
+    terminal_tags = [
+        tag
+        for tag in ("skipped", "failure", "error")
+        if matches[0].find(tag) is not None
+    ]
+    if terminal_tags:
+        failures.append(f"{expected_name}: has {','.join(terminal_tags)}")
+
+if failures:
+    print("Memory mutation authority JUnit proof failed:", file=sys.stderr)
+    for failure in failures:
+        print(f"- {failure}", file=sys.stderr)
+    raise SystemExit(1)
+
+print(
+    "Android memory mutation authority JUnit proof verified: "
+    "5 executed tests, 0 skipped, 0 failures, 0 errors."
+)
+PY
+}
+
 check_legacy_relay_guard() {
   local output
   local status_code
@@ -3295,6 +3517,8 @@ run python3 -m py_compile \
 	  script/check_p2p_nat_libjuice_compile_only.py \
 	  script/test_p2p_nat_libjuice_compile_only.py \
 	  script/check_p2p_nat_security_design.py \
+	  script/check_p2p_nat_phase_a_progress.py \
+	  script/test_p2p_nat_phase_a_progress.py \
 	  script/check_production_relay_security_design.py \
 	  script/check_runtime_python_sandbox_review.py \
 	  script/test_runtime_python_sandbox_review.py \
@@ -3348,6 +3572,8 @@ run python3 -m unittest script/test_p2p_nat_pre_network_review.py
 run python3 script/check_p2p_nat_controlled_spike_review.py
 run python3 -m unittest script/test_p2p_nat_controlled_spike_review.py
 run python3 script/check_p2p_nat_security_design.py
+run python3 script/check_p2p_nat_phase_a_progress.py
+run python3 -m unittest script/test_p2p_nat_phase_a_progress.py
 run python3 script/check_p2p_nat_libjuice_offline_source.py
 run python3 -m unittest script/test_p2p_nat_libjuice_offline_source.py
 run python3 script/check_p2p_nat_libjuice_compile_only.py
@@ -4216,6 +4442,13 @@ run ./gradlew --no-daemon \
 	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadDecodesNonRetryableChatContextWindowExceeded \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadRejectsUnknownCodes \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesSharedCatalogBlankCodePointSet \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactSizeByteMaximum \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactContextWindowMaximum \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata \
@@ -4599,7 +4832,29 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.releasePairingParserRejectsMacosLocalDiagnosticQrRoute \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthPublishesOnlyLatestCurrentRequestOnce \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsWrongChannelConnectionAndReauthenticatedAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthExactCurrentTerminalsCloseBeforeDuplicateAndRetry \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthClearsPendingOnDisconnectRevocationAndViewModelClear \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthIgnoresSupersededErrorAndDelayedSendFailure \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldDocumentSendFailureCannotCloseReplacementRequest \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationTombstonesOldChatMessagesAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkLifecycleRequiresExactTerminalAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkSendFailureRequiresExactDispatchAuthority \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectedModelSendStateRejectsEmbeddingModelAsChatModel \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.requestModelInstallRejectsUnknownModelWithoutPersistingOrPulling \
@@ -4683,7 +4938,10 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce \
+	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority \
+			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsRejectsMalformedDuplicateUnknownIdsAndMetadata \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsIgnoresStaleResponsesAndClearsAcrossAuthorityChanges \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors \
@@ -4936,6 +5194,11 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.incompleteInlineThinkTagPlaceholderIsClearedOnDone \
   -Pkotlin.incremental=false
 
+run check_android_authenticated_read_authority_junit
+run check_android_authenticated_read_rollover_authority_junit
+run check_android_chat_sessions_bulk_terminal_authority_junit
+run check_android_memory_mutation_authority_junit
+
 run swift build --product AetherLink
 run swift build --product AetherLinkRelay
 run check_relay_binary_source_rate_limit_cli_guard
@@ -5017,6 +5280,7 @@ run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionW
 		run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreSignsTransportBoundV2AuthChallengeWithoutV1Downgrade|RuntimeIdentityKeyStoreTests/testKeychainStoreSignsTransportBoundV2AuthChallenge|RuntimeIdentityKeyStoreTests/testRuntimeIdentitySignersRejectNoncanonicalTransportBindings'
 		run swift test --filter 'LocalRuntimeMessageRouterTests/testTransportBoundHelloAndAuthResponseUseV2SignaturesAndDispatchCommands|LocalRuntimeMessageRouterTests/testTransportBoundHelloRejectsMissingMalformedAndMismatchedBindingsBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsMissingBindingAndV1SignatureBeforeCommands|LocalRuntimeMessageRouterTests/testTransportBoundAuthRejectsReplayedOldBindingAfterSinkBindingChanges|LocalRuntimeMessageRouterTests/testUnboundSinkRejectsUnexpectedTransportBindingBeforeChallengeAndCommands'
 		run swift test --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|OllamaBackendTests/testEmbedPostsBatchWithoutTruncationAndReturnsVectors|OllamaBackendTests/testEmbedRejectsEmptyOrInconsistentVectors|OllamaBackendTests/testEmbedRejectsWrongVectorCount|OllamaBackendTests/testUnloadModelPostsEmptyChatWithKeepAliveZero|OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testEmbedPostsBatchAndRestoresIndexOrder|LMStudioBackendTests/testEmbedRejectsDuplicateMissingOrOutOfRangeIndexes|LMStudioBackendTests/testEmbedRejectsEmptyOrInconsistentVectors|LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID|LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel|AggregatingLlmBackendResidencyTests/testRepeatedSameModelDoesNotUnloadBetweenChats|AggregatingLlmBackendResidencyTests/testIdlePolicyUnloadsActiveModelAfterDelay|AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion|AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight|AggregatingLlmBackendResidencyTests/testCancelBeforeAsyncRouteResolutionPreventsProviderChatDispatch|AggregatingLlmBackendResidencyTests/testRejectedDuplicateGenerationCannotRemoveOriginalReservation|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsChatModelAndDoesNotRoute|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsProviderManagedModelAndDoesNotRoute|AggregatingLlmBackendResidencyTests/testQualifiedInstalledEmbeddingRoutesToItsProviderModelID|AggregatingLlmBackendResidencyTests/testEmbeddingDoesNotEnterGenerationCancellationRegistry|AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama|AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider|AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing|RuntimeSemanticChatSessionSearchTests'
+		run swift test --filter 'ProtocolCodecTests/testRelayPlaintextFrameCeilingReservesAuthenticationTag|OllamaBackendTests/testModelInfoCatalogPublicationLimitsAcceptExactBoundariesAndRejectLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|OllamaBackendTests/testCatalogStreamingReadRejectsOversizedPositiveContentLength|OllamaBackendTests/testShowStreamingReadAcceptsExactByteLimitAndExcludesOnlyLimitPlusOneDetail|OllamaBackendTests/testListModelsPropagatesCancellationDuringShowFanout|OllamaBackendTests/testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout|OllamaBackendTests/testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs|OllamaBackendTests/testListModelsPreservesByteDistinctUnicodeCapabilities|OllamaBackendTests/testUnloadModelDoesNotMatchByteDistinctUnicodeRunningIdentity|OllamaBackendTests/testUnloadModelRejectsOversizedRunningCatalogBeforePosting|OllamaBackendTests/testHealthCheckRejectsMalformedTagsCatalog|OllamaBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentKeysInTagsAndRunningCatalogs|OllamaBackendTests/testListModelsRejectsDuplicateExactAndCanonicalModelIdentities|OllamaBackendTests/testListModelsRejectsConflictingNameAndModelIdentityAliases|OllamaBackendTests/testListModelsAcceptsContextWindowBoundariesAndMatchingAliases|OllamaBackendTests/testListModelsOmitsInvalidContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsExcludesShowDetailsWithInvalidCapabilities|OllamaBackendTests/testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities|OllamaBackendTests/testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys|LMStudioBackendTests/testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback|LMStudioBackendTests/testFallbackCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne|LMStudioBackendTests/testNativeCatalogRejectsOversizedPositiveContentLengthWithoutFallback|LMStudioBackendTests/testNativeCatalogAccepts256RowsAndRejects257Rows|LMStudioBackendTests/testNativeCatalogRejectsInvalidPublicationMetadataWithoutFallback|LMStudioBackendTests/testUnloadModelRejectsOversizedNativeCatalogBeforePosting|LMStudioBackendTests/testUnloadModelAcceptsMaximumLoadedInstanceFanout|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceFanoutBeforePosting|LMStudioBackendTests/testUnloadModelRejectsInvalidLoadedInstanceMetadataDuringPolling|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testListModelsFallsBackForExplicitNativeEndpointIncompatibility|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeAuthClientOrServerFailures|LMStudioBackendTests/testListModelsDoesNotFallbackForNativeTransportFailure|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentNativeObjectKeysWithoutFallback|LMStudioBackendTests/testListModelsRejectsDuplicateAndEscapeEquivalentFallbackObjectKeys|LMStudioBackendTests/testListModelsRejectsExactAndCanonicalDuplicateModelIdentities|LMStudioBackendTests/testListModelsRejectsConflictingNativeModelIdentityAliases|LMStudioBackendTests/testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling|LMStudioBackendTests/testListModelsAcceptsMatchingNativeContextAliases|LMStudioBackendTests/testListModelsRejectsInvalidNativeContextWindowValuesWithoutFallback|LMStudioBackendTests/testListModelsRejectsInvalidFallbackContextWindowValues|LMStudioBackendTests/testListModelsRejectsConflictingContextWindowAliases|LMStudioBackendTests/testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator|LMStudioBackendTests/testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent|LMStudioBackendTests/testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback|AggregatingLlmBackendResidencyTests/testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog|LocalRuntimeMessageRouterTests/testModelsListAcceptsCatalogAtPublicationLimits|LocalRuntimeMessageRouterTests/testModelsListRejectsValidCartesianLimitsAboveRelayFrameCeiling|LocalRuntimeMessageRouterTests/testModelsListPublishesInt64MaximumSizeWithoutPrecisionLoss|LocalRuntimeMessageRouterTests/testModelsListRejectsCatalogAbovePublicationLimit|LocalRuntimeMessageRouterTests/testModelsListRejectsUntrustedMetadataAtPublicationBoundary|LocalRuntimeMessageRouterTests/testModelsListRejectsContextWindowMetadataOutsideRuntimeCeiling|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancellationKeepsSharedWorkForRemainingWaiter|LocalRuntimeMessageRouterTests/testModelsListSingleFlightCancelledNonLastWaitersReturnBeforeProviderCompletion|LocalRuntimeMessageRouterTests/testModelsListSingleFlightLastWaiterCancellationStopsProviderWork|LocalRuntimeMessageRouterTests/testModelsListSingleFlightWaitsForCancelledProviderToRetireBeforeReplacement|LocalRuntimeMessageRouterTests/testModelsListSingleFlightDoesNotCacheFailure|LocalRuntimeMessageRouterTests/testModelsListSingleFlightSuppressesPublicationAfterReauthentication|LocalRuntimeMessageRouterTests/testChatSendIgnoresContextWindowMetadataAboveRuntimeCeiling'
 		run swift test --filter 'AggregatingLlmBackendResidencyTests/testQualifiedModelMatchesOnlyExactProviderModelID|AggregatingLlmBackendResidencyTests/testChatRejectsProviderModelIDWithReservedQualifiedPrefix|AggregatingLlmBackendResidencyTests/testEmbeddingRejectsProviderModelIDWithReservedQualifiedPrefix'
 		run swift test --filter 'AggregatingLlmBackendResidencyTests/testEmbeddingResidencyUnloadsPreviousChatModel|SQLiteRuntimeChatEventStoreTests/testSQLiteSemanticSearchSourcesReadOwnerScopedSessionsAndMessagesInOneSnapshot'
 			run swift test --filter 'RuntimeModelIdleUnloadPolicyTests|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyUnloadsModelWhenNewDelayAlreadyElapsed|AggregatingLlmBackendResidencyTests/testUpdatingIdlePolicyWhileGenerationIsInFlightDefersUnloadUntilCompletion|AggregatingLlmBackendResidencyTests/testPendingIdleUnloadBlocksSameModelChatUntilProviderUnloadCompletes|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForSameModelUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledChatWaitingForModelSwitchUnloadDoesNotReserveOrDispatch|AggregatingLlmBackendResidencyTests/testCancelledEmbeddingWaitingForSameModelUnloadDoesNotDispatch|AggregatingLlmBackendResidencyTests/testExtendingIdlePolicyInvalidatesEarlierTimer'
@@ -5472,6 +5736,13 @@ echo "Covered Android memory.list semantic-model hint and transient-cache addend
 echo "Covered Android memory.list closed-payload app-path addendum: RuntimeClientViewModel rejects unknown top-level memory.list response metadata, unknown per-entry metadata, unknown nested search metadata, and unknown approved-memory source/session/source-pointer metadata before runtime memory state publication or device storage mutation, then accepts a canonical retry before semantic memory search, source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered runtime reasoning search metadata addendum: chat.sessions.list can match stored assistant reasoning separately from visible answer text across JSONL router and SQLite/FTS paths, and Android Settings labels reasoning matched fields."
 echo "Covered context-window compaction addendum: models.result carries optional context_window_tokens, Android preserves the metadata, Ollama/LM Studio parse context-window hints, and macOS chat.send uses resolved model context windows to choose runtime compaction budget plus backend-only summary text and durable source-pointer metadata that stays out of chat.messages.list and SQLite FTS."
+echo "Covered resource-bounded provider model-catalog/context-window trust-boundary addendum: focused Swift and Android protocol tests pin true streaming 4 MiB catalog/detail ingestion, positive Content-Length preflight, limit-plus-one stop, 256 rows and Ollama detail calls, aggregate and Ollama detail-fanout cancellation propagation, bounded unique LM Studio unload instances, exact 1,048,560-byte relay plaintext acceptance and 1,048,561-byte rejection, exact Int64 size serialization, 512/522-code-point byte-exact identities, shared Unicode blank-only rejection, 32 byte-exact-unique nonblank capabilities of at most 128 code points, strict duplicate and escape-equivalent JSON keys, precision-safe Decimal context validation through 16,777,216, LM Studio catalog fallback only 404/405/501, explicit native chat.end including final-line parser.finish success, whole-catalog router rejection without truncation, provider-specific Ollama context omission versus LM Studio and final-router rejection, Android/schema exact-plus-one parity, and conservative legacy compaction fallback only for genuinely absent context metadata. This is URLProtocol/JVM-backed no-device proof, not live-provider, physical-device, or live-network proof."
+echo "Covered v0.2 addendum: bounded public models.list single-flight. Up to eight concurrent public waiters share one provider catalog operation; a ninth receives a sanitized retryable backend_unavailable. Every waiter retains its own request id and publication authority, one waiter cancellation preserves shared work, last-waiter cancellation stops provider work, cancellation must retire before replacement, and success or failure is not cached. Internal authority catalog lookups remain outside coalescing. This is no-device mock-backend proof, not live-provider, physical-device, external-network, throughput, production-relay/P2P, or Phase B proof."
+echo "Covered v0.2 addendum: Android runtime.health current-request authority. Each authenticated request uses a namespaced id bound to the exact channel, connection generation, and authenticated authority generation; only the latest exact result, error, or send failure can close or mutate state, while stale, duplicate, wrong-channel, old-connection, and prior-auth terminals are inert. Disconnect, revocation, reauthentication, and ViewModel clear remove pending authority. This is Android JVM no-device proof, not physical-device, peer-receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
+echo "Covered v0.2 addendum: Android authenticated transcript and document read current-request authority. chat.messages.list, index.documents.list, and retrieval.query results, errors, and send failures require the exact request id, channel, connection generation, and authenticated authority generation before pending state, transient document state, transcript publication, or device persistence can change. Wrong-channel, old-connection, prior-auth, duplicate, superseded, and delayed terminals are inert; reauthentication, disconnect, revocation, and ViewModel clear remove old authority. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
+echo "Covered v0.2 addendum: Android authenticated read rollover and chat.sessions.list receive authority. chat.sessions.list results and pagination require the exact request id, receiving channel, connection generation, and authenticated authority generation before any accumulator, terminal, history, search, or bulk-lifecycle state can change. Successful same-channel reauthentication replaces pending memory.list and research.notebooks.list authority, authentication revocation clears pending memory.list authority, stale results, errors, and canceled timeouts are inert, and current replacements remain usable. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
+echo "Covered v0.2 addendum: Android chat.sessions bulk terminal authority. Runtime-authoritative archive-all and delete-all success results, malformed errors, ordinary errors, and asynchronous send failures require the exact pending request id, operation type where applicable, receiving or dispatch channel, connection generation, and authenticated authority generation before bulk state, local session persistence, reconciliation, error publication, or authentication state can change. Wrong-channel, old-connection, prior-authentication, duplicate, and stale terminals are inert. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
+echo "Covered v0.2 addendum: Android persistent-memory mutation current-request authority. memory.upsert and memory.delete use namespaced request ids bound to the exact operation, target, expected result fields, channel, connection generation, and authenticated authority generation. Only one exact-current result, error, or send failure may close a mutation or change device memory state; unsolicited, mismatched, stale, duplicate, and delayed terminals are inert. Same-target mutations serialize while different targets remain independent. The 15-second local timeout closes only the exact current request, never automatically retries the mutation, and forces fresh memory.list reconciliation; reauthentication, revocation, disconnect, receive failure, and ViewModel clear cancel pending authority and timeout jobs. This is Android JVM no-device proof, not physical-device, optical QR, peer receipt or exactly-once host mutation, real lost-response recovery beyond the deterministic timeout, live-provider, external-network, production-relay/P2P/NAT, Phase B, or deployment proof."
 echo "Covered adaptive context compaction budget and pre-dispatch rejection addendum: the planner enforces byte- and decoded-image-aware input accounting across multilingual text and attachments, emits fixed provenance plus untrusted summaries with request-matching contiguous source pointers, rejects an oversized newest request before backend dispatch, preserves runtime-memory separation, validates SQLite accounting metadata, pins chat_context_window_exceeded in Android and the shared schema, and keeps localized Android error layout bounded."
 echo "Covered backend-only LLM chat compaction summary addendum: focused Swift regressions require a bounded same-model summary prepass, reasoning isolation, deterministic fallback on oversized output, durable cancellation intent across the prepass-to-primary handoff, atomic primary backend registration with connection-owned cancellation, one global primary-and-derived generation-id reservation namespace, and absence of generated summary text after SQLite reopen and session search."
 echo "Covered durable chat compaction summary cache addendum: an owner-only SQLite sidecar keys exact bounded prepass input by owner, session, dedicated source fingerprint, actual resolved provider model, and summary policy; successful primary completion enables reopen reuse without another prepass, while cancellation/error/non-fitting output does not commit, corrupt rows miss, row count is bounded, session deletion purges derived rows, and summary text remains outside chat history and FTS."
@@ -5697,7 +5968,7 @@ echo "Covered Android models.pull fail-closed and chat.cancel acknowledgement ap
 echo "Covered Android pairing.result closed-payload app-path addendum: RuntimeClientViewModel rejects unknown pairing.result response metadata before trust mutation, pending route cleanup, authenticated refresh fanout, or device storage mutation, then accepts a canonical retry while keeping backend_url canaries out of state/storage before source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered Android auth.challenge closed-payload app-path addendum: RuntimeClientViewModel rejects unknown auth.challenge response metadata before runtime proof verification or auth.response signing/sending, closes the authentication attempt, and rejects a later unsolicited accepted response before authenticated session state, route-refresh scheduling, or authenticated refresh fanout while keeping backend_url canaries out of state/storage."
 echo "Covered Android auth.response result closed-payload app-path addendum: RuntimeClientViewModel rejects unknown auth.response result metadata before authentication state mutation or authenticated refresh fanout, then accepts a canonical auth.response retry while keeping backend_url canaries out of state/storage before route refresh, source approval, citation, trusted-source review, permission, or audit semantics exist."
-echo "Covered Android error payload closed-payload app-path addendum: RuntimeClientViewModel rejects unknown error response metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation, then accepts canonical error retries while keeping backend_url and workspace_id canaries out of state/storage before source approval, citation, trusted-source review, permission, or audit semantics exist."
+echo "Covered Android error payload closed-payload app-path addendum: RuntimeClientViewModel rejects unknown error response metadata before active stream termination, route/auth state mutation, or device storage mutation. Exact-current namespaced memory.list malformed errors consume only their correlation before error publication, allow a fresh replacement, and make late canonical errors for the closed id inert; active chat errors retain canonical same-id retry. Backend_url and workspace_id canaries stay out of state/storage before source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered Android error payload code enum decode addendum: shared protocol schema, docs, schema hygiene, and Android ErrorPayload now use the same canonical protocol error code set, and Android rejects unknown, blank, or whitespace-mutated error payload codes during decode before runtime UI state, local persistence, source approval, citation, trusted-source review, permission, or audit semantics exist."
 echo "Covered Android chat and memory timestamp date-time decode addendum: Android chat sessions, stored chat messages, chat session mutation results, memory entries, memory delete results, memory summary draft dismiss results, memory summary draft sessions, and memory summary draft source pointers reject malformed, date-only, and timezone-less timestamp metadata during DTO decode before Android chat-history state, memory review state, local persistence, source approval, citation, trusted-source review, permission, audit, direct Android backend access, or physical Android proof exists."
 echo "Covered Android chat.messages.list request bounds decode addendum: Android ChatMessagesListRequestPayload rejects blank session_id values plus negative and over-maximum limit values during decode before runtime chat-store dispatch, local persistence, chat compaction metadata projection, source approval, citation, trusted-source review, permission, or audit semantics exist."
@@ -5727,8 +5998,9 @@ echo "Covered production P2P/NAT bounded no-network handoff addendum: explicit a
 echo "Covered production P2P/NAT pre-network approval addendum: immutable review-v1 preserves exactly seven canonically ordered proposed_not_selected recommendations, decision-v1 resolves all seven to their recommended options with explicit_user_instruction, and closed handoff-v3 supersedes handoff-v2. The 15-test mutation suite rejects missing, duplicate-key, unknown, reordered, partial, mismatched, evidence-drifted, weakened, fabricated-measurement, or unauthorized states; handoff-v3 hash-pins Android P2pNatContract.kt, the no-network scan covers SocketFactory.createSocket and CFStreamCreatePairWithSocketToHost, the security-design validator directly verifies canonical handoff closure, and Kotlin and Swift P2P/NAT contract/conformance suites execute in the default gate. controlled-network-spike remains blocked_on_separate_review by networking_library_selection, session_cryptography_library_selection, isolated_harness_design, and socket_destination_and_egress_controls; networkIOAllowed, librarySelectionAuthorized, productionDeploymentAuthorized, and controlledNetworkSpikeSocketExecutionAuthorized stay false. This is policy approval and no-device validation only, not ICE/STUN/TURN implementation, candidate exchange, NAT traversal, physical Android, optical QR, live-network, performance, battery, capacity, deployment, or production-readiness proof."
 echo "Covered production P2P/NAT controlled-spike review addendum: closed review-v1 proposes exactly four canonically ordered recommendations and selects zero. It recommends libjuice-1.7.2-static-c-abi subject to exact source and regular-nomination/consent audit, platform-native-p256-hkdf-sha256-aes256gcm, linux-netns-twin-agent-local-services, and numeric-endpoint-allowlist-plus-os-egress-witness. The 10-test mutation suite rejects implicit selection, incomplete or reordered decisions, option or source drift, weakened security floors, fabricated measurements, authorization, handoff, and immutability changes. librarySelectionAuthorized, harnessImplementationAuthorized, networkIOAllowed, socketExecutionAuthorized, productionDeploymentAuthorized, and nextHandoffAuthorized remain false. This is official-source review and no-device validation only, not source download, library selection, compilation, harness implementation, socket execution, ICE/STUN/TURN traffic, NAT traversal, physical Android, live-network, performance, deployment, or production-readiness proof."
 echo "Covered production P2P/NAT controlled-spike phase A approval addendum: separate decision-v1 records explicit_user_instruction for all four canonical recommendations as approved_for_bounded_phase_a_evidence, and closed handoff-v4 supersedes handoff-v3 while preserving both completed package evidence maps and all seven pre-network resolutions. Offline inspection/pinning of user-provided or pre-existing workspace libjuice source, Android/macOS compile-only integration, transport-neutral session-cryptography vectors, and static phase A harness/egress policy work are authorized; git clone/fetch, download tools, package-manager source acquisition, and inspected-code execution are prohibited. The 17-test mutation suite rejects partial, reordered, implicit, evidence-drifted, offline-source-policy-expanded, phase-expanded, network/socket/phase-B-authorized, bool/int-type-confused, fabricated-measurement, namespace-expanded, mutable, or misleading states, and the independent security-design validator verifies the same handoff. sourceAcquisitionNetworkIOAllowed, controlledSpikeNetworkIOAllowed, controlledSpikeSocketExecutionAuthorized, phaseBExecutionAuthorized, productionNetworkIOAllowed, and productionDeploymentAuthorized remain false. This is no-device/static approval evidence only, not completed source audit, compilation, executable harness, socket execution, ICE/STUN/TURN traffic, NAT traversal, physical Android, live-network, performance, deployment, or production-readiness proof."
-echo "Covered production P2P/NAT controlled-spike phase A crypto and static-policy addendum: the shared ALP1 fixture and independent Python oracle verify direct and relay P-256 ECDH, leading-zero secret normalization, transcript-bound HKDF-SHA-256 key separation, role-bound bidirectional confirmation, single-use ephemeral derivation, key-owned one-shot cipher issuance, deterministic directional AES-256-GCM nonce/AAD construction, tamper/replay/provider failure, concurrent sequence safety, and counter exhaustion across Swift CryptoKit and provider-neutral Android JCA. An execution-before-import AST allowlist and 19-file SHA-256 preflight runs before the Phase A validators. The static harness artifact hash-pins decision-v1, review-v1, and handoff-v4; fixes agent_a, agent_b, stun_service, and turn_service; permits only exact numeric UDP tuples; rejects DNS, DoH, DoT, proxy, redirect, wildcard, range, malformed, loopback, link-local, broadcast, unlisted private, unspecified, multicast, and general external TCP/UDP IPv4/IPv6 egress; and keeps retainedRuntimeEvents empty. All execution, socket, network, measurement, Phase B, and production gates remain false. Offline libjuice source audit and actual Android/macOS C ABI compile-only evidence remain blocked because no reviewed offline libjuice source is present. This is no-device/static interoperability and policy proof, not dependency execution, executable netns proof, packet capture, ICE/STUN/TURN traffic, NAT traversal, physical Android, optical QR, live-network, performance, deployment, or production-readiness proof."
+echo "Covered production P2P/NAT controlled-spike phase A crypto and static-policy addendum: the shared ALP1 fixture and independent Python oracle verify direct and relay P-256 ECDH, leading-zero secret normalization, transcript-bound HKDF-SHA-256 key separation, role-bound bidirectional confirmation, single-use ephemeral derivation, key-owned one-shot cipher issuance, deterministic directional AES-256-GCM nonce/AAD construction, tamper/replay/provider failure, concurrent sequence safety, and counter exhaustion across Swift CryptoKit and provider-neutral Android JCA. An execution-before-import AST allowlist and 22-file SHA-256 preflight runs before the Phase A validators. The static harness artifact hash-pins decision-v1, review-v1, and handoff-v4; fixes agent_a, agent_b, stun_service, and turn_service; permits only exact numeric UDP tuples; rejects DNS, DoH, DoT, proxy, redirect, wildcard, range, malformed, loopback, link-local, broadcast, unlisted private, unspecified, multicast, and general external TCP/UDP IPv4/IPv6 egress; and keeps retainedRuntimeEvents empty. All execution, socket, network, measurement, Phase B, and production gates remain false. Offline libjuice source audit and actual Android/macOS C ABI compile-only evidence remain blocked because no reviewed offline libjuice source is present. This is no-device/static interoperability and policy proof, not dependency execution, executable netns proof, packet capture, ICE/STUN/TURN traffic, NAT traversal, physical Android, optical QR, live-network, performance, deployment, or production-readiness proof."
 echo "Covered production P2P/NAT controlled-spike phase A offline-source and compile-boundary addendum: offline-source-intake-v1 fixes build/offline-source/libjuice-1.7.2 as the only reviewed intake location and validates the current blocked_missing_offline_source state; an unexpected source drop fails closed until a new versioned reviewed manifest records exact provenance, commit, archive and file digests, license, generated files, dependency closure, and build flags. libjuice-compile-only-contract-v1 keeps android_macos_compile_only_integration=blocked_missing_reviewed_source and records only a future direct-compile/static-archive C ABI boundary for Android minSdk 26 arm64-v8a and x86_64 plus macOS 14.0 arm64 and x86_64. No source was acquired or executed, no compiler was invoked, no native adapter or build wiring was created, and all socket, network, Phase B, measurement, and production gates remain closed. This is no-device/static blocked-state evidence, not source-audit completion, compilation, ABI compatibility, library behavior, ICE/STUN/TURN, NAT traversal, physical Android, live-network, deployment, or production-readiness proof."
+echo "Covered production P2P/NAT controlled-spike phase A progress addendum: immutable progress-v1 records 4 bounded Phase A approvals, 2 bounded evidence groups completed, 2 bounded evidence groups blocked, and the final Phase A security review blocked_on_source_and_compile_evidence. Source acquisition, source execution, compiler/archive invocation, socket creation, runtime/harness/controlled-spike network I/O, Phase B network/socket/external egress, production network I/O, and production deployment remain false. The 7-test progress mutation suite independently rejects authority, evidence, source-chain, measurement, Phase B, and immutability drift. This is no-device/static progress evidence only, not source acquisition, compilation, library execution, sockets, network traffic, Phase B, external egress, production deployment, or production-readiness proof."
 echo "Covered macOS host document source review and audit export addendum: one security-scoped coordinated regular-file selection is copied into a bounded owner-only private snapshot, reviewed without approving or exposing content, and shared with explicit runtime_shared scope only after a versioned one-time ten-minute confirmation. Replacements preserve the active revision until source-revision compare-and-swap commits on the same SQLite store used by the runtime router; removal requires the current revision and retains content-free audit tombstones. The inspector previews 50 app-data-lifetime audit events and exports at most the latest 1,000 without paths, bookmarks, bodies, queries, snippets, or pending content. Citations, a client trusted-source review protocol, physical Android, optical QR, live-provider semantic quality, production relay/P2P, and real-network behavior remain unproven."
 echo "Covered structured answer source attribution addendum: successful nonblank stop completions can store one through eight ordered runtime-generated source references containing only source_index, safe document_name, canonical mime_type, and nonnegative chunk_index from contexts actually supplied to generation. Capability-negotiated authenticated chat.done and history responses project that historical snapshot; legacy clients retain the old shape, later revoke does not rewrite completed provenance, regenerate replaces prior attribution, and cancel, error, blank, audit-failed, or source-free requests expose none. Android strictly decodes, sanitizes, persists, restores, and renders the source list between answer and actions with localized accessibility summaries. This does not claim sentence-level entailment, current authorization, physical Android rendering, live-provider citation quality, optical QR, production relay/P2P, or real-network proof."
 echo "Covered authenticated historical chat source attribution review addendum: chat.source_attribution.resolve uses exact session_id, server-generated non-authorizing assistant_message_id, and source_index input under chat.source_attribution.resolve.v1. Normal done/history keeps source_attributions at exactly four safe display fields and never exposes source text or the internal source_index, source_anchor_id, document_id, and source_revision binding. Review preparation resolves canonical owner-scoped history, atomically revalidates current runtime_shared approval and the exact historical revision, and fails closed for regenerated, deleted, legacy, stale, replaced, or revoked sources without display-metadata inference. Capability omission and partial capability compatibility are router-unit evidence; live smoke covers the fully capable request, happy response, forbidden metadata, exact invalid_payload and chat_source_attribution_not_found failures, authentication rejection, and connection survival. Android reuses the existing review dialog; only the locator may persist while authority ids, tokens, and revisions remain private and transient. This remains no-device evidence and does not claim physical Android, live-provider citation quality, production relay/P2P, or real-network proof."

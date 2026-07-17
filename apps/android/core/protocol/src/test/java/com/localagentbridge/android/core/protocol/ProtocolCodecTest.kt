@@ -935,11 +935,209 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation() {
+        fun encodedModels(count: Int): String = List(count) { index ->
+            """{"id":"model-$index","name":"Model $index"}"""
+        }.joinToString(prefix = "[", postfix = "]")
+
+        val accepted = Json.decodeFromString<ModelsResultPayload>(
+            """{"models":${encodedModels(256)}}""",
+        )
+        assertEquals(256, accepted.models.size)
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ModelsResultPayload>(
+                """{"models":${encodedModels(257)}}""",
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("models"))
+    }
+
+    @Test
+    fun modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings() {
+        val supplementaryCodePoint = "\uD83E\uDDE0"
+
+        fun decodeField(field: String, value: String): ModelsResultPayload {
+            val encodedValue = Json.encodeToString(value)
+            val row = when (field) {
+                "id" -> """{"id":$encodedValue,"name":"Model"}"""
+                "name" -> """{"id":"model","name":$encodedValue}"""
+                "provider_model_id" ->
+                    """{"id":"model","name":"Model","provider_model_id":$encodedValue}"""
+                "remote_model" ->
+                    """{"id":"model","name":"Model","remote_model":$encodedValue}"""
+                else -> error("unsupported model identity field $field")
+            }
+            return Json.decodeFromString("""{"models":[$row]}""")
+        }
+
+        listOf("id", "name", "provider_model_id", "remote_model").forEach { field ->
+            val exact = supplementaryCodePoint.repeat(512)
+            val decoded = decodeField(field, exact)
+            val actual = when (field) {
+                "id" -> decoded.models.single().id
+                "name" -> decoded.models.single().name
+                "provider_model_id" -> decoded.models.single().providerModelId
+                else -> decoded.models.single().remoteModel
+            }
+            assertEquals(512, actual?.codePointCount(0, actual.length))
+
+            val error = assertThrows(Exception::class.java) {
+                decodeField(field, supplementaryCodePoint.repeat(513))
+            }
+            assertTrue("expected $field in ${error.message}", error.message.orEmpty().contains(field))
+        }
+    }
+
+    @Test
+    fun modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId() {
+        val supplementaryCodePoint = "\uD83E\uDDE0"
+        fun decodeQualifiedId(value: String): ModelsResultPayload =
+            Json.decodeFromString(
+                """{"models":[{"id":"model","name":"Model","qualified_id":${Json.encodeToString(value)}}]}""",
+            )
+
+        val exact = "lm_studio:" + supplementaryCodePoint.repeat(512)
+        val decoded = decodeQualifiedId(exact)
+        assertEquals(522, decoded.models.single().qualifiedId?.codePointCount(0, exact.length))
+
+        val error = assertThrows(Exception::class.java) {
+            decodeQualifiedId("lm_studio:" + supplementaryCodePoint.repeat(513))
+        }
+        assertTrue(error.message.orEmpty().contains("qualified_id"))
+    }
+
+    @Test
+    fun modelInfoPayloadUsesSharedCatalogBlankCodePointSet() {
+        val blankOnly = "\u0009\u000A\u000B\u000C\u000D\u0020\u0085\u00A0\u1680" +
+            "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u200B" +
+            "\u2028\u2029\u202F\u205F\u3000\uFEFF"
+
+        fun row(field: String, value: String): String {
+            val encoded = Json.encodeToString(value)
+            return when (field) {
+                "id" -> """{"id":$encoded,"name":"Model"}"""
+                "name" -> """{"id":"model","name":$encoded}"""
+                "provider_model_id" ->
+                    """{"id":"model","name":"Model","provider_model_id":$encoded}"""
+                "qualified_id" ->
+                    """{"id":"model","name":"Model","qualified_id":$encoded}"""
+                "remote_model" ->
+                    """{"id":"model","name":"Model","remote_model":$encoded}"""
+                else -> error("unsupported model field $field")
+            }
+        }
+
+        listOf("id", "name", "provider_model_id", "qualified_id", "remote_model").forEach { field ->
+            val error = assertThrows(Exception::class.java) {
+                Json.decodeFromString<ModelsResultPayload>(
+                    """{"models":[${row(field, blankOnly)}]}""",
+                )
+            }
+            assertTrue(error.message.orEmpty().contains(field))
+            val accepted = Json.decodeFromString<ModelsResultPayload>(
+                """{"models":[${row(field, "\u200Bx")}] }""",
+            )
+            assertEquals(1, accepted.models.size)
+        }
+    }
+
+    @Test
+    fun modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits() {
+        val supplementaryCodePoint = "\uD83E\uDDE0"
+        fun decodeCapabilities(capabilities: List<String>): ModelsResultPayload =
+            Json.decodeFromString(
+                """{"models":[{"id":"model","name":"Model","capabilities":${Json.encodeToString(capabilities)}}]}""",
+            )
+
+        val exactCapabilities = List(32) { index ->
+            ('A'.code + index).toChar() + supplementaryCodePoint.repeat(127)
+        }
+        val accepted = decodeCapabilities(exactCapabilities)
+        assertEquals(32, accepted.models.single().capabilities.size)
+        assertTrue(
+            accepted.models.single().capabilities.all {
+                it.codePointCount(0, it.length) == 128
+            },
+        )
+        val byteDistinctCapabilities = listOf(
+            "chat",
+            " CHAT ",
+            "caf\u00E9",
+            "cafe\u0301",
+        )
+        assertEquals(
+            byteDistinctCapabilities,
+            decodeCapabilities(byteDistinctCapabilities).models.single().capabilities,
+        )
+
+        val sharedBlankCodePoints = listOf(
+            "\u0085",
+            "\u00A0",
+            "\u1680",
+            "\u200B",
+            "\u2028",
+            "\u2029",
+            "\u202F",
+            "\u205F",
+            "\u3000",
+            "\uFEFF",
+        )
+
+        listOf(
+            List(33) { index -> "capability-$index" } to "33 entries",
+            listOf(supplementaryCodePoint.repeat(129)) to "129 code points",
+            listOf(" \t\n") to "blank item",
+            *sharedBlankCodePoints.map { listOf(it) to "shared blank code point" }.toTypedArray(),
+        ).forEach { (capabilities, description) ->
+            val error = assertThrows("expected $description rejection", Exception::class.java) {
+                decodeCapabilities(capabilities)
+            }
+            assertTrue(error.message.orEmpty().contains("capabilities"))
+        }
+    }
+
+    @Test
+    fun modelInfoPayloadEnforcesExactSizeByteMaximum() {
+        val accepted = Json.decodeFromString<ModelsResultPayload>(
+            """{"models":[{"id":"model","name":"Model","size_bytes":9223372036854775807}]}""",
+        )
+        assertEquals(Long.MAX_VALUE, accepted.models.single().sizeBytes)
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ModelsResultPayload>(
+                """{"models":[{"id":"model","name":"Model","size_bytes":9223372036854775808}]}""",
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("size_bytes"))
+    }
+
+    @Test
+    fun modelInfoPayloadEnforcesExactContextWindowMaximum() {
+        val accepted = Json.decodeFromString<ModelsResultPayload>(
+            """{"models":[{"id":"model","name":"Model","context_window_tokens":16777216}]}""",
+        )
+        assertEquals(16_777_216, accepted.models.single().contextWindowTokens)
+
+        val error = assertThrows(Exception::class.java) {
+            Json.decodeFromString<ModelsResultPayload>(
+                """{"models":[{"id":"model","name":"Model","context_window_tokens":16777217}]}""",
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("context_window_tokens"))
+    }
+
+    @Test
     fun modelInfoPayloadRejectsInvalidScalarMetadata() {
         val invalidPayloads = listOf(
             """{"models":[{"id":"","name":"Empty ID"}]}""" to "id",
+            """{"models":[{"id":" \t","name":"Blank ID"}]}""" to "id",
             """{"models":[{"id":"missing-name"}]}""" to "name",
             """{"models":[{"id":"empty-name","name":""}]}""" to "name",
+            """{"models":[{"id":"blank-name","name":" \t"}]}""" to "name",
+            """{"models":[{"id":"blank-provider-model","name":"Blank Provider Model","provider_model_id":" \t"}]}""" to "provider_model_id",
+            """{"models":[{"id":"blank-qualified","name":"Blank Qualified","qualified_id":" \t"}]}""" to "qualified_id",
+            """{"models":[{"id":"blank-remote","name":"Blank Remote","remote_model":" \t"}]}""" to "remote_model",
             """{"models":[{"id":"bad-backend","name":"Bad Backend","backend":"openai"}]}""" to "backend",
             """{"models":[{"id":"bad-provider","name":"Bad Provider","provider":"openai"}]}""" to "provider",
             """{"models":[{"id":"bad-kind","name":"Bad Kind","model_kind":"vision"}]}""" to "model_kind",

@@ -12,6 +12,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private let unloadPollAttempts: Int
     private let unloadPollIntervalNanoseconds: UInt64
     private let unloadSleeper: @Sendable (UInt64) async throws -> Void
+    private let catalogResponseByteLimit: Int
     private let registry = GenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -22,25 +23,30 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         self.unloadPollAttempts = Self.defaultUnloadPollAttempts
         self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
         self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
+        self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
     }
 
     init(
         baseURL: URL,
         session: URLSession,
         unloadPollAttempts: Int,
+        catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
     ) {
         self.baseURL = baseURL
         self.session = session
         self.unloadPollAttempts = max(1, unloadPollAttempts)
+        self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
     }
 
     public func healthCheck() async -> BackendStatus {
         do {
-            _ = try await performDataRequest(endpoint: "GET /api/tags", url: baseURL.appending(path: "api/tags"))
+            let endpoint = "GET /api/tags"
+            let data = try await performCatalogDataRequest(endpoint: endpoint, url: baseURL.appending(path: "api/tags"))
+            _ = try decodeTagsResponse(data, endpoint: endpoint)
             return .available
         } catch let error as OllamaBackendError {
             return .unavailable(error.backendError)
@@ -54,24 +60,32 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     public func listModels() async throws -> [ModelInfo] {
         let tagsEndpoint = "GET /api/tags"
-        let tagsData = try await performDataRequest(endpoint: tagsEndpoint, url: baseURL.appending(path: "api/tags"))
+        let tagsData = try await performCatalogDataRequest(endpoint: tagsEndpoint, url: baseURL.appending(path: "api/tags"))
+        let tags = try decodeTagsResponse(tagsData, endpoint: tagsEndpoint)
         let psEndpoint = "GET /api/ps"
-        let psData = try await performDataRequest(endpoint: psEndpoint, url: baseURL.appending(path: "api/ps"))
-        do {
-            let tags = try decoder.decode(OllamaTagsResponse.self, from: tagsData)
-            let running = try decoder.decode(OllamaRunningModelsResponse.self, from: psData)
-            let detailsByName = await modelDetailsByName(
-                names: Self.uniqueModelNames(tags.models.map(\.name) + running.models.map(\.name))
+        let psData = try await performCatalogDataRequest(endpoint: psEndpoint, url: baseURL.appending(path: "api/ps"))
+        let running = try decodeRunningModelsResponse(psData, endpoint: psEndpoint)
+        let detailNames = Self.uniqueModelNames(tags.models.map(\.name) + running.models.map(\.name))
+        guard detailNames.count <= ModelInfo.maximumCatalogModelCount else {
+            throw OllamaBackendError.responseDecoding(
+                endpoint: tagsEndpoint,
+                reason: "The model catalog exceeds the supported row limit."
             )
-            return Self.mergeModels(
+        }
+        let detailsByName = try await modelDetailsByName(
+            names: detailNames
+        )
+        do {
+            return try Self.mergeModels(
                 installedModels: tags.models,
                 runningModels: running.models,
                 detailsByName: detailsByName
             )
-        } catch let error as DecodingError {
-            throw OllamaBackendError.responseDecoding(endpoint: "\(tagsEndpoint), \(psEndpoint)", reason: error.localizedDescription)
         } catch {
-            throw OllamaBackendError.responseDecoding(endpoint: "\(tagsEndpoint), \(psEndpoint)", reason: error.localizedDescription)
+            throw OllamaBackendError.responseDecoding(
+                endpoint: tagsEndpoint,
+                reason: error.localizedDescription
+            )
         }
     }
 
@@ -137,19 +151,16 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     private func findRunningModelID(matching modelID: String) async throws -> String? {
         let endpoint = "GET /api/ps"
-        let data = try await performDataRequest(endpoint: endpoint, url: baseURL.appending(path: "api/ps"))
-        let response: OllamaRunningModelsResponse
-        do {
-            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
-            response = try decoder.decode(OllamaRunningModelsResponse.self, from: data)
-        } catch {
-            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
-        }
-        if let exact = response.models.first(where: { $0.name == modelID }) {
+        let data = try await performCatalogDataRequest(endpoint: endpoint, url: baseURL.appending(path: "api/ps"))
+        let response = try decodeRunningModelsResponse(data, endpoint: endpoint)
+        let exactTarget = Data(modelID.utf8)
+        if let exact = response.models.first(where: { Data($0.name.utf8) == exactTarget }) {
             return exact.name
         }
-        let canonicalTarget = Self.canonicalModelName(modelID)
-        return response.models.first(where: { Self.canonicalModelName($0.name) == canonicalTarget })?.name
+        let canonicalTarget = Data(Self.canonicalModelName(modelID).utf8)
+        return response.models.first(where: {
+            Data(Self.canonicalModelName($0.name).utf8) == canonicalTarget
+        })?.name
     }
 
     public func embed(request: EmbeddingRequest) async throws -> EmbeddingResult {
@@ -180,26 +191,29 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private static func mergeModels(
         installedModels: [OllamaModel],
         runningModels: [OllamaRunningModel],
-        detailsByName: [String: OllamaModelDetails] = [:]
-    ) -> [ModelInfo] {
+        detailsByName: [Data: OllamaModelDetails] = [:]
+    ) throws -> [ModelInfo] {
         var result: [ModelInfo] = []
-        var indexesByID: [String: Int] = [:]
-        var indexesByCanonicalName: [String: Int] = [:]
+        var indexesByID: [Data: Int] = [:]
+        var indexesByCanonicalName: [Data: Int] = [:]
 
-        func remember(_ model: ModelInfo) {
-            indexesByID[model.id] = result.count
-            indexesByCanonicalName[canonicalModelName(model.id)] = result.count
+        func remember(_ model: ModelInfo) throws {
+            try ModelInfo.validateForCatalogPublication(model)
+            indexesByID[Data(model.id.utf8)] = result.count
+            indexesByCanonicalName[Data(canonicalModelName(model.id).utf8)] = result.count
             result.append(model)
         }
 
         for model in installedModels {
             let details = modelDetails(for: model.name, in: detailsByName)
+            guard details.isTrusted else { continue }
             let capabilities = inferredCapabilities(
                 details.capabilities,
                 for: model.name
             )
+            guard ModelInfo.areValidCapabilities(capabilities) else { continue }
             let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
-            remember(ModelInfo(
+            try remember(ModelInfo(
                 id: model.name,
                 name: model.name,
                 provider: .ollama,
@@ -218,7 +232,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
 
         for model in runningModels {
-            if let existingIndex = indexesByID[model.name] ?? indexesByCanonicalName[canonicalModelName(model.name)] {
+            if let existingIndex = indexesByID[Data(model.name.utf8)]
+                ?? indexesByCanonicalName[Data(canonicalModelName(model.name).utf8)] {
                 result[existingIndex].running = true
                 if result[existingIndex].sizeBytes == nil {
                     result[existingIndex].sizeBytes = model.size
@@ -231,12 +246,14 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     continue
                 }
                 let details = modelDetails(for: model.name, in: detailsByName)
+                guard details.isTrusted else { continue }
                 let capabilities = inferredCapabilities(
                     details.capabilities,
                     for: model.name
                 )
+                guard ModelInfo.areValidCapabilities(capabilities) else { continue }
                 let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
-                remember(ModelInfo(
+                try remember(ModelInfo(
                     id: model.name,
                     name: model.name,
                     provider: .ollama,
@@ -254,15 +271,23 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         return result
     }
 
-    private func modelDetailsByName(names: [String]) async -> [String: OllamaModelDetails] {
-        var result: [String: OllamaModelDetails] = [:]
+    private func modelDetailsByName(names: [String]) async throws -> [Data: OllamaModelDetails] {
+        var result: [Data: OllamaModelDetails] = [:]
         for name in names where !name.isEmpty {
+            try Task.checkCancellation()
             do {
                 let details = try await fetchModelDetails(name: name)
                 if !details.isEmpty {
-                    result[name] = details
-                    result[Self.canonicalModelName(name)] = details
+                    result[Data(name.utf8)] = details
+                    result[Data(Self.canonicalModelName(name).utf8)] = details
                 }
+            } catch OllamaModelDetailsError.malformedResponse {
+                result[Data(name.utf8)] = .untrusted
+                result[Data(Self.canonicalModelName(name).utf8)] = .untrusted
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw CancellationError()
             } catch {
                 continue
             }
@@ -276,19 +301,38 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = try encoder.encode(OllamaShowRequest(model: name))
-        let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
-        let response = try decoder.decode(OllamaShowResponse.self, from: data)
+        let data: Data
+        do {
+            data = try await performBoundedDataRequest(endpoint: endpoint, request: urlRequest)
+        } catch OllamaCatalogIngestionError.responseTooLarge {
+            throw OllamaModelDetailsError.malformedResponse
+        }
+        let response: OllamaShowResponse
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            response = try decoder.decode(OllamaShowResponse.self, from: data)
+            guard ModelInfo.areValidCapabilities(response.capabilities) else {
+                throw OllamaCatalogValidationError.invalidCapabilities
+            }
+        } catch {
+            throw OllamaModelDetailsError.malformedResponse
+        }
         let capabilities = response.capabilities.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        }.filter { !$0.isEmpty }
+        }
+        guard ModelInfo.areValidCapabilities(capabilities) else {
+            throw OllamaModelDetailsError.malformedResponse
+        }
         return OllamaModelDetails(
             capabilities: capabilities,
             contextWindowTokens: response.contextWindowTokens
         )
     }
 
-    private static func modelDetails(for name: String, in detailsByName: [String: OllamaModelDetails]) -> OllamaModelDetails {
-        detailsByName[name] ?? detailsByName[canonicalModelName(name)] ?? OllamaModelDetails()
+    private static func modelDetails(for name: String, in detailsByName: [Data: OllamaModelDetails]) -> OllamaModelDetails {
+        detailsByName[Data(name.utf8)]
+            ?? detailsByName[Data(canonicalModelName(name).utf8)]
+            ?? OllamaModelDetails()
     }
 
     private static func canonicalModelName(_ name: String) -> String {
@@ -307,21 +351,148 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         if result.contains(where: { $0 == "vision" }) && !normalized.contains("chat") && !normalized.contains("completion") {
             result.append("chat")
         }
+        var uniqueCapabilityIdentities = Set<Data>()
         return result.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        }.filter { !$0.isEmpty }.reduce(into: [String]()) { unique, capability in
-            if !unique.contains(capability) {
-                unique.append(capability)
-            }
+        }.filter { capability in
+            !capability.isEmpty
+                && uniqueCapabilityIdentities.insert(Data(capability.utf8)).inserted
         }
     }
 
     private static func uniqueModelNames(_ names: [String]) -> [String] {
-        var seen: Set<String> = []
+        var seen: Set<Data> = []
         return names.filter { name in
-            guard !seen.contains(name) else { return false }
-            seen.insert(name)
+            let identity = Data(canonicalModelName(name).utf8)
+            guard !seen.contains(identity) else { return false }
+            seen.insert(identity)
             return true
+        }
+    }
+
+    private func decodeTagsResponse(_ data: Data, endpoint: String) throws -> OllamaTagsResponse {
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            let response = try decoder.decode(OllamaTagsResponse.self, from: data)
+            guard response.models.count <= ModelInfo.maximumCatalogModelCount else {
+                throw OllamaCatalogValidationError.tooManyModels
+            }
+            try Self.validateUniqueModelIdentities(response.models.map(\.name))
+            try response.models.forEach(Self.validateInstalledModel)
+            return response
+        } catch {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+    }
+
+    private func decodeRunningModelsResponse(
+        _ data: Data,
+        endpoint: String
+    ) throws -> OllamaRunningModelsResponse {
+        do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
+            let response = try decoder.decode(OllamaRunningModelsResponse.self, from: data)
+            guard response.models.count <= ModelInfo.maximumCatalogModelCount else {
+                throw OllamaCatalogValidationError.tooManyModels
+            }
+            try Self.validateUniqueModelIdentities(response.models.map(\.name))
+            try response.models.forEach(Self.validateRunningModel)
+            return response
+        } catch {
+            throw OllamaBackendError.responseDecoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+    }
+
+    private static func validateUniqueModelIdentities(_ names: [String]) throws {
+        var exactNames: Set<Data> = []
+        var canonicalNames: Set<Data> = []
+        for name in names {
+            guard exactNames.insert(Data(name.utf8)).inserted,
+                  canonicalNames.insert(Data(canonicalModelName(name).utf8)).inserted else {
+                throw OllamaCatalogValidationError.ambiguousModelIdentity
+            }
+        }
+    }
+
+    private static func validateInstalledModel(_ model: OllamaModel) throws {
+        let candidate = ModelInfo(
+            id: model.name,
+            name: model.name,
+            provider: .ollama,
+            providerModelID: model.name,
+            sizeBytes: model.size,
+            source: model.source,
+            remoteModel: model.remoteModel
+        )
+        try ModelInfo.validateForCatalogPublication(candidate)
+    }
+
+    private static func validateRunningModel(_ model: OllamaRunningModel) throws {
+        let candidate = ModelInfo(
+            id: model.name,
+            name: model.name,
+            provider: .ollama,
+            providerModelID: model.name,
+            sizeBytes: model.size,
+            source: model.source
+        )
+        try ModelInfo.validateForCatalogPublication(candidate)
+    }
+
+    private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
+        do {
+            return try await performBoundedDataRequest(endpoint: endpoint, request: URLRequest(url: url))
+        } catch OllamaCatalogIngestionError.responseTooLarge {
+            throw OllamaBackendError.responseDecoding(
+                endpoint: endpoint,
+                reason: "The provider response exceeds the supported byte limit."
+            )
+        }
+    }
+
+    private func performBoundedDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+        do {
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw OllamaBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
+            }
+            let isSuccess = (200..<300).contains(http.statusCode)
+            if http.expectedContentLength > Int64(catalogResponseByteLimit) {
+                if isSuccess {
+                    throw OllamaCatalogIngestionError.responseTooLarge
+                }
+                throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+            }
+
+            var data = Data()
+            data.reserveCapacity(min(catalogResponseByteLimit, 64 * 1_024))
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > catalogResponseByteLimit {
+                    if isSuccess {
+                        throw OllamaCatalogIngestionError.responseTooLarge
+                    }
+                    throw OllamaBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                }
+            }
+            try Self.validate(response, endpoint: endpoint, body: data)
+            return data
+        } catch let error as OllamaCatalogIngestionError {
+            throw error
+        } catch let error as OllamaBackendError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch let error as URLError {
+            throw OllamaBackendError.unreachable(
+                endpoint: endpoint,
+                baseURL: baseURL.absoluteString,
+                reason: error.localizedDescription
+            )
+        } catch {
+            throw OllamaBackendError.transport(endpoint: endpoint, reason: error.localizedDescription)
         }
     }
 
@@ -345,10 +516,6 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         } catch {
             throw OllamaBackendError.transport(endpoint: endpoint, reason: error.localizedDescription)
         }
-    }
-
-    private func performDataRequest(endpoint: String, url: URL) async throws -> Data {
-        try await performDataRequest(endpoint: endpoint, request: URLRequest(url: url))
     }
 
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
@@ -630,14 +797,41 @@ private struct OllamaModel: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = try container.decodeIfPresent(String.self, forKey: .name)
-            ?? container.decode(String.self, forKey: .model)
+        name = try Self.decodeModelIdentity(from: container)
         digest = try container.decodeIfPresent(String.self, forKey: .digest)
         size = try container.decodeIfPresent(Int64.self, forKey: .size)
         remoteModel = try container.decodeIfPresent(String.self, forKey: .remoteModel)
         remoteHost = try container.decodeIfPresent(String.self, forKey: .remoteHost)
         let modifiedAtString = try container.decodeIfPresent(String.self, forKey: .modifiedAt)
         modifiedAt = modifiedAtString.flatMap(Self.parseDate)
+    }
+
+    fileprivate static func decodeModelIdentity<Key: CodingKey>(
+        from container: KeyedDecodingContainer<Key>,
+        nameKey: Key,
+        modelKey: Key
+    ) throws -> String {
+        let name = try container.decodeIfPresent(String.self, forKey: nameKey)
+        let model = try container.decodeIfPresent(String.self, forKey: modelKey)
+        if let name, let model, Data(name.utf8) != Data(model.utf8) {
+            throw OllamaCatalogValidationError.ambiguousModelIdentity
+        }
+        guard let identity = name ?? model else {
+            throw DecodingError.keyNotFound(
+                nameKey,
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "Expected a model identity."
+                )
+            )
+        }
+        return identity
+    }
+
+    private static func decodeModelIdentity(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> String {
+        try decodeModelIdentity(from: container, nameKey: .name, modelKey: .model)
     }
 
     private static func parseDate(_ string: String) -> Date? {
@@ -685,11 +879,7 @@ private struct OllamaRunningModel: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let name = try container.decodeIfPresent(String.self, forKey: .name) {
-            self.name = name
-        } else {
-            self.name = try container.decode(String.self, forKey: .model)
-        }
+        name = try OllamaModel.decodeModelIdentity(from: container, nameKey: .name, modelKey: .model)
         size = try container.decodeIfPresent(Int64.self, forKey: .size)
             ?? container.decodeIfPresent(Int64.self, forKey: .sizeVRAM)
     }
@@ -744,6 +934,9 @@ private struct OllamaShowRequest: Encodable {
 private struct OllamaModelDetails {
     var capabilities: [String] = []
     var contextWindowTokens: Int?
+    var isTrusted = true
+
+    static let untrusted = OllamaModelDetails(isTrusted: false)
 
     var isEmpty: Bool {
         capabilities.isEmpty && contextWindowTokens == nil
@@ -768,62 +961,119 @@ private struct OllamaShowResponse: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
 
-        let directContextWindow = try Self.firstPositive(
-            container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
-            container.decodeIfPresent(Int.self, forKey: .contextLength),
-            container.decodeIfPresent(Int.self, forKey: .contextWindow),
-            container.decodeIfPresent(Int.self, forKey: .numCtx)
-        )
-        let modelInfo = try container.decodeIfPresent([String: FlexibleInt].self, forKey: .modelInfo)
-        let modelInfoContextWindow = Self.firstPositive(
-            modelInfo?["llama.context_length"]?.value,
-            modelInfo?["general.context_length"]?.value,
-            modelInfo?["context_length"]?.value,
-            modelInfo?["num_ctx"]?.value
-        )
-        let parameters = try container.decodeIfPresent(String.self, forKey: .parameters)
-        contextWindowTokens = directContextWindow
-            ?? modelInfoContextWindow
-            ?? Self.contextWindowTokens(fromParameters: parameters)
+        do {
+            var candidates = try Self.contextWindowValues(
+                in: container,
+                keys: [.contextWindowTokens, .contextLength, .contextWindow, .numCtx]
+            )
+            if container.contains(.modelInfo) {
+                let modelInfo = try container.nestedContainer(
+                    keyedBy: ModelInfoCodingKey.self,
+                    forKey: .modelInfo
+                )
+                candidates += try Self.contextWindowValues(
+                    in: modelInfo,
+                    keys: ModelInfoCodingKey.contextWindowKeys
+                )
+            }
+            if container.contains(.parameters) {
+                let parameters = try container.decode(String.self, forKey: .parameters)
+                candidates += try Self.contextWindowValues(fromParameters: parameters)
+            }
+            guard Set(candidates).count <= 1 else {
+                throw OllamaCatalogValidationError.conflictingContextWindowAliases
+            }
+            contextWindowTokens = candidates.first
+        } catch {
+            contextWindowTokens = nil
+        }
     }
 
-    private static func firstPositive(_ values: Int?...) -> Int? {
-        values.first { ($0 ?? 0) > 0 } ?? nil
+    private static func contextWindowValues<Key: CodingKey>(
+        in container: KeyedDecodingContainer<Key>,
+        keys: [Key]
+    ) throws -> [Int] {
+        try keys.compactMap { key in
+            guard container.contains(key) else { return nil }
+            let value = try container.decode(Decimal.self, forKey: key)
+            guard let validated = ModelInfo.validatedContextWindowTokens(decimal: value) else {
+                throw OllamaCatalogValidationError.invalidContextWindow
+            }
+            return validated
+        }
     }
 
-    private static func contextWindowTokens(fromParameters parameters: String?) -> Int? {
-        guard let parameters else { return nil }
+    private static func contextWindowValues(fromParameters parameters: String) throws -> [Int] {
+        var values: [Int] = []
         for line in parameters.split(whereSeparator: \.isNewline) {
             let parts = line.split { character in
                 character == " " || character == "\t" || character == "="
             }
-            guard parts.count >= 2 else { continue }
-            guard parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "num_ctx" else {
+            guard parts.first?.lowercased() == "num_ctx" else {
                 continue
             }
-            if let value = Int(parts[1]), value > 0 {
-                return value
+            guard parts.count == 2,
+                  parts[1].allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let value = Int(parts[1]),
+                  let validated = ModelInfo.validatedContextWindowTokens(value) else {
+                throw OllamaCatalogValidationError.invalidContextWindow
             }
+            values.append(validated)
         }
-        return nil
+        return values
     }
 }
 
-private struct FlexibleInt: Decodable {
-    var value: Int?
+private struct ModelInfoCodingKey: CodingKey, Hashable {
+    static let contextWindowKeys = [
+        Self(stringValue: "llama.context_length")!,
+        Self(stringValue: "general.context_length")!,
+        Self(stringValue: "context_length")!,
+        Self(stringValue: "num_ctx")!,
+    ]
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let int = try? container.decode(Int.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = Int(double)
-        } else if let string = try? container.decode(String.self) {
-            value = Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
-        } else {
-            value = nil
+    var stringValue: String
+    var intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
+private enum OllamaCatalogValidationError: Error, LocalizedError {
+    case ambiguousModelIdentity
+    case conflictingContextWindowAliases
+    case invalidCapabilities
+    case invalidContextWindow
+    case tooManyModels
+
+    var errorDescription: String? {
+        switch self {
+        case .ambiguousModelIdentity:
+            return "The provider returned an ambiguous model identity."
+        case .conflictingContextWindowAliases:
+            return "The provider returned conflicting context-window aliases."
+        case .invalidCapabilities:
+            return "The provider returned invalid model capabilities."
+        case .invalidContextWindow:
+            return "The provider returned an invalid context window."
+        case .tooManyModels:
+            return "The provider returned too many model rows."
         }
     }
+}
+
+private enum OllamaCatalogIngestionError: Error {
+    case responseTooLarge
+}
+
+private enum OllamaModelDetailsError: Error {
+    case malformedResponse
 }
 
 private struct OllamaChatRequest: Encodable {

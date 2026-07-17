@@ -64,6 +64,15 @@ public struct BackendError: Error, Equatable, LocalizedError, Sendable {
 }
 
 public struct ModelInfo: Identifiable, Equatable, Sendable {
+    public static let maximumCatalogModelCount = 256
+    public static let maximumCatalogResponseBytes = 4_194_304
+    public static let maximumModelIdentityCodePoints = 512
+    public static let maximumQualifiedModelIDCodePoints = 522
+    public static let maximumCapabilityCount = 32
+    public static let maximumCapabilityCodePoints = 128
+    public static let maximumContextWindowTokens = 16_777_216
+    public static let maximumSizeBytes = Int64.max
+
     public var id: String
     public var name: String
     public var provider: ModelProvider
@@ -112,6 +121,139 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         self.remoteHost = remoteHost
         self.contextWindowTokens = contextWindowTokens
         self.persistentEmbeddingRevision = persistentEmbeddingRevision
+    }
+
+    public static func validatedContextWindowTokens(_ value: Int?) -> Int? {
+        guard let value, (1...maximumContextWindowTokens).contains(value) else {
+            return nil
+        }
+        return value
+    }
+
+    public static func validatedContextWindowTokens(decimal value: Decimal) -> Int? {
+        guard value >= Decimal(1), value <= Decimal(maximumContextWindowTokens) else {
+            return nil
+        }
+        var candidate = value
+        var integral = Decimal()
+        NSDecimalRound(&integral, &candidate, 0, .down)
+        guard integral == value else {
+            return nil
+        }
+        return NSDecimalNumber(decimal: integral).intValue
+    }
+
+    public static func validateForCatalogPublication(_ model: ModelInfo) throws {
+        guard isValidRequiredModelIdentity(model.id) else {
+            throw ModelCatalogPublicationValidationError.invalidModelID
+        }
+        guard isValidRequiredModelIdentity(model.name) else {
+            throw ModelCatalogPublicationValidationError.invalidModelName
+        }
+        guard isValidRequiredModelIdentity(model.providerModelID) else {
+            throw ModelCatalogPublicationValidationError.invalidProviderModelID
+        }
+        if let remoteModel = model.remoteModel,
+           !isValidRequiredModelIdentity(remoteModel) {
+            throw ModelCatalogPublicationValidationError.invalidRemoteModel
+        }
+        guard areValidCapabilities(model.capabilities) else {
+            throw ModelCatalogPublicationValidationError.invalidCapabilities
+        }
+        if let contextWindowTokens = model.contextWindowTokens,
+           validatedContextWindowTokens(contextWindowTokens) == nil {
+            throw ModelCatalogPublicationValidationError.invalidContextWindow
+        }
+        if let sizeBytes = model.sizeBytes,
+           !(0...maximumSizeBytes).contains(sizeBytes) {
+            throw ModelCatalogPublicationValidationError.invalidSize
+        }
+    }
+
+    public static func validateQualifiedModelID(_ modelID: String) throws {
+        guard isNonblankBoundedString(modelID, maximumCodePoints: maximumQualifiedModelIDCodePoints) else {
+            throw ModelCatalogPublicationValidationError.invalidQualifiedModelID
+        }
+    }
+
+    public static func isValidRequiredModelIdentity(_ value: String) -> Bool {
+        isNonblankBoundedString(value, maximumCodePoints: maximumModelIdentityCodePoints)
+    }
+
+    public static func areValidCapabilities(_ capabilities: [String]) -> Bool {
+        guard capabilities.count <= maximumCapabilityCount else {
+            return false
+        }
+        var uniqueCapabilities = Set<Data>()
+        for capability in capabilities {
+            guard isNonblankBoundedString(
+                capability,
+                maximumCodePoints: maximumCapabilityCodePoints
+            ) else {
+                return false
+            }
+            guard uniqueCapabilities.insert(Data(capability.utf8)).inserted else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func isNonblankBoundedString(_ value: String, maximumCodePoints: Int) -> Bool {
+        value.unicodeScalars.count <= maximumCodePoints
+            && value.unicodeScalars.contains { !isCatalogBlankCodePoint($0.value) }
+    }
+
+    private static func isCatalogBlankCodePoint(_ value: UInt32) -> Bool {
+        switch value {
+        case 0x0009...0x000D,
+             0x0020,
+             0x0085,
+             0x00A0,
+             0x1680,
+             0x2000...0x200B,
+             0x2028,
+             0x2029,
+             0x202F,
+             0x205F,
+             0x3000,
+             0xFEFF:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+public enum ModelCatalogPublicationValidationError: Error, Equatable, LocalizedError, Sendable {
+    case invalidModelID
+    case invalidQualifiedModelID
+    case invalidModelName
+    case invalidProviderModelID
+    case invalidRemoteModel
+    case invalidCapabilities
+    case invalidContextWindow
+    case invalidSize
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidModelID:
+            return "The model catalog contains an invalid model identifier."
+        case .invalidQualifiedModelID:
+            return "The model catalog contains an invalid qualified model identifier."
+        case .invalidModelName:
+            return "The model catalog contains an invalid model name."
+        case .invalidProviderModelID:
+            return "The model catalog contains an invalid provider model identifier."
+        case .invalidRemoteModel:
+            return "The model catalog contains invalid remote-model metadata."
+        case .invalidCapabilities:
+            return "The model catalog contains invalid capability metadata."
+        case .invalidContextWindow:
+            return "The model catalog contains invalid context-window metadata."
+        case .invalidSize:
+            return "The model catalog contains invalid model-size metadata."
+        }
     }
 }
 

@@ -10006,8 +10006,17 @@ class RuntimeClientViewModelTest {
                 it.type == MessageType.MemorySummaryDraftsList
             }
 
+            suspend fun requestNextRuntimeHealthId(): String {
+                fixture.viewModel.requestRuntimeHealth()
+                advanceUntilIdle()
+                return fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.RuntimeHealth
+                }.requestId
+            }
+
             fun assertRuntimeHealthStateUnchanged() {
                 val state = fixture.viewModel.state.value
+                assertNull(fixture.viewModel.privateField<Any>("pendingRuntimeHealthRequest"))
                 assertEquals(initialRuntimeStatus, state.runtimeStatus)
                 assertEquals(initialBackendAvailable, state.backendAvailable)
                 assertEquals(initialBackendCode, state.backendCode)
@@ -10025,10 +10034,11 @@ class RuntimeClientViewModelTest {
                 )
             }
 
+            val topLevelRequestId = requestNextRuntimeHealthId()
             fixture.channel.enqueue(
                 ProtocolEnvelope(
                     type = MessageType.RuntimeHealth,
-                    requestId = "runtime-health-unknown-top-level",
+                    requestId = topLevelRequestId,
                     payload = json.parseToJsonElement(
                         """
                             {
@@ -10047,10 +10057,11 @@ class RuntimeClientViewModelTest {
             assertTrue(rejectedTopLevelState.error?.technicalDetail.orEmpty().contains("backend_url"))
             assertRuntimeHealthStateUnchanged()
 
+            val providerRequestId = requestNextRuntimeHealthId()
             fixture.channel.enqueue(
                 ProtocolEnvelope(
                     type = MessageType.RuntimeHealth,
-                    requestId = "runtime-health-unknown-provider",
+                    requestId = providerRequestId,
                     payload = json.parseToJsonElement(
                         """
                             {
@@ -10072,10 +10083,11 @@ class RuntimeClientViewModelTest {
             assertTrue(rejectedProviderState.error?.technicalDetail.orEmpty().contains("ollama.provider_url"))
             assertRuntimeHealthStateUnchanged()
 
+            val residencyRequestId = requestNextRuntimeHealthId()
             fixture.channel.enqueue(
                 ProtocolEnvelope(
                     type = MessageType.RuntimeHealth,
-                    requestId = "runtime-health-unknown-residency",
+                    requestId = residencyRequestId,
                     payload = json.parseToJsonElement(
                         """
                             {
@@ -10098,10 +10110,11 @@ class RuntimeClientViewModelTest {
             assertTrue(rejectedResidencyState.error?.technicalDetail.orEmpty().contains("model_residency.workspace_id"))
             assertRuntimeHealthStateUnchanged()
 
+            val nestedRequestId = requestNextRuntimeHealthId()
             fixture.channel.enqueue(
                 ProtocolEnvelope(
                     type = MessageType.RuntimeHealth,
-                    requestId = "runtime-health-unknown-residency-failure",
+                    requestId = nestedRequestId,
                     payload = json.parseToJsonElement(
                         """
                             {
@@ -10132,6 +10145,7 @@ class RuntimeClientViewModelTest {
             )
             assertRuntimeHealthStateUnchanged()
 
+            val canonicalRequestId = requestNextRuntimeHealthId()
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
@@ -10152,7 +10166,7 @@ class RuntimeClientViewModelTest {
                             idleUnloadDelaySeconds = 60,
                         ),
                     ),
-                    requestId = "runtime-health-canonical-retry",
+                    requestId = canonicalRequestId,
                 ),
             )
             advanceUntilIdle()
@@ -10191,6 +10205,557 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun runtimeHealthPublishesOnlyLatestCurrentRequestOnce() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last {
+                        it.type == MessageType.ChatSessionsList
+                    }.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last {
+                        it.type == MessageType.MemoryList
+                    }.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemorySummaryDraftsList,
+                    serializer = MemorySummaryDraftsListResultPayload.serializer(),
+                    payload = MemorySummaryDraftsListResultPayload(drafts = emptyList()),
+                    requestId = fixture.channel.sentEnvelopes.last {
+                        it.type == MessageType.MemorySummaryDraftsList
+                    }.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val initialStatus = fixture.viewModel.state.value.runtimeStatus
+            val initialModelsRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ModelsList
+            }
+            val initialChatSessionsRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            val initialMemoryRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryList
+            }
+            val initialMemorySummaryRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            val initialResearchRequests = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            val supersededRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+            assertTrue(supersededRequest.requestId.startsWith("runtime-health-"))
+            assertTrue(currentRequest.requestId.startsWith("runtime-health-"))
+            assertNotEquals(supersededRequest.requestId, currentRequest.requestId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "unavailable"),
+                    requestId = supersededRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(initialStatus, fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                initialModelsRequests,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(
+                        status = "degraded",
+                        ollama = RuntimeBackendStatusPayload(
+                            available = false,
+                            code = "backend_unavailable",
+                        ),
+                    ),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals(false, fixture.viewModel.state.value.backendAvailable)
+            assertEquals("backend_unavailable", fixture.viewModel.state.value.backendCode)
+            assertEquals(
+                initialModelsRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
+            assertEquals(
+                initialChatSessionsRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            assertEquals(
+                initialMemoryRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+            assertEquals(
+                initialMemorySummaryRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            assertEquals(
+                initialResearchRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "unavailable"),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals(
+                initialModelsRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ModelsList },
+            )
+            assertEquals(
+                initialChatSessionsRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            assertEquals(
+                initialMemoryRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+            assertEquals(
+                initialMemorySummaryRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+            assertEquals(
+                initialResearchRequests + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeHealthRejectsWrongChannelConnectionAndReauthenticatedAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            val oldRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+            val oldConnectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val oldAuthorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val initialStatus = fixture.viewModel.state.value.runtimeStatus
+            val candidateResponse = envelope(
+                type = MessageType.RuntimeHealth,
+                serializer = RuntimeHealthPayload.serializer(),
+                payload = RuntimeHealthPayload(status = "unavailable"),
+                requestId = oldRequest.requestId,
+            )
+
+            fixture.viewModel.handleRuntimeHealthForTest(
+                envelope = candidateResponse,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = oldConnectionGeneration,
+            )
+            fixture.viewModel.handleRuntimeHealthForTest(
+                envelope = candidateResponse,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = oldConnectionGeneration - 1L,
+            )
+
+            assertEquals(initialStatus, fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                oldRequest.requestId,
+                fixture.viewModel.pendingRuntimeHealthRequestIdForTest(),
+            )
+
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                oldAuthorityGeneration + 1L,
+            )
+            fixture.viewModel.handleRuntimeHealthForTest(
+                envelope = candidateResponse,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = oldConnectionGeneration,
+            )
+            assertEquals(initialStatus, fixture.viewModel.state.value.runtimeStatus)
+            assertEquals(
+                oldRequest.requestId,
+                fixture.viewModel.pendingRuntimeHealthRequestIdForTest(),
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                oldAuthorityGeneration,
+            )
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "runtime-health-same-channel-reauth",
+            )
+            runCurrent()
+
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+            val currentConnectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val currentAuthorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            assertNotEquals(oldRequest.requestId, currentRequest.requestId)
+            assertTrue(currentRequest.requestId.startsWith("runtime-health-"))
+            assertEquals(oldConnectionGeneration, currentConnectionGeneration)
+            assertNotEquals(oldAuthorityGeneration, currentAuthorityGeneration)
+            assertEquals(
+                currentRequest.requestId,
+                fixture.viewModel.pendingRuntimeHealthRequestIdForTest(),
+            )
+
+            fixture.viewModel.handleRuntimeHealthForTest(
+                envelope = candidateResponse,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = currentConnectionGeneration,
+            )
+
+            assertEquals("authenticated", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                currentRequest.requestId,
+                fixture.viewModel.pendingRuntimeHealthRequestIdForTest(),
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "degraded"),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeHealthExactCurrentTerminalsCloseBeforeDuplicateAndRetry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+
+            suspend fun requestNextRuntimeHealth(): ProtocolEnvelope {
+                fixture.viewModel.requestRuntimeHealth()
+                advanceUntilIdle()
+                return fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.RuntimeHealth
+                }.also { request ->
+                    assertTrue(request.requestId.startsWith("runtime-health-"))
+                    assertEquals(
+                        request.requestId,
+                        fixture.viewModel.pendingRuntimeHealthRequestIdForTest(),
+                    )
+                }
+            }
+
+            val errorRequest = requestNextRuntimeHealth()
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_unavailable",
+                        message = "Current health request failed",
+                        retryable = true,
+                    ),
+                    requestId = errorRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("backend_unavailable", fixture.viewModel.state.value.error?.code)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "unavailable"),
+                    requestId = errorRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("ok", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals("backend_unavailable", fixture.viewModel.state.value.error?.code)
+
+            val postErrorRetry = requestNextRuntimeHealth()
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "degraded"),
+                    requestId = postErrorRetry.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+
+            val malformedRequest = requestNextRuntimeHealth()
+            fixture.channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.RuntimeHealth,
+                    requestId = malformedRequest.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"status":42}""",
+                    ).jsonObject,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "ok"),
+                    requestId = malformedRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+
+            val postMalformedRetry = requestNextRuntimeHealth()
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "ok"),
+                    requestId = postMalformedRetry.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("ok", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.RuntimeHealth) {
+                    afterSend = null
+                    throw IllegalStateException("current runtime health send failure")
+                }
+            }
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            val failedSendRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+
+            assertTrue(failedSendRequest.requestId.startsWith("runtime-health-"))
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "unavailable"),
+                    requestId = failedSendRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("ok", fixture.viewModel.state.value.runtimeStatus)
+            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+
+            val postSendFailureRetry = requestNextRuntimeHealth()
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "degraded"),
+                    requestId = postSendFailureRetry.requestId,
+                ),
+            )
+            advanceUntilIdle()
+            assertNull(fixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeHealthClearsPendingOnDisconnectRevocationAndViewModelClear() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val disconnectFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            disconnectFixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            assertNotNull(disconnectFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            disconnectFixture.viewModel.disconnect()
+            assertNull(disconnectFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            advanceUntilIdle()
+            disconnectFixture.viewModel.clearForTest()
+
+            val revocationFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            revocationFixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            assertNotNull(revocationFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            revocationFixture.viewModel.revokeAuthenticatedRuntimeSessionStateForTest()
+            assertNull(revocationFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            assertFalse(
+                revocationFixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true,
+            )
+            revocationFixture.viewModel.clearForTest()
+
+            val clearedFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            clearedFixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            assertNotNull(clearedFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            clearedFixture.viewModel.clearForTest()
+            assertNull(clearedFixture.viewModel.pendingRuntimeHealthRequestIdForTest())
+            advanceUntilIdle()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeHealthIgnoresSupersededErrorAndDelayedSendFailure() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            var supersededRequest: ProtocolEnvelope? = null
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.RuntimeHealth) {
+                    afterSend = null
+                    supersededRequest = sent
+                    fixture.viewModel.requestRuntimeHealth()
+                    throw IllegalStateException("delayed runtime health send failure")
+                }
+            }
+
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+
+            val staleRequest = requireNotNull(supersededRequest)
+            val currentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
+            assertNotEquals(staleRequest.requestId, currentRequest.requestId)
+            assertEquals("ok", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "superseded health request",
+                        retryable = false,
+                    ),
+                    requestId = staleRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(fixture.viewModel.state.value.isConnected)
+            assertEquals("ok", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(status = "degraded"),
+                    requestId = currentRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("degraded", fixture.viewModel.state.value.runtimeStatus)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -10201,6 +10766,11 @@ class RuntimeClientViewModelTest {
                 selectedModelId = selectedModel.id,
             )
 
+            fixture.viewModel.requestRuntimeHealth()
+            advanceUntilIdle()
+            val runtimeHealthRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
             fixture.channel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
@@ -10220,7 +10790,7 @@ class RuntimeClientViewModelTest {
                             ),
                         ),
                     ),
-                    requestId = "runtime-health-residency",
+                    requestId = runtimeHealthRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -15118,6 +15688,676 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            runCurrent()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.IndexDocumentsList
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val currentResult = envelope(
+                type = MessageType.IndexDocumentsList,
+                serializer = IndexDocumentsListResultPayload.serializer(),
+                payload = IndexDocumentsListResultPayload(
+                    documents = listOf(
+                        RuntimeDocumentIndexDocumentPayload(
+                            id = "doc-exact-catalog-authority",
+                            displayName = "Exact Catalog Authority.md",
+                            mimeType = "text/markdown",
+                            contentFingerprint = "0011223344556677",
+                            extractedCharacterCount = 512,
+                            chunkCount = 2,
+                            quality = "chunked",
+                        ),
+                    ),
+                    summary = IndexDocumentsSummaryPayload(
+                        documentCount = 1,
+                        chunkCount = 2,
+                        extractedCharacterCount = 512,
+                        qualityCounts = IndexDocumentsQualityCountsPayload(
+                            noUsableText = 0,
+                            singleChunk = 0,
+                            chunked = 1,
+                        ),
+                    ),
+                ),
+                requestId = request.requestId,
+            )
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = currentResult,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration - 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                envelope = envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Prior-auth catalog error.",
+                        retryable = false,
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+            assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertTrue(fixture.viewModel.state.value.documentCatalog.documents.isEmpty())
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertEquals(
+                listOf("doc-exact-catalog-authority"),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.id },
+            )
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = envelope(
+                    type = MessageType.IndexDocumentsList,
+                    serializer = IndexDocumentsListResultPayload.serializer(),
+                    payload = IndexDocumentsListResultPayload(
+                        documents = listOf(
+                            RuntimeDocumentIndexDocumentPayload(
+                                id = "doc-duplicate-catalog",
+                                displayName = "Duplicate Catalog.md",
+                                mimeType = "text/markdown",
+                                contentFingerprint = "8899aabbccddeeff",
+                                extractedCharacterCount = 128,
+                                chunkCount = 1,
+                                quality = "single_chunk",
+                            ),
+                        ),
+                        summary = IndexDocumentsSummaryPayload(
+                            documentCount = 1,
+                            chunkCount = 1,
+                            extractedCharacterCount = 128,
+                            qualityCounts = IndexDocumentsQualityCountsPayload(
+                                noUsableText = 0,
+                                singleChunk = 1,
+                                chunked = 0,
+                            ),
+                        ),
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertEquals(
+                listOf("doc-exact-catalog-authority"),
+                fixture.viewModel.state.value.documentCatalog.documents.map { it.id },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert() =
+        runTest {
+            val mainDispatcher = StandardTestDispatcher(testScheduler)
+            Dispatchers.setMain(mainDispatcher)
+            try {
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    redactRuntimeOwnedLocalDataOnSave = true,
+                )
+                fixture.viewModel.refreshRuntimeDocumentCatalog()
+                runCurrent()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.IndexDocumentsList
+                }
+                val connectionGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+                )
+                val authorityGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+                )
+                val currentError = envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "document_index_unavailable",
+                        message = "Document catalog is unavailable.",
+                        retryable = false,
+                    ),
+                    requestId = request.requestId,
+                )
+
+                fixture.viewModel.handleErrorForTest(
+                    envelope = currentError,
+                    sourceChannel = ScriptedRuntimeProtocolChannel(),
+                    sourceConnectionGeneration = connectionGeneration,
+                )
+                fixture.viewModel.handleErrorForTest(
+                    envelope = currentError,
+                    sourceChannel = fixture.channel,
+                    sourceConnectionGeneration = connectionGeneration - 1L,
+                )
+                fixture.viewModel.setPrivateField(
+                    "runtimeSessionAuthorityGeneration",
+                    authorityGeneration + 1L,
+                )
+                fixture.viewModel.handleErrorForTest(
+                    envelope = currentError,
+                    sourceChannel = fixture.channel,
+                    sourceConnectionGeneration = connectionGeneration,
+                )
+                fixture.viewModel.setPrivateField(
+                    "runtimeSessionAuthorityGeneration",
+                    authorityGeneration,
+                )
+
+                assertEquals(
+                    request.requestId,
+                    fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                        "pendingDocumentCatalogRequest",
+                    ),
+                )
+                assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+                assertNull(fixture.viewModel.state.value.error)
+
+                fixture.viewModel.handleErrorForTest(
+                    envelope = currentError,
+                    sourceChannel = fixture.channel,
+                    sourceConnectionGeneration = connectionGeneration,
+                )
+
+                assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+                assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+                assertEquals(
+                    "document_catalog_load_failed",
+                    fixture.viewModel.state.value.error?.code,
+                )
+
+                fixture.viewModel.refreshRuntimeDocumentCatalog()
+                runCurrent()
+                val retry = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.IndexDocumentsList
+                }
+                assertNotEquals(request.requestId, retry.requestId)
+                assertNull(fixture.viewModel.state.value.error)
+
+                fixture.viewModel.handleErrorForTest(
+                    envelope = currentError,
+                    sourceChannel = fixture.channel,
+                    sourceConnectionGeneration = connectionGeneration,
+                )
+                fixture.viewModel.handleRuntimeDocumentResultForTest(
+                    methodName = "handleIndexDocumentsList",
+                    envelope = envelope(
+                        type = MessageType.IndexDocumentsList,
+                        serializer = IndexDocumentsListResultPayload.serializer(),
+                        payload = IndexDocumentsListResultPayload(
+                            documents = emptyList(),
+                            summary = IndexDocumentsSummaryPayload(
+                                documentCount = 0,
+                                chunkCount = 0,
+                                extractedCharacterCount = 0,
+                                qualityCounts = IndexDocumentsQualityCountsPayload(
+                                    noUsableText = 0,
+                                    singleChunk = 0,
+                                    chunked = 0,
+                                ),
+                            ),
+                        ),
+                        requestId = request.requestId,
+                    ),
+                    sourceChannel = fixture.channel,
+                    sourceConnectionGeneration = connectionGeneration,
+                )
+
+                assertEquals(
+                    retry.requestId,
+                    fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                        "pendingDocumentCatalogRequest",
+                    ),
+                )
+                assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+                assertNull(fixture.viewModel.state.value.error)
+
+                fixture.channel.enqueue(
+                    envelope(
+                        type = MessageType.IndexDocumentsList,
+                        serializer = IndexDocumentsListResultPayload.serializer(),
+                        payload = IndexDocumentsListResultPayload(
+                            documents = emptyList(),
+                            summary = IndexDocumentsSummaryPayload(
+                                documentCount = 0,
+                                chunkCount = 0,
+                                extractedCharacterCount = 0,
+                                qualityCounts = IndexDocumentsQualityCountsPayload(
+                                    noUsableText = 0,
+                                    singleChunk = 0,
+                                    chunked = 0,
+                                ),
+                            ),
+                        ),
+                        requestId = retry.requestId,
+                    ),
+                )
+                advanceUntilIdle()
+
+                assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+                assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+                assertNull(fixture.viewModel.state.value.error)
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            fixture.channel.sendFailure = IllegalStateException("catalog send failed")
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            val failedRequestId = requireNotNull(
+                fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                    "pendingDocumentCatalogRequest",
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            runCurrent()
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertEquals(
+                "document_catalog_load_failed",
+                fixture.viewModel.state.value.error?.code,
+            )
+
+            fixture.channel.sendFailure = null
+            fixture.viewModel.refreshRuntimeDocumentCatalog()
+            runCurrent()
+            val retry = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.IndexDocumentsList
+            }
+            assertNotEquals(failedRequestId, retry.requestId)
+
+            val lateResult = envelope(
+                type = MessageType.IndexDocumentsList,
+                serializer = IndexDocumentsListResultPayload.serializer(),
+                payload = IndexDocumentsListResultPayload(
+                    documents = emptyList(),
+                    summary = IndexDocumentsSummaryPayload(
+                        documentCount = 0,
+                        chunkCount = 0,
+                        extractedCharacterCount = 0,
+                        qualityCounts = IndexDocumentsQualityCountsPayload(
+                            noUsableText = 0,
+                            singleChunk = 0,
+                            chunked = 0,
+                        ),
+                    ),
+                ),
+                requestId = failedRequestId,
+            )
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleIndexDocumentsList",
+                envelope = lateResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                envelope = envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Late failed-request error.",
+                        retryable = false,
+                    ),
+                    requestId = failedRequestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertEquals(
+                retry.requestId,
+                fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                    "pendingDocumentCatalogRequest",
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(lateResult.copy(requestId = retry.requestId))
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+            assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            fixture.viewModel.searchRuntimeDocuments("exact search authority")
+            runCurrent()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RetrievalQuery
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val document = RuntimeDocumentIndexDocumentPayload(
+                id = "doc-exact-search-authority",
+                displayName = "Exact Search Authority.md",
+                mimeType = "text/markdown",
+                contentFingerprint = "1234567890abcdef",
+                extractedCharacterCount = 1024,
+                chunkCount = 4,
+                quality = "chunked",
+            )
+            val currentResult = envelope(
+                type = MessageType.RetrievalQuery,
+                serializer = RetrievalQueryResultPayload.serializer(),
+                payload = RetrievalQueryResultPayload(
+                    results = listOf(
+                        RetrievalQueryResultItemPayload(
+                            document = document,
+                            chunkIndex = 1,
+                            startCharacterOffset = 10,
+                            endCharacterOffset = 80,
+                            rank = 1,
+                            matchedTerms = listOf("exact", "authority"),
+                            snippet = "Exact current search result",
+                            sourceAnchorId = "source_anchor_1234567890abcdef",
+                        ),
+                    ),
+                ),
+                requestId = request.requestId,
+            )
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleRetrievalQuery",
+                envelope = currentResult,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleRetrievalQuery",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration - 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleRetrievalQuery",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                envelope = envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Prior-auth search error.",
+                        retryable = false,
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertNotNull(fixture.viewModel.privateField<Any>("pendingDocumentSearchRequest"))
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+            assertTrue(fixture.viewModel.state.value.documentSearchResults.isEmpty())
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleRetrievalQuery",
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingDocumentSearchRequest"))
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals(
+                listOf("Exact current search result"),
+                fixture.viewModel.state.value.documentSearchResults.map { it.snippet },
+            )
+
+            fixture.viewModel.handleRuntimeDocumentResultForTest(
+                methodName = "handleRetrievalQuery",
+                envelope = envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(
+                        results = listOf(
+                            RetrievalQueryResultItemPayload(
+                                document = document.copy(id = "doc-duplicate-search"),
+                                chunkIndex = 2,
+                                startCharacterOffset = 20,
+                                endCharacterOffset = 90,
+                                rank = 1,
+                                matchedTerms = listOf("duplicate"),
+                                snippet = "Duplicate search result must stay inert",
+                                sourceAnchorId = "source_anchor_fedcba0987654321",
+                            ),
+                        ),
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertEquals(
+                listOf("Exact current search result"),
+                fixture.viewModel.state.value.documentSearchResults.map { it.snippet },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun delayedOldDocumentSendFailureCannotCloseReplacementRequest() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val oldSendStarted = CompletableDeferred<Unit>()
+            val releaseOldSendFailure = CompletableDeferred<Unit>()
+            var oldRequestId: String? = null
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.RetrievalQuery && oldRequestId == null) {
+                    oldRequestId = sent.requestId
+                    oldSendStarted.complete(Unit)
+                    releaseOldSendFailure.await()
+                    throw IllegalStateException("delayed old document send failure")
+                }
+            }
+
+            fixture.viewModel.searchRuntimeDocuments("old document request")
+            runCurrent()
+            assertTrue(oldSendStarted.isCompleted)
+
+            fixture.viewModel.searchRuntimeDocuments(" ")
+            fixture.viewModel.searchRuntimeDocuments("replacement document request")
+            runCurrent()
+            val replacementRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.RetrievalQuery
+            }
+            assertNotEquals(oldRequestId, replacementRequest.requestId)
+            assertEquals(
+                replacementRequest.requestId,
+                fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                    "pendingDocumentSearchRequest",
+                ),
+            )
+
+            releaseOldSendFailure.complete(Unit)
+            advanceUntilIdle()
+            fixture.channel.afterSend = null
+
+            assertEquals(
+                replacementRequest.requestId,
+                fixture.viewModel.pendingRuntimeDocumentRequestIdForTest(
+                    "pendingDocumentSearchRequest",
+                ),
+            )
+            assertTrue(fixture.viewModel.state.value.isSearchingDocuments)
+            assertEquals("replacement document request", fixture.viewModel.state.value.documentSearchQuery)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RetrievalQuery,
+                    serializer = RetrievalQueryResultPayload.serializer(),
+                    payload = RetrievalQueryResultPayload(results = emptyList()),
+                    requestId = replacementRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingDocumentSearchRequest"))
+            assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            suspend fun createFixtureWithPendingDocumentRequests(): RuntimeClientFixture {
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    redactRuntimeOwnedLocalDataOnSave = true,
+                )
+                fixture.viewModel.refreshRuntimeDocumentCatalog()
+                fixture.viewModel.searchRuntimeDocuments("pending authority")
+                runCurrent()
+                assertNotNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+                assertNotNull(fixture.viewModel.privateField<Any>("pendingDocumentSearchRequest"))
+                return fixture
+            }
+
+            fun assertPendingDocumentAuthorityCleared(fixture: RuntimeClientFixture) {
+                assertNull(fixture.viewModel.privateField<Any>("pendingDocumentCatalogRequest"))
+                assertNull(fixture.viewModel.privateField<Any>("pendingDocumentSearchRequest"))
+                assertFalse(fixture.viewModel.state.value.isLoadingDocumentCatalog)
+                assertFalse(fixture.viewModel.state.value.isSearchingDocuments)
+            }
+
+            val disconnectedFixture = createFixtureWithPendingDocumentRequests()
+            disconnectedFixture.viewModel.disconnect()
+            runCurrent()
+            assertPendingDocumentAuthorityCleared(disconnectedFixture)
+
+            val revokedFixture = createFixtureWithPendingDocumentRequests()
+            revokedFixture.viewModel.revokeAuthenticatedRuntimeSessionStateForTest()
+            runCurrent()
+            assertPendingDocumentAuthorityCleared(revokedFixture)
+            revokedFixture.viewModel.clearForTest()
+
+            val clearedFixture = createFixtureWithPendingDocumentRequests()
+            clearedFixture.viewModel.clearForTest()
+            runCurrent()
+            assertPendingDocumentAuthorityCleared(clearedFixture)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -19034,6 +20274,7 @@ class RuntimeClientViewModelTest {
             val initialMemoryRequest = fixture.channel.sentEnvelopes.last {
                 it.type == MessageType.MemoryList
             }
+            assertTrue(initialMemoryRequest.requestId.startsWith("memory-list-"))
 
             fun assertExistingMemoryPreserved() {
                 assertEquals(
@@ -19373,13 +20614,40 @@ class RuntimeClientViewModelTest {
                     payload = MemoryUpsertResultPayload(
                         entry = MemoryEntryPayload(
                             id = "canonical-upsert-memory",
-                            content = "Canonical upsert memory",
+                            content = "New runtime memory",
                             enabled = true,
                             createdAt = "2026-06-25T00:00:00Z",
                             updatedAt = "2026-06-25T00:01:00Z",
                         ),
                     ),
                     requestId = upsertRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertExistingMemoryPreserved()
+
+            fixture.viewModel.addMemoryEntry("Canonical upsert memory")
+            advanceUntilIdle()
+            val replacementUpsertRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertNotEquals(upsertRequest.requestId, replacementUpsertRequest.requestId)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "canonical-upsert-memory",
+                            content = "Canonical upsert memory",
+                            enabled = true,
+                            createdAt = "2026-06-25T00:00:00Z",
+                            updatedAt = "2026-06-25T00:01:00Z",
+                        ),
+                    ),
+                    requestId = replacementUpsertRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -19485,11 +20753,972 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertDeleteTargetPreserved()
+
+            fixture.viewModel.removeMemoryEntry("delete-target")
+            advanceUntilIdle()
+            val replacementDeleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertNotEquals(deleteRequest.requestId, replacementDeleteRequest.requestId)
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "delete-target",
+                        deletedAt = "2026-06-25T00:01:00Z",
+                    ),
+                    requestId = replacementDeleteRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
             val acceptedState = fixture.viewModel.state.value
             assertNull(acceptedState.error)
             assertEquals(listOf("Keep memory"), acceptedState.memoryEntries.map { it.content })
             assertEquals(listOf("Keep memory"), fixture.localStore.data.memoryEntries.map { it.content })
         } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = PersistedRuntimeData(
+                    memoryEntries = listOf(
+                        PersistedMemoryEntry(
+                            id = "existing-memory",
+                            content = "Existing memory",
+                            enabled = true,
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                        ),
+                    ),
+                ),
+            )
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            fun upsertResult(
+                requestId: String,
+                content: String,
+                id: String = "authority-memory",
+            ): ProtocolEnvelope {
+                return envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = id,
+                            content = content,
+                            enabled = true,
+                            createdAt = "2026-06-25T00:00:00Z",
+                            updatedAt = "2026-06-25T00:01:00Z",
+                        ),
+                    ),
+                    requestId = requestId,
+                )
+            }
+            fun assertExistingMemoryOnly() {
+                assertEquals(
+                    listOf("Existing memory"),
+                    fixture.localStore.data.memoryEntries.map { it.content },
+                )
+            }
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = "memory-upsert-unsolicited",
+                    content = "Unsolicited memory",
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertExistingMemoryOnly()
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.addMemoryEntry("Authority-bound memory")
+            runCurrent()
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryUpsert }
+            val requestCount = fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert }
+            assertTrue(request.requestId.startsWith("memory-upsert-"))
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+
+            fixture.viewModel.addMemoryEntry("Authority-bound memory")
+            runCurrent()
+            assertEquals(
+                requestCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert },
+            )
+
+            val exactResult = upsertResult(request.requestId, "Authority-bound memory")
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = exactResult,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = exactResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration + 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = exactResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertExistingMemoryOnly()
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(request.requestId, "Tampered memory"),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertExistingMemoryOnly()
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = exactResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertExistingMemoryOnly()
+
+            fixture.viewModel.addMemoryEntry("Authority-bound memory")
+            runCurrent()
+            val replacementRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertNotEquals(request.requestId, replacementRequest.requestId)
+            val replacementResult = upsertResult(
+                requestId = replacementRequest.requestId,
+                content = "Authority-bound memory",
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = replacementResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertNull(fixture.viewModel.state.value.error)
+            assertEquals(
+                listOf("Authority-bound memory", "Existing memory"),
+                fixture.localStore.data.memoryEntries.map { it.content },
+            )
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = replacementResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(
+                1,
+                fixture.localStore.data.memoryEntries.count { it.id == "authority-memory" },
+            )
+
+            fun deleteResult(requestId: String, id: String = "existing-memory"): ProtocolEnvelope {
+                return envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = id,
+                        deletedAt = "2026-06-25T00:02:00Z",
+                    ),
+                    requestId = requestId,
+                )
+            }
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = deleteResult("memory-delete-unsolicited"),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+
+            val deleteCountBefore = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryDelete
+            }
+            val upsertCountBefore = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryUpsert
+            }
+            fixture.viewModel.removeMemoryEntry("existing-memory")
+            runCurrent()
+            val firstDeleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            fixture.viewModel.setMemoryEntryEnabled("existing-memory", enabled = false)
+            fixture.viewModel.removeMemoryEntry("existing-memory")
+            runCurrent()
+            assertEquals(
+                deleteCountBefore + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryDelete },
+            )
+            assertEquals(
+                upsertCountBefore,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert },
+            )
+
+            fixture.viewModel.addMemoryEntry("Independent target memory")
+            runCurrent()
+            val independentRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = independentRequest.requestId,
+                    content = "Independent target memory",
+                    id = "independent-memory",
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+
+            val exactDeleteResult = deleteResult(firstDeleteRequest.requestId)
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = exactDeleteResult,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = exactDeleteResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration + 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = exactDeleteResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = upsertResult(
+                    requestId = firstDeleteRequest.requestId,
+                    content = "Existing memory",
+                    id = "existing-memory",
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+
+            fixture.viewModel.removeMemoryEntry("existing-memory")
+            runCurrent()
+            val mismatchedDeleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertNotEquals(firstDeleteRequest.requestId, mismatchedDeleteRequest.requestId)
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = exactDeleteResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = deleteResult(mismatchedDeleteRequest.requestId, id = "authority-memory"),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+
+            fixture.viewModel.removeMemoryEntry("existing-memory")
+            runCurrent()
+            val finalDeleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            val finalDeleteResult = deleteResult(finalDeleteRequest.requestId)
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = finalDeleteResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertNull(fixture.viewModel.state.value.error)
+            assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = finalDeleteResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertFalse(fixture.localStore.data.memoryEntries.any { it.id == "existing-memory" })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = PersistedRuntimeData(
+                    memoryEntries = listOf(
+                        PersistedMemoryEntry(
+                            id = "delete-target",
+                            content = "Delete target memory",
+                            enabled = true,
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                        ),
+                    ),
+                ),
+            )
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            fun runtimeError(requestId: String, code: String): ProtocolEnvelope {
+                return envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = code,
+                        message = "Synthetic memory mutation error.",
+                        retryable = false,
+                    ),
+                    requestId = requestId,
+                )
+            }
+
+            fixture.viewModel.addMemoryEntry("Error-bound memory")
+            runCurrent()
+            val request = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryUpsert }
+            val authenticationError = runtimeError(request.requestId, "authentication_required")
+
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                ScriptedRuntimeProtocolChannel(),
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration + 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleErrorForTest(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = request.requestId,
+                    payload = buildJsonObject {
+                        put("code", "memory_store_unavailable")
+                        put("message", "Malformed terminal error.")
+                        put("retryable", true)
+                        put("backend_url", "http://127.0.0.1:11434")
+                    },
+                ),
+                fixture.channel,
+                connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.viewModel.addMemoryEntry("Independent memory")
+            fixture.viewModel.removeMemoryEntry("delete-target")
+            runCurrent()
+            val upsertRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            val deleteRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())
+
+            val ordinaryError = runtimeError(upsertRequest.requestId, "memory_store_unavailable")
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("memory_store_unavailable", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                listOf("Delete target memory"),
+                fixture.localStore.data.memoryEntries.map { it.content },
+            )
+
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+
+            fixture.viewModel.addMemoryEntry("Independent memory")
+            runCurrent()
+            val retryUpsertRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertNotEquals(upsertRequest.requestId, retryUpsertRequest.requestId)
+            assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())
+
+            fixture.viewModel.handleErrorForTest(
+                runtimeError(deleteRequest.requestId, "authentication_required"),
+                fixture.channel,
+                connectionGeneration,
+            )
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals("pairing_required", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                listOf("Delete target memory"),
+                fixture.localStore.data.memoryEntries.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val fixtures = mutableListOf<RuntimeClientFixture>()
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memoryMutationRequestTimeoutMillis = 1_000L,
+            ).also(fixtures::add)
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.MemoryUpsert) {
+                    afterSend = null
+                    throw IllegalStateException("current memory mutation send failure")
+                }
+            }
+            fixture.viewModel.addMemoryEntry("Send failure memory")
+            advanceUntilIdle()
+            val failedRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "failed-send-memory",
+                            content = "Send failure memory",
+                            enabled = true,
+                        ),
+                    ),
+                    requestId = failedRequest.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+            assertEquals("send_failed", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.addMemoryEntry("Send failure memory")
+            runCurrent()
+            val retryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertNotEquals(failedRequest.requestId, retryRequest.requestId)
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "retry-memory",
+                            content = "Send failure memory",
+                            enabled = true,
+                        ),
+                    ),
+                    requestId = retryRequest.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.addMemoryEntry("Reauthentication-cleared memory")
+            runCurrent()
+            val preReauthenticationRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "memory-mutation-reauthentication",
+            )
+            runCurrent()
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                fixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            fixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "reauthentication-memory",
+                            content = "Reauthentication-cleared memory",
+                            enabled = true,
+                        ),
+                    ),
+                    requestId = preReauthenticationRequest.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertFalse(
+                fixture.localStore.data.memoryEntries.any {
+                    it.content == "Reauthentication-cleared memory"
+                },
+            )
+
+            fixture.viewModel.addMemoryEntry("Disconnect-cleared memory")
+            runCurrent()
+            assertEquals(1, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
+                fixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+            fixture.viewModel.disconnect()
+            assertEquals(0, fixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                fixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+
+            val replacementRaceFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memoryMutationRequestTimeoutMillis = 1_000L,
+            ).also(fixtures::add)
+            val firstUpsertSendStarted = CompletableDeferred<Unit>()
+            val releaseFirstUpsertFailure = CompletableDeferred<Unit>()
+            var shouldBlockFirstUpsert = true
+            replacementRaceFixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.MemoryUpsert && shouldBlockFirstUpsert) {
+                    shouldBlockFirstUpsert = false
+                    firstUpsertSendStarted.complete(Unit)
+                    releaseFirstUpsertFailure.await()
+                    throw IllegalStateException("stale upsert send failure")
+                }
+            }
+            replacementRaceFixture.viewModel.addMemoryEntry("Replacement race memory")
+            runCurrent()
+            assertTrue(firstUpsertSendStarted.isCompleted)
+            val firstUpsertRequest = replacementRaceFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            val replacementRaceConnectionGeneration = requireNotNull(
+                replacementRaceFixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            assertEquals(
+                1,
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+            advanceTimeBy(500L)
+            runCurrent()
+            replacementRaceFixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = replacementRaceFixture.viewModel,
+                channel = replacementRaceFixture.channel,
+                requestId = "memory-upsert-replacement-race",
+            )
+            runCurrent()
+            assertEquals(0, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+
+            replacementRaceFixture.viewModel.addMemoryEntry("Replacement race memory")
+            runCurrent()
+            val replacementUpsertRequest = replacementRaceFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertNotEquals(firstUpsertRequest.requestId, replacementUpsertRequest.requestId)
+            assertEquals(1, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+
+            advanceTimeBy(500L)
+            runCurrent()
+            assertEquals(1, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertNull(replacementRaceFixture.viewModel.state.value.error)
+
+            releaseFirstUpsertFailure.complete(Unit)
+            runCurrent()
+            assertEquals(1, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertNull(replacementRaceFixture.viewModel.state.value.error)
+            replacementRaceFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "replacement-race-memory",
+                            content = "Replacement race memory",
+                            enabled = true,
+                        ),
+                    ),
+                    requestId = replacementUpsertRequest.requestId,
+                ),
+                sourceChannel = replacementRaceFixture.channel,
+                sourceConnectionGeneration = replacementRaceConnectionGeneration,
+            )
+            assertTrue(
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertEquals(
+                listOf("Replacement race memory"),
+                replacementRaceFixture.localStore.data.memoryEntries.map { it.content },
+            )
+
+            val firstDeleteSendStarted = CompletableDeferred<Unit>()
+            val releaseFirstDeleteFailure = CompletableDeferred<Unit>()
+            var shouldBlockFirstDelete = true
+            replacementRaceFixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.MemoryDelete && shouldBlockFirstDelete) {
+                    shouldBlockFirstDelete = false
+                    firstDeleteSendStarted.complete(Unit)
+                    releaseFirstDeleteFailure.await()
+                    throw IllegalStateException("stale delete send failure")
+                }
+            }
+            replacementRaceFixture.viewModel.removeMemoryEntry("replacement-race-memory")
+            runCurrent()
+            assertTrue(firstDeleteSendStarted.isCompleted)
+            val firstDeleteRequest = replacementRaceFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            replacementRaceFixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = replacementRaceFixture.viewModel,
+                channel = replacementRaceFixture.channel,
+                requestId = "memory-delete-replacement-race",
+            )
+            runCurrent()
+            assertEquals(0, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+
+            replacementRaceFixture.viewModel.removeMemoryEntry("replacement-race-memory")
+            runCurrent()
+            val replacementDeleteRequest = replacementRaceFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            assertNotEquals(firstDeleteRequest.requestId, replacementDeleteRequest.requestId)
+            assertEquals(1, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+
+            releaseFirstDeleteFailure.complete(Unit)
+            runCurrent()
+            assertEquals(1, replacementRaceFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertNull(replacementRaceFixture.viewModel.state.value.error)
+            replacementRaceFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "replacement-race-memory",
+                        deletedAt = "2026-06-25T00:02:00Z",
+                    ),
+                    requestId = replacementDeleteRequest.requestId,
+                ),
+                sourceChannel = replacementRaceFixture.channel,
+                sourceConnectionGeneration = replacementRaceConnectionGeneration,
+            )
+            assertTrue(
+                replacementRaceFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertTrue(replacementRaceFixture.localStore.data.memoryEntries.isEmpty())
+
+            val timeoutFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = PersistedRuntimeData(
+                    memoryEntries = listOf(
+                        PersistedMemoryEntry(
+                            id = "timeout-target",
+                            content = "Timeout target memory",
+                            enabled = true,
+                            createdAtMillis = 100L,
+                            updatedAtMillis = 200L,
+                        ),
+                    ),
+                ),
+                memoryMutationRequestTimeoutMillis = 1_000L,
+            ).also(fixtures::add)
+            val timeoutConnectionGeneration = requireNotNull(
+                timeoutFixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val memoryListCountBeforeTimeout = timeoutFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryList
+            }
+            val deleteCountBeforeTimeout = timeoutFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryDelete
+            }
+            timeoutFixture.viewModel.setMemoryEntryEnabled("timeout-target", enabled = false)
+            runCurrent()
+            val timedOutRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryUpsert
+            }
+            val upsertCountBeforeTimeout = timeoutFixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryUpsert
+            }
+            assertEquals(1, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
+                timeoutFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+
+            timeoutFixture.viewModel.removeMemoryEntry("timeout-target")
+            runCurrent()
+            assertEquals(
+                deleteCountBeforeTimeout,
+                timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryDelete },
+            )
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals(0, timeoutFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                timeoutFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertEquals("runtime_error", timeoutFixture.viewModel.state.value.error?.code)
+            assertEquals(
+                upsertCountBeforeTimeout,
+                timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryUpsert },
+            )
+            assertEquals(
+                memoryListCountBeforeTimeout + 1,
+                timeoutFixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+
+            timeoutFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryUpsert",
+                envelope = envelope(
+                    type = MessageType.MemoryUpsert,
+                    serializer = MemoryUpsertResultPayload.serializer(),
+                    payload = MemoryUpsertResultPayload(
+                        entry = MemoryEntryPayload(
+                            id = "timeout-target",
+                            content = "Timeout target memory",
+                            enabled = false,
+                        ),
+                    ),
+                    requestId = timedOutRequest.requestId,
+                ),
+                sourceChannel = timeoutFixture.channel,
+                sourceConnectionGeneration = timeoutConnectionGeneration,
+            )
+            assertTrue(timeoutFixture.localStore.data.memoryEntries.single().enabled)
+
+            timeoutFixture.viewModel.removeMemoryEntry("timeout-target")
+            runCurrent()
+            val postTimeoutDeleteRequest = timeoutFixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryDelete
+            }
+            timeoutFixture.viewModel.handleMemoryMutationForTest(
+                methodName = "handleMemoryDelete",
+                envelope = envelope(
+                    type = MessageType.MemoryDelete,
+                    serializer = MemoryDeleteResultPayload.serializer(),
+                    payload = MemoryDeleteResultPayload(
+                        id = "timeout-target",
+                        deletedAt = "2026-06-25T00:03:00Z",
+                    ),
+                    requestId = postTimeoutDeleteRequest.requestId,
+                ),
+                sourceChannel = timeoutFixture.channel,
+                sourceConnectionGeneration = timeoutConnectionGeneration,
+            )
+            assertTrue(timeoutFixture.localStore.data.memoryEntries.isEmpty())
+
+            val receiveFailureFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memoryMutationRequestTimeoutMillis = 1_000L,
+            ).also(fixtures::add)
+            receiveFailureFixture.viewModel.addMemoryEntry("Receive failure memory")
+            runCurrent()
+            assertEquals(1, receiveFailureFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
+                receiveFailureFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+            receiveFailureFixture.channel.failReceive(
+                IllegalStateException("memory mutation receive failure"),
+            )
+            runCurrent()
+            assertEquals(0, receiveFailureFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                receiveFailureFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+            assertFalse(
+                receiveFailureFixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true,
+            )
+            receiveFailureFixture.viewModel.clearForTest()
+            fixtures.remove(receiveFailureFixture)
+
+            val clearedFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                memoryMutationRequestTimeoutMillis = 1_000L,
+            )
+            clearedFixture.viewModel.addMemoryEntry("ViewModel-clear memory")
+            runCurrent()
+            assertEquals(1, clearedFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertEquals(
+                1,
+                clearedFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .size,
+            )
+            clearedFixture.viewModel.clearForTest()
+            assertEquals(0, clearedFixture.viewModel.pendingMemoryMutationCountForTest())
+            assertTrue(
+                clearedFixture.viewModel
+                    .privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")
+                    .orEmpty()
+                    .isEmpty(),
+            )
+        } finally {
+            fixtures.forEach { it.viewModel.clearForTest() }
             Dispatchers.resetMain()
         }
     }
@@ -19506,6 +21735,7 @@ class RuntimeClientViewModelTest {
             val initialMemoryRequest = fixture.channel.sentEnvelopes.last {
                 it.type == MessageType.MemoryList
             }
+            assertTrue(initialMemoryRequest.requestId.startsWith("memory-list-"))
             val memoryRequestCountBeforeRejectedError = fixture.channel.sentEnvelopes.count {
                 it.type == MessageType.MemoryList
             }
@@ -19528,12 +21758,16 @@ class RuntimeClientViewModelTest {
             assertEquals("invalid_payload", rejectedState.error?.code)
             assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("error response"))
             assertTrue(rejectedState.error?.technicalDetail.orEmpty().contains("backend_url"))
+            assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
             fixture.viewModel.refreshRuntimeMemory()
             advanceUntilIdle()
             assertEquals(
-                memoryRequestCountBeforeRejectedError,
+                memoryRequestCountBeforeRejectedError + 1,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
             )
+            val replacementMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
 
             fixture.channel.enqueue(
                 envelope(
@@ -19549,15 +21783,35 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
 
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(
+                replacementMemoryRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingMemoryListRequestId"),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "memory_store_unavailable",
+                        message = "Memory store unavailable.",
+                        retryable = true,
+                    ),
+                    requestId = replacementMemoryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
             assertEquals("memory_load_failed", fixture.viewModel.state.value.error?.code)
             assertEquals(
                 "Memory store unavailable.",
                 fixture.viewModel.state.value.error?.technicalDetail,
             )
+            assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
             fixture.viewModel.refreshRuntimeMemory()
             advanceUntilIdle()
             assertEquals(
-                memoryRequestCountBeforeRejectedError + 1,
+                memoryRequestCountBeforeRejectedError + 2,
                 fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
             )
         } finally {
@@ -20827,6 +23081,431 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun chatSessionsBulkLifecycleRequiresExactTerminalAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var exercisedTerminalCount = 0
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = true,
+            )
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            assertTrue(request.requestId.startsWith("chat-sessions-bulk-"))
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val success = envelope(
+                type = MessageType.ChatSessionArchive,
+                serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                payload = ChatSessionsBulkLifecycleResultPayload(
+                    scope = "all_active",
+                    status = "archived",
+                    affectedCount = 1,
+                    remainingCount = 0,
+                    completedAt = "2026-06-25T00:01:00Z",
+                ),
+                requestId = request.requestId,
+            )
+            val authenticationError = envelope(
+                type = MessageType.Error,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "authentication_required",
+                    message = "Wrong authority must stay inert.",
+                    retryable = false,
+                ),
+                requestId = request.requestId,
+            )
+            val ordinaryError = envelope(
+                type = MessageType.Error,
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "backend_unavailable",
+                    message = "Wrong authority must not publish an error.",
+                    retryable = true,
+                ),
+                requestId = request.requestId,
+            )
+            val malformedError = ProtocolEnvelope(
+                type = MessageType.Error,
+                requestId = request.requestId,
+                payload = buildJsonObject {
+                    put("code", "backend_unavailable")
+                    put("message", "Wrong malformed authority must stay inert.")
+                    put("retryable", true)
+                    put("unexpected", true)
+                },
+            )
+            val wrongChannel = ScriptedRuntimeProtocolChannel()
+
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                success,
+                wrongChannel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                wrongChannel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                wrongChannel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                malformedError,
+                wrongChannel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 4
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                success,
+                fixture.channel,
+                connectionGeneration - 1L,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration - 1L,
+            )
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                fixture.channel,
+                connectionGeneration - 1L,
+            )
+            fixture.viewModel.handleErrorForTest(
+                malformedError,
+                fixture.channel,
+                connectionGeneration - 1L,
+            )
+            exercisedTerminalCount += 4
+
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                success,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                malformedError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 4
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            val continuation = envelope(
+                type = MessageType.ChatSessionArchive,
+                serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                payload = ChatSessionsBulkLifecycleResultPayload(
+                    scope = "all_active",
+                    status = "archived",
+                    affectedCount = 1,
+                    remainingCount = 1,
+                    completedAt = "2026-06-25T00:01:00Z",
+                ),
+                requestId = request.requestId,
+            )
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                continuation,
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 1
+            runCurrent()
+
+            val finalRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            assertTrue(finalRequest.requestId.startsWith("chat-sessions-bulk-"))
+            assertNotEquals(request.requestId, finalRequest.requestId)
+            fixture.viewModel.handleErrorForTest(
+                authenticationError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                ordinaryError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                malformedError,
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 3
+
+            assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                    payload = ChatSessionsBulkLifecycleResultPayload(
+                        scope = "all_active",
+                        status = "archived",
+                        affectedCount = 0,
+                        remainingCount = 0,
+                        completedAt = "2026-06-25T00:02:00Z",
+                    ),
+                    requestId = finalRequest.requestId,
+                ),
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 1
+            runCurrent()
+
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertEquals(1, fixture.viewModel.state.value.archivedChatSessions.size)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            assertEquals(17, exercisedTerminalCount)
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var exercisedTerminalCount = 0
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture = fixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = true,
+            )
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionArchive
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            fixture.viewModel.handleErrorForTest(
+                ProtocolEnvelope(
+                    type = MessageType.Error,
+                    requestId = request.requestId,
+                    payload = buildJsonObject {
+                        put("code", "backend_unavailable")
+                        put("message", "Current malformed bulk error.")
+                        put("retryable", true)
+                        put("unexpected", true)
+                    },
+                ),
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 1
+            runCurrent()
+
+            assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+
+            fixture.viewModel.handleChatSessionLifecycleForTest(
+                envelope(
+                    type = MessageType.ChatSessionArchive,
+                    serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                    payload = ChatSessionsBulkLifecycleResultPayload(
+                        scope = "all_active",
+                        status = "archived",
+                        affectedCount = 1,
+                        remainingCount = 0,
+                        completedAt = "2026-06-25T00:02:00Z",
+                    ),
+                    requestId = request.requestId,
+                ),
+                fixture.channel,
+                connectionGeneration,
+            )
+            exercisedTerminalCount += 1
+            runCurrent()
+
+            assertEquals(1, fixture.viewModel.state.value.chatSessions.size)
+            assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())
+            assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)
+        } finally {
+            assertEquals(2, exercisedTerminalCount)
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSessionsBulkSendFailureRequiresExactDispatchAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var exercisedTerminalCount = 0
+        try {
+            val currentFixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            completePendingRuntimeChatSessionList(
+                fixture = currentFixture,
+                sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                capable = true,
+            )
+            currentFixture.channel.afterSend = { envelope ->
+                if (envelope.type == MessageType.ChatSessionArchive) {
+                    throw IllegalStateException("current bulk send failure")
+                }
+            }
+            currentFixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+            exercisedTerminalCount += 1
+            currentFixture.channel.afterSend = null
+
+            assertFalse(currentFixture.viewModel.state.value.isBulkMutatingChatSessions)
+            assertEquals("chat_session_sync_failed", currentFixture.viewModel.state.value.error?.code)
+            assertEquals(1, currentFixture.viewModel.state.value.chatSessions.size)
+            assertTrue(currentFixture.viewModel.state.value.archivedChatSessions.isEmpty())
+
+            listOf("channel", "connection", "authority").forEach { staleDimension ->
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    redactRuntimeOwnedLocalDataOnSave = false,
+                )
+                completePendingRuntimeChatSessionList(
+                    fixture = fixture,
+                    sessions = runtimeChatSessionSummaries(start = 0, count = 1),
+                    capable = true,
+                )
+                val sendStarted = CompletableDeferred<Unit>()
+                val releaseSendFailure = CompletableDeferred<Unit>()
+                fixture.channel.afterSend = { envelope ->
+                    if (envelope.type == MessageType.ChatSessionArchive) {
+                        sendStarted.complete(Unit)
+                        releaseSendFailure.await()
+                        throw IllegalStateException("delayed stale bulk send failure")
+                    }
+                }
+                fixture.viewModel.archiveChatSessions()
+                runCurrent()
+                assertTrue(sendStarted.isCompleted)
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatSessionArchive
+                }
+                val connectionGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+                )
+                val authorityGeneration = requireNotNull(
+                    fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+                )
+                val replacementChannel = ScriptedRuntimeProtocolChannel()
+                when (staleDimension) {
+                    "channel" -> fixture.viewModel.setPrivateField("activeChannel", replacementChannel)
+                    "connection" -> fixture.viewModel.setPrivateField(
+                        "activeConnectionGeneration",
+                        connectionGeneration + 1L,
+                    )
+                    "authority" -> fixture.viewModel.setPrivateField(
+                        "runtimeSessionAuthorityGeneration",
+                        authorityGeneration + 1L,
+                    )
+                }
+                releaseSendFailure.complete(Unit)
+                runCurrent()
+                exercisedTerminalCount += 1
+
+                assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+                assertNull(fixture.viewModel.state.value.error)
+                when (staleDimension) {
+                    "channel" -> fixture.viewModel.setPrivateField("activeChannel", fixture.channel)
+                    "connection" -> fixture.viewModel.setPrivateField(
+                        "activeConnectionGeneration",
+                        connectionGeneration,
+                    )
+                    "authority" -> fixture.viewModel.setPrivateField(
+                        "runtimeSessionAuthorityGeneration",
+                        authorityGeneration,
+                    )
+                }
+                fixture.channel.afterSend = null
+                fixture.viewModel.handleChatSessionLifecycleForTest(
+                    envelope(
+                        type = MessageType.ChatSessionArchive,
+                        serializer = ChatSessionsBulkLifecycleResultPayload.serializer(),
+                        payload = ChatSessionsBulkLifecycleResultPayload(
+                            scope = "all_active",
+                            status = "archived",
+                            affectedCount = 1,
+                            remainingCount = 0,
+                            completedAt = "2026-06-25T00:03:00Z",
+                        ),
+                        requestId = request.requestId,
+                    ),
+                    fixture.channel,
+                    connectionGeneration,
+                )
+                exercisedTerminalCount += 1
+                runCurrent()
+
+                assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)
+                assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+                assertEquals(1, fixture.viewModel.state.value.archivedChatSessions.size)
+                assertNull(fixture.viewModel.state.value.error)
+            }
+        } finally {
+            assertEquals(7, exercisedTerminalCount)
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun capableRuntimeBulkStopsAt50BatchBudgetWithoutApplyingMutation() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -21439,6 +24118,407 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val expectedSessions = runtimeChatSessionSummaries(start = 100, count = 1)
+            val response = envelope(
+                type = MessageType.ChatSessionsList,
+                serializer = ChatSessionsListResultPayload.serializer(),
+                payload = ChatSessionsListResultPayload(
+                    sessions = expectedSessions,
+                    snapshotCount = expectedSessions.size,
+                ),
+                requestId = request.requestId,
+            )
+
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = response,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = response,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration - 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = response,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertEquals(
+                request.requestId,
+                fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"),
+            )
+            assertTrue(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = response,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertNull(fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"))
+            assertFalse(fixture.viewModel.state.value.isLoadingChatSessions)
+            assertEquals(
+                expectedSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 101, count = 1),
+                        snapshotCount = 1,
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(
+                expectedSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            val requestCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ChatSessionsList
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = runtimeChatSessionSummaries(start = 110, count = 1),
+                        nextCursor = "foreign-cursor",
+                        snapshotCount = 2,
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = ProtocolEnvelope(
+                    type = MessageType.ChatSessionsList,
+                    requestId = request.requestId,
+                    payload = json.parseToJsonElement(
+                        """{"sessions":[],"snapshot_count":0,"backend_url":"http://foreign.invalid"}""",
+                    ).jsonObject,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration - 1L,
+            )
+
+            assertEquals(
+                requestCount,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSessionsList },
+            )
+            assertEquals(
+                request.requestId,
+                fixture.viewModel.privateField<String>("pendingChatSessionsRequestId"),
+            )
+            assertTrue(fixture.viewModel.state.value.chatSessions.isEmpty())
+            assertNull(fixture.viewModel.state.value.error)
+
+            val currentSessions = runtimeChatSessionSummaries(start = 120, count = 1)
+            fixture.viewModel.handleChatSessionsListForTest(
+                envelope = envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = currentSessions,
+                        snapshotCount = currentSessions.size,
+                    ),
+                    requestId = request.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            assertEquals(
+                currentSessions.map { it.sessionId },
+                fixture.viewModel.state.value.chatSessions.map { it.id },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModelToClear: RuntimeClientViewModel? = null
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+                leaveResearchNotebooksPending = true,
+            )
+            viewModelToClear = fixture.viewModel
+            val oldMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            assertTrue(oldMemoryRequest.requestId.startsWith("memory-list-"))
+            val oldResearchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            val oldResearchTimeout = requireNotNull(
+                fixture.viewModel.privateField<Job>("researchNotebooksListRequestTimeoutJob"),
+            )
+            val memoryRequestCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemoryList
+            }
+            val researchRequestCount = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.ResearchNotebooksList
+            }
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "same-channel-read-authority-reauth",
+            )
+            runCurrent()
+
+            val newMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            val newResearchRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ResearchNotebooksList
+            }
+            assertNotEquals(oldMemoryRequest.requestId, newMemoryRequest.requestId)
+            assertNotEquals(oldResearchRequest.requestId, newResearchRequest.requestId)
+            assertEquals(
+                memoryRequestCount + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemoryList },
+            )
+            assertEquals(
+                researchRequestCount + 1,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.ResearchNotebooksList },
+            )
+            assertTrue(oldResearchTimeout.isCancelled)
+            assertEquals(
+                newMemoryRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingMemoryListRequestId"),
+            )
+            assertEquals(
+                newResearchRequest.requestId,
+                fixture.viewModel.pendingResearchNotebooksRequestIdForTest(),
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "stale-memory-entry",
+                                content = "Must stay inert",
+                                enabled = true,
+                            ),
+                        ),
+                    ),
+                    requestId = oldMemoryRequest.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = listOf(researchNotebookPayload()),
+                        snapshotCount = 1,
+                    ),
+                    requestId = oldResearchRequest.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_unavailable",
+                        message = "Stale memory error must stay inert.",
+                        retryable = false,
+                    ),
+                    requestId = oldMemoryRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertEquals(
+                newMemoryRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingMemoryListRequestId"),
+            )
+            assertEquals(
+                newResearchRequest.requestId,
+                fixture.viewModel.pendingResearchNotebooksRequestIdForTest(),
+            )
+            assertTrue(fixture.viewModel.state.value.memoryEntries.isEmpty())
+            assertTrue(fixture.viewModel.researchNotebooks.value.notebooks.isEmpty())
+            assertNull(fixture.viewModel.state.value.error)
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "current-memory-entry",
+                                content = "Current memory",
+                                enabled = true,
+                            ),
+                        ),
+                    ),
+                    requestId = newMemoryRequest.requestId,
+                ),
+            )
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ResearchNotebooksList,
+                    serializer = ResearchNotebooksListResultPayload.serializer(),
+                    payload = ResearchNotebooksListResultPayload(
+                        notebooks = emptyList(),
+                        snapshotCount = 0,
+                    ),
+                    requestId = newResearchRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
+            assertNull(fixture.viewModel.pendingResearchNotebooksRequestIdForTest())
+            assertEquals(
+                listOf("current-memory-entry"),
+                fixture.viewModel.state.value.memoryEntries.map { it.id },
+            )
+            fixture.viewModel.clearForTest()
+            runCurrent()
+        } finally {
+            viewModelToClear?.clearForTest()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val oldMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            assertEquals(
+                oldMemoryRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingMemoryListRequestId"),
+            )
+
+            fixture.viewModel.requestModels()
+            runCurrent()
+            val modelsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ModelsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Sibling request lost authentication.",
+                        retryable = false,
+                    ),
+                    requestId = modelsRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertFalse(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") ?: true)
+            assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))
+            assertEquals("pairing_required", fixture.viewModel.state.value.runtimeStatus)
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "memory-list-recovery-auth",
+            )
+            runCurrent()
+            val replacementMemoryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.MemoryList
+            }
+            assertNotEquals(oldMemoryRequest.requestId, replacementMemoryRequest.requestId)
+            assertEquals(
+                replacementMemoryRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingMemoryListRequestId"),
+            )
+            fixture.viewModel.clearForTest()
+            runCurrent()
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun chatSessionsListSendFailurePreservesConcurrentTranscriptRequest() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -21990,6 +25070,521 @@ class RuntimeClientViewModelTest {
                     message.content == "Must remain ignored"
                 },
             )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val sessionId = "runtime-chat-messages-authority"
+            val initialData = PersistedRuntimeData(
+                activeSessionId = sessionId,
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = sessionId,
+                        title = "Authority-bound transcript",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                    ),
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+
+            fixture.viewModel.openPreviousChat(sessionId)
+            runCurrent()
+            val request = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+            val authorityGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("runtimeSessionAuthorityGeneration"),
+            )
+            val currentResult = envelope(
+                type = MessageType.ChatMessagesList,
+                serializer = ChatMessagesListResultPayload.serializer(),
+                payload = ChatMessagesListResultPayload(
+                    sessionId = sessionId,
+                    messages = listOf(
+                        ChatStoredMessagePayload(
+                            role = "assistant",
+                            content = "Exact current transcript",
+                            createdAt = "2026-07-17T00:00:00Z",
+                        ),
+                    ),
+                ),
+                requestId = request.requestId,
+            )
+
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = currentResult,
+                sourceChannel = ScriptedRuntimeProtocolChannel(),
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration - 1L,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration + 1L,
+            )
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.setPrivateField(
+                "runtimeSessionAuthorityGeneration",
+                authorityGeneration,
+            )
+
+            assertEquals(
+                request.requestId,
+                fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+            )
+            assertEquals(sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertTrue(
+                fixture.localStore.data.sessions.single { it.id == sessionId }.messages.isEmpty(),
+            )
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = currentResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertEquals(
+                listOf("Exact current transcript"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+            assertEquals(
+                listOf("Exact current transcript"),
+                fixture.localStore.data.sessions.single { it.id == sessionId }.messages.map { it.content },
+            )
+
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = currentResult.copy(
+                    payload = json.encodeToJsonElement(
+                        ChatMessagesListResultPayload.serializer(),
+                        ChatMessagesListResultPayload(
+                            sessionId = sessionId,
+                            messages = listOf(
+                                ChatStoredMessagePayload(
+                                    role = "assistant",
+                                    content = "Duplicate transcript must stay inert",
+                                ),
+                            ),
+                        ),
+                    ).jsonObject,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertEquals(
+                listOf("Exact current transcript"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+            assertEquals(
+                listOf("Exact current transcript"),
+                fixture.localStore.data.sessions.single { it.id == sessionId }.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val oldSessionId = "runtime-chat-delayed-send-old"
+            val replacementSessionId = "runtime-chat-delayed-send-replacement"
+            val initialData = PersistedRuntimeData(
+                activeSessionId = oldSessionId,
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(oldSessionId, replacementSessionId).mapIndexed { index, sessionId ->
+                    PersistedChatSession(
+                        id = sessionId,
+                        title = "Delayed send session $index",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L + index,
+                        updatedAtMillis = 200L + index,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                    )
+                },
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+            val oldSendStarted = CompletableDeferred<Unit>()
+            val releaseOldSendFailure = CompletableDeferred<Unit>()
+            var oldRequestId: String? = null
+            fixture.channel.afterSend = { sent ->
+                if (sent.type == MessageType.ChatMessagesList && oldRequestId == null) {
+                    oldRequestId = sent.requestId
+                    oldSendStarted.complete(Unit)
+                    releaseOldSendFailure.await()
+                    throw IllegalStateException("delayed old transcript send failure")
+                }
+            }
+
+            assertTrue(fixture.viewModel.openPreviousChat(oldSessionId))
+            runCurrent()
+            assertTrue(oldSendStarted.isCompleted)
+            assertEquals(oldSessionId, fixture.viewModel.state.value.loadingChatSessionId)
+
+            assertTrue(fixture.viewModel.openPreviousChat(replacementSessionId))
+            runCurrent()
+            val replacementRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            assertNotEquals(oldRequestId, replacementRequest.requestId)
+            assertEquals(
+                replacementRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+            )
+            assertEquals(
+                replacementSessionId,
+                fixture.viewModel.state.value.loadingChatSessionId,
+            )
+
+            releaseOldSendFailure.complete(Unit)
+            advanceUntilIdle()
+            fixture.channel.afterSend = null
+
+            assertEquals(
+                replacementRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+            )
+            assertEquals(
+                replacementSessionId,
+                fixture.viewModel.state.value.loadingChatSessionId,
+            )
+            assertTrue(
+                requireNotNull(oldRequestId) in
+                    fixture.viewModel.closedRuntimeChatHistoryRequestIdsForTest(),
+            )
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = replacementSessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "Replacement transcript",
+                            ),
+                        ),
+                    ),
+                    requestId = replacementRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertEquals(
+                listOf("Replacement transcript"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+            assertEquals(
+                listOf("Replacement transcript"),
+                fixture.localStore.data.sessions
+                    .single { it.id == replacementSessionId }
+                    .messages
+                    .map { it.content },
+            )
+            assertNull(fixture.viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            suspend fun createFixtureWithPendingChatMessages(
+                suffix: String,
+            ): Pair<RuntimeClientFixture, String> {
+                val sessionId = "runtime-chat-lifecycle-$suffix"
+                val fixture = createAuthenticatedRuntimeClientFixture(
+                    models = listOf(textChatModel()),
+                    initialData = PersistedRuntimeData(
+                        activeSessionId = sessionId,
+                        selectedModelId = "ollama:llama3.1:8b",
+                        trustedRuntimeAutoReconnectEnabled = false,
+                        sessions = listOf(
+                            PersistedChatSession(
+                                id = sessionId,
+                                title = "Pending transcript $suffix",
+                                modelId = "ollama:llama3.1:8b",
+                                createdAtMillis = 100L,
+                                updatedAtMillis = 200L,
+                                runtimeOwned = true,
+                                runtimeMessageCount = 1,
+                            ),
+                        ),
+                    ),
+                    redactRuntimeOwnedLocalDataOnSave = false,
+                )
+                assertTrue(fixture.viewModel.openPreviousChat(sessionId))
+                runCurrent()
+                val request = fixture.channel.sentEnvelopes.last {
+                    it.type == MessageType.ChatMessagesList
+                }
+                assertEquals(
+                    request.requestId,
+                    fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+                )
+                assertEquals(
+                    sessionId,
+                    fixture.viewModel.privateField<String>("pendingChatMessagesSessionId"),
+                )
+                assertNotNull(
+                    fixture.viewModel.privateField<Any>("pendingChatMessagesRequestCorrelation"),
+                )
+                assertEquals(sessionId, fixture.viewModel.state.value.loadingChatSessionId)
+                return fixture to request.requestId
+            }
+
+            fun assertPendingChatMessagesAuthorityCleared(
+                fixture: RuntimeClientFixture,
+                requestId: String,
+            ) {
+                assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"))
+                assertNull(fixture.viewModel.privateField<String>("pendingChatMessagesSessionId"))
+                assertNull(
+                    fixture.viewModel.privateField<Any>("pendingChatMessagesRequestCorrelation"),
+                )
+                assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+                assertTrue(
+                    requestId in fixture.viewModel.closedRuntimeChatHistoryRequestIdsForTest(),
+                )
+            }
+
+            val (disconnectedFixture, disconnectedRequestId) =
+                createFixtureWithPendingChatMessages("disconnect")
+            disconnectedFixture.viewModel.disconnect()
+            runCurrent()
+            assertPendingChatMessagesAuthorityCleared(
+                disconnectedFixture,
+                disconnectedRequestId,
+            )
+
+            val (revokedFixture, revokedRequestId) =
+                createFixtureWithPendingChatMessages("revocation")
+            revokedFixture.viewModel.revokeAuthenticatedRuntimeSessionStateForTest()
+            runCurrent()
+            assertPendingChatMessagesAuthorityCleared(revokedFixture, revokedRequestId)
+            revokedFixture.viewModel.clearForTest()
+
+            val (clearedFixture, clearedRequestId) =
+                createFixtureWithPendingChatMessages("viewmodel-clear")
+            clearedFixture.viewModel.clearForTest()
+            runCurrent()
+            assertPendingChatMessagesAuthorityCleared(clearedFixture, clearedRequestId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun sameChannelReauthenticationTombstonesOldChatMessagesAuthority() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val oldSessionId = "runtime-chat-before-reauth"
+            val newSessionId = "runtime-chat-after-reauth"
+            val initialData = PersistedRuntimeData(
+                activeSessionId = oldSessionId,
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(oldSessionId, newSessionId).mapIndexed { index, sessionId ->
+                    PersistedChatSession(
+                        id = sessionId,
+                        title = "Runtime session $index",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L + index,
+                        updatedAtMillis = 200L + index,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 1,
+                    )
+                },
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+                redactRuntimeOwnedLocalDataOnSave = false,
+            )
+
+            fixture.viewModel.openPreviousChat(oldSessionId)
+            runCurrent()
+            val oldRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            val connectionGeneration = requireNotNull(
+                fixture.viewModel.privateField<Long>("activeConnectionGeneration"),
+            )
+
+            fixture.viewModel.sendHelloForTest()
+            runCurrent()
+            completeRuntimeAuthentication(
+                viewModel = fixture.viewModel,
+                channel = fixture.channel,
+                requestId = "same-channel-chat-messages-reauth",
+            )
+            runCurrent()
+
+            assertNull(fixture.viewModel.privateField<Any>("pendingChatMessagesRequestCorrelation"))
+            assertTrue(
+                oldRequest.requestId in fixture.viewModel.closedRuntimeChatHistoryRequestIdsForTest(),
+            )
+            val postAuthenticationSessionsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(
+                        sessions = listOf(
+                            ChatSessionSummaryPayload(
+                                sessionId = oldSessionId,
+                                title = "Runtime session 0",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-07-17T00:00:00Z",
+                                messageCount = 1,
+                                status = "active",
+                            ),
+                            ChatSessionSummaryPayload(
+                                sessionId = newSessionId,
+                                title = "Runtime session 1",
+                                model = "ollama:llama3.1:8b",
+                                lastActivityAt = "2026-07-17T00:01:00Z",
+                                messageCount = 1,
+                                status = "active",
+                            ),
+                        ),
+                        snapshotCount = 2,
+                    ),
+                    requestId = postAuthenticationSessionsRequest.requestId,
+                ),
+            )
+            runCurrent()
+            assertTrue(fixture.viewModel.selectChatSession(newSessionId))
+            runCurrent()
+            val newRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatMessagesList
+            }
+            assertNotEquals(oldRequest.requestId, newRequest.requestId)
+
+            val oldResult = envelope(
+                type = MessageType.ChatMessagesList,
+                serializer = ChatMessagesListResultPayload.serializer(),
+                payload = ChatMessagesListResultPayload(
+                    sessionId = oldSessionId,
+                    messages = listOf(
+                        ChatStoredMessagePayload(
+                            role = "assistant",
+                            content = "Old session transcript must stay inert",
+                        ),
+                    ),
+                ),
+                requestId = oldRequest.requestId,
+            )
+            fixture.viewModel.handleChatMessagesListForTest(
+                envelope = oldResult,
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+            fixture.viewModel.handleErrorForTest(
+                envelope = envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Old session authentication error.",
+                        retryable = false,
+                    ),
+                    requestId = oldRequest.requestId,
+                ),
+                sourceChannel = fixture.channel,
+                sourceConnectionGeneration = connectionGeneration,
+            )
+
+            assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)
+            assertEquals(
+                newRequest.requestId,
+                fixture.viewModel.privateField<String>("pendingChatMessagesRequestId"),
+            )
+            assertEquals(newSessionId, fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.viewModel.state.value.messages.isEmpty())
+            assertTrue(fixture.localStore.data.sessions.all { it.messages.isEmpty() })
+            assertNull(fixture.viewModel.state.value.error)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = newSessionId,
+                        messages = listOf(
+                            ChatStoredMessagePayload(
+                                role = "assistant",
+                                content = "New session transcript",
+                            ),
+                        ),
+                    ),
+                    requestId = newRequest.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertEquals(
+                listOf("New session transcript"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+            assertEquals(
+                listOf("New session transcript"),
+                fixture.localStore.data.sessions.single { it.id == newSessionId }.messages.map { it.content },
+            )
+            fixture.viewModel.clearForTest()
+            advanceUntilIdle()
         } finally {
             Dispatchers.resetMain()
         }
@@ -23409,12 +27004,15 @@ class RuntimeClientViewModelTest {
                 channel = channel,
             )
             advanceUntilIdle()
+            val runtimeHealthRequest = channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
             channel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
                     serializer = RuntimeHealthPayload.serializer(),
                     payload = RuntimeHealthPayload(status = "ok"),
-                    requestId = "runtime-health",
+                    requestId = runtimeHealthRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -26429,12 +30027,15 @@ class RuntimeClientViewModelTest {
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.ChatSessionsList })
             assertTrue(channel.sentEnvelopes.any { it.type == MessageType.MemoryList })
 
+            val runtimeHealthRequest = channel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
             channel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
                     serializer = RuntimeHealthPayload.serializer(),
                     payload = RuntimeHealthPayload(status = "ok"),
-                    requestId = "runtime-health",
+                    requestId = runtimeHealthRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -37193,12 +40794,15 @@ class RuntimeClientViewModelTest {
             )
             advanceUntilIdle()
             assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateSuggestionsAvailable)
+            val replacementRuntimeHealthRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
             replacementChannel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
                     serializer = RuntimeHealthPayload.serializer(),
                     payload = RuntimeHealthPayload(status = "ok"),
-                    requestId = "replacement-runtime-health",
+                    requestId = replacementRuntimeHealthRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -37673,12 +41277,15 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
             assertFalse(fixture.viewModel.state.value.memorySemanticDuplicateClustersAvailable)
 
+            val replacementRuntimeHealthRequest = replacementChannel.sentEnvelopes.last {
+                it.type == MessageType.RuntimeHealth
+            }
             replacementChannel.enqueue(
                 envelope(
                     type = MessageType.RuntimeHealth,
                     serializer = RuntimeHealthPayload.serializer(),
                     payload = RuntimeHealthPayload(status = "ok"),
-                    requestId = "replacement-cluster-runtime-health",
+                    requestId = replacementRuntimeHealthRequest.requestId,
                 ),
             )
             advanceUntilIdle()
@@ -37920,6 +41527,7 @@ class RuntimeClientViewModelTest {
         replacementChannel: ScriptedRuntimeProtocolChannel? = null,
         leaveResearchNotebooksPending: Boolean = false,
         runtimeCapabilities: List<String> = listOf(MEMORY_SUMMARY_DRAFT_APPROVAL_METHOD_CAPABILITY),
+        memoryMutationRequestTimeoutMillis: Long? = null,
         memorySummaryControlRequestTimeoutMillis: Long? = null,
         memorySummaryGenerationRequestTimeoutMillis: Long? = null,
     ): RuntimeClientFixture {
@@ -37956,6 +41564,7 @@ class RuntimeClientViewModelTest {
                 lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = attachmentReader,
                 attachmentPromptHeaderProvider = ::testAttachmentOnlyPromptHeader,
+                memoryMutationRequestTimeoutMillis = memoryMutationRequestTimeoutMillis,
                 memorySummaryControlRequestTimeoutMillis =
                     memorySummaryControlRequestTimeoutMillis,
                 memorySummaryGenerationRequestTimeoutMillis =
@@ -37991,12 +41600,16 @@ class RuntimeClientViewModelTest {
             }
         }
         if (leaveScheduledTimeoutsPending) runCurrent() else advanceUntilIdle()
+        val runtimeHealthRequest = channel.sentEnvelopes.last {
+            it.type == MessageType.RuntimeHealth
+        }
+        assertTrue(runtimeHealthRequest.requestId.startsWith("runtime-health-"))
         channel.enqueue(
             envelope(
                 type = MessageType.RuntimeHealth,
                 serializer = RuntimeHealthPayload.serializer(),
                 payload = RuntimeHealthPayload(status = "ok"),
-                requestId = "runtime-health",
+                requestId = runtimeHealthRequest.requestId,
             ),
         )
         if (leaveScheduledTimeoutsPending) runCurrent() else advanceUntilIdle()
@@ -38068,6 +41681,32 @@ class RuntimeClientViewModelTest {
         val field = pending.javaClass.getDeclaredField("localMessageId")
         field.isAccessible = true
         return field.get(pending) as String
+    }
+
+    private fun RuntimeClientViewModel.pendingRuntimeHealthRequestIdForTest(): String? {
+        val pending = privateField<Any>("pendingRuntimeHealthRequest") ?: return null
+        val field = pending.javaClass.getDeclaredField("requestId")
+        field.isAccessible = true
+        return field.get(pending) as String
+    }
+
+    private fun RuntimeClientViewModel.pendingRuntimeDocumentRequestIdForTest(
+        fieldName: String,
+    ): String? {
+        val pending = privateField<Any>(fieldName) ?: return null
+        val field = pending.javaClass.getDeclaredField("requestId")
+        field.isAccessible = true
+        return field.get(pending) as String
+    }
+
+    private fun RuntimeClientViewModel.closedRuntimeChatHistoryRequestIdsForTest(): Set<String> {
+        return privateField<List<Any>>("closedRuntimeChatHistoryRequests")
+            .orEmpty()
+            .mapTo(linkedSetOf()) { correlation ->
+                val field = correlation.javaClass.getDeclaredField("requestId")
+                field.isAccessible = true
+                field.get(correlation) as String
+            }
     }
 
     private fun RuntimeClientViewModel.setPrivateField(name: String, value: Any?) {
@@ -38144,6 +41783,118 @@ class RuntimeClientViewModelTest {
         )
         method.isAccessible = true
         method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.handleMemoryMutationForTest(
+        methodName: String,
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            methodName,
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.pendingMemoryMutationCountForTest(): Int {
+        return privateField<Map<String, Any>>("pendingMemoryMutationsByRequestId").orEmpty().size
+    }
+
+    private fun RuntimeClientViewModel.handleChatMessagesListForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "handleChatMessagesList",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.handleChatSessionsListForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "handleChatSessionsList",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.handleChatSessionLifecycleForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "handleChatSessionLifecycle",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.pendingResearchNotebooksRequestIdForTest(): String? {
+        val pending = privateField<Any>("pendingResearchNotebooksListRun") ?: return null
+        val field = pending.javaClass.getDeclaredField("requestId")
+        field.isAccessible = true
+        return field.get(pending) as String
+    }
+
+    private fun RuntimeClientViewModel.handleRuntimeDocumentResultForTest(
+        methodName: String,
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            methodName,
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.handleRuntimeHealthForTest(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "handleRuntimeHealth",
+            ProtocolEnvelope::class.java,
+            RuntimeProtocolChannel::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(this, envelope, sourceChannel, sourceConnectionGeneration)
+    }
+
+    private fun RuntimeClientViewModel.revokeAuthenticatedRuntimeSessionStateForTest() {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod(
+            "revokeAuthenticatedRuntimeSessionState",
+            Collection::class.java,
+        )
+        method.isAccessible = true
+        method.invoke(this, emptyList<Any>())
     }
 
     private fun RuntimeClientViewModel.handleMemorySummaryDecisionForTest(

@@ -12,6 +12,53 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertEqual(decoded.requestID, envelope.requestID)
     }
 
+    func testRelayPlaintextFrameCeilingReservesAuthenticationTag() throws {
+        let codec = ProtocolCodec()
+
+        func envelope(encodedBodyLength: Int) throws -> ProtocolEnvelope {
+            var envelope = ProtocolEnvelope(
+                type: MessageType.modelsList,
+                requestID: "relay-plaintext-boundary",
+                timestamp: Date(timeIntervalSince1970: 0),
+                payload: ["padding": .string("")]
+            )
+            let emptyLength = try codec.encodeEnvelopeBody(envelope).count
+            XCTAssertGreaterThanOrEqual(encodedBodyLength, emptyLength)
+            envelope.payload["padding"] = .string(
+                String(repeating: "x", count: encodedBodyLength - emptyLength)
+            )
+            XCTAssertEqual(try codec.encodeEnvelopeBody(envelope).count, encodedBodyLength)
+            return envelope
+        }
+
+        XCTAssertEqual(RelayFrameCipher.authenticationTagBytes, 16)
+        XCTAssertEqual(
+            ProtocolCodec.maxRelayPlaintextFrameBytes
+                + RelayFrameCipher.authenticationTagBytes,
+            ProtocolCodec.maxFrameBytes
+        )
+        XCTAssertNoThrow(try codec.validateFrameBodyLength(
+            ProtocolCodec.maxRelayPlaintextFrameBytes
+                + RelayFrameCipher.authenticationTagBytes
+        ))
+        XCTAssertThrowsError(try codec.validateFrameBodyLength(
+            ProtocolCodec.maxRelayPlaintextFrameBytes
+                + RelayFrameCipher.authenticationTagBytes + 1
+        ))
+
+        let exactEnvelope = try envelope(
+            encodedBodyLength: ProtocolCodec.maxRelayPlaintextFrameBytes
+        )
+        let exactBody = try codec.encodeEnvelopeBody(exactEnvelope)
+        XCTAssertNoThrow(try codec.validateRelayPlaintextBodyLength(exactBody.count))
+
+        let oversizedEnvelope = try envelope(
+            encodedBodyLength: ProtocolCodec.maxRelayPlaintextFrameBytes + 1
+        )
+        let oversizedBody = try codec.encodeEnvelopeBody(oversizedEnvelope)
+        XCTAssertThrowsError(try codec.validateRelayPlaintextBodyLength(oversizedBody.count))
+    }
+
     func testSemanticDuplicateThresholdPreservesExactIntegerWireKind() throws {
         let codec = ProtocolCodec()
         let prefix = """

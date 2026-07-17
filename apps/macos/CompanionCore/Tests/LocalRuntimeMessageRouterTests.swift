@@ -10,6 +10,7 @@ import struct BridgeProtocol.RelayRuntimeIdentity
 import struct BridgeProtocol.RelayRuntimeRegistrationIdentityChallenge
 import enum BridgeProtocol.RelayAllocationIdentityOperation
 import enum BridgeProtocol.RelayIdentityAuthorization
+import struct BridgeProtocol.ProtocolCodec
 import struct BridgeProtocol.ProtocolEnvelope
 import struct BridgeProtocol.TransportSecurityContext
 @testable import CompanionCore
@@ -425,6 +426,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model["provider_model_id"], .string("llama3.1:8b"))
         XCTAssertEqual(model["qualified_id"], .string("ollama:llama3.1:8b"))
         XCTAssertEqual(model["context_window_tokens"], .number(32768))
+        XCTAssertEqual(model["size_bytes"], .integer(4))
         XCTAssertFalse(String(describing: message?.payload).contains("11434"))
 
         guard case .object(let cloudModel)? = models.last else {
@@ -437,6 +439,223 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(cloudModel["source"], .string("cloud"))
         XCTAssertEqual(cloudModel["remote_model"], .string("deepseek-v4-pro"))
         XCTAssertNil(cloudModel["remote_host"])
+    }
+
+    func testModelsListAcceptsCatalogAtPublicationLimits() async throws {
+        let maximumIdentity = String(
+            repeating: "\u{1F600}",
+            count: ModelInfo.maximumModelIdentityCodePoints
+        )
+        let maximumCapabilities = (0..<ModelInfo.maximumCapabilityCount).map { index in
+            String(repeating: "c", count: ModelInfo.maximumCapabilityCodePoints - 1)
+                + String(UnicodeScalar(65 + index)!)
+        }
+        let boundaryModel = ModelInfo(
+            id: maximumIdentity,
+            name: maximumIdentity,
+            provider: .lmStudio,
+            capabilities: maximumCapabilities,
+            providerModelID: maximumIdentity,
+            sizeBytes: 0,
+            remoteModel: maximumIdentity,
+            contextWindowTokens: ModelInfo.maximumContextWindowTokens
+        )
+        let models = [boundaryModel] + (1..<ModelInfo.maximumCatalogModelCount).map { index in
+            ModelInfo(id: "model-\(index)", name: "model-\(index)")
+        }
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(models: models))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-publication-limits"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.modelsList)
+        guard case .array(let payloads)? = message?.payload["models"],
+              case .object(let firstPayload)? = payloads.first else {
+            return XCTFail("Expected bounded model catalog")
+        }
+        XCTAssertEqual(payloads.count, ModelInfo.maximumCatalogModelCount)
+        XCTAssertEqual(firstPayload["qualified_id"], .string("lm_studio:\(maximumIdentity)"))
+        XCTAssertEqual(firstPayload["capabilities"], .array(maximumCapabilities.map(JSONValue.string)))
+        XCTAssertEqual(
+            firstPayload["context_window_tokens"],
+            .number(Double(ModelInfo.maximumContextWindowTokens))
+        )
+        let response = try XCTUnwrap(message)
+        XCTAssertLessThanOrEqual(
+            try ProtocolCodec().encodeEnvelopeBody(response).count,
+            ProtocolCodec.maxRelayPlaintextFrameBytes
+        )
+    }
+
+    func testModelsListRejectsValidCartesianLimitsAboveRelayFrameCeiling() async throws {
+        let maximumCapabilities = (0..<ModelInfo.maximumCapabilityCount).map { index in
+            String(repeating: "c", count: ModelInfo.maximumCapabilityCodePoints - 3)
+                + String(format: "%03d", index)
+        }
+        let models = (0..<ModelInfo.maximumCatalogModelCount).map { index in
+            ModelInfo(
+                id: "model-\(index)",
+                name: "model-\(index)",
+                capabilities: maximumCapabilities
+            )
+        }
+        for model in models {
+            XCTAssertNoThrow(try ModelInfo.validateForCatalogPublication(model))
+        }
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(models: models))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-cartesian-frame-limit"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.payload["code"], .string("bad_backend_response"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+    }
+
+    func testModelsListPublishesInt64MaximumSizeWithoutPrecisionLoss() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(models: [
+            ModelInfo(
+                id: "maximum-size-model",
+                name: "maximum-size-model",
+                sizeBytes: ModelInfo.maximumSizeBytes
+            )
+        ]))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-int64-size"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        guard case .array(let models)? = message?.payload["models"],
+              case .object(let model)? = models.first else {
+            return XCTFail("Expected model catalog")
+        }
+        XCTAssertEqual(model["size_bytes"], .integer(Int64.max))
+        let body = try ProtocolCodec().encodeEnvelopeBody(try XCTUnwrap(message))
+        XCTAssertTrue(
+            String(decoding: body, as: UTF8.self).contains("9223372036854775807")
+        )
+    }
+
+    func testModelsListRejectsCatalogAbovePublicationLimit() async throws {
+        let models = (0...ModelInfo.maximumCatalogModelCount).map { index in
+            ModelInfo(id: "model-\(index)", name: "model-\(index)")
+        }
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(models: models))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-publication-limit-plus-one"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.payload["code"], .string("bad_backend_response"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertFalse(String(describing: message?.payload).contains("model-256"))
+    }
+
+    func testModelsListRejectsUntrustedMetadataAtPublicationBoundary() async throws {
+        let overlongIdentity = String(
+            repeating: "m",
+            count: ModelInfo.maximumModelIdentityCodePoints + 1
+        )
+        let overlongCapability = String(
+            repeating: "c",
+            count: ModelInfo.maximumCapabilityCodePoints + 1
+        )
+        var invalidModels: [ModelInfo] = []
+
+        var blankID = ModelInfo(id: "valid", name: "valid")
+        blankID.id = " \n"
+        invalidModels.append(blankID)
+
+        var longID = ModelInfo(id: "valid", name: "valid")
+        longID.id = overlongIdentity
+        invalidModels.append(longID)
+
+        var longName = ModelInfo(id: "valid", name: "valid")
+        longName.name = overlongIdentity
+        invalidModels.append(longName)
+
+        var longProviderModelID = ModelInfo(id: "valid", name: "valid")
+        longProviderModelID.providerModelID = overlongIdentity
+        invalidModels.append(longProviderModelID)
+
+        var longRemoteModel = ModelInfo(id: "valid", name: "valid")
+        longRemoteModel.remoteModel = overlongIdentity
+        invalidModels.append(longRemoteModel)
+
+        var excessiveCapabilities = ModelInfo(id: "valid", name: "valid")
+        excessiveCapabilities.capabilities = (0...ModelInfo.maximumCapabilityCount).map { "capability-\($0)" }
+        invalidModels.append(excessiveCapabilities)
+
+        var longCapability = ModelInfo(id: "valid", name: "valid")
+        longCapability.capabilities = [overlongCapability]
+        invalidModels.append(longCapability)
+
+        var duplicateCapabilities = ModelInfo(id: "valid", name: "valid")
+        duplicateCapabilities.capabilities = ["chat", "chat"]
+        invalidModels.append(duplicateCapabilities)
+
+        var invalidContext = ModelInfo(id: "valid", name: "valid")
+        invalidContext.contextWindowTokens = ModelInfo.maximumContextWindowTokens + 1
+        invalidModels.append(invalidContext)
+
+        var negativeSize = ModelInfo(id: "valid", name: "valid")
+        negativeSize.sizeBytes = -1
+        invalidModels.append(negativeSize)
+
+        invalidModels.append(ModelInfo(id: "valid", name: "valid", provider: .aggregate))
+
+        for (index, model) in invalidModels.enumerated() {
+            let sink = RecordingSink()
+            let router = makeRouter(backend: MockBackend(models: [model]))
+            router.handle(ProtocolEnvelope(
+                type: MessageType.modelsList,
+                requestID: "models-invalid-publication-\(index)"
+            ), sink: sink)
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.error, "case \(index)")
+            XCTAssertEqual(
+                message?.payload["code"],
+                .string("bad_backend_response"),
+                "case \(index)"
+            )
+            XCTAssertEqual(message?.payload["retryable"], .bool(false), "case \(index)")
+        }
+    }
+
+    func testModelsListRejectsContextWindowMetadataOutsideRuntimeCeiling() async throws {
+        var model = ModelInfo(
+            id: "untrusted-context-window",
+            name: "untrusted-context-window"
+        )
+        model.contextWindowTokens = ModelInfo.maximumContextWindowTokens + 1
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(models: [model]))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-untrusted-context-window"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.payload["code"], .string("bad_backend_response"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
     }
 
     func testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch() async throws {
@@ -494,6 +713,381 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(true))
         XCTAssertFalse(String(describing: message?.payload).contains("11434"))
         XCTAssertFalse(String(describing: message?.payload).contains("127.0.0.1"))
+    }
+
+    func testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess()
+        async throws
+    {
+        let firstCatalog = [ModelInfo(id: "first-catalog", name: "first-catalog")]
+        let secondCatalog = [ModelInfo(id: "second-catalog", name: "second-catalog")]
+        let admittedWaiters = LockedBox(0)
+        let backend = MockBackend(
+            modelListBatches: [firstCatalog, secondCatalog],
+            holdModelListUntilReleased: true
+        )
+        defer { backend.releaseHeldModelLists() }
+        let router = makeRouter(
+            backend: backend,
+            modelsListWaiterRegistrationCheckpoint: {
+                admittedWaiters.value += 1
+            }
+        )
+        let admittedSinks = (0..<LocalRuntimeMessageRouter.maximumConcurrentModelCatalogWaiters)
+            .map { _ in RecordingSink() }
+
+        for (index, sink) in admittedSinks.enumerated() {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.modelsList,
+                requestID: "models-single-flight-\(index)"
+            ), sink: sink)
+        }
+
+        let allWaitersAdmitted = await waitForCondition {
+            admittedWaiters.value
+                == LocalRuntimeMessageRouter.maximumConcurrentModelCatalogWaiters
+        }
+        XCTAssertTrue(allWaitersAdmitted)
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+
+        let overflowSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-single-flight-overflow"
+        ), sink: overflowSink)
+        let overflow = try await overflowSink.waitForMessages(count: 1).last
+        XCTAssertEqual(overflow?.type, MessageType.error)
+        XCTAssertEqual(overflow?.requestID, "models-single-flight-overflow")
+        XCTAssertEqual(overflow?.payload["code"], .string("backend_unavailable"))
+        XCTAssertEqual(overflow?.payload["retryable"], .bool(true))
+        XCTAssertEqual(
+            overflow?.payload["message"],
+            .string("AetherLink Runtime is currently refreshing the model catalog.")
+        )
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+
+        backend.releaseHeldModelLists()
+        for (index, sink) in admittedSinks.enumerated() {
+            let response = try await sink.waitForMessages(count: 1).last
+            XCTAssertEqual(response?.type, MessageType.modelsList)
+            XCTAssertEqual(response?.requestID, "models-single-flight-\(index)")
+            guard case .array(let models)? = response?.payload["models"],
+                  case .object(let model)? = models.first else {
+                return XCTFail("Expected first shared model catalog")
+            }
+            XCTAssertEqual(model["id"], .string("first-catalog"))
+        }
+
+        let laterSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-single-flight-fresh"
+        ), sink: laterSink)
+        let later = try await laterSink.waitForMessages(count: 1).last
+        guard case .array(let models)? = later?.payload["models"],
+              case .object(let model)? = models.first else {
+            return XCTFail("Expected fresh model catalog")
+        }
+        XCTAssertEqual(later?.requestID, "models-single-flight-fresh")
+        XCTAssertEqual(model["id"], .string("second-catalog"))
+        XCTAssertEqual(backend.listModelsCallCount, 2)
+        XCTAssertEqual(
+            admittedWaiters.value,
+            LocalRuntimeMessageRouter.maximumConcurrentModelCatalogWaiters + 1
+        )
+    }
+
+    func testModelsListSingleFlightCancellationKeepsSharedWorkForRemainingWaiter()
+        async throws
+    {
+        let admitted = expectation(description: "two model catalog waiters admitted")
+        admitted.expectedFulfillmentCount = 2
+        let backend = MockBackend(
+            models: [ModelInfo(id: "shared-catalog", name: "shared-catalog")],
+            holdModelListUntilReleased: true
+        )
+        defer { backend.releaseHeldModelLists() }
+        let router = makeRouter(
+            backend: backend,
+            modelsListWaiterRegistrationCheckpoint: { admitted.fulfill() }
+        )
+        let cancelledSink = RecordingSink()
+        let remainingSink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-cancelled-waiter"
+        ), sink: cancelledSink)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-remaining-waiter"
+        ), sink: remainingSink)
+        await fulfillment(of: [admitted], timeout: 1)
+
+        router.connectionDidClose(cancelledSink.connectionID)
+        backend.releaseHeldModelLists()
+
+        let response = try await remainingSink.waitForMessages(count: 1).last
+        XCTAssertEqual(response?.type, MessageType.modelsList)
+        XCTAssertEqual(response?.requestID, "models-remaining-waiter")
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+        XCTAssertEqual(backend.modelListCancellationCount, 0)
+        let cancelledMessages = try await cancelledSink.waitForMessages(
+            count: 1,
+            timeout: 0.05
+        )
+        XCTAssertTrue(cancelledMessages.isEmpty)
+    }
+
+    func testModelsListSingleFlightCancelledNonLastWaitersReturnBeforeProviderCompletion()
+        async throws
+    {
+        let backend = MockBackend(
+            models: [ModelInfo(id: "shared-catalog", name: "shared-catalog")],
+            holdModelListUntilReleased: true
+        )
+        defer { backend.releaseHeldModelLists() }
+        let coordinator = RuntimeModelCatalogCoordinator(
+            maximumWaiterCount: LocalRuntimeMessageRouter.maximumConcurrentModelCatalogWaiters
+        )
+        let registeredWaiters = LockedBox(0)
+        let anchor = Task {
+            try await coordinator.listModels(
+                waiterRegistered: { registeredWaiters.value += 1 },
+                operation: { try await backend.listModels() }
+            )
+        }
+        let anchorRegistered = await waitForCondition {
+            registeredWaiters.value == 1 && backend.listModelsCallCount == 1
+        }
+        XCTAssertTrue(anchorRegistered)
+
+        for index in 0..<16 {
+            let completed = expectation(description: "cancelled waiter \(index) returned")
+            let waiter = Task {
+                defer { completed.fulfill() }
+                return try await coordinator.listModels(
+                    waiterRegistered: { registeredWaiters.value += 1 },
+                    operation: { try await backend.listModels() }
+                )
+            }
+            let registered = await waitForCondition {
+                registeredWaiters.value == index + 2
+            }
+            XCTAssertTrue(registered)
+
+            waiter.cancel()
+            await fulfillment(of: [completed], timeout: 0.2)
+            switch await waiter.result {
+            case .success:
+                XCTFail("A cancelled waiter must not receive the shared catalog")
+            case .failure(let error):
+                XCTAssertTrue(error is CancellationError)
+            }
+        }
+
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+        XCTAssertEqual(backend.modelListCancellationCount, 0)
+        backend.releaseHeldModelLists()
+        let anchorModels = try await anchor.value
+        XCTAssertEqual(anchorModels.map(\.id), ["shared-catalog"])
+    }
+
+    func testModelsListSingleFlightLastWaiterCancellationStopsProviderWork() async throws {
+        let admitted = expectation(description: "model catalog waiter admitted")
+        let backend = MockBackend(holdModelListUntilCancelled: true)
+        let router = makeRouter(
+            backend: backend,
+            modelsListWaiterRegistrationCheckpoint: { admitted.fulfill() }
+        )
+        let sink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-last-waiter-cancelled"
+        ), sink: sink)
+        await fulfillment(of: [admitted], timeout: 1)
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+
+        router.connectionDidClose(sink.connectionID)
+
+        let providerCancelled = await waitForCondition {
+            backend.modelListCancellationCount == 1
+        }
+        XCTAssertTrue(providerCancelled)
+        let messages = try await sink.waitForMessages(count: 1, timeout: 0.05)
+        XCTAssertTrue(messages.isEmpty)
+    }
+
+    func testModelsListSingleFlightWaitsForCancelledProviderToRetireBeforeReplacement()
+        async throws
+    {
+        let firstWaiterRegistered = expectation(description: "first model catalog waiter admitted")
+        let backend = MockBackend(
+            modelListBatches: [
+                [ModelInfo(id: "cancelled-catalog", name: "cancelled-catalog")],
+                [ModelInfo(id: "replacement-catalog", name: "replacement-catalog")],
+            ],
+            holdModelListUntilCancelled: true,
+            holdModelListCancellationUntilReleased: true
+        )
+        defer { backend.releaseHeldModelListCancellation() }
+        let coordinator = RuntimeModelCatalogCoordinator(
+            maximumWaiterCount: LocalRuntimeMessageRouter.maximumConcurrentModelCatalogWaiters
+        )
+        let first = Task {
+            try await coordinator.listModels(
+                waiterRegistered: { firstWaiterRegistered.fulfill() },
+                operation: { try await backend.listModels() }
+            )
+        }
+        await fulfillment(of: [firstWaiterRegistered], timeout: 1)
+
+        first.cancel()
+        let providerCancellationStarted = await waitForCondition {
+            backend.modelListCancellationCount == 1
+        }
+        XCTAssertTrue(providerCancellationStarted)
+        switch await first.result {
+        case .success:
+            XCTFail("The cancelled last waiter must return before provider retirement")
+        case .failure(let error):
+            XCTAssertTrue(error is CancellationError)
+        }
+
+        do {
+            _ = try await coordinator.listModels(
+                waiterRegistered: {},
+                operation: { try await backend.listModels() }
+            )
+            XCTFail("A replacement flight must wait for provider cancellation to finish")
+        } catch RuntimeModelCatalogCoordinatorError.waiterLimitExceeded {
+            // The retiring provider operation remains the only flight.
+        }
+        XCTAssertEqual(backend.listModelsCallCount, 1)
+
+        backend.releaseHeldModelListCancellation()
+        var replacement: [ModelInfo]?
+        for _ in 0..<500 where replacement == nil {
+            do {
+                replacement = try await coordinator.listModels(
+                    waiterRegistered: {},
+                    operation: { try await backend.listModels() }
+                )
+            } catch RuntimeModelCatalogCoordinatorError.waiterLimitExceeded {
+                try await Task.sleep(nanoseconds: 1_000_000)
+            }
+        }
+        XCTAssertEqual(replacement?.map(\.id), ["replacement-catalog"])
+        XCTAssertEqual(backend.listModelsCallCount, 2)
+    }
+
+    func testModelsListSingleFlightDoesNotCacheFailure() async throws {
+        let backend = MockBackend(modelListResultBatches: [
+            .failure(OllamaBackendError.unreachable(
+                endpoint: "GET /api/tags",
+                baseURL: "http://127.0.0.1:11434",
+                reason: "first catalog attempt failed"
+            )),
+            .success([ModelInfo(id: "recovered-catalog", name: "recovered-catalog")]),
+        ])
+        let router = makeRouter(backend: backend)
+        let firstSink = RecordingSink()
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-failed-flight"
+        ), sink: firstSink)
+        let first = try await firstSink.waitForMessages(count: 1).last
+        XCTAssertEqual(first?.type, MessageType.error)
+        XCTAssertEqual(first?.payload["code"], .string("backend_unavailable"))
+
+        let secondSink = RecordingSink()
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-recovered-flight"
+        ), sink: secondSink)
+        let second = try await secondSink.waitForMessages(count: 1).last
+        guard case .array(let models)? = second?.payload["models"],
+              case .object(let model)? = models.first else {
+            return XCTFail("Expected recovered model catalog")
+        }
+        XCTAssertEqual(second?.requestID, "models-recovered-flight")
+        XCTAssertEqual(model["id"], .string("recovered-catalog"))
+        XCTAssertEqual(backend.listModelsCallCount, 2)
+    }
+
+    func testModelsListSingleFlightSuppressesPublicationAfterReauthentication() async throws {
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let privateKey = P256.Signing.PrivateKey()
+        let deviceID = "models-list-reauthentication-device"
+        try await trustedStore.trust(TrustedDevice(
+            id: deviceID,
+            name: "Models List Reauthentication Device",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let registeredWaiters = LockedBox(0)
+        let backend = MockBackend(
+            modelListBatches: [
+                [ModelInfo(id: "stale-catalog", name: "stale-catalog")],
+                [ModelInfo(id: "fresh-catalog", name: "fresh-catalog")],
+            ],
+            holdModelListUntilReleased: true
+        )
+        defer { backend.releaseHeldModelLists() }
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true,
+            trustedDeviceStore: trustedStore,
+            modelsListWaiterRegistrationCheckpoint: {
+                registeredWaiters.value += 1
+            }
+        )
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: deviceID,
+            privateKey: privateKey
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-before-reauthentication"
+        ), sink: sink)
+        let staleRequestRegistered = await waitForCondition {
+            registeredWaiters.value == 1 && backend.listModelsCallCount == 1
+        }
+        XCTAssertTrue(staleRequestRegistered)
+
+        try await reauthenticateTrustedDevice(
+            router: router,
+            sink: sink,
+            deviceID: deviceID,
+            privateKey: privateKey,
+            clientCapabilities: [],
+            existingMessageCount: 2,
+            requestSuffix: "models-list"
+        )
+        backend.releaseHeldModelLists()
+        let messagesAfterStaleCompletion = try await sink.waitForMessages(
+            count: 5,
+            timeout: 0.1
+        )
+        XCTAssertEqual(messagesAfterStaleCompletion.count, 4)
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "models-after-reauthentication"
+        ), sink: sink)
+        let response = try await sink.waitForMessages(count: 5).last
+        guard case .array(let models)? = response?.payload["models"],
+              case .object(let model)? = models.first else {
+            return XCTFail("Expected fresh authenticated model catalog")
+        }
+        XCTAssertEqual(response?.requestID, "models-after-reauthentication")
+        XCTAssertEqual(model["id"], .string("fresh-catalog"))
+        XCTAssertEqual(backend.listModelsCallCount, 2)
+        XCTAssertEqual(registeredWaiters.value, 2)
     }
 
     func testModelsPullRequiresHostApprovalWithoutBackendDispatch() async throws {
@@ -14460,6 +15054,61 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let uncompactRequest = try XCTUnwrap(largeModelRequest.value)
         XCTAssertFalse(uncompactRequest.messages.contains { $0.content == RuntimeChatContextCompactionPlanner.provenanceMessage.content })
         XCTAssertEqual(uncompactRequest.messages.filter(\.isConversationTurnForTests).count, messagePayloads.count)
+    }
+
+    func testChatSendIgnoresContextWindowMetadataAboveRuntimeCeiling() async throws {
+        XCTAssertNil(ModelInfo.validatedContextWindowTokens(nil))
+        XCTAssertNil(ModelInfo.validatedContextWindowTokens(-1))
+        XCTAssertNil(ModelInfo.validatedContextWindowTokens(0))
+        XCTAssertEqual(
+            ModelInfo.validatedContextWindowTokens(ModelInfo.maximumContextWindowTokens),
+            ModelInfo.maximumContextWindowTokens
+        )
+        XCTAssertNil(
+            ModelInfo.validatedContextWindowTokens(ModelInfo.maximumContextWindowTokens + 1)
+        )
+
+        var messagePayloads: [JSONValue] = []
+        for index in 0..<18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "user" : "assistant"),
+                "content": .string("untrusted context-window turn \(index) " + String(repeating: "U", count: 1_600))
+            ]))
+        }
+        var model = ModelInfo(
+            id: "untrusted-context-window",
+            name: "untrusted-context-window",
+            installed: true
+        )
+        model.contextWindowTokens = ModelInfo.maximumContextWindowTokens + 1
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [model],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-untrusted-context-window",
+            payload: [
+                "session_id": .string("session-untrusted-context-window"),
+                "model": .string(model.id),
+                "messages": .array(messagePayloads)
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertTrue(request.messages.contains { message in
+            message.role == "system"
+                && message.content.hasPrefix("Runtime conversation summary:")
+        })
+        XCTAssertLessThan(request.messages.filter(\.isConversationTurnForTests).count, messagePayloads.count)
     }
 
     func testChatSendRejectsOversizedNewestMessageBeforeBackendDispatch() async throws {
@@ -31117,6 +31766,7 @@ private func makeRouter(
     runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
     pairedRelayAuthorizationTimeout: TimeInterval = 5,
     requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+    modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryPublicationCheckpoint: (@Sendable () -> Void)? = nil,
     memorySummaryWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
@@ -31173,6 +31823,7 @@ private func makeRouter(
         runtimeChallengeSigner: runtimeChallengeSigner,
         pairedRelayAuthorizationTimeout: pairedRelayAuthorizationTimeout,
         requestTaskRegistrationCheckpoint: requestTaskRegistrationCheckpoint,
+        modelsListWaiterRegistrationCheckpoint: modelsListWaiterRegistrationCheckpoint,
         memorySummaryCacheCommitCheckpoint: memorySummaryCacheCommitCheckpoint,
         memorySummaryPublicationCheckpoint: memorySummaryPublicationCheckpoint,
         memorySummaryWaiterRegistrationCheckpoint:
@@ -33703,11 +34354,17 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let status: BackendStatus
     private let models: [ModelInfo]
     private var modelListBatches: [[ModelInfo]]
+    private var modelListResultBatches: [Result<[ModelInfo], Error>]
     private let modelListError: Error?
     private let holdModelListUntilReleased: Bool
+    private let holdModelListUntilCancelled: Bool
+    private let holdModelListCancellationUntilReleased: Bool
     private let modelListReleaseLock = NSLock()
     private var modelListReleaseRequested = false
     private var modelListReleaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private let modelListCancellationReleaseLock = NSLock()
+    private var modelListCancellationReleaseRequested = false
+    private var modelListCancellationReleaseContinuations: [CheckedContinuation<Void, Never>] = []
     private let pullResult: ModelPullResult
     private let pullError: Error?
     private let unloadError: Error?
@@ -33727,6 +34384,8 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private var healthCheckCalls = 0
     private let listModelsCallCountLock = NSLock()
     private var listModelsCalls = 0
+    private let modelListCancellationCountLock = NSLock()
+    private var modelListCancellations = 0
     private let chatEvents: [ChatStreamEvent]
     private let chatEventBatchesLock = NSLock()
     private var chatEventBatches: [[ChatStreamEvent]]
@@ -33752,8 +34411,11 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         status: BackendStatus = .available,
         models: [ModelInfo] = [],
         modelListBatches: [[ModelInfo]] = [],
+        modelListResultBatches: [Result<[ModelInfo], Error>] = [],
         modelListError: Error? = nil,
         holdModelListUntilReleased: Bool = false,
+        holdModelListUntilCancelled: Bool = false,
+        holdModelListCancellationUntilReleased: Bool = false,
         pullResult: ModelPullResult = ModelPullResult(model: "mock", status: "success", installed: true),
         pullError: Error? = nil,
         unloadError: Error? = nil,
@@ -33779,8 +34441,12 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.status = status
         self.models = models
         self.modelListBatches = modelListBatches
+        self.modelListResultBatches = modelListResultBatches
         self.modelListError = modelListError
         self.holdModelListUntilReleased = holdModelListUntilReleased
+        self.holdModelListUntilCancelled = holdModelListUntilCancelled
+        self.holdModelListCancellationUntilReleased =
+            holdModelListCancellationUntilReleased
         self.pullResult = pullResult
         self.pullError = pullError
         self.unloadError = unloadError
@@ -33819,6 +34485,10 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         listModelsCallCountLock.withLock { listModelsCalls }
     }
 
+    var modelListCancellationCount: Int {
+        modelListCancellationCountLock.withLock { modelListCancellations }
+    }
+
     var embeddingRequests: [EmbeddingRequest] {
         embeddingRequestsLock.withLock { recordedEmbeddingRequests }
     }
@@ -33841,6 +34511,16 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
             modelListReleaseRequested = true
             let continuations = modelListReleaseContinuations
             modelListReleaseContinuations.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume() }
+    }
+
+    func releaseHeldModelListCancellation() {
+        let continuations = modelListCancellationReleaseLock.withLock {
+            modelListCancellationReleaseRequested = true
+            let continuations = modelListCancellationReleaseContinuations
+            modelListCancellationReleaseContinuations.removeAll()
             return continuations
         }
         continuations.forEach { $0.resume() }
@@ -33875,9 +34555,18 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     }
 
     func listModels() async throws -> [ModelInfo] {
-        let nextModels = listModelsCallCountLock.withLock {
+        let (result, callOrdinal) = listModelsCallCountLock.withLock {
+            () -> (Result<[ModelInfo], Error>, Int) in
             listModelsCalls += 1
-            return modelListBatches.isEmpty ? models : modelListBatches.removeFirst()
+            let callOrdinal = listModelsCalls
+            if !modelListResultBatches.isEmpty {
+                return (modelListResultBatches.removeFirst(), callOrdinal)
+            }
+            let nextModels = modelListBatches.isEmpty ? models : modelListBatches.removeFirst()
+            if let modelListError {
+                return (.failure(modelListError), callOrdinal)
+            }
+            return (.success(nextModels), callOrdinal)
         }
         onListModels?()
         if holdModelListUntilReleased {
@@ -33890,10 +34579,28 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
                 if resumeImmediately { continuation.resume() }
             }
         }
-        if let modelListError {
-            throw modelListError
+        if holdModelListUntilCancelled && callOrdinal == 1 {
+            do {
+                try await Task.sleep(nanoseconds: UInt64.max)
+            } catch {
+                modelListCancellationCountLock.withLock {
+                    modelListCancellations += 1
+                }
+                if holdModelListCancellationUntilReleased {
+                    await withCheckedContinuation { continuation in
+                        let resumeImmediately = modelListCancellationReleaseLock.withLock {
+                            () -> Bool in
+                            guard !modelListCancellationReleaseRequested else { return true }
+                            modelListCancellationReleaseContinuations.append(continuation)
+                            return false
+                        }
+                        if resumeImmediately { continuation.resume() }
+                    }
+                }
+                throw error
+            }
         }
-        return nextModels
+        return try result.get()
     }
 
     func pullModel(name: String) async throws -> ModelPullResult {

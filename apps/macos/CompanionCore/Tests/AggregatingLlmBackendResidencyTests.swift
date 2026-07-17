@@ -3,6 +3,36 @@ import OllamaBackend
 import XCTest
 
 final class AggregatingLlmBackendResidencyTests: XCTestCase {
+    func testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog() async {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "ollama-model", name: "ollama-model", provider: .ollama)]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "lm-model", name: "lm-model", provider: .lmStudio)],
+            holdsModelListingOpen: true
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+        let task = Task {
+            try await backend.listModels()
+        }
+
+        XCTAssertTrue(lmStudio.waitForModelListStart())
+        task.cancel()
+        lmStudio.releaseModelList()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected aggregate catalog cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(ollama.modelListCallCount, 1)
+        XCTAssertEqual(lmStudio.modelListCallCount, 1)
+    }
+
     func testSwitchingModelsUnloadsPreviousInactiveModel() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,

@@ -316,6 +316,7 @@ private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(
     MessageType.PairingRequest,
     MessageType.Hello,
     MessageType.AuthResponse,
+    MessageType.RuntimeHealth,
     MessageType.ChatSessionsList,
     MessageType.ChatMessagesList,
     MessageType.ChatTitleRequest,
@@ -325,6 +326,8 @@ private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(
     MessageType.ChatSessionDelete,
     MessageType.ModelsList,
     MessageType.MemoryList,
+    MessageType.MemoryUpsert,
+    MessageType.MemoryDelete,
     MessageType.MemoryDuplicateSuggestionsList,
     MessageType.MemorySemanticDuplicateClustersList,
     MessageType.MemorySummaryDraftsList,
@@ -420,7 +423,31 @@ private data class PendingMemorySummaryDraftsRequest(
     override val authorityGeneration: Long,
 ) : PendingMemorySummaryRequestCorrelation
 
+private sealed interface PendingMemoryMutationTarget {
+    data class NewEntry(val content: String) : PendingMemoryMutationTarget
+    data class ExistingEntry(val entryId: String) : PendingMemoryMutationTarget
+}
+
+private data class PendingMemoryMutation(
+    val requestId: String,
+    val type: String,
+    val target: PendingMemoryMutationTarget,
+    val expectedEntryId: String?,
+    val expectedContent: String?,
+    val expectedEnabled: Boolean?,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
 private data class PendingMemoryDuplicateSuggestionsRequest(
+    val requestId: String,
+    val channel: RuntimeProtocolChannel,
+    val connectionGeneration: Long,
+    val authorityGeneration: Long,
+)
+
+private data class PendingRuntimeHealthRequest(
     val requestId: String,
     val channel: RuntimeProtocolChannel,
     val connectionGeneration: Long,
@@ -433,6 +460,29 @@ private data class PendingModelsListRequest(
     val connectionGeneration: Long,
     val authorityGeneration: Long,
 )
+
+private sealed interface PendingRuntimeDocumentRequest {
+    val requestId: String
+    val channel: RuntimeProtocolChannel
+    val connectionGeneration: Long
+    val authorityGeneration: Long
+}
+
+private data class PendingRuntimeDocumentCatalogRequest(
+    override val requestId: String,
+    override val channel: RuntimeProtocolChannel,
+    override val connectionGeneration: Long,
+    override val authorityGeneration: Long,
+) : PendingRuntimeDocumentRequest
+
+private data class PendingRuntimeDocumentSearchRequest(
+    override val requestId: String,
+    val payload: RetrievalQueryRequestPayload,
+    val canRetryWithoutEmbedding: Boolean,
+    override val channel: RuntimeProtocolChannel,
+    override val connectionGeneration: Long,
+    override val authorityGeneration: Long,
+) : PendingRuntimeDocumentRequest
 
 private data class PendingMemorySemanticDuplicateSuggestionsRequest(
     val requestId: String,
@@ -558,11 +608,18 @@ internal data class RuntimeClientViewModelDependencies(
         RuntimeRelayProbeResult.Ready
     },
     val authenticatedRouteRefreshEnabled: Boolean = false,
+    val memoryMutationRequestTimeoutMillis: Long? = null,
     val memorySummaryControlRequestTimeoutMillis: Long? = null,
     val memorySummaryGenerationRequestTimeoutMillis: Long? = null,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     init {
+        require(
+            memoryMutationRequestTimeoutMillis == null ||
+                memoryMutationRequestTimeoutMillis > 0L
+        ) {
+            "Memory mutation request timeout must be positive when enabled"
+        }
         require(
             memorySummaryControlRequestTimeoutMillis == null ||
                 memorySummaryControlRequestTimeoutMillis > 0L
@@ -604,6 +661,7 @@ internal data class RuntimeClientViewModelDependencies(
                 },
                 relayReachabilityChecker = AndroidRuntimeRelayReachabilityChecker(),
                 authenticatedRouteRefreshEnabled = false,
+                memoryMutationRequestTimeoutMillis = MEMORY_MUTATION_REQUEST_TIMEOUT_MS,
                 memorySummaryControlRequestTimeoutMillis =
                     MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
                 memorySummaryGenerationRequestTimeoutMillis =
@@ -1591,6 +1649,7 @@ private const val MAX_DEFERRED_CHAT_TITLE_CANDIDATES = 8
 private const val MAX_CHAT_TITLE_RECONCILIATION_RETRY_ATTEMPTS = 1
 private const val MAX_CLOSED_CHAT_SESSION_LIFECYCLE_REQUESTS = 128
 private const val MAX_CLOSED_CHAT_SESSION_RENAME_REQUESTS = 128
+private const val MEMORY_LIST_REQUEST_ID_PREFIX = "memory-list-"
 private const val RESEARCH_NOTEBOOKS_LIST_REQUEST_ID_PREFIX = "research-notebooks-list-"
 private const val MAX_RESEARCH_NOTEBOOKS_LIST_PAGE_SIZE = 100
 private const val MAX_RESEARCH_NOTEBOOKS_LIST_PAGES = 100
@@ -1618,6 +1677,7 @@ internal const val ROUTE_REFRESH_REQUEST_TIMEOUT_MS = 15_000L
 internal const val CITATION_RESOLVE_REQUEST_TIMEOUT_MS = 15_000L
 internal const val RESEARCH_NOTEBOOKS_LIST_REQUEST_TIMEOUT_MS = 15_000L
 internal const val CHAT_SESSION_RENAME_REQUEST_TIMEOUT_MS = 15_000L
+internal const val MEMORY_MUTATION_REQUEST_TIMEOUT_MS = 15_000L
 internal const val CHAT_TITLE_REQUEST_TIMEOUT_MS = 15_000L
 internal const val CHAT_TITLE_RECONCILIATION_LEG_TIMEOUT_MS = 15_000L
 internal const val CHAT_TITLE_RECONCILIATION_TIMEOUT_MS = 30_000L
@@ -1720,6 +1780,7 @@ class RuntimeClientViewModel internal constructor(
     private var pendingPairingDiscoveryTimeoutJob: Job? = null
     private var pendingPairingRetryAttempts = 0
     private var pendingModelPullRequestId: String? = null
+    private var pendingRuntimeHealthRequest: PendingRuntimeHealthRequest? = null
     private var pendingModelsListRequest: PendingModelsListRequest? = null
     private var pendingChatSessionsRequestId: String? = null
     private var pendingChatSessionsQuery: String? = null
@@ -1749,6 +1810,8 @@ class RuntimeClientViewModel internal constructor(
     private var pendingMemoryListChannel: RuntimeProtocolChannel? = null
     private var pendingMemoryListConnectionGeneration: Long? = null
     private var pendingMemoryListAuthorityGeneration: Long? = null
+    private val pendingMemoryMutationsByRequestId = mutableMapOf<String, PendingMemoryMutation>()
+    private val memoryMutationRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()
     private var pendingMemoryDuplicateSuggestionsRequest: PendingMemoryDuplicateSuggestionsRequest? = null
     private val closedMemoryDuplicateSuggestionsRequests =
         mutableListOf<PendingMemoryDuplicateSuggestionsRequest>()
@@ -1774,10 +1837,8 @@ class RuntimeClientViewModel internal constructor(
         mutableListOf<PendingMemorySummaryDraftsRequest>()
     private val memorySummaryRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()
     private var memorySummaryDraftsRefreshDeferred = false
-    private var pendingDocumentCatalogRequestId: String? = null
-    private var pendingDocumentSearchRequestId: String? = null
-    private var pendingDocumentSearchPayload: RetrievalQueryRequestPayload? = null
-    private var pendingDocumentSearchCanRetryWithoutEmbedding = false
+    private var pendingDocumentCatalogRequest: PendingRuntimeDocumentCatalogRequest? = null
+    private var pendingDocumentSearchRequest: PendingRuntimeDocumentSearchRequest? = null
     private var pendingCitationResolveRequestId: String? = null
     private var pendingCitationResolveSourceAnchorId: String? = null
     private var citationResolveRequestTimeoutJob: Job? = null
@@ -2451,6 +2512,23 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        val channel = activeChannel ?: return
+        val target = PendingMemoryMutationTarget.NewEntry(cleanContent)
+        if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        val requestId = MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()
+        val pending = PendingMemoryMutation(
+            requestId = requestId,
+            type = MessageType.MemoryUpsert,
+            target = target,
+            expectedEntryId = null,
+            expectedContent = cleanContent,
+            expectedEnabled = true,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        pendingMemoryMutationsByRequestId[requestId] = pending
+        scheduleMemoryMutationTimeout(pending)
         clearMemoryDuplicateSuggestions()
         clearMemorySemanticDuplicateSuggestions()
         clearMemorySemanticDuplicateClusters()
@@ -2462,6 +2540,7 @@ class RuntimeClientViewModel internal constructor(
                     content = cleanContent,
                     enabled = true,
                 ),
+                requestId = requestId,
             )
         )
     }
@@ -2477,6 +2556,23 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        val channel = activeChannel ?: return
+        val target = PendingMemoryMutationTarget.ExistingEntry(cleanId)
+        if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        val requestId = MEMORY_DELETE_REQUEST_ID_PREFIX + UUID.randomUUID()
+        val pending = PendingMemoryMutation(
+            requestId = requestId,
+            type = MessageType.MemoryDelete,
+            target = target,
+            expectedEntryId = cleanId,
+            expectedContent = null,
+            expectedEnabled = null,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        pendingMemoryMutationsByRequestId[requestId] = pending
+        scheduleMemoryMutationTimeout(pending)
         clearMemoryDuplicateSuggestions()
         clearMemorySemanticDuplicateSuggestions()
         clearMemorySemanticDuplicateClusters()
@@ -2485,6 +2581,7 @@ class RuntimeClientViewModel internal constructor(
                 type = MessageType.MemoryDelete,
                 serializer = MemoryDeletePayload.serializer(),
                 payload = MemoryDeletePayload(id = cleanId),
+                requestId = requestId,
             )
         )
     }
@@ -2499,6 +2596,23 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
+        val channel = activeChannel ?: return
+        val target = PendingMemoryMutationTarget.ExistingEntry(entry.id)
+        if (pendingMemoryMutationsByRequestId.values.any { it.target == target }) return
+        val requestId = MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()
+        val pending = PendingMemoryMutation(
+            requestId = requestId,
+            type = MessageType.MemoryUpsert,
+            target = target,
+            expectedEntryId = entry.id,
+            expectedContent = entry.content,
+            expectedEnabled = enabled,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        pendingMemoryMutationsByRequestId[requestId] = pending
+        scheduleMemoryMutationTimeout(pending)
         clearMemoryDuplicateSuggestions()
         clearMemorySemanticDuplicateSuggestions()
         clearMemorySemanticDuplicateClusters()
@@ -2511,6 +2625,7 @@ class RuntimeClientViewModel internal constructor(
                     content = entry.content,
                     enabled = enabled,
                 ),
+                requestId = requestId,
             )
         )
     }
@@ -3870,9 +3985,11 @@ class RuntimeClientViewModel internal constructor(
         closedRuntimeAuthenticationRequestIds.clear()
         cancelPendingPairingDiscoveryTimeout()
         pendingModelPullRequestId = null
+        clearPendingRuntimeHealthRequest()
         clearPendingModelsListRequest()
         modelCatalogAcceptedAuthorityGeneration = null
         clearPendingMemoryListRequest()
+        clearPendingMemoryMutations()
         clearPendingRuntimeDocumentRequests()
         clearResearchNotebookSessionState()
         clearPendingRouteRefreshRequest()
@@ -3926,7 +4043,15 @@ class RuntimeClientViewModel internal constructor(
             showError("authentication_required")
             return
         }
-        sendEnvelope(ProtocolEnvelope(type = MessageType.RuntimeHealth))
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        val requestId = RUNTIME_HEALTH_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingRuntimeHealthRequest = PendingRuntimeHealthRequest(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
+        sendEnvelope(ProtocolEnvelope(type = MessageType.RuntimeHealth, requestId = requestId))
     }
 
     fun requestModels() {
@@ -4142,7 +4267,7 @@ class RuntimeClientViewModel internal constructor(
                 )
             }
         }
-        val requestId = UUID.randomUUID().toString()
+        val requestId = MEMORY_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()
         pendingMemoryListRequestId = requestId
         pendingMemoryListChannel = channel
         pendingMemoryListConnectionGeneration = activeConnectionGeneration
@@ -4199,10 +4324,15 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun requestRuntimeDocumentCatalog() {
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
-        if (pendingDocumentCatalogRequestId != null) return
-        val requestId = UUID.randomUUID().toString()
-        pendingDocumentCatalogRequestId = requestId
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        if (!isSessionAuthenticated || pendingDocumentCatalogRequest != null) return
+        val requestId = DOCUMENT_CATALOG_REQUEST_ID_PREFIX + UUID.randomUUID()
+        pendingDocumentCatalogRequest = PendingRuntimeDocumentCatalogRequest(
+            requestId = requestId,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
         mutableState.update {
             it.copy(
                 isLoadingDocumentCatalog = true,
@@ -4238,12 +4368,17 @@ class RuntimeClientViewModel internal constructor(
         payload: RetrievalQueryRequestPayload,
         canRetryWithoutEmbedding: Boolean,
     ) {
-        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
-        if (pendingDocumentSearchRequestId != null) return
+        val channel = activeChannel?.takeIf(RuntimeProtocolChannel::isConnected) ?: return
+        if (!isSessionAuthenticated || pendingDocumentSearchRequest != null) return
         val requestId = DOCUMENT_SEARCH_REQUEST_ID_PREFIX + UUID.randomUUID()
-        pendingDocumentSearchRequestId = requestId
-        pendingDocumentSearchPayload = payload
-        pendingDocumentSearchCanRetryWithoutEmbedding = canRetryWithoutEmbedding
+        pendingDocumentSearchRequest = PendingRuntimeDocumentSearchRequest(
+            requestId = requestId,
+            payload = payload,
+            canRetryWithoutEmbedding = canRetryWithoutEmbedding,
+            channel = channel,
+            connectionGeneration = activeConnectionGeneration,
+            authorityGeneration = runtimeSessionAuthorityGeneration,
+        )
         mutableState.update {
             it.copy(
                 documentSearchQuery = payload.query,
@@ -5099,7 +5234,11 @@ class RuntimeClientViewModel internal constructor(
                 sourceConnectionGeneration,
             )
             MessageType.PairingResult -> handlePairingResult(envelope)
-            MessageType.RuntimeHealth -> handleRuntimeHealth(envelope)
+            MessageType.RuntimeHealth -> handleRuntimeHealth(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.ModelsList, MessageType.ModelsResult -> handleModels(
                 envelope,
                 sourceChannel,
@@ -5108,8 +5247,16 @@ class RuntimeClientViewModel internal constructor(
             MessageType.ModelsPull -> handleModelPull(envelope)
             MessageType.RelayAllocationChallenge -> handleRelayAllocationChallenge(envelope)
             MessageType.RouteRefresh -> handleRouteRefresh(envelope)
-            MessageType.ChatSessionsList -> handleChatSessionsList(envelope)
-            MessageType.ChatMessagesList -> handleChatMessagesList(envelope)
+            MessageType.ChatSessionsList -> handleChatSessionsList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.ChatMessagesList -> handleChatMessagesList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.ChatDelta -> handleChatDelta(
                 envelope,
                 sourceChannel,
@@ -5142,8 +5289,16 @@ class RuntimeClientViewModel internal constructor(
                 sourceChannel,
                 sourceConnectionGeneration,
             )
-            MessageType.IndexDocumentsList -> handleIndexDocumentsList(envelope)
-            MessageType.RetrievalQuery -> handleRetrievalQuery(envelope)
+            MessageType.IndexDocumentsList -> handleIndexDocumentsList(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.RetrievalQuery -> handleRetrievalQuery(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.CitationResolve -> handleCitationResolve(envelope)
             MessageType.ChatSourceAttributionResolve ->
                 handleHistoricalSourceAttributionResolve(
@@ -5202,8 +5357,16 @@ class RuntimeClientViewModel internal constructor(
                 sourceChannel,
                 sourceConnectionGeneration,
             )
-            MessageType.MemoryUpsert -> handleMemoryUpsert(envelope)
-            MessageType.MemoryDelete -> handleMemoryDelete(envelope)
+            MessageType.MemoryUpsert -> handleMemoryUpsert(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
+            MessageType.MemoryDelete -> handleMemoryDelete(
+                envelope,
+                sourceChannel,
+                sourceConnectionGeneration,
+            )
             MessageType.Error -> handleError(
                 envelope,
                 sourceChannel,
@@ -5370,7 +5533,13 @@ class RuntimeClientViewModel internal constructor(
                 titleReconciliationRequiredAfterAuthentication = true
             }
             resetMemorySummaryDraftsRequestCorrelations()
+            clearPendingRuntimeHealthRequest()
             clearPendingModelsListRequest()
+            clearPendingMemoryListRequest()
+            clearPendingMemoryMutations()
+            clearPendingChatMessagesRequest()
+            clearPendingRuntimeDocumentRequests()
+            clearPendingResearchNotebooksListRun()
             modelCatalogAcceptedAuthorityGeneration = null
             resetMemoryDuplicateSuggestionsAuthority()
             resetMemorySemanticDuplicateSuggestionsAuthority()
@@ -5936,12 +6105,28 @@ class RuntimeClientViewModel internal constructor(
         pendingPairedRelayAllocationAuthorization = null
     }
 
-    private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
+    private fun handleRuntimeHealth(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingRuntimeHealthRequest ?: return
+        if (!pending.matchesCurrentRuntimeHealthAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
         envelope.payload.runtimeHealthUnknownMetadataKey()?.let { unknownKey ->
+            clearPendingRuntimeHealthRequest()
             showError("invalid_payload", "runtime.health response contains unsupported metadata: $unknownKey")
             return
         }
-        val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
+        val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: run {
+            clearPendingRuntimeHealthRequest()
+            return
+        }
+        clearPendingRuntimeHealthRequest()
         if (payload.status.isPairingRequiredRuntimeCode()) {
             revokeAuthenticatedRuntimeSessionState()
             mutableState.update {
@@ -6120,9 +6305,18 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleChatSessionsList(envelope: ProtocolEnvelope) {
+    private fun handleChatSessionsList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
         val run = pendingChatSessionsListRun ?: return
-        if (run.requestId != envelope.requestId || !run.hasCurrentRuntimeAuthority()) return
+        if (!run.matchesCurrentRuntimeAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
         run.pageCount += 1
         if (run.pageCount > MAX_RUNTIME_CHAT_SESSION_LIST_PAGES) {
             failPendingChatSessionsListRun(run, "chat.sessions.list response exceeded the 100-page budget")
@@ -6216,6 +6410,17 @@ class RuntimeClientViewModel internal constructor(
             activeConnectionGeneration == connectionGeneration &&
             isSessionAuthenticated &&
             runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun PendingChatSessionsListRun.matchesCurrentRuntimeAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return this.requestId == requestId &&
+            channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            hasCurrentRuntimeAuthority()
     }
 
     private fun clearPendingChatSessionsListRun(
@@ -6389,8 +6594,19 @@ class RuntimeClientViewModel internal constructor(
         activeRuntimeSessionId(syncedData)?.let(::requestRuntimeChatMessages)
     }
 
-    private fun handleChatMessagesList(envelope: ProtocolEnvelope) {
-        if (pendingChatMessagesRequestId != envelope.requestId) return
+    private fun handleChatMessagesList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val correlation = pendingChatMessagesRequestCorrelation ?: return
+        if (
+            !correlation.matchesCurrentChatMessagesAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
         val expectedSessionId = pendingChatMessagesSessionId
         clearPendingChatMessagesRequest()
         envelope.payload.chatMessagesListUnknownMetadataKey()?.let { unknownKey ->
@@ -7071,8 +7287,20 @@ class RuntimeClientViewModel internal constructor(
         sourceChannel: RuntimeProtocolChannel,
         sourceConnectionGeneration: Long,
     ) {
-        if (pendingChatSessionsBulkLifecycle?.requestId == envelope.requestId) {
-            handleChatSessionsBulkLifecycle(envelope)
+        val pendingBulkLifecycle = pendingChatSessionsBulkLifecycle?.takeIf { pending ->
+            envelope.type == pending.type &&
+                pending.matchesCurrentRuntimeAuthority(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+        }
+        if (pendingBulkLifecycle != null) {
+            handleChatSessionsBulkLifecycle(
+                envelope = envelope,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
             return
         }
         if (envelope.requestId !in pendingChatSessionLifecycleRequestIds) return
@@ -7296,7 +7524,7 @@ class RuntimeClientViewModel internal constructor(
         ) {
             return false
         }
-        val requestId = UUID.randomUUID().toString()
+        val requestId = CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX + UUID.randomUUID()
         val pending = PendingChatSessionsBulkLifecycle(
             requestId = requestId,
             type = type,
@@ -7336,12 +7564,19 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
-    private fun handleChatSessionsBulkLifecycle(envelope: ProtocolEnvelope) {
+    private fun handleChatSessionsBulkLifecycle(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
         val pending = pendingChatSessionsBulkLifecycle ?: return
         if (
-            pending.requestId != envelope.requestId ||
             envelope.type != pending.type ||
-            !pending.hasCurrentRuntimeAuthority()
+            !pending.matchesCurrentRuntimeAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
         ) {
             return
         }
@@ -7393,7 +7628,7 @@ class RuntimeClientViewModel internal constructor(
                 )
                 return
             }
-            pending.requestId = UUID.randomUUID().toString()
+            pending.requestId = CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX + UUID.randomUUID()
             sendRuntimeChatSessionsBulkLifecycleBatch(pending)
             return
         }
@@ -7417,6 +7652,17 @@ class RuntimeClientViewModel internal constructor(
             activeConnectionGeneration == connectionGeneration &&
             isSessionAuthenticated &&
             runtimeSessionAuthorityGeneration == authorityGeneration
+    }
+
+    private fun PendingChatSessionsBulkLifecycle.matchesCurrentRuntimeAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return this.requestId == requestId &&
+            channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            hasCurrentRuntimeAuthority()
     }
 
     private fun clearPendingChatSessionsBulkLifecycle(
@@ -7532,9 +7778,35 @@ class RuntimeClientViewModel internal constructor(
             authorityGeneration == runtimeSessionAuthorityGeneration
     }
 
-    private fun handleIndexDocumentsList(envelope: ProtocolEnvelope) {
-        if (pendingDocumentCatalogRequestId != envelope.requestId) return
-        pendingDocumentCatalogRequestId = null
+    private fun PendingRuntimeDocumentRequest.matchesCurrentRuntimeDocumentAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return this.requestId == requestId &&
+            channel === sourceChannel &&
+            activeChannel === sourceChannel &&
+            channel.isConnected &&
+            connectionGeneration == sourceConnectionGeneration &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            authorityGeneration == runtimeSessionAuthorityGeneration
+    }
+
+    private fun handleIndexDocumentsList(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingDocumentCatalogRequest ?: return
+        if (
+            !pending.matchesCurrentRuntimeDocumentAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        clearPendingRuntimeDocumentCatalogRequest()
         envelope.payload.indexDocumentsListResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "index.documents.list response contains unsupported metadata: $unknownKey")
             mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
@@ -7558,8 +7830,19 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleRetrievalQuery(envelope: ProtocolEnvelope) {
-        if (pendingDocumentSearchRequestId != envelope.requestId) return
+    private fun handleRetrievalQuery(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingDocumentSearchRequest ?: return
+        if (
+            !pending.matchesCurrentRuntimeDocumentAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
         clearPendingRuntimeDocumentSearch()
         envelope.payload.retrievalQueryResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "retrieval.query response contains unsupported metadata: $unknownKey")
@@ -8267,30 +8550,72 @@ class RuntimeClientViewModel internal constructor(
         drainDeferredMemorySummaryDraftsRefresh()
     }
 
-    private fun handleMemoryUpsert(envelope: ProtocolEnvelope) {
-        clearMemoryDuplicateSuggestions()
-        clearMemorySemanticDuplicateSuggestions()
-        clearMemorySemanticDuplicateClusters()
+    private fun handleMemoryUpsert(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingMemoryMutationsByRequestId[envelope.requestId] ?: return
+        if (!pending.matchesCurrentMemoryMutationAuthority(
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        if (!closePendingMemoryMutation(pending)) return
+        if (pending.type != MessageType.MemoryUpsert) {
+            showError("invalid_payload", "memory.upsert response does not match the pending operation")
+            return
+        }
         envelope.payload.memoryUpsertResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.upsert response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(MemoryUpsertResultPayload.serializer(), envelope.payload) ?: return
+        val matchesExpectedEntry =
+            (pending.expectedEntryId == null || payload.entry.id == pending.expectedEntryId) &&
+                payload.entry.content == pending.expectedContent &&
+                payload.entry.enabled == pending.expectedEnabled
+        if (!matchesExpectedEntry) {
+            showError("invalid_payload", "memory.upsert response does not match the pending entry")
+            return
+        }
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         publishPersistedRuntimeData(
             persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
             save = true,
         )
     }
 
-    private fun handleMemoryDelete(envelope: ProtocolEnvelope) {
-        clearMemoryDuplicateSuggestions()
-        clearMemorySemanticDuplicateSuggestions()
-        clearMemorySemanticDuplicateClusters()
+    private fun handleMemoryDelete(
+        envelope: ProtocolEnvelope,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ) {
+        val pending = pendingMemoryMutationsByRequestId[envelope.requestId] ?: return
+        if (!pending.matchesCurrentMemoryMutationAuthority(
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) return
+        if (!closePendingMemoryMutation(pending)) return
+        if (pending.type != MessageType.MemoryDelete) {
+            showError("invalid_payload", "memory.delete response does not match the pending operation")
+            return
+        }
         envelope.payload.memoryDeleteResultUnknownMetadataKey()?.let { unknownKey ->
             showError("invalid_payload", "memory.delete response contains unsupported metadata: $unknownKey")
             return
         }
         val payload = decodePayload(MemoryDeleteResultPayload.serializer(), envelope.payload) ?: return
+        if (payload.id != pending.expectedEntryId) {
+            showError("invalid_payload", "memory.delete response does not match the pending entry")
+            return
+        }
+        clearMemoryDuplicateSuggestions()
+        clearMemorySemanticDuplicateSuggestions()
+        clearMemorySemanticDuplicateClusters()
         publishPersistedRuntimeData(
             persistedRuntimeData.withoutRuntimeMemoryEntry(payload.id),
             save = true,
@@ -8336,6 +8661,17 @@ class RuntimeClientViewModel internal constructor(
         sourceConnectionGeneration: Long,
     ) {
         if (envelope.requestId in closedRuntimeAuthenticationRequestIds) return
+        val isCurrentBulkLifecycleError = pendingChatSessionsBulkLifecycle?.let { pending ->
+            pending.matchesCurrentRuntimeAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        } == true
+        if (
+            envelope.requestId.startsWith(CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX) &&
+            !isCurrentBulkLifecycleError
+        ) return
         if (
             isClosedTitleRequest(
                 requestId = envelope.requestId,
@@ -8433,6 +8769,39 @@ class RuntimeClientViewModel internal constructor(
                 )
                 return
             }
+        pendingRuntimeHealthRequest
+            ?.takeIf { pending ->
+                pending.matchesCurrentRuntimeHealthAuthority(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            }
+            ?.let {
+                envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                    clearPendingRuntimeHealthRequest()
+                    showError(
+                        "invalid_payload",
+                        "runtime.health error response contains unsupported metadata: $unknownKey",
+                    )
+                    return
+                }
+                val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                    clearPendingRuntimeHealthRequest()
+                    return
+                }
+                clearPendingRuntimeHealthRequest()
+                if (payload.code.isPairingRequiredRuntimeCode()) {
+                    revokeAuthenticatedRuntimeSessionState()
+                }
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+        if (envelope.requestId.startsWith(RUNTIME_HEALTH_REQUEST_ID_PREFIX)) return
         pendingModelsListRequest
             ?.takeIf { pending ->
                 pending.matchesCurrentModelsAuthority(
@@ -8560,6 +8929,78 @@ class RuntimeClientViewModel internal constructor(
                     ),
                 )
             }
+            return
+        }
+        if (envelope.requestId.startsWith(MEMORY_LIST_REQUEST_ID_PREFIX)) {
+            if (!isCurrentMemoryListRequest(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            ) return
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                clearPendingMemoryListRequest()
+                showError(
+                    "invalid_payload",
+                    "error response contains unsupported metadata: $unknownKey",
+                )
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            val retryQuery = pendingMemoryListQuery
+            val unsupportedEmbeddingHint = payload?.code == "invalid_payload" &&
+                pendingMemoryListEmbeddingModelId != null &&
+                payload.message.orEmpty().contains("embedding_model_id")
+            clearPendingMemoryListRequest()
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            if (unsupportedEmbeddingHint && retryQuery != null) {
+                requestRuntimeMemory(retryQuery, allowEmbeddingModel = false)
+                return
+            }
+            showError("memory_load_failed", payload?.message)
+            return
+        }
+        val memoryMutationType = when {
+            envelope.requestId.startsWith(MEMORY_UPSERT_REQUEST_ID_PREFIX) -> MessageType.MemoryUpsert
+            envelope.requestId.startsWith(MEMORY_DELETE_REQUEST_ID_PREFIX) -> MessageType.MemoryDelete
+            else -> null
+        }
+        if (memoryMutationType != null) {
+            val pending = pendingMemoryMutationsByRequestId[envelope.requestId] ?: return
+            if (!pending.matchesCurrentMemoryMutationAuthority(
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            ) return
+            if (!closePendingMemoryMutation(pending)) return
+            if (pending.type != memoryMutationType) {
+                showError("invalid_payload", "memory mutation error does not match the pending operation")
+                return
+            }
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                showError(
+                    "invalid_payload",
+                    "memory mutation error response contains unsupported metadata: $unknownKey",
+                )
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: return
+            if (payload.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+            }
+            mutableState.value = state.value.withRuntimeError(
+                envelope,
+                payload,
+                pendingModelPullRequestId,
+            )
             return
         }
         if (shouldIgnoreClosedMemoryDuplicateSuggestionsError(
@@ -8717,21 +9158,66 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (envelope.requestId.isTrustedSourceRequestId()) return
-        if (pendingDocumentSearchRequestId == envelope.requestId) {
+        val pendingDocumentCatalog = pendingDocumentCatalogRequest
+        if (
+            pendingDocumentCatalog?.matchesCurrentRuntimeDocumentAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            ) == true
+        ) {
+            envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
+                clearPendingRuntimeDocumentCatalogRequest()
+                mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+                showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
+                return
+            }
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                clearPendingRuntimeDocumentCatalogRequest()
+                mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+                return
+            }
+            clearPendingRuntimeDocumentCatalogRequest()
+            mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
+            if (payload.code.isPairingRequiredRuntimeCode()) {
+                revokeAuthenticatedRuntimeSessionState()
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload,
+                    pendingModelPullRequestId,
+                )
+                return
+            }
+            showError("document_catalog_load_failed", payload.message)
+            return
+        }
+        if (envelope.requestId.startsWith(DOCUMENT_CATALOG_REQUEST_ID_PREFIX)) return
+        val pendingDocumentSearch = pendingDocumentSearchRequest
+        if (
+            pendingDocumentSearch?.matchesCurrentRuntimeDocumentAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            ) == true
+        ) {
             envelope.payload.errorPayloadUnknownMetadataKey()?.let { unknownKey ->
                 clearPendingRuntimeDocumentSearch()
                 mutableState.update { it.copy(isSearchingDocuments = false) }
                 showError("invalid_payload", "error response contains unsupported metadata: $unknownKey")
                 return
             }
-            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            val originalPayload = pendingDocumentSearchPayload
-            val shouldRetryWithoutEmbedding = payload?.code == "invalid_payload" &&
-                pendingDocumentSearchCanRetryWithoutEmbedding &&
-                originalPayload?.embeddingModelId != null &&
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload) ?: run {
+                clearPendingRuntimeDocumentSearch()
+                mutableState.update { it.copy(isSearchingDocuments = false) }
+                return
+            }
+            val originalPayload = pendingDocumentSearch.payload
+            val shouldRetryWithoutEmbedding = payload.code == "invalid_payload" &&
+                pendingDocumentSearch.canRetryWithoutEmbedding &&
+                originalPayload.embeddingModelId != null &&
                 payload.message.trim() == LEGACY_RETRIEVAL_EMBEDDING_UNSUPPORTED_MESSAGE
             clearPendingRuntimeDocumentSearch()
-            if (payload?.code.isPairingRequiredRuntimeCode()) {
+            if (payload.code.isPairingRequiredRuntimeCode()) {
                 revokeAuthenticatedRuntimeSessionState()
                 mutableState.value = state.value.withRuntimeError(
                     envelope,
@@ -8742,13 +9228,13 @@ class RuntimeClientViewModel internal constructor(
             }
             if (shouldRetryWithoutEmbedding) {
                 requestRuntimeDocumentSearch(
-                    payload = requireNotNull(originalPayload).copy(embeddingModelId = null),
+                    payload = originalPayload.copy(embeddingModelId = null),
                     canRetryWithoutEmbedding = false,
                 )
                 return
             }
             mutableState.update { it.copy(isSearchingDocuments = false) }
-            showError("document_search_failed", payload?.message)
+            showError("document_search_failed", payload.message)
             return
         }
         if (envelope.requestId.startsWith(DOCUMENT_SEARCH_REQUEST_ID_PREFIX)) return
@@ -8874,18 +9360,36 @@ class RuntimeClientViewModel internal constructor(
                 return
             }
             pendingChatSessionsBulkLifecycle
-                ?.takeIf { it.requestId == envelope.requestId }
+                ?.takeIf {
+                    it.matchesCurrentRuntimeAuthority(
+                        requestId = envelope.requestId,
+                        sourceChannel = sourceChannel,
+                        sourceConnectionGeneration = sourceConnectionGeneration,
+                    )
+                }
                 ?.let { pending ->
                     failPendingChatSessionsBulkLifecycle(pending, detail, errorCode = "invalid_payload")
                     return
                 }
             pendingChatSessionsListRun
-                ?.takeIf { it.requestId == envelope.requestId }
+                ?.takeIf {
+                    it.matchesCurrentRuntimeAuthority(
+                        requestId = envelope.requestId,
+                        sourceChannel = sourceChannel,
+                        sourceConnectionGeneration = sourceConnectionGeneration,
+                    )
+                }
                 ?.let { run ->
                     failPendingChatSessionsListRun(run, detail)
                     return
                 }
-            if (pendingChatMessagesRequestId == envelope.requestId) {
+            if (
+                isCurrentChatMessagesRequest(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            ) {
                 clearPendingChatMessagesRequest()
                 showError("invalid_payload", detail)
                 return
@@ -8894,7 +9398,13 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         pendingChatSessionsBulkLifecycle
-            ?.takeIf { it.requestId == envelope.requestId }
+            ?.takeIf {
+                it.matchesCurrentRuntimeAuthority(
+                    requestId = envelope.requestId,
+                    sourceChannel = sourceChannel,
+                    sourceConnectionGeneration = sourceConnectionGeneration,
+                )
+            }
             ?.let { pending ->
                 val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
                 if (payload?.code.isPairingRequiredRuntimeCode()) {
@@ -8956,7 +9466,12 @@ class RuntimeClientViewModel internal constructor(
             }
             return
         }
-        if (pendingChatSessionsRequestId == envelope.requestId) {
+        if (pendingChatSessionsListRun?.matchesCurrentRuntimeAuthority(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            ) == true
+        ) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             if (payload?.code.isPairingRequiredRuntimeCode()) {
                 clearPendingChatSessionsListRun(
@@ -8980,7 +9495,13 @@ class RuntimeClientViewModel internal constructor(
             showError("chat_history_load_failed", payload?.message)
             return
         }
-        if (pendingChatMessagesRequestId == envelope.requestId) {
+        if (
+            isCurrentChatMessagesRequest(
+                requestId = envelope.requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
+        ) {
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             if (payload?.code.isPairingRequiredRuntimeCode()) {
                 revokeAuthenticatedRuntimeSessionState()
@@ -8993,34 +9514,6 @@ class RuntimeClientViewModel internal constructor(
             }
             clearPendingChatMessagesRequest()
             showError("chat_history_load_failed", payload?.message)
-            return
-        }
-        if (isCurrentMemoryListRequest(
-                requestId = envelope.requestId,
-                sourceChannel = sourceChannel,
-                sourceConnectionGeneration = sourceConnectionGeneration,
-            )
-        ) {
-            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            val retryQuery = pendingMemoryListQuery
-            val unsupportedEmbeddingHint = payload?.code == "invalid_payload" &&
-                pendingMemoryListEmbeddingModelId != null &&
-                payload.message.orEmpty().contains("embedding_model_id")
-            clearPendingMemoryListRequest()
-            if (payload?.code.isPairingRequiredRuntimeCode()) {
-                revokeAuthenticatedRuntimeSessionState()
-                mutableState.value = state.value.withRuntimeError(
-                    envelope,
-                    payload,
-                    pendingModelPullRequestId,
-                )
-                return
-            }
-            if (unsupportedEmbeddingHint && retryQuery != null) {
-                requestRuntimeMemory(retryQuery, allowEmbeddingModel = false)
-                return
-            }
-            showError("memory_load_failed", payload?.message)
             return
         }
         if (isCurrentMemoryDuplicateSuggestionsRequest(
@@ -9190,22 +9683,6 @@ class RuntimeClientViewModel internal constructor(
                 return
             }
             showError("memory_summary_drafts_load_failed", payload?.message)
-            return
-        }
-        if (pendingDocumentCatalogRequestId == envelope.requestId) {
-            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-            pendingDocumentCatalogRequestId = null
-            mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
-            if (payload?.code.isPairingRequiredRuntimeCode()) {
-                revokeAuthenticatedRuntimeSessionState()
-                mutableState.value = state.value.withRuntimeError(
-                    envelope,
-                    payload,
-                    pendingModelPullRequestId,
-                )
-                return
-            }
-            showError("document_catalog_load_failed", payload?.message)
             return
         }
         val pendingMemorySummaryDraftGeneration =
@@ -9495,6 +9972,30 @@ class RuntimeClientViewModel internal constructor(
                     closePendingChatSessionRenameRequest(envelope.requestId, renameMutation)
                 val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
                     pendingMemoryListRequestId == envelope.requestId
+                val failedMemoryMutation = if (
+                    envelope.type in setOf(MessageType.MemoryUpsert, MessageType.MemoryDelete) &&
+                    channelAtDispatch != null &&
+                    expectedConnectionGeneration != null
+                ) {
+                    pendingMemoryMutationsByRequestId[envelope.requestId]
+                        ?.takeIf { pending ->
+                            pending.type == envelope.type &&
+                                pending.matchesCurrentMemoryMutationAuthority(
+                                    sourceChannel = channelAtDispatch,
+                                    sourceConnectionGeneration = expectedConnectionGeneration,
+                                )
+                        }
+                } else {
+                    null
+                }
+                val isRuntimeHealthRequest = envelope.type == MessageType.RuntimeHealth &&
+                    channelAtDispatch != null &&
+                    expectedConnectionGeneration != null &&
+                    pendingRuntimeHealthRequest?.matchesCurrentRuntimeHealthAuthority(
+                        requestId = envelope.requestId,
+                        sourceChannel = channelAtDispatch,
+                        sourceConnectionGeneration = expectedConnectionGeneration,
+                    ) == true
                 val isModelsListRequest = envelope.type == MessageType.ModelsList &&
                     pendingModelsListRequest?.requestId == envelope.requestId
                 val isMemoryDuplicateSuggestionsRequest =
@@ -9519,9 +10020,21 @@ class RuntimeClientViewModel internal constructor(
                             sourceConnectionGeneration = expectedConnectionGeneration,
                         )
                 val isDocumentCatalogRequest = envelope.type == MessageType.IndexDocumentsList &&
-                    pendingDocumentCatalogRequestId == envelope.requestId
+                    channelAtDispatch != null &&
+                    expectedConnectionGeneration != null &&
+                    pendingDocumentCatalogRequest?.matchesCurrentRuntimeDocumentAuthority(
+                        requestId = envelope.requestId,
+                        sourceChannel = channelAtDispatch,
+                        sourceConnectionGeneration = expectedConnectionGeneration,
+                    ) == true
                 val isDocumentSearchRequest = envelope.type == MessageType.RetrievalQuery &&
-                    pendingDocumentSearchRequestId == envelope.requestId
+                    channelAtDispatch != null &&
+                    expectedConnectionGeneration != null &&
+                    pendingDocumentSearchRequest?.matchesCurrentRuntimeDocumentAuthority(
+                        requestId = envelope.requestId,
+                        sourceChannel = channelAtDispatch,
+                        sourceConnectionGeneration = expectedConnectionGeneration,
+                    ) == true
                 val isCitationResolveRequest = envelope.type == MessageType.CitationResolve &&
                     pendingCitationResolveRequestId == envelope.requestId
                 val isHistoricalSourceAttributionResolveRequest =
@@ -9607,15 +10120,43 @@ class RuntimeClientViewModel internal constructor(
                 }
                 val isCurrentPairingRequest = envelope.type == MessageType.PairingRequest &&
                     pendingInitialPairingRequest?.requestId == envelope.requestId
-                val chatSessionsListRun = pendingChatSessionsListRun?.takeIf { pending ->
+                val chatSessionsListRun = if (
                     envelope.type == MessageType.ChatSessionsList &&
-                        pending.requestId == envelope.requestId
+                    channelAtDispatch != null &&
+                    expectedConnectionGeneration != null
+                ) {
+                    pendingChatSessionsListRun?.takeIf { pending ->
+                        pending.matchesCurrentRuntimeAuthority(
+                            requestId = envelope.requestId,
+                            sourceChannel = channelAtDispatch,
+                            sourceConnectionGeneration = expectedConnectionGeneration,
+                        )
+                    }
+                } else {
+                    null
                 }
                 val isCurrentChatMessagesListRequest =
                     envelope.type == MessageType.ChatMessagesList &&
-                        pendingChatMessagesRequestId == envelope.requestId
-                val bulkLifecycleRequest = pendingChatSessionsBulkLifecycle?.takeIf { pending ->
-                    pending.requestId == envelope.requestId && pending.type == envelope.type
+                        channelAtDispatch != null &&
+                        expectedConnectionGeneration != null &&
+                        isCurrentChatMessagesRequest(
+                            requestId = envelope.requestId,
+                            sourceChannel = channelAtDispatch,
+                            sourceConnectionGeneration = expectedConnectionGeneration,
+                        )
+                val bulkLifecycleRequest = if (
+                    channelAtDispatch != null && expectedConnectionGeneration != null
+                ) {
+                    pendingChatSessionsBulkLifecycle?.takeIf { pending ->
+                        pending.type == envelope.type &&
+                            pending.matchesCurrentRuntimeAuthority(
+                                requestId = envelope.requestId,
+                                sourceChannel = channelAtDispatch,
+                                sourceConnectionGeneration = expectedConnectionGeneration,
+                            )
+                    }
+                } else {
+                    null
                 }
                 if (isCurrentPairingRequest) {
                     clearPendingPairingRequest()
@@ -9652,6 +10193,16 @@ class RuntimeClientViewModel internal constructor(
                     showError("memory_load_failed", error.message)
                     return@onFailure
                 }
+                if (failedMemoryMutation != null) {
+                    closePendingMemoryMutation(failedMemoryMutation)
+                    showError("send_failed", error.message)
+                    return@onFailure
+                }
+                if (isRuntimeHealthRequest) {
+                    clearPendingRuntimeHealthRequest()
+                    showError("send_failed", error.message)
+                    return@onFailure
+                }
                 if (isModelsListRequest) {
                     clearPendingModelsListRequest()
                     showError("send_failed", error.message)
@@ -9676,7 +10227,7 @@ class RuntimeClientViewModel internal constructor(
                     return@onFailure
                 }
                 if (isDocumentCatalogRequest) {
-                    pendingDocumentCatalogRequestId = null
+                    clearPendingRuntimeDocumentCatalogRequest()
                     mutableState.update { it.copy(isLoadingDocumentCatalog = false) }
                     showError("document_catalog_load_failed", error.message)
                     return@onFailure
@@ -10105,6 +10656,36 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
+    private fun RuntimeChatHistoryRequestCorrelation.matchesCurrentChatMessagesAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return pendingChatMessagesRequestCorrelation === this &&
+            pendingChatMessagesRequestId == requestId &&
+            this.requestId == requestId &&
+            type == MessageType.ChatMessagesList &&
+            channel === sourceChannel &&
+            activeChannel === sourceChannel &&
+            channel.isConnected &&
+            connectionGeneration == sourceConnectionGeneration &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated &&
+            authorityGeneration == runtimeSessionAuthorityGeneration
+    }
+
+    private fun isCurrentChatMessagesRequest(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return pendingChatMessagesRequestCorrelation?.matchesCurrentChatMessagesAuthority(
+            requestId = requestId,
+            sourceChannel = sourceChannel,
+            sourceConnectionGeneration = sourceConnectionGeneration,
+        ) == true
+    }
+
     private fun isClosedRuntimeChatHistoryRequest(
         requestId: String,
         sourceChannel: RuntimeProtocolChannel,
@@ -10123,14 +10704,18 @@ class RuntimeClientViewModel internal constructor(
         sourceConnectionGeneration: Long,
     ): Boolean {
         val currentSessionsRequest = pendingChatSessionsListRun?.let { run ->
-            run.requestId == requestId &&
-                run.channel === sourceChannel &&
-                run.connectionGeneration == sourceConnectionGeneration
+            run.matchesCurrentRuntimeAuthority(
+                requestId = requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
         } == true
         val currentMessagesRequest = pendingChatMessagesRequestCorrelation?.let { correlation ->
-            correlation.requestId == requestId &&
-                correlation.channel === sourceChannel &&
-                correlation.connectionGeneration == sourceConnectionGeneration
+            correlation.matchesCurrentChatMessagesAuthority(
+                requestId = requestId,
+                sourceChannel = sourceChannel,
+                sourceConnectionGeneration = sourceConnectionGeneration,
+            )
         } == true
         if (currentSessionsRequest || currentMessagesRequest) return false
 
@@ -10250,14 +10835,17 @@ class RuntimeClientViewModel internal constructor(
         runtimeSessionAuthorityGeneration += 1L
         clearTitleReconciliationAuthority()
         resetMemorySummaryDraftsRequestCorrelations()
+        clearPendingRuntimeHealthRequest()
         clearPendingModelsListRequest()
+        clearPendingMemoryListRequest()
+        clearPendingMemoryMutations()
         modelCatalogAcceptedAuthorityGeneration = null
         resetMemoryDuplicateSuggestionsAuthority()
         resetMemorySemanticDuplicateSuggestionsAuthority()
         resetMemorySemanticDuplicateClustersAuthority()
         runtimeChatSessionsAuthoritativeSyncSupported = false
         runtimeChatSessionsBulkAuthorityEnabled = false
-        clearTrustedSourceSessionState()
+        clearPendingRuntimeDocumentRequests()
         clearResearchNotebookSessionState()
         clearPendingRuntimeHistoryRequests()
         clearPendingChatSessionsBulkLifecycle()
@@ -10355,15 +10943,25 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun clearPendingRuntimeDocumentRequests() {
-        pendingDocumentCatalogRequestId = null
+        clearPendingRuntimeDocumentCatalogRequest()
         clearPendingRuntimeDocumentSearch()
         clearTrustedSourceSessionState()
+        mutableState.update {
+            it.copy(
+                documentCatalog = RuntimeDocumentCatalog(),
+                isLoadingDocumentCatalog = false,
+                documentSearchResults = emptyList(),
+                isSearchingDocuments = false,
+            )
+        }
+    }
+
+    private fun clearPendingRuntimeDocumentCatalogRequest() {
+        pendingDocumentCatalogRequest = null
     }
 
     private fun clearPendingRuntimeDocumentSearch() {
-        pendingDocumentSearchRequestId = null
-        pendingDocumentSearchPayload = null
-        pendingDocumentSearchCanRetryWithoutEmbedding = false
+        pendingDocumentSearchRequest = null
     }
 
     private fun clearPendingMemoryListRequest() {
@@ -10373,6 +10971,56 @@ class RuntimeClientViewModel internal constructor(
         pendingMemoryListChannel = null
         pendingMemoryListConnectionGeneration = null
         pendingMemoryListAuthorityGeneration = null
+    }
+
+    private fun clearPendingMemoryMutations() {
+        memoryMutationRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)
+        memoryMutationRequestTimeoutJobsByRequestId.clear()
+        pendingMemoryMutationsByRequestId.clear()
+    }
+
+    private fun closePendingMemoryMutation(pending: PendingMemoryMutation): Boolean {
+        if (pendingMemoryMutationsByRequestId[pending.requestId] !== pending) return false
+        pendingMemoryMutationsByRequestId.remove(pending.requestId)
+        memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()
+        return true
+    }
+
+    private fun scheduleMemoryMutationTimeout(pending: PendingMemoryMutation) {
+        val timeoutMillis = dependencies.memoryMutationRequestTimeoutMillis ?: return
+        memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()
+        memoryMutationRequestTimeoutJobsByRequestId[pending.requestId] = viewModelScope.launch {
+            delay(timeoutMillis)
+            if (memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId) == null) {
+                return@launch
+            }
+            if (!pending.matchesCurrentMemoryMutationAuthority(
+                    sourceChannel = pending.channel,
+                    sourceConnectionGeneration = pending.connectionGeneration,
+                )
+            ) {
+                if (pendingMemoryMutationsByRequestId[pending.requestId] === pending) {
+                    pendingMemoryMutationsByRequestId.remove(pending.requestId)
+                }
+                return@launch
+            }
+            if (!closePendingMemoryMutation(pending)) return@launch
+            showError("runtime_error", "Memory mutation timed out")
+            clearPendingMemoryListRequest()
+            requestRuntimeMemory()
+        }
+    }
+
+    private fun PendingMemoryMutation.matchesCurrentMemoryMutationAuthority(
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
     }
 
     private fun hasPendingMemorySummaryDraftAction(): Boolean {
@@ -10593,6 +11241,24 @@ class RuntimeClientViewModel internal constructor(
             startsWith(MEMORY_SUMMARY_DRAFT_GENERATE_REQUEST_ID_PREFIX) ||
             startsWith(MEMORY_SUMMARY_DRAFT_APPROVE_REQUEST_ID_PREFIX) ||
             startsWith(MEMORY_SUMMARY_DRAFT_DISMISS_REQUEST_ID_PREFIX)
+    }
+
+    private fun clearPendingRuntimeHealthRequest() {
+        pendingRuntimeHealthRequest = null
+    }
+
+    private fun PendingRuntimeHealthRequest.matchesCurrentRuntimeHealthAuthority(
+        requestId: String,
+        sourceChannel: RuntimeProtocolChannel,
+        sourceConnectionGeneration: Long,
+    ): Boolean {
+        return this.requestId == requestId &&
+            channel === sourceChannel &&
+            connectionGeneration == sourceConnectionGeneration &&
+            authorityGeneration == runtimeSessionAuthorityGeneration &&
+            activeChannel === sourceChannel &&
+            activeConnectionGeneration == sourceConnectionGeneration &&
+            isSessionAuthenticated
     }
 
     private fun clearPendingModelsListRequest() {
@@ -11511,7 +12177,9 @@ class RuntimeClientViewModel internal constructor(
         const val MAX_RUNTIME_TRUSTED_SOURCES = 100
         const val MAX_RUNTIME_DOCUMENT_QUERY_CHARACTERS = 1024
         private const val CHAT_TITLE_REQUEST_ID_PREFIX = "chat-title-"
+        private const val DOCUMENT_CATALOG_REQUEST_ID_PREFIX = "index-documents-list-"
         private const val DOCUMENT_SEARCH_REQUEST_ID_PREFIX = "retrieval-query-"
+        private const val RUNTIME_HEALTH_REQUEST_ID_PREFIX = "runtime-health-"
         private const val MODELS_LIST_REQUEST_ID_PREFIX = "models-list-"
         private const val MEMORY_DUPLICATE_SUGGESTIONS_REQUEST_ID_PREFIX =
             "memory-duplicate-suggestions-list-"
@@ -11527,7 +12195,10 @@ class RuntimeClientViewModel internal constructor(
             "memory-summary-draft-approve-"
         private const val MEMORY_SUMMARY_DRAFT_DISMISS_REQUEST_ID_PREFIX =
             "memory-summary-draft-dismiss-"
+        private const val MEMORY_UPSERT_REQUEST_ID_PREFIX = "memory-upsert-"
+        private const val MEMORY_DELETE_REQUEST_ID_PREFIX = "memory-delete-"
         private const val CHAT_SESSIONS_LIST_REQUEST_ID_PREFIX = "chat-sessions-list-"
+        private const val CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX = "chat-sessions-bulk-"
         private const val CHAT_MESSAGES_LIST_REQUEST_ID_PREFIX = "chat-messages-list-"
         private const val CITATION_RESOLVE_REQUEST_ID_PREFIX = "citation-resolve-"
         private const val HISTORICAL_SOURCE_ATTRIBUTION_RESOLVE_REQUEST_ID_PREFIX =

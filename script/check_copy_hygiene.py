@@ -23839,8 +23839,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android runtime search actions must promote one authoritative summary without replacing the full cache.",
         ),
         (
-            "if (run.requestId != envelope.requestId || !run.hasCurrentRuntimeAuthority()) return",
-            "Android runtime search responses must exactly match the current pending request.",
+            "if (!run.matchesCurrentRuntimeAuthority(\n                requestId = envelope.requestId,\n                sourceChannel = sourceChannel,\n                sourceConnectionGeneration = sourceConnectionGeneration,",
+            "Android runtime search responses must exactly match the current request and receiving transport authority.",
         ),
         (
             "private fun clearRuntimeChatSearchAuthority()",
@@ -34263,8 +34263,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             android_protocol_text,
             (
                 '@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',
-                "require(sizeBytes == null || sizeBytes >= 0)",
-                "require(contextWindowTokens == null || contextWindowTokens > 0)",
+                "require(sizeBytes == null || sizeBytes in 0..MAX_MODEL_SIZE_BYTES)",
+                "contextWindowTokens in 1..MAX_MODEL_CONTEXT_WINDOW_TOKENS",
             ),
         ),
         (
@@ -34314,7 +34314,8 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             schema_path,
             schema_text,
             (
-                '"context_window_tokens": { "type": "integer", "minimum": 1 }',
+                '"context_window_tokens": {',
+                '"maximum": 16777216',
                 '"chat_context_window_exceeded"',
             ),
         ),
@@ -37988,11 +37989,11 @@ def provider_confirmed_runtime_model_unload_state_guard_failures() -> list[str]:
         ),
         lmstudio_path: (
             "LMStudioUnloadModelsResponse.self",
-            "let matches = response.models.filter { $0.key == modelID }",
+            "Data($0.key.utf8) == requestedModelIdentity",
             "guard matches.count <= 1 else",
             "return .unsupported(provider: provider, modelID: providerModelID)",
             "instanceIDs = model.loadedInstances.map(\\.id)",
-            "guard acknowledgement.instanceID == instanceID",
+            "guard Data(acknowledgement.instanceID.utf8) == Data(instanceID.utf8)",
             "for attempt in 0..<unloadPollAttempts",
             "Native model residency state was malformed.",
             "StrictJSONValidator.validateNoDuplicateObjectKeys",
@@ -38011,6 +38012,7 @@ def provider_confirmed_runtime_model_unload_state_guard_failures() -> list[str]:
             "testUnloadModelResolvesExactKeyOnly",
             "testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback",
             "testUnloadModelRejectsMalformedAndMismatchedInstanceAcknowledgements",
+            "testUnloadModelRejectsPartialMultipleInstanceAcknowledgement",
             "testUnloadModelRejectsPersistentProviderResidencyAfterBoundedPolling",
             "testUnloadModelPollingPropagatesCancellation",
             "testUnloadConfirmationFailureBackendErrorIsSanitized",
@@ -38089,6 +38091,10 @@ def provider_confirmed_runtime_model_unload_state_guard_failures() -> list[str]:
             "OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup",
             "OllamaBackendTests/testUnloadModelRejectsDuplicateRunningStateKeysDuringPolling",
             "LMStudioBackendTests/testUnloadModelReturnsUnsupportedWhenNativeAPIRequiresFallback",
+            "LMStudioBackendTests/testUnloadModelRejectsMissingNullOrDuplicateResidencyAtInitialLookup",
+            "LMStudioBackendTests/testUnloadModelRejectsMissingNullOrDuplicateResidencyDuringPolling",
+            "LMStudioBackendTests/testUnloadModelRejectsMalformedAndMismatchedInstanceAcknowledgements",
+            "LMStudioBackendTests/testUnloadModelRejectsPartialMultipleInstanceAcknowledgement",
             "AggregatingLlmBackendResidencyTests/testManualUnloadKeepsActiveModelVisibleWhileProviderConfirmationIsPending",
             "AggregatingLlmBackendResidencyTests/testNonthrowingUnsupportedUnloadIsFailureAndKeepsManualResidencyActive",
             "AggregatingLlmBackendResidencyTests/testMismatchedUnloadConfirmationIdentityIsFailureAndKeepsManualResidencyActive",
@@ -40229,17 +40235,17 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         '@SerialName("qualified_id") val qualifiedId: String? = null',
         '@SerialName("size_bytes") val sizeBytes: Long? = null',
         '@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',
-        "require(id.isNotEmpty())",
-        "require(!name.isNullOrEmpty())",
-        "model info id must be nonempty",
-        "model info name must be nonempty",
+        "require(id.hasModelCatalogContent())",
+        "require(name != null && name.hasModelCatalogContent())",
+        "model info id must be nonblank",
+        "model info name must be nonblank",
         "model info backend must be ollama or lm_studio",
         "model info provider must be ollama or lm_studio",
         "model info model_kind must be chat or embedding",
         "model info capabilities must be unique",
         "model info source must be local or cloud",
-        "require(sizeBytes == null || sizeBytes >= 0)",
-        "require(contextWindowTokens == null || contextWindowTokens > 0)",
+        "require(sizeBytes == null || sizeBytes in 0..MAX_MODEL_SIZE_BYTES)",
+        "contextWindowTokens in 1..MAX_MODEL_CONTEXT_WINDOW_TOKENS",
         "Instant.parse(value)",
         'requireProtocolDateTime(modifiedAt, "model info modified_at")',
         '@SerialName("modified_at") val modifiedAt: String? = null',
@@ -42759,7 +42765,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation",
         "RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination",
         "Android error payload closed-payload app-path addendum",
-        "rejects unknown error response metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation",
+        "Exact-current namespaced memory.list malformed errors consume only their correlation before error publication",
+        "active chat errors retain canonical same-id retry",
     )
     for snippet in required_error_payload_app_path_no_device_snippets:
         if snippet not in no_device_text:
@@ -42771,7 +42778,8 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
     required_error_payload_protocol_doc_snippets = (
         "error` result/response payloads accept only `code`, `message`, and `retryable`",
         "Error payloads must not carry backend URLs, provider URLs, backend credentials, route tokens",
-        "Android clients reject unsupported error metadata before pending request cleanup, active stream termination, route/auth state mutation, or device storage mutation",
+        "Android clients reject unsupported error metadata before active stream termination, route/auth state mutation, or device storage mutation",
+        "exact-current namespaced `memory.list` error consumes only its request correlation",
     )
     for snippet in required_error_payload_protocol_doc_snippets:
         if snippet not in docs_protocol_text:
@@ -43649,14 +43657,14 @@ def android_document_retrieval_viewmodel_guard_failures() -> list[str]:
     required_viewmodel_snippets = (
         "MessageType.IndexDocumentsList,",
         "MessageType.RetrievalQuery,",
-        "pendingDocumentCatalogRequestId",
-        "pendingDocumentSearchRequestId",
+        "private var pendingDocumentCatalogRequest: PendingRuntimeDocumentCatalogRequest? = null",
+        "private var pendingDocumentSearchRequest: PendingRuntimeDocumentSearchRequest? = null",
         "fun refreshRuntimeDocumentCatalog()",
         "fun searchRuntimeDocuments(query: String)",
         "IndexDocumentsListRequestPayload(",
         "RetrievalQueryRequestPayload(",
-        "handleIndexDocumentsList(envelope)",
-        "handleRetrievalQuery(envelope)",
+        "MessageType.IndexDocumentsList -> handleIndexDocumentsList(",
+        "MessageType.RetrievalQuery -> handleRetrievalQuery(",
         "payload.documents.take(MAX_RUNTIME_DOCUMENT_CATALOG_ROWS).mapIndexed",
         "payload.results.take(MAX_RUNTIME_DOCUMENT_SEARCH_RESULTS).mapIndexed",
         "document_catalog_load_failed",
@@ -47120,6 +47128,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "pre_network_tests": ROOT / "script/test_p2p_nat_pre_network_review.py",
         "spike_review_validator": ROOT / "script/check_p2p_nat_controlled_spike_review.py",
         "spike_review_tests": ROOT / "script/test_p2p_nat_controlled_spike_review.py",
+        "progress_validator": ROOT / "script/check_p2p_nat_phase_a_progress.py",
+        "progress_tests": ROOT / "script/test_p2p_nat_phase_a_progress.py",
         "session_crypto_validator": ROOT / "script/check_p2p_nat_session_crypto_vectors.py",
         "session_crypto_tests": ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
         "harness_egress_validator": ROOT / "script/check_p2p_nat_phase_a_harness_egress.py",
@@ -47156,6 +47166,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         "offline_source_md": design_root / "controlled-network-spike/phase-a/offline-source-intake-v1.md",
         "compile_only_json": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json",
         "compile_only_md": design_root / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.md",
+        "phase_a_progress": design_root / "controlled-network-spike/phase-a/progress-v1.json",
         "vectors": ROOT / "shared/protocol/fixtures/production-p2p-nat-v1-vectors.json",
         "manifest": design_root / "evidence.sha256",
         "roadmap": ROOT / "docs/roadmap.md",
@@ -47183,14 +47194,18 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "object_pairs_hook=reject_duplicate_names",
             "validate_current_pre_network_handoff",
             "validate_current_controlled_spike_handoff",
+            "validate_current_phase_a_progress",
             "validate_phase_a_static_evidence_preflight",
             "validate_phase_a_static_python_ast",
             "PHASE_A_STATIC_EVIDENCE_SHA256",
+            "EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 22",
             "allowed_from_imports",
             "check_p2p_nat_session_crypto_vectors.py",
             "check_p2p_nat_phase_a_harness_egress.py",
             "check_p2p_nat_libjuice_offline_source.py",
             "check_p2p_nat_libjuice_compile_only.py",
+            "check_p2p_nat_phase_a_progress.py",
+            "test_p2p_nat_phase_a_progress.py",
             "EXPECTED_PRE_NETWORK_DECISION_RESOLUTIONS",
             '"controlled-network-spike"',
             'DESIGN_ROOT / "implementation"',
@@ -47233,7 +47248,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "validate_source_handoff",
             "validate_decision",
             "validate_handoff_v4",
-            "4 recommendations approved for phase A; handoff-v4 closed; socket gate closed",
+            "4 recommendations approved for phase A; handoff-v4 closed;",
+            "progress-v1 blocked incomplete; socket gate closed",
         ),
         "spike_review_tests": (
             "test_missing_unknown_and_duplicate_names_fail",
@@ -47247,6 +47263,25 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "test_approval_decision_authorization_measurement_and_evidence_drift_fail",
             "test_handoff_v4_phase_a_and_closed_network_gates_fail",
             "test_security_design_validator_independently_rejects_handoff_v4_authority_drift",
+        ),
+        "progress_validator": (
+            "production_p2p_nat_v1_controlled_spike_phase_a_progress_v1",
+            "P2P/NAT Phase A progress validation passed",
+            "EXPECTED_EXECUTION_AUTHORITY",
+            "validate_source_documents",
+            "validate_owned_python_ast",
+            "validate_artifact_hashes",
+            "FORBIDDEN_DYNAMIC_ATTRIBUTE_NAMES",
+            "dynamic call target is forbidden",
+        ),
+        "progress_tests": (
+            "test_canonical_progress_sources_ast_hashes_and_independent_validator_pass",
+            "test_duplicate_missing_unknown_and_nonstandard_json_fail",
+            "test_source_chain_approval_order_and_status_summary_drift_fail",
+            "test_evidence_completion_blocker_scope_and_reference_drift_fail",
+            "test_every_execution_gate_phase_b_measurement_and_immutability_drift_fail",
+            "test_central_validator_independently_rejects_progress_authority_drift",
+            "test_owned_ast_rejects_process_network_dynamic_and_file_write_capabilities",
         ),
         "session_crypto_validator": (
             "production-p2p-nat-v1-session-crypto-vectors.json",
@@ -47348,12 +47383,15 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "script/check_p2p_nat_libjuice_compile_only.py",
             "script/test_p2p_nat_libjuice_compile_only.py",
             "script/check_p2p_nat_security_design.py",
+            "script/check_p2p_nat_phase_a_progress.py",
+            "script/test_p2p_nat_phase_a_progress.py",
             "Covered production P2P/NAT bounded no-network handoff addendum:",
             "Covered production P2P/NAT pre-network approval addendum:",
             "Covered production P2P/NAT controlled-spike review addendum:",
             "Covered production P2P/NAT controlled-spike phase A approval addendum:",
             "Covered production P2P/NAT controlled-spike phase A crypto and static-policy addendum:",
             "Covered production P2P/NAT controlled-spike phase A offline-source and compile-boundary addendum:",
+            "Covered production P2P/NAT controlled-spike phase A progress addendum:",
             "Handoff-v2 records canonical-contracts and no-network-conformance completed",
             "controlled-network-spike remains blocked",
             "decision-v1 resolves all seven",
@@ -47366,6 +47404,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "the security-design validator directly verifies canonical handoff closure",
             "10-test mutation suite",
             "17-test mutation suite",
+            "22-file SHA-256 preflight",
+            "7-test progress mutation suite",
             "librarySelectionAuthorized, harnessImplementationAuthorized, networkIOAllowed",
             "sourceAcquisitionNetworkIOAllowed",
             "controlledSpikeNetworkIOAllowed, controlledSpikeSocketExecutionAuthorized",
@@ -47590,6 +47630,40 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "x86_64",
             "authorizes no current compiler or archive invocation",
         ),
+        "phase_a_progress": (
+            '"artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v1"',
+            '"count": 4',
+            '"boundedEvidenceCompletedCount": 2',
+            '"requiredBoundedEvidenceGroupCount": 4',
+            '"blockedBoundedEvidenceCount": 2',
+            '"phaseASecurityReviewStatus": "blocked_on_source_and_compile_evidence"',
+            '"status": "blocked_missing_offline_source"',
+            '"status": "blocked_missing_reviewed_source"',
+            '"status": "completed_bounded_no_device_vectors"',
+            '"status": "static_design_complete"',
+            '"sourceAcquisitionNetworkIOAllowed": false',
+            '"sourceExecutionAllowed": false',
+            '"compilerInvocationAuthorized": false',
+            '"archiveInvocationAuthorized": false',
+            '"socketCreationAllowed": false',
+            '"runtimeNetworkIOAllowed": false',
+            '"harnessNetworkIOAllowed": false',
+            '"controlledSpikeNetworkIOAllowed": false',
+            '"controlledSpikeSocketExecutionAuthorized": false',
+            '"phaseBExecutionAuthorized": false',
+            '"phaseBNetworkIOAllowed": false',
+            '"phaseBSocketExecutionAuthorized": false',
+            '"externalEgressAllowed": false',
+            '"productionNetworkIOAllowed": false',
+            '"productionDeploymentAuthorized": false',
+            '"phaseBDecisionEligible": false',
+            '"recordState": "closed"',
+        ),
+        "context": (
+            "progress-v1.json",
+            "current versioned Phase A evidence-status authority",
+            "blocked_on_source_and_compile_evidence",
+        ),
         "vectors": (
             '"schema": "aetherlink-production-p2p-nat-v1-vectors"',
             '"expectedCanonicalHex"',
@@ -47627,6 +47701,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
 
     phase_a_gate_order = (
         "run python3 script/check_p2p_nat_security_design.py",
+        "run python3 script/check_p2p_nat_phase_a_progress.py",
+        "run python3 -m unittest script/test_p2p_nat_phase_a_progress.py",
         "run python3 script/check_p2p_nat_libjuice_offline_source.py",
         "run python3 -m unittest script/test_p2p_nat_libjuice_offline_source.py",
         "run python3 script/check_p2p_nat_libjuice_compile_only.py",
@@ -47660,8 +47736,8 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         or phase_a_gate_positions != sorted(phase_a_gate_positions)
     ):
         failures.append(
-            "Default no-device gate must run the P2P/NAT security-design preflight before "
-            "the offline-source, compile-only, crypto, and static harness validators/tests."
+            "Default no-device gate must run the P2P/NAT security-design and Phase A progress "
+            "preflight before the offline-source, compile-only, crypto, and static harness validators/tests."
         )
 
     manifest_lines = [line for line in texts.get("manifest", "").splitlines() if line]
@@ -47669,7 +47745,7 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
         failures.append("P2P/NAT security design evidence manifest must contain 13 artifacts.")
     manifest_bytes = paths["manifest"].read_bytes() if paths["manifest"].is_file() else b""
     manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
-    expected_manifest_hash = "dd26adc9070c878d72a4e4299bcb241e7fc856f85a3f570419bd84509ace99ba"
+    expected_manifest_hash = "7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721"
     if manifest_hash != expected_manifest_hash:
         failures.append(
             "P2P/NAT security design evidence manifest collection hash drifted: "
@@ -47862,6 +47938,33 @@ def p2p_nat_security_design_guard_failures() -> list[str]:
             "blocked_missing_offline_source",
             "blocked_missing_reviewed_source",
             "minSdk 26",
+            "no-device",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[name].relative_to(ROOT)} section {heading!r} is missing {snippet!r}."
+                )
+    phase_a_progress_sections = {
+        "roadmap": "Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
+        "progress": "2026-07-17 Production P2P/NAT Phase A Progress V1 (Final Review Blocked)",
+        "qa": "2026-07-17 Production P2P/NAT Phase A Progress V1 No-Device Checklist",
+    }
+    phase_a_progress_summary = (
+        "Phase A progress: 4 recommendations are approved for bounded Phase A; "
+        "2 bounded evidence groups are complete (cross_platform_session_crypto_vectors and "
+        "static_harness_and_egress_policy); 2 are blocked "
+        "(libjuice_supply_chain_and_source_audit=blocked_missing_offline_source and "
+        "android_macos_compile_only_integration=blocked_missing_reviewed_source); "
+        "the final Phase A security review is blocked_on_source_and_compile_evidence."
+    )
+    for name, heading in phase_a_progress_sections.items():
+        section = section_text(name, heading)
+        for snippet in (
+            phase_a_progress_summary,
+            "progress-v1",
+            "handoff-v4",
+            "22-file SHA-256 preflight",
+            "7-test progress mutation suite",
             "no-device",
         ):
             if snippet not in section:
@@ -52165,12 +52268,12 @@ def runtime_python_sandbox_review_guard_failures() -> list[str]:
         return failures
 
     expected_hashes = {
-        "review": "44db1fd48cf4da9bf777f276fe9acc5df2838e3dcdc83388051222ae101179dd",
+        "review": "70fc6a52abba4217b18c7826cbb6685d7dbad986ed2de13bb80a03ebd3fcea85",
         "review_md": "3e2fc5892120a46522096f700ad4ca7cdb0516aa530f7e3a9ea8a8f6b308fc9a",
         "threat": "24e63f129095b9ee57a4fd8e0a896dabe6b668397383bb274ef4b9f433435ef1",
         "standards": "3c43ed9fc2aa63e7d4eee8f6a19392c97d1eca3a814a4c79b5fd91e9618cdbdd",
-        "manifest": "9bff16c06ca8d36dea4b1a0933547f6e46ddb287c6c84de8df1783f53b91e2d5",
-        "validator": "0b43dca32d435f64bd57e9ccd7b2f864a57f7d841608984d09b80da7068b24d5",
+        "manifest": "351c2830f3113a2362a84c2bc7ac3e084ee7cfb8e1e92977ec9410eb62187fa1",
+        "validator": "2bd0edb1460edc40fbb329a85daae8cc7e8c2e9efa55978d0b9ca3fd9d723aa3",
         "tests": "3bc1af16952520d474efa40bd81d47230e6747ff99ef97ca18ac8409c8ba30b0",
     }
     for label, expected in expected_hashes.items():
@@ -52355,7 +52458,2570 @@ python3 -m unittest script/test_runtime_python_sandbox_review.py
     return failures
 
 
+def provider_model_catalog_context_window_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "model_info": ROOT / "apps/macos/OllamaBackend/Sources/LlmBackend.swift",
+        "strict_json": ROOT / "apps/macos/OllamaBackend/Sources/StrictJSONValidator.swift",
+        "protocol_codec": ROOT / "apps/macos/Protocol/Sources/ProtocolCodec.swift",
+        "protocol_tests": ROOT / "apps/macos/Protocol/Tests/ProtocolCodecTests.swift",
+        "ollama": ROOT / "apps/macos/OllamaBackend/Sources/OllamaBackend.swift",
+        "lm_studio": ROOT / "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift",
+        "aggregate": ROOT / "apps/macos/CompanionCore/Sources/AggregatingLlmBackend.swift",
+        "ollama_tests": ROOT / "apps/macos/OllamaBackend/Tests/OllamaBackendTests.swift",
+        "lm_studio_tests": ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift",
+        "aggregate_tests": ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift",
+        "router": ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift",
+        "catalog_coordinator": ROOT / "apps/macos/CompanionCore/Sources/RuntimeModelCatalogCoordinator.swift",
+        "router_tests": ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift",
+        "schema": ROOT / "packages/protocol-schema/protocol.schema.json",
+        "android_models": ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt",
+        "android_tests": ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt",
+        "schema_check": ROOT / "script/check_protocol_schema.py",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "protocol": ROOT / "docs/protocol.md",
+        "architecture": ROOT / "docs/architecture.md",
+        "security": ROOT / "docs/security.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Provider model-catalog/context-window guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+
+    source_guards = {
+        "model_info": (
+            "public static let maximumCatalogModelCount = 256",
+            "public static let maximumCatalogResponseBytes = 4_194_304",
+            "public static let maximumModelIdentityCodePoints = 512",
+            "public static let maximumQualifiedModelIDCodePoints = 522",
+            "public static let maximumCapabilityCount = 32",
+            "public static let maximumCapabilityCodePoints = 128",
+            "public static let maximumContextWindowTokens = 16_777_216",
+            "public static let maximumSizeBytes = Int64.max",
+            "public static func validateForCatalogPublication(_ model: ModelInfo) throws",
+            "public static func validateQualifiedModelID(_ modelID: String) throws",
+            "value.unicodeScalars.count <= maximumCodePoints",
+            "value.unicodeScalars.contains { !isCatalogBlankCodePoint($0.value) }",
+            "case 0x0009...0x000D",
+            "0x2000...0x200B",
+            "0xFEFF",
+            "var uniqueCapabilities = Set<Data>()",
+            "guard uniqueCapabilities.insert(Data(capability.utf8)).inserted else",
+            "public static func validatedContextWindowTokens(_ value: Int?) -> Int?",
+            "(1...maximumContextWindowTokens).contains(value)",
+            "public static func validatedContextWindowTokens(decimal value: Decimal) -> Int?",
+            "NSDecimalRound(&integral, &candidate, 0, .down)",
+            "guard integral == value else",
+        ),
+        "strict_json": (
+            "public static func validateNoDuplicateObjectKeys(in data: Data) throws",
+            "key = try JSONDecoder().decode(String.self, from: Data(bytes[keyRange]))",
+            "guard keys.insert(key).inserted else",
+            "throw StrictJSONValidationError.duplicateObjectKey",
+        ),
+        "protocol_codec": (
+            "public static let maxFrameBytes = 1024 * 1024",
+            "public static let maxRelayPlaintextFrameBytes =",
+            "maxFrameBytes - RelayFrameCipher.authenticationTagBytes",
+            "public static let authenticationTagBytes = 16",
+            "public func validateRelayPlaintextBodyLength(_ bodyLength: Int) throws",
+            "bodyLength <= Self.maxRelayPlaintextFrameBytes",
+        ),
+        "protocol_tests": (
+            "testRelayPlaintextFrameCeilingReservesAuthenticationTag",
+            "ProtocolCodec.maxRelayPlaintextFrameBytes",
+            "+ RelayFrameCipher.authenticationTagBytes",
+            "ProtocolCodec.maxFrameBytes",
+            "encodedBodyLength: ProtocolCodec.maxRelayPlaintextFrameBytes",
+            "encodedBodyLength: ProtocolCodec.maxRelayPlaintextFrameBytes + 1",
+            "codec.validateRelayPlaintextBodyLength",
+        ),
+        "ollama": (
+            "private let catalogResponseByteLimit: Int",
+            "private func performBoundedDataRequest(endpoint: String, request: URLRequest) async throws -> Data",
+            "let (bytes, response) = try await session.bytes(for: request)",
+            "http.expectedContentLength > Int64(catalogResponseByteLimit)",
+            "if data.count > catalogResponseByteLimit",
+            "response.models.count <= ModelInfo.maximumCatalogModelCount",
+            "detailNames.count <= ModelInfo.maximumCatalogModelCount",
+            "try ModelInfo.validateForCatalogPublication(candidate)",
+            "private func decodeTagsResponse(_ data: Data, endpoint: String)",
+            "private func decodeRunningModelsResponse(",
+            "try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)",
+            "private static func validateUniqueModelIdentities(_ names: [String]) throws",
+            "var exactNames: Set<Data> = []",
+            "exactNames.insert(Data(name.utf8)).inserted",
+            "canonicalNames.insert(Data(canonicalModelName(name).utf8)).inserted",
+            "var uniqueCapabilityIdentities = Set<Data>()",
+            "uniqueCapabilityIdentities.insert(Data(capability.utf8)).inserted",
+            "private func modelDetailsByName(names: [String]) async throws -> [Data: OllamaModelDetails]",
+            "let exactTarget = Data(modelID.utf8)",
+            "fileprivate static func decodeModelIdentity<Key: CodingKey>(",
+            "if let name, let model, Data(name.utf8) != Data(model.utf8)",
+            "private static func contextWindowValues<Key: CodingKey>(",
+            "let value = try container.decode(Decimal.self, forKey: key)",
+            "ModelInfo.validatedContextWindowTokens(decimal: value)",
+            "throw OllamaCatalogValidationError.conflictingContextWindowAliases",
+            "guard details.isTrusted else { continue }",
+            "result[Data(name.utf8)] = .untrusted",
+            "result[Data(Self.canonicalModelName(name).utf8)] = .untrusted",
+            "private func modelDetailsByName(names: [String]) async throws",
+            "try Task.checkCancellation()",
+            "catch is CancellationError",
+            "static let untrusted = OllamaModelDetails(isTrusted: false)",
+        ),
+        "lm_studio": (
+            "private let catalogResponseByteLimit: Int",
+            "private func performBoundedCatalogDataRequest(endpoint: String, request: URLRequest) async throws -> Data",
+            "let (bytes, response) = try await session.bytes(for: request)",
+            "http.expectedContentLength > Int64(catalogResponseByteLimit)",
+            "if data.count > catalogResponseByteLimit",
+            "response.models.count <= ModelInfo.maximumCatalogModelCount",
+            "response.data.count <= ModelInfo.maximumCatalogModelCount",
+            "try ModelInfo.validateForCatalogPublication(modelInfo)",
+            "try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)",
+            "private static func validateUniqueModelIdentities(_ identities: [String]) throws",
+            "identity.precomposedStringWithCanonicalMapping",
+            "private static func validateLoadedInstances(_ instances: [LMStudioLoadedInstance]) throws",
+            "instances.count <= ModelInfo.maximumCatalogModelCount",
+            "ModelInfo.isValidRequiredModelIdentity(instance.id)",
+            "exactIdentifiers.insert(Data(instance.id.utf8)).inserted",
+            "instance.id.precomposedStringWithCanonicalMapping",
+            "try Self.validateUniqueModelIdentities(response.models.map(\\.key))",
+            "Data(acknowledgement.instanceID.utf8) == Data(instanceID.utf8)",
+            "case id",
+            "Data(keyAlias.utf8) != Data(idAlias.utf8)",
+            "func decodeContextWindowTokens(aliases: [Key]) throws -> Int?",
+            "let value = try decode(Decimal.self, forKey: alias)",
+            "ModelInfo.validatedContextWindowTokens(decimal: value)",
+            "var shouldFallbackModelCatalogToOpenAICompatible: Bool",
+            "return statusCode == 404 || statusCode == 405 || statusCode == 501",
+            "var shouldFallbackNativeEndpointToOpenAICompatible: Bool",
+            "return statusCode == 400 || statusCode == 404 || statusCode == 405",
+            "|| statusCode == 422 || statusCode == 501",
+            'if event.name == "chat.end"',
+            "for event in parser.finish()",
+            "throw LMStudioBackendError.badResponse(",
+            'reason: "The native stream ended without chat.end."',
+        ),
+        "aggregate": (
+            "public func listModels() async throws -> [ModelInfo]",
+            "try Task.checkCancellation()",
+            "catch is CancellationError",
+            "catch let error as URLError where error.code == .cancelled",
+        ),
+        "router": (
+            "let models = try await backend.listModels()",
+            "static let maximumConcurrentModelCatalogWaiters = 8",
+            "let modelCatalogCoordinator: RuntimeModelCatalogCoordinator",
+            "modelCatalogCoordinator.listModels(",
+            "modelsListPublicationAuthority(sink: sink)",
+            "publishModelsListEnvelope(",
+            'message: "AetherLink Runtime is currently refreshing the model catalog."',
+            "guard models.count <= ModelInfo.maximumCatalogModelCount else",
+            "try ModelInfo.validateForCatalogPublication(model)",
+            'code: "bad_backend_response"',
+            'payload["size_bytes"] = .integer(sizeBytes)',
+            "let encodedBody = try codec.encodeEnvelopeBody(responseEnvelope)",
+            "codec.validateRelayPlaintextBodyLength(encodedBody.count)",
+            "if let contextWindowTokens = ModelInfo.validatedContextWindowTokens(",
+            'payload["context_window_tokens"] = .number(Double(contextWindowTokens))',
+            "contextWindowTokens: ModelInfo.validatedContextWindowTokens(contextWindowTokens)",
+        ),
+        "catalog_coordinator": (
+            "enum RuntimeModelCatalogCoordinatorError: Error",
+            "case waiterLimitExceeded",
+            "case closed(operationCompleted: Bool)",
+            "private var waiterIDs: Set<UUID> = []",
+            "guard waiterIDs.count < maximumWaiterCount else",
+            "task?.cancel()",
+            "case .closed(operationCompleted: false):",
+            "withTaskCancellationHandler",
+            "_ = selectedFlight.cancelWaiter(waiterID)",
+        ),
+        "schema": (
+            '"maxItems": 256',
+            '"maxLength": 512',
+            '"maxLength": 522',
+            '"maxItems": 32',
+            '"maxLength": 128',
+            '"maximum": 16777216',
+            '"maximum": 9223372036854775807',
+            '"$ref": "#/$defs/modelCatalogNonBlankString"',
+        ),
+        "android_models": (
+            "private const val MAX_MODEL_CATALOG_SIZE = 256",
+            "private const val MAX_MODEL_IDENTITY_CODE_POINTS = 512",
+            "private const val MAX_MODEL_QUALIFIED_ID_CODE_POINTS = 522",
+            "private const val MAX_MODEL_CAPABILITIES = 32",
+            "private const val MAX_MODEL_CAPABILITY_CODE_POINTS = 128",
+            "private const val MAX_MODEL_CONTEXT_WINDOW_TOKENS = 16_777_216",
+            "private const val MAX_MODEL_SIZE_BYTES = Long.MAX_VALUE",
+            "private fun String.hasModelCatalogContent(): Boolean",
+            "private fun isModelCatalogBlankCodePoint(codePoint: Int): Boolean",
+            "in 0x2000..0x200B",
+            "0xFEFF",
+            "codePointCount(0, value.length)",
+            '"models.result models must contain at most 256 entries"',
+            "capabilities.distinct() == capabilities",
+        ),
+        "schema_check": (
+            "def check_models_result_payload_schema_contract(schema: dict[str, object]) -> list[str]:",
+            '"maxItems": 256',
+            '"maxLength": 512',
+            '"maxLength": 522',
+            '"maxItems": 32',
+            '"maxLength": 128',
+            '"maximum": 16_777_216',
+            '"maximum": 9_223_372_036_854_775_807',
+            "catalog_nonblank_pattern = (",
+            "failures.extend(check_models_result_payload_schema_contract(schema))",
+        ),
+    }
+    for label, snippets in source_guards.items():
+        for snippet in snippets:
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing provider catalog trust guard {snippet!r}."
+                )
+    if texts["ollama"].count("guard details.isTrusted else { continue }") != 2:
+        failures.append(
+            "apps/macos/OllamaBackend/Sources/OllamaBackend.swift: installed and running model "
+            "paths must both exclude untrusted show metadata."
+        )
+    if texts["lm_studio"].count('if event.name == "chat.end"') != 2:
+        failures.append(
+            "apps/macos/LMStudioBackend/Sources/LMStudioBackend.swift: native chat must require "
+            "chat.end in both the main stream loop and parser.finish() path."
+        )
+
+    ollama_tests = (
+        "testModelInfoCatalogPublicationLimitsAcceptExactBoundariesAndRejectLimitPlusOne",
+        "testCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne",
+        "testCatalogStreamingReadRejectsOversizedPositiveContentLength",
+        "testShowStreamingReadAcceptsExactByteLimitAndExcludesOnlyLimitPlusOneDetail",
+        "testListModelsPropagatesCancellationDuringShowFanout",
+        "testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout",
+        "testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs",
+        "testListModelsPreservesByteDistinctUnicodeCapabilities",
+        "testUnloadModelDoesNotMatchByteDistinctUnicodeRunningIdentity",
+        "testUnloadModelRejectsOversizedRunningCatalogBeforePosting",
+        "testHealthCheckRejectsMalformedTagsCatalog",
+        "testListModelsRejectsDuplicateAndEscapeEquivalentKeysInTagsAndRunningCatalogs",
+        "testListModelsRejectsDuplicateExactAndCanonicalModelIdentities",
+        "testListModelsRejectsConflictingNameAndModelIdentityAliases",
+        "testListModelsAcceptsContextWindowBoundariesAndMatchingAliases",
+        "testListModelsOmitsInvalidContextMetadataAndPreservesValidCapabilities",
+        "testListModelsExcludesShowDetailsWithInvalidCapabilities",
+        "testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities",
+        "testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys",
+    )
+    lm_studio_tests = (
+        "testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback",
+        "testFallbackCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne",
+        "testNativeCatalogRejectsOversizedPositiveContentLengthWithoutFallback",
+        "testNativeCatalogAccepts256RowsAndRejects257Rows",
+        "testNativeCatalogRejectsInvalidPublicationMetadataWithoutFallback",
+        "testUnloadModelRejectsOversizedNativeCatalogBeforePosting",
+        "testUnloadModelAcceptsMaximumLoadedInstanceFanout",
+        "testUnloadModelRejectsInvalidLoadedInstanceFanoutBeforePosting",
+        "testUnloadModelRejectsInvalidLoadedInstanceMetadataDuringPolling",
+        "testListModelsFallsBackToOpenAICompatibleModels",
+        "testListModelsFallsBackForExplicitNativeEndpointIncompatibility",
+        "testListModelsDoesNotFallbackForNativeAuthClientOrServerFailures",
+        "testListModelsDoesNotFallbackForNativeTransportFailure",
+        "testListModelsRejectsDuplicateAndEscapeEquivalentNativeObjectKeysWithoutFallback",
+        "testListModelsRejectsDuplicateAndEscapeEquivalentFallbackObjectKeys",
+        "testListModelsRejectsExactAndCanonicalDuplicateModelIdentities",
+        "testListModelsRejectsConflictingNativeModelIdentityAliases",
+        "testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling",
+        "testListModelsAcceptsMatchingNativeContextAliases",
+        "testListModelsRejectsInvalidNativeContextWindowValuesWithoutFallback",
+        "testListModelsRejectsInvalidFallbackContextWindowValues",
+        "testListModelsRejectsConflictingContextWindowAliases",
+        "testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator",
+        "testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent",
+        "testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback",
+    )
+    router_tests = (
+        "testModelsListAcceptsCatalogAtPublicationLimits",
+        "testModelsListRejectsValidCartesianLimitsAboveRelayFrameCeiling",
+        "testModelsListPublishesInt64MaximumSizeWithoutPrecisionLoss",
+        "testModelsListRejectsCatalogAbovePublicationLimit",
+        "testModelsListRejectsUntrustedMetadataAtPublicationBoundary",
+        "testModelsListRejectsContextWindowMetadataOutsideRuntimeCeiling",
+        "testModelsListSingleFlightCoalescesBoundedWaitersAndDoesNotCacheSuccess",
+        "testModelsListSingleFlightCancellationKeepsSharedWorkForRemainingWaiter",
+        "testModelsListSingleFlightCancelledNonLastWaitersReturnBeforeProviderCompletion",
+        "testModelsListSingleFlightLastWaiterCancellationStopsProviderWork",
+        "testModelsListSingleFlightWaitsForCancelledProviderToRetireBeforeReplacement",
+        "testModelsListSingleFlightDoesNotCacheFailure",
+        "testModelsListSingleFlightSuppressesPublicationAfterReauthentication",
+        "testChatSendIgnoresContextWindowMetadataAboveRuntimeCeiling",
+    )
+    protocol_tests = (
+        "testRelayPlaintextFrameCeilingReservesAuthenticationTag",
+    )
+    aggregate_tests = (
+        "testListModelsPropagatesCancellationInsteadOfReturningPartialCatalog",
+    )
+    for label, test_names, helper in (
+        ("protocol_tests", protocol_tests, None),
+        ("ollama_tests", ollama_tests, "assertCatalogRejected("),
+        ("lm_studio_tests", lm_studio_tests, "assertBadCatalogResponse("),
+        ("aggregate_tests", aggregate_tests, None),
+        ("router_tests", router_tests, None),
+    ):
+        for test_name in test_names:
+            if f"func {test_name}" not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing focused regression {test_name}."
+                )
+        if helper is not None and helper not in texts[label]:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)}: missing strict catalog test helper {helper!r}."
+            )
+    android_tests = (
+        "modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation",
+        "modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings",
+        "modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId",
+        "modelInfoPayloadUsesSharedCatalogBlankCodePointSet",
+        "modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits",
+        "modelInfoPayloadEnforcesExactSizeByteMaximum",
+        "modelInfoPayloadEnforcesExactContextWindowMaximum",
+    )
+    for snippet in (
+        'val byteDistinctCapabilities = listOf(',
+        '"caf\\u00E9"',
+        '"cafe\\u0301"',
+        "decodeCapabilities(byteDistinctCapabilities)",
+    ):
+        if snippet not in texts["android_tests"]:
+            failures.append(
+                f"{paths['android_tests'].relative_to(ROOT)}: missing byte-distinct capability regression {snippet!r}."
+            )
+    for test_name in android_tests:
+        if f"fun {test_name}" not in texts["android_tests"]:
+            failures.append(
+                f"{paths['android_tests'].relative_to(ROOT)}: missing focused regression {test_name}."
+            )
+        selector = (
+            "--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                "script/check_no_device_quality.sh: focused Android provider catalog selector "
+                f"must appear exactly once for {test_name}."
+            )
+    for snippet in (
+        'XCTFail("Malformed native output must not trigger a second provider dispatch")',
+        'XCTAssertEqual(events, [.delta("Native")])',
+        'XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat"])',
+    ):
+        if snippet not in texts["lm_studio_tests"]:
+            failures.append(
+                f"{paths['lm_studio_tests'].relative_to(ROOT)}: missing native partial-stream guard {snippet!r}."
+            )
+    for snippet in (
+        'XCTFail("A terminal-less native stream must not trigger a second provider dispatch")',
+        'XCTFail("Expected terminal-less native stream rejection")',
+        'XCTAssertEqual(error.code, "lm_studio_bad_response")',
+    ):
+        if snippet not in texts["lm_studio_tests"]:
+            failures.append(
+                f"{paths['lm_studio_tests'].relative_to(ROOT)}: missing native terminal EOF guard {snippet!r}."
+            )
+    for label in ("ollama_tests", "lm_studio_tests"):
+        for snippet in (
+            "16777215.9999999999",
+            "16777216.0000000001",
+        ):
+            if snippet not in texts[label]:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing precision-safe context regression {snippet!r}."
+                )
+    for snippet in (
+        "testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling",
+        "1.6777216e7",
+        "testListModelsAcceptsMatchingNativeContextAliases",
+        "3.2768e4",
+        "testListModelsRejectsConflictingContextWindowAliases",
+        "16777215.9999999999",
+    ):
+        if snippet not in texts["lm_studio_tests"]:
+            failures.append(
+                f"{paths['lm_studio_tests'].relative_to(ROOT)}: missing decimal/scientific or precision-alias regression {snippet!r}."
+            )
+    for snippet in (
+        'XCTAssertEqual(error.code, "bad_backend_response")',
+        "XCTAssertFalse(error.retryable)",
+    ):
+        if snippet not in texts["ollama_tests"]:
+            failures.append(
+                f"{paths['ollama_tests'].relative_to(ROOT)}: missing malformed health guard {snippet!r}."
+            )
+
+    qualified_tests = (
+        *(f"ProtocolCodecTests/{name}" for name in protocol_tests),
+        *(f"OllamaBackendTests/{name}" for name in ollama_tests),
+        *(f"LMStudioBackendTests/{name}" for name in lm_studio_tests),
+        *(f"AggregatingLlmBackendResidencyTests/{name}" for name in aggregate_tests),
+        *(f"LocalRuntimeMessageRouterTests/{name}" for name in router_tests),
+    )
+    focused_selector = "run swift test --filter '" + "|".join(qualified_tests) + "'"
+    if texts["no_device"].count(focused_selector) != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: focused provider model-catalog/context-window "
+            "Swift selector must appear exactly once with the canonical test order."
+        )
+    marker = (
+        "Covered resource-bounded provider model-catalog/context-window trust-boundary addendum: "
+        "focused Swift and Android protocol tests pin true streaming 4 MiB catalog/detail ingestion, "
+        "positive Content-Length preflight, limit-plus-one stop, 256 rows and Ollama detail calls, "
+        "aggregate and Ollama detail-fanout cancellation propagation, bounded unique LM Studio "
+        "unload instances, exact 1,048,560-byte relay plaintext acceptance and 1,048,561-byte "
+        "rejection, exact Int64 size serialization, 512/522-code-point byte-exact identities, "
+        "shared Unicode blank-only rejection, 32 byte-exact-unique nonblank capabilities "
+        "of at most 128 code points, "
+        "strict duplicate and escape-equivalent JSON keys, precision-safe Decimal context validation "
+        "through 16,777,216, LM Studio catalog fallback only 404/405/501, explicit native chat.end "
+        "including final-line parser.finish success, whole-catalog router rejection without "
+        "truncation, provider-specific Ollama context omission versus LM Studio and final-router "
+        "rejection, Android/schema exact-plus-one parity, and conservative legacy compaction fallback "
+        "only for genuinely absent context metadata. This is URLProtocol/JVM-backed no-device proof, "
+        "not live-provider, physical-device, or live-network proof."
+    )
+    if texts["no_device"].count(f'echo "{marker}"') != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: provider model-catalog/context-window proof marker "
+            "must appear exactly once with the URLProtocol no-device boundary."
+        )
+    single_flight_marker = (
+        "Covered v0.2 addendum: bounded public models.list single-flight. Up to eight concurrent "
+        "public waiters share one provider catalog operation; a ninth receives a sanitized "
+        "retryable backend_unavailable. Every waiter retains its own request id and publication "
+        "authority, one waiter cancellation preserves shared work, last-waiter cancellation stops "
+        "provider work, cancellation must retire before replacement, and success or failure is not "
+        "cached. Internal authority catalog lookups remain outside coalescing. This is no-device "
+        "mock-backend proof, not live-provider, physical-device, external-network, throughput, "
+        "production-relay/P2P, or Phase B proof."
+    )
+    if texts["no_device"].count(f'echo "{single_flight_marker}"') != 1:
+        failures.append(
+            "script/check_no_device_quality.sh: bounded public models.list single-flight marker "
+            "must appear exactly once with the no-device and authority boundaries."
+        )
+    if texts["router"].count("modelCatalogCoordinator.listModels(") != 1:
+        failures.append(
+            "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift: only the public "
+            "models.list path may use the model-catalog single-flight coordinator."
+        )
+
+    document_headings = {
+        "protocol": "`models.list`",
+        "security": "Resource-Bounded Provider Model-Catalog Trust Boundary",
+        "roadmap": "v0.2 Fail-Closed Resource-Bounded Provider Model-Catalog Trust Boundary",
+        "progress": "2026-07-17 v0.2 Fail-Closed Resource-Bounded Provider Model-Catalog Trust Boundary",
+        "qa": "2026-07-17 v0.2 Fail-Closed Resource-Bounded Provider Model-Catalog Trust Boundary",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+
+    architecture_sections = []
+    for heading in ("Ollama Backend Adapter", "LM Studio Backend Adapter"):
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts["architecture"],
+        )
+        if match is None:
+            failures.append(
+                f"{paths['architecture'].relative_to(ROOT)}: missing section {heading!r}."
+            )
+        else:
+            architecture_sections.append(match.group("body"))
+    if len(architecture_sections) == 2:
+        document_sections["architecture"] = "\n".join(architecture_sections)
+
+    contract_patterns = (
+        (r"4\s*MiB|4[,_]194[,_]304", "streaming response byte ceiling"),
+        (r"256", "catalog row and detail-fanout ceiling"),
+        (r"512.*522|522.*512", "model identity ceilings"),
+        (r"32.*128|128.*32", "capability count and item ceilings"),
+        (r"ModelInfo\.maximumContextWindowTokens|16[,_]777[,_]216", "shared ceiling"),
+        (r"404.*405.*501", "LM Studio compatibility fallback statuses"),
+        (r"duplicate", "duplicate-key or duplicate-identity rejection"),
+        (r"context[- ]window", "context-window trust boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in contract_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} provider catalog section is missing {description}."
+                )
+
+    required_document_snippets = {
+        "architecture": (
+            "invalid or conflicting context metadata in an otherwise trusted Ollama show response "
+            "omits only the context value",
+            "Invalid LM Studio context metadata rejects that catalog",
+        ),
+        "protocol": (
+            "Ollama may omit a context-only invalid",
+            "LM Studio rejects invalid context catalog metadata",
+            "a non-nil invalid value reaching final router publication rejects the whole catalog",
+        ),
+        "qa": (
+            "Exact 1,048,560-byte plaintext passes the codec guard and 1,048,561 bytes fails.",
+            "Ollama context-only rejection may omit",
+            "LM Studio invalid context rejects the catalog",
+        ),
+    }
+    for label, snippets in required_document_snippets.items():
+        section = document_sections.get(label)
+        if section is None:
+            continue
+        for snippet in snippets:
+            if snippet not in section:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} provider catalog section is missing "
+                    f"provider-specific contract {snippet!r}."
+                )
+
+    for label in ("architecture", "security", "roadmap", "progress", "qa"):
+        section = document_sections.get(label)
+        if section is not None and re.search(
+            r"(?:legacy|conservative).*fallback|fallback.*(?:legacy|conservative)",
+            section,
+            re.IGNORECASE | re.DOTALL,
+        ) is None:
+            failures.append(
+                f"{paths[label].relative_to(ROOT)} provider catalog section is missing legacy compaction fallback."
+            )
+
+    for label in ("security", "roadmap", "progress", "qa"):
+        section = document_sections.get(label)
+        if section is None:
+            continue
+        for pattern, description in (
+            (r"URLProtocol", "URLProtocol evidence"),
+            (r"live[- ]provider", "live-provider non-proof boundary"),
+            (r"(?:physical|real)[- ]device", "device non-proof boundary"),
+            (r"external[- ]network|live[- ]network|real[- ]network", "network non-proof boundary"),
+        ):
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} provider catalog section is missing {description}."
+                )
+    for label in ("architecture", "security", "roadmap", "progress", "qa"):
+        section = document_sections.get(label)
+        if section is None:
+            continue
+        for pattern, description in (
+            (r"eight|8", "eight-waiter public admission ceiling"),
+            (r"ninth|9th", "ninth-waiter retryable rejection"),
+            (r"last[- ]waiter", "last-waiter provider cancellation"),
+            (r"retir(?:e|ing|ement).*replacement|replacement.*retir", "cancellation retirement before replacement"),
+            (r"not cached|no (?:success|failure).*cache", "success and failure non-cache boundary"),
+            (r"internal authority", "internal authority lookup exclusion"),
+        ):
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} provider catalog section is missing "
+                    f"bounded public single-flight contract: {description}."
+                )
+    return failures
+
+
+def android_authenticated_read_authority_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Android authenticated read authority guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    viewmodel = texts["viewmodel"]
+    for snippet in (
+        'private const val CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX = "chat-sessions-bulk-"',
+        "val requestId = CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX + UUID.randomUUID()",
+        "pending.requestId = CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX + UUID.randomUUID()",
+    ):
+        if snippet not in viewmodel:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: bulk request namespace is missing {snippet!r}."
+            )
+    required_viewmodel_snippets = (
+        "private sealed interface PendingRuntimeDocumentRequest",
+        "private data class PendingRuntimeDocumentCatalogRequest(",
+        "private data class PendingRuntimeDocumentSearchRequest(",
+        'private const val DOCUMENT_CATALOG_REQUEST_ID_PREFIX = "index-documents-list-"',
+        'private const val DOCUMENT_SEARCH_REQUEST_ID_PREFIX = "retrieval-query-"',
+        "MessageType.ChatMessagesList -> handleChatMessagesList(",
+        "MessageType.IndexDocumentsList -> handleIndexDocumentsList(",
+        "MessageType.RetrievalQuery -> handleRetrievalQuery(",
+        "private fun PendingRuntimeDocumentRequest.matchesCurrentRuntimeDocumentAuthority(",
+        "private fun RuntimeChatHistoryRequestCorrelation.matchesCurrentChatMessagesAuthority(",
+        "private fun clearPendingRuntimeDocumentRequests()",
+        "clearPendingChatMessagesRequest()",
+        "activeChannel === sourceChannel",
+        "activeConnectionGeneration == sourceConnectionGeneration",
+        "authorityGeneration == runtimeSessionAuthorityGeneration",
+        "isSessionAuthenticated",
+    )
+    for snippet in required_viewmodel_snippets:
+        if snippet not in viewmodel:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: missing authenticated read authority guard {snippet!r}."
+            )
+
+    request_bound_start = viewmodel.find("private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(")
+    request_bound_end = viewmodel.find("\n)", request_bound_start)
+    request_bound_section = (
+        viewmodel[request_bound_start:request_bound_end]
+        if request_bound_start >= 0 and request_bound_end > request_bound_start
+        else ""
+    )
+    for message_type in (
+        "MessageType.ChatMessagesList",
+        "MessageType.IndexDocumentsList",
+        "MessageType.RetrievalQuery",
+    ):
+        if message_type not in request_bound_section:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: superseded {message_type} send failures must stay request-bound."
+            )
+
+    test_names = (
+        "runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce",
+        "runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce",
+        "delayedOldDocumentSendFailureCannotCloseReplacementRequest",
+        "pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear",
+        "chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce",
+        "sameChannelReauthenticationTombstonesOldChatMessagesAuthority",
+        "runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert",
+        "runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert",
+        "delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest",
+        "pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear",
+    )
+    for test_name in test_names:
+        executable_test_declaration = re.compile(
+            rf"(?m)^\s*@Test\s*$\n\s*fun {re.escape(test_name)}\s*\("
+        )
+        if executable_test_declaration.search(texts["tests"]) is None:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing executable @Test authenticated read authority regression {test_name}."
+            )
+        selector = (
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: selector for {test_name} must appear exactly once."
+            )
+
+    junit_guard_start = texts["no_device"].find(
+        "check_android_authenticated_read_authority_junit() {"
+    )
+    junit_guard_end = texts["no_device"].find("\n}\n", junit_guard_start)
+    junit_guard_section = (
+        texts["no_device"][junit_guard_start:junit_guard_end]
+        if junit_guard_start >= 0 and junit_guard_end > junit_guard_start
+        else ""
+    )
+    junit_names_start = junit_guard_section.find("expected_names = (")
+    junit_names_end = junit_guard_section.find("\n)\n\ntry:", junit_names_start)
+    junit_names_section = (
+        junit_guard_section[junit_names_start:junit_names_end]
+        if junit_names_start >= 0 and junit_names_end > junit_names_start
+        else ""
+    )
+    junit_test_names = tuple(
+        re.findall(r'(?m)^\s*"([^"]+)",\s*$', junit_names_section)
+    )
+    if junit_test_names != test_names:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read JUnit expected_names must exactly match the canonical ten tests in order."
+        )
+    if len(junit_test_names) != len(set(junit_test_names)):
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read JUnit expected_names must not contain duplicates."
+        )
+    for test_name in test_names:
+        if junit_names_section.count(f'"{test_name}",') != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: authenticated read JUnit expected_names must contain {test_name} exactly once."
+            )
+    for snippet in (
+        "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml",
+        'root.findall("testcase")',
+        'case.find(tag) is not None',
+        '("skipped", "failure", "error")',
+        "10 executed tests, 0 skipped, 0 failures, 0 errors.",
+    ):
+        if snippet not in junit_guard_section:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: authenticated read JUnit execution guard is missing {snippet!r}."
+            )
+    if len(
+        re.findall(
+            r"(?m)^run check_android_authenticated_read_authority_junit\s*$",
+            texts["no_device"],
+        )
+    ) != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read JUnit execution guard must run exactly once."
+        )
+
+    for snippet in (
+        "pendingRuntimeDocumentRequestIdForTest",
+        "closedRuntimeChatHistoryRequestIdsForTest",
+        "handleChatMessagesListForTest",
+        "handleRuntimeDocumentResultForTest",
+    ):
+        if snippet not in texts["tests"]:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing authenticated read evidence helper {snippet!r}."
+            )
+
+    marker = (
+        "Covered v0.2 addendum: Android authenticated transcript and document read current-request authority. "
+        "chat.messages.list, index.documents.list, and retrieval.query results, errors, and send failures require "
+        "the exact request id, channel, connection generation, and authenticated authority generation before "
+        "pending state, transient document state, transcript publication, or device persistence can change. "
+        "Wrong-channel, old-connection, prior-auth, duplicate, superseded, and delayed terminals are inert; "
+        "reauthentication, disconnect, revocation, and ViewModel clear remove old authority. This is Android "
+        "JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, "
+        "production-relay/P2P, Phase B, or deployment proof."
+    )
+    if texts["no_device"].count(f'echo "{marker}"') != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read authority marker must appear exactly once."
+        )
+
+    document_headings = {
+        "roadmap": "v0.2 Android Authenticated Transcript And Document Read Authority",
+        "progress": "2026-07-17 v0.2 Android Authenticated Transcript And Document Read Authority",
+        "qa": "2026-07-17 v0.2 Android Authenticated Transcript And Document Read Authority No-Device Checklist",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+
+    required_document_patterns = (
+        (r"chat\.messages\.list", "transcript request type"),
+        (r"index\.documents\.list", "document catalog request type"),
+        (r"retrieval\.query", "document search request type"),
+        (r"request id", "request-id authority"),
+        (r"channel", "channel authority"),
+        (r"connection generation", "connection-generation authority"),
+        (r"authenticat(?:ed|ion).*authority|authority generation", "authentication authority"),
+        (r"result", "result authority"),
+        (r"error", "error authority"),
+        (r"send failure", "send-failure authority"),
+        (r"reauthentication", "reauthentication cleanup"),
+        (r"disconnect", "disconnect cleanup"),
+        (r"revocation", "revocation cleanup"),
+        (r"ViewModel", "ViewModel cleanup"),
+        (r"JUnit.*XML|XML.*JUnit", "dynamic JUnit execution proof"),
+        (r"no-device", "no-device evidence boundary"),
+        (r"physical", "physical-device non-proof boundary"),
+        (r"Phase B", "controlled-spike Phase B boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in required_document_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} authenticated read authority section is missing {description}."
+                )
+    qa_section = document_sections.get("qa", "")
+    for test_name in test_names:
+        if test_name not in qa_section:
+            failures.append(
+                f"{paths['qa'].relative_to(ROOT)}: authenticated read QA section must name {test_name}."
+            )
+    for label in ("roadmap", "progress", "qa"):
+        section = document_sections.get(label, "")
+        for snippet in (
+            "590",
+            "1,064",
+            "check-no-device-quality-authenticated-read-terminal-closure-final-reviewed-20260717.log",
+            "12,075",
+            "dynamic JUnit proof marker",
+            "two zero-delay registry self-tests",
+            "88 local development-relay match lines",
+            "56 authenticated relay connections",
+            "905 encrypted frame bodies",
+            "final delta re-review reports no P0-P3 findings",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: authenticated read final evidence is missing {snippet!r}."
+                )
+    return failures
+
+
+def android_authenticated_read_rollover_authority_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Android authenticated read rollover authority guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    viewmodel = texts["viewmodel"]
+    required_viewmodel_snippets = (
+        'private const val MEMORY_LIST_REQUEST_ID_PREFIX = "memory-list-"',
+        "val requestId = MEMORY_LIST_REQUEST_ID_PREFIX + UUID.randomUUID()",
+        "MessageType.ChatSessionsList -> handleChatSessionsList(",
+        "private fun handleChatSessionsList(\n        envelope: ProtocolEnvelope,\n        sourceChannel: RuntimeProtocolChannel,\n        sourceConnectionGeneration: Long,",
+        "private fun PendingChatSessionsListRun.matchesCurrentRuntimeAuthority(",
+        "channel === sourceChannel",
+        "connectionGeneration == sourceConnectionGeneration",
+        "hasCurrentRuntimeAuthority()",
+    )
+    for snippet in required_viewmodel_snippets:
+        if snippet not in viewmodel:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: missing authenticated read rollover guard {snippet!r}."
+            )
+
+    handler_start = viewmodel.find("private fun handleChatSessionsList(")
+    handler_end = viewmodel.find(
+        "\n    private fun PendingChatSessionsListRun.hasCurrentRuntimeAuthority()",
+        handler_start,
+    )
+    handler = (
+        viewmodel[handler_start:handler_end]
+        if handler_start >= 0 and handler_end > handler_start
+        else ""
+    )
+    authority_offset = handler.find("run.matchesCurrentRuntimeAuthority(")
+    page_count_offset = handler.find("run.pageCount += 1")
+    metadata_offset = handler.find("chatSessionsListUnknownMetadataKey()")
+    continuation_offset = handler.find("requestRuntimeChatSessionsContinuation(run, nextCursor)")
+    if (
+        authority_offset < 0
+        or page_count_offset < authority_offset
+        or metadata_offset < page_count_offset
+        or continuation_offset < metadata_offset
+    ):
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: chat.sessions.list must verify exact receive authority before page accounting, metadata handling, and pagination."
+        )
+
+    handle_error_start = viewmodel.find("private fun handleError(")
+    handle_error_end = viewmodel.find("\n    private fun sendEnvelope(", handle_error_start)
+    handle_error_section = (
+        viewmodel[handle_error_start:handle_error_end]
+        if handle_error_start >= 0 and handle_error_end > handle_error_start
+        else ""
+    )
+    send_failure_start = viewmodel.find("private suspend fun sendEnvelopeInternal(")
+    send_failure_end = viewmodel.find("\n    private fun <T> envelope(", send_failure_start)
+    send_failure_section = (
+        viewmodel[send_failure_start:send_failure_end]
+        if send_failure_start >= 0 and send_failure_end > send_failure_start
+        else ""
+    )
+    stale_error_start = viewmodel.find(
+        "private fun shouldIgnoreStaleRuntimeChatHistoryError("
+    )
+    stale_error_end = viewmodel.find(
+        "\n    private fun clearRuntimeChatSearchAuthority()",
+        stale_error_start,
+    )
+    stale_error_section = (
+        viewmodel[stale_error_start:stale_error_end]
+        if stale_error_start >= 0 and stale_error_end > stale_error_start
+        else ""
+    )
+    structural_authority_checks = (
+        (
+            handle_error_section,
+            "pendingChatSessionsListRun\n                ?.takeIf {\n                    it.matchesCurrentRuntimeAuthority(",
+            "malformed-error handler",
+        ),
+        (
+            handle_error_section,
+            "if (pendingChatSessionsListRun?.matchesCurrentRuntimeAuthority(",
+            "ordinary-error handler",
+        ),
+        (
+            send_failure_section,
+            "pendingChatSessionsListRun?.takeIf { pending ->\n                        pending.matchesCurrentRuntimeAuthority(",
+            "send-failure handler",
+        ),
+        (
+            stale_error_section,
+            "val currentSessionsRequest = pendingChatSessionsListRun?.let { run ->\n            run.matchesCurrentRuntimeAuthority(",
+            "stale-error classifier",
+        ),
+    )
+    for section, snippet, description in structural_authority_checks:
+        if snippet not in section:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: chat.sessions.list {description} must use the exact receive-authority matcher."
+            )
+
+    memory_error_offset = handle_error_section.find(
+        "if (envelope.requestId.startsWith(MEMORY_LIST_REQUEST_ID_PREFIX)) {"
+    )
+    memory_authority_offset = handle_error_section.find(
+        "if (!isCurrentMemoryListRequest(",
+        memory_error_offset,
+    )
+    memory_metadata_offset = handle_error_section.find(
+        "envelope.payload.errorPayloadUnknownMetadataKey()",
+        memory_authority_offset,
+    )
+    memory_clear_offset = handle_error_section.find(
+        "clearPendingMemoryListRequest()",
+        memory_metadata_offset,
+    )
+    memory_error_publication_offset = handle_error_section.find(
+        'showError(\n                    "invalid_payload",',
+        memory_metadata_offset,
+    )
+    if (
+        memory_error_offset < 0
+        or memory_authority_offset < memory_error_offset
+        or memory_metadata_offset < memory_authority_offset
+        or memory_clear_offset < memory_metadata_offset
+        or memory_error_publication_offset < memory_clear_offset
+    ):
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: namespaced memory.list errors must reject stale authority, close exact malformed metadata correlation, and then publish the error."
+        )
+
+    auth_success_start = viewmodel.find("if (payload.accepted == true) {")
+    auth_success_end = viewmodel.find("\n        } else {", auth_success_start)
+    auth_success_section = (
+        viewmodel[auth_success_start:auth_success_end]
+        if auth_success_start >= 0 and auth_success_end > auth_success_start
+        else ""
+    )
+    for snippet in (
+        "clearPendingMemoryListRequest()",
+        "clearPendingResearchNotebooksListRun()",
+    ):
+        if snippet not in auth_success_section:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: successful reauthentication must replace pending read authority through {snippet}."
+            )
+
+    revoke_start = viewmodel.find("private fun revokeAuthenticatedRuntimeSessionState(")
+    revoke_end = viewmodel.find("\n    private fun clearResearchNotebookSessionState()", revoke_start)
+    revoke_section = (
+        viewmodel[revoke_start:revoke_end]
+        if revoke_start >= 0 and revoke_end > revoke_start
+        else ""
+    )
+    for snippet in (
+        "clearPendingMemoryListRequest()",
+        "clearResearchNotebookSessionState()",
+    ):
+        if snippet not in revoke_section:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: authenticated-session revocation must clear pending read authority through {snippet}."
+            )
+
+    test_names = (
+        "chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce",
+        "chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure",
+        "sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority",
+        "siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority",
+    )
+    for test_name in test_names:
+        executable_test_declaration = re.compile(
+            rf"(?m)^\s*@Test\s*$\n\s*fun {re.escape(test_name)}\s*\("
+        )
+        if executable_test_declaration.search(texts["tests"]) is None:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing executable @Test authenticated read rollover regression {test_name}."
+            )
+        selector = (
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: selector for {test_name} must appear exactly once."
+            )
+
+    for snippet in (
+        "handleChatSessionsListForTest",
+        "pendingResearchNotebooksRequestIdForTest",
+    ):
+        if snippet not in texts["tests"]:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing authenticated read rollover evidence helper {snippet!r}."
+            )
+
+    reauthentication_test_start = texts["tests"].find(
+        "fun sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority()"
+    )
+    reauthentication_test_end = texts["tests"].find(
+        "\n    @OptIn(ExperimentalCoroutinesApi::class)",
+        reauthentication_test_start + 1,
+    )
+    reauthentication_test_section = (
+        texts["tests"][reauthentication_test_start:reauthentication_test_end]
+        if reauthentication_test_start >= 0
+        and reauthentication_test_end > reauthentication_test_start
+        else ""
+    )
+    for snippet in (
+        'assertTrue(oldMemoryRequest.requestId.startsWith("memory-list-"))',
+        'code = "backend_unavailable"',
+        'message = "Stale memory error must stay inert."',
+        "assertNull(fixture.viewModel.state.value.error)",
+    ):
+        if snippet not in reauthentication_test_section:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: same-channel reauthentication regression must pin stale memory.list error isolation through {snippet!r}."
+            )
+
+    malformed_error_test_start = texts["tests"].find(
+        "fun errorPayloadRejectsUnknownMetadataBeforePendingStateMutation()"
+    )
+    malformed_error_test_end = texts["tests"].find(
+        "\n    @OptIn(ExperimentalCoroutinesApi::class)",
+        malformed_error_test_start + 1,
+    )
+    malformed_error_test_section = (
+        texts["tests"][malformed_error_test_start:malformed_error_test_end]
+        if malformed_error_test_start >= 0
+        and malformed_error_test_end > malformed_error_test_start
+        else ""
+    )
+    for snippet in (
+        'assertTrue(initialMemoryRequest.requestId.startsWith("memory-list-"))',
+        'assertNull(fixture.viewModel.privateField<String>("pendingMemoryListRequestId"))',
+        "val replacementMemoryRequest = fixture.channel.sentEnvelopes.last",
+        "replacementMemoryRequest.requestId,",
+        "memoryRequestCountBeforeRejectedError + 2",
+    ):
+        if snippet not in malformed_error_test_section:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: malformed memory.list error regression must pin terminal closure, stale-old-error isolation, and replacement retry through {snippet!r}."
+            )
+
+    junit_guard_start = texts["no_device"].find(
+        "check_android_authenticated_read_rollover_authority_junit() {"
+    )
+    junit_guard_end = texts["no_device"].find("\n}\n", junit_guard_start)
+    junit_guard_section = (
+        texts["no_device"][junit_guard_start:junit_guard_end]
+        if junit_guard_start >= 0 and junit_guard_end > junit_guard_start
+        else ""
+    )
+    junit_names_start = junit_guard_section.find("expected_names = (")
+    junit_names_end = junit_guard_section.find("\n)\n\ntry:", junit_names_start)
+    junit_names_section = (
+        junit_guard_section[junit_names_start:junit_names_end]
+        if junit_names_start >= 0 and junit_names_end > junit_names_start
+        else ""
+    )
+    junit_test_names = tuple(
+        re.findall(r'(?m)^\s*"([^"]+)",\s*$', junit_names_section)
+    )
+    if junit_test_names != test_names:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover JUnit expected_names must exactly match the canonical four tests in order."
+        )
+    if len(junit_test_names) != len(set(junit_test_names)):
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover JUnit expected_names must not contain duplicates."
+        )
+    for test_name in test_names:
+        if junit_names_section.count(f'"{test_name}",') != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover JUnit expected_names must contain {test_name} exactly once."
+            )
+    for snippet in (
+        "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml",
+        'root.findall("testcase")',
+        'case.find(tag) is not None',
+        '("skipped", "failure", "error")',
+        "4 executed tests, 0 skipped, 0 failures, 0 errors.",
+    ):
+        if snippet not in junit_guard_section:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover JUnit execution guard is missing {snippet!r}."
+            )
+    if len(
+        re.findall(
+            r"(?m)^run check_android_authenticated_read_rollover_authority_junit\s*$",
+            texts["no_device"],
+        )
+    ) != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover JUnit execution guard must run exactly once."
+        )
+
+    marker = (
+        "Covered v0.2 addendum: Android authenticated read rollover and chat.sessions.list receive authority. "
+        "chat.sessions.list results and pagination require the exact request id, receiving channel, connection "
+        "generation, and authenticated authority generation before any accumulator, terminal, history, search, "
+        "or bulk-lifecycle state can change. Successful same-channel reauthentication replaces pending memory.list "
+        "and research.notebooks.list authority, authentication revocation clears pending memory.list authority, "
+        "stale results, errors, and canceled timeouts are inert, and current replacements remain usable. This is Android "
+        "JVM no-device proof, not physical-device, optical QR, peer receipt, live-provider, external-network, "
+        "production-relay/P2P, Phase B, or deployment proof."
+    )
+    if texts["no_device"].count(f'echo "{marker}"') != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: authenticated read rollover authority marker must appear exactly once."
+        )
+
+    document_headings = {
+        "roadmap": "v0.2 Android Authenticated Read Rollover And Session-List Receive Authority",
+        "progress": "2026-07-17 v0.2 Android Authenticated Read Rollover And Session-List Receive Authority",
+        "qa": "2026-07-17 v0.2 Android Authenticated Read Rollover And Session-List Receive Authority No-Device Checklist",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+
+    required_document_patterns = (
+        (r"chat\.sessions\.list", "session-list request type"),
+        (r"memory\.list", "memory-list request type"),
+        (r"research\.notebooks\.list", "research-list request type"),
+        (r"request id", "request-id authority"),
+        (r"channel", "channel authority"),
+        (r"connection generation", "connection-generation authority"),
+        (r"authenticat(?:ed|ion).*authority|authority generation", "authentication authority"),
+        (r"pagination", "pagination boundary"),
+        (r"malformed", "malformed-terminal boundary"),
+        (r"error", "stale-error boundary"),
+        (r"namespac|memory-list-", "memory-list request namespace"),
+        (r"reauthentication", "reauthentication cleanup"),
+        (r"revocation", "revocation cleanup"),
+        (r"timeout", "timeout cancellation"),
+        (r"no-device", "no-device evidence boundary"),
+        (r"physical", "physical-device non-proof boundary"),
+        (r"Phase B", "controlled-spike Phase B boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in required_document_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} authenticated read rollover section is missing {description}."
+                )
+    qa_section = document_sections.get("qa", "")
+    for test_name in test_names:
+        if test_name not in qa_section:
+            failures.append(
+                f"{paths['qa'].relative_to(ROOT)}: authenticated read rollover QA section must name {test_name}."
+            )
+    for label in ("roadmap", "progress", "qa"):
+        section = document_sections.get(label, "")
+        for snippet in (
+            "594",
+            "1,068",
+            "build/qa/check-no-device-quality-authenticated-read-rollover-authority-final-reviewed-20260717.log",
+            "12,083",
+            "dynamic JUnit proof marker",
+            "two zero-delay registry self-tests",
+            "88 local development-relay match lines",
+            "56 authenticated relay connections",
+            "905 encrypted frame bodies",
+            "final GPT-5.6 Sol re-review reports no P0-P3 findings",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: authenticated read rollover final evidence is missing {snippet!r}."
+                )
+    return failures
+
+
+def android_chat_sessions_bulk_terminal_authority_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "protocol": ROOT / "docs/protocol.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Android chat sessions bulk terminal authority guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    viewmodel = texts["viewmodel"]
+
+    helper_start = viewmodel.find(
+        "private fun PendingChatSessionsBulkLifecycle.matchesCurrentRuntimeAuthority("
+    )
+    helper_end = viewmodel.find(
+        "\n    private fun clearPendingChatSessionsBulkLifecycle(",
+        helper_start,
+    )
+    helper = (
+        viewmodel[helper_start:helper_end]
+        if helper_start >= 0 and helper_end > helper_start
+        else ""
+    )
+    for snippet in (
+        "this.requestId == requestId",
+        "channel === sourceChannel",
+        "connectionGeneration == sourceConnectionGeneration",
+        "hasCurrentRuntimeAuthority()",
+    ):
+        if snippet not in helper:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: bulk terminal authority matcher is missing {snippet!r}."
+            )
+
+    lifecycle_start = viewmodel.find("private fun handleChatSessionLifecycle(")
+    lifecycle_end = viewmodel.find(
+        "\n    private fun applyResearchNotebookLifecycleResult(",
+        lifecycle_start,
+    )
+    lifecycle = (
+        viewmodel[lifecycle_start:lifecycle_end]
+        if lifecycle_start >= 0 and lifecycle_end > lifecycle_start
+        else ""
+    )
+    for snippet in (
+        "envelope.type == pending.type",
+        "pending.matchesCurrentRuntimeAuthority(",
+        "sourceChannel = sourceChannel",
+        "sourceConnectionGeneration = sourceConnectionGeneration",
+    ):
+        if snippet not in lifecycle:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: bulk success dispatch is missing {snippet!r}."
+            )
+
+    bulk_handler_start = viewmodel.find("private fun handleChatSessionsBulkLifecycle(")
+    bulk_handler_end = viewmodel.find(
+        "\n    private fun PendingChatSessionsBulkLifecycle.expectedStatus()",
+        bulk_handler_start,
+    )
+    bulk_handler = (
+        viewmodel[bulk_handler_start:bulk_handler_end]
+        if bulk_handler_start >= 0 and bulk_handler_end > bulk_handler_start
+        else ""
+    )
+    for snippet in (
+        "sourceChannel: RuntimeProtocolChannel",
+        "sourceConnectionGeneration: Long",
+        "pending.matchesCurrentRuntimeAuthority(",
+        "envelope.type != pending.type",
+    ):
+        if snippet not in bulk_handler:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: bulk result handler is missing {snippet!r}."
+            )
+
+    handle_error_start = viewmodel.find("private fun handleError(")
+    handle_error_end = viewmodel.find("\n    private fun sendEnvelope(", handle_error_start)
+    handle_error = (
+        viewmodel[handle_error_start:handle_error_end]
+        if handle_error_start >= 0 and handle_error_end > handle_error_start
+        else ""
+    )
+    handle_error_prelude = handle_error[:1800]
+    stale_bulk_error_pattern = re.compile(
+        r"val isCurrentBulkLifecycleError = pendingChatSessionsBulkLifecycle\?\.let \{ pending ->\s*"
+        r"pending\.matchesCurrentRuntimeAuthority\(\s*"
+        r"requestId = envelope\.requestId,\s*"
+        r"sourceChannel = sourceChannel,\s*"
+        r"sourceConnectionGeneration = sourceConnectionGeneration,\s*"
+        r"\)\s*\} == true\s*"
+        r"if \(\s*"
+        r"envelope\.requestId\.startsWith\(CHAT_SESSIONS_BULK_REQUEST_ID_PREFIX\) &&\s*"
+        r"!isCurrentBulkLifecycleError\s*"
+        r"\) return",
+        re.DOTALL,
+    )
+    if stale_bulk_error_pattern.search(handle_error_prelude) is None:
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: stale, prior-batch, and completed bulk errors must return before generic handling."
+        )
+    error_bulk_offsets = [
+        match.start()
+        for match in re.finditer("pendingChatSessionsBulkLifecycle", handle_error)
+        if match.start() >= len(handle_error_prelude)
+    ]
+    if len(error_bulk_offsets) != 2:
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: expected exactly two bulk error correlation branches."
+        )
+    for offset in error_bulk_offsets:
+        branch = handle_error[offset:offset + 650]
+        for snippet in (
+            "matchesCurrentRuntimeAuthority(",
+            "sourceChannel = sourceChannel",
+            "sourceConnectionGeneration = sourceConnectionGeneration",
+        ):
+            if snippet not in branch:
+                failures.append(
+                    f"{paths['viewmodel'].relative_to(ROOT)}: bulk error branch is missing {snippet!r}."
+                )
+
+    send_failure_start = viewmodel.find("private suspend fun sendEnvelopeInternal(")
+    send_failure_end = viewmodel.find("\n    private fun <T> envelope(", send_failure_start)
+    send_failure = (
+        viewmodel[send_failure_start:send_failure_end]
+        if send_failure_start >= 0 and send_failure_end > send_failure_start
+        else ""
+    )
+    bulk_send_offset = send_failure.find(
+        "val bulkLifecycleRequest = if ("
+    )
+    bulk_send_branch = (
+        send_failure[bulk_send_offset:bulk_send_offset + 900]
+        if bulk_send_offset >= 0
+        else ""
+    )
+    for snippet in (
+        "pending.type == envelope.type",
+        "pending.matchesCurrentRuntimeAuthority(",
+        "sourceChannel = channelAtDispatch",
+        "sourceConnectionGeneration = expectedConnectionGeneration",
+    ):
+        if snippet not in bulk_send_branch:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: bulk send-failure authority is missing {snippet!r}."
+            )
+
+    test_names = (
+        "chatSessionsBulkLifecycleRequiresExactTerminalAuthority",
+        "chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority",
+        "chatSessionsBulkSendFailureRequiresExactDispatchAuthority",
+    )
+    test_sections: dict[str, str] = {}
+    for test_name in test_names:
+        if re.search(
+            rf"(?m)^\s*@Test\s*$\n\s*fun {test_name}\s*\(",
+            texts["tests"],
+        ) is None:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing executable bulk terminal authority regression {test_name}."
+            )
+        test_start = texts["tests"].find(f"fun {test_name}()")
+        test_end = texts["tests"].find(
+            "\n    @OptIn(ExperimentalCoroutinesApi::class)",
+            test_start + 1,
+        )
+        test_sections[test_name] = (
+            texts["tests"][test_start:test_end]
+            if test_start >= 0 and test_end > test_start
+            else ""
+        )
+        if re.search(r"\breturn(?:@\w+)?\b", test_sections[test_name]) is not None:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: bulk terminal authority regression {test_name} must not bypass its finally canary with return."
+            )
+    authority_test = test_sections[test_names[0]]
+    for snippet in (
+        "val wrongChannel = ScriptedRuntimeProtocolChannel()",
+        "connectionGeneration - 1L",
+        "authorityGeneration + 1L",
+        "fixture.viewModel.handleChatSessionLifecycleForTest(",
+        "fixture.viewModel.handleErrorForTest(",
+        'code = "authentication_required"',
+        'code = "backend_unavailable"',
+        'put("unexpected", true)',
+        'assertTrue(request.requestId.startsWith("chat-sessions-bulk-"))',
+        "assertNotEquals(request.requestId, finalRequest.requestId)",
+        "var exercisedTerminalCount = 0",
+        "assertEquals(17, exercisedTerminalCount)",
+        'assertTrue(fixture.viewModel.privateField<Boolean>("isSessionAuthenticated") == true)',
+    ):
+        if snippet not in authority_test:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: bulk terminal authority regression is missing {snippet!r}."
+            )
+    for error_name in ("authenticationError", "ordinaryError", "malformedError"):
+        call = f"fixture.viewModel.handleErrorForTest(\n                {error_name},"
+        if authority_test.count(call) != 4:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: bulk terminal authority regression must execute {error_name} in four stale-authority/batch contexts."
+            )
+
+    malformed_test = test_sections[test_names[1]]
+    for snippet in (
+        'put("unexpected", true)',
+        "fixture.viewModel.handleErrorForTest(",
+        "fixture.channel,",
+        "connectionGeneration,",
+        'assertEquals("invalid_payload", fixture.viewModel.state.value.error?.code)',
+        "fixture.viewModel.handleChatSessionLifecycleForTest(",
+        "assertTrue(fixture.viewModel.state.value.archivedChatSessions.isEmpty())",
+        "var exercisedTerminalCount = 0",
+        "assertEquals(2, exercisedTerminalCount)",
+    ):
+        if snippet not in malformed_test:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: current malformed bulk error regression is missing {snippet!r}."
+            )
+
+    send_failure_test = test_sections[test_names[2]]
+    for snippet in (
+        "currentFixture.channel.afterSend = { envelope ->",
+        'throw IllegalStateException("current bulk send failure")',
+        'assertEquals("chat_session_sync_failed", currentFixture.viewModel.state.value.error?.code)',
+        'listOf("channel", "connection", "authority").forEach { staleDimension ->',
+        "releaseSendFailure.await()",
+        'throw IllegalStateException("delayed stale bulk send failure")',
+        "releaseSendFailure.complete(Unit)",
+        "assertTrue(fixture.viewModel.state.value.isBulkMutatingChatSessions)",
+        "fixture.viewModel.handleChatSessionLifecycleForTest(",
+        "assertFalse(fixture.viewModel.state.value.isBulkMutatingChatSessions)",
+        "var exercisedTerminalCount = 0",
+        "assertEquals(7, exercisedTerminalCount)",
+    ):
+        if snippet not in send_failure_test:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: bulk send-failure authority regression is missing {snippet!r}."
+            )
+    if "private fun RuntimeClientViewModel.handleChatSessionLifecycleForTest(" not in texts["tests"]:
+        failures.append(
+            f"{paths['tests'].relative_to(ROOT)}: missing bulk lifecycle source-authority test helper."
+        )
+
+    for test_name in test_names:
+        selector = (
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: bulk terminal authority selector for {test_name} must appear exactly once."
+            )
+    junit_start = texts["no_device"].find(
+        "check_android_chat_sessions_bulk_terminal_authority_junit() {"
+    )
+    junit_end = texts["no_device"].find("\n}\n", junit_start)
+    junit = (
+        texts["no_device"][junit_start:junit_end]
+        if junit_start >= 0 and junit_end > junit_start
+        else ""
+    )
+    for snippet in (
+        "expected_names = (",
+        "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml",
+        'root.findall("testcase")',
+        '("skipped", "failure", "error")',
+        "3 executed tests, 0 skipped, 0 failures, 0 errors.",
+    ):
+        if snippet not in junit:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: bulk terminal JUnit proof is missing {snippet!r}."
+            )
+    junit_names_start = junit.find("expected_names = (")
+    junit_names_end = junit.find("\n)\n\ntry:", junit_names_start)
+    junit_names_section = (
+        junit[junit_names_start:junit_names_end]
+        if junit_names_start >= 0 and junit_names_end > junit_names_start
+        else ""
+    )
+    junit_test_names = tuple(
+        re.findall(r'(?m)^\s*"([^"]+)",\s*$', junit_names_section)
+    )
+    if junit_test_names != test_names:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: bulk terminal JUnit names must exactly match the canonical three tests in order."
+        )
+    if len(
+        re.findall(
+            r"(?m)^run check_android_chat_sessions_bulk_terminal_authority_junit\s*$",
+            texts["no_device"],
+        )
+    ) != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: bulk terminal JUnit proof must run exactly once."
+        )
+
+    marker_prefix = (
+        "Covered v0.2 addendum: Android chat.sessions bulk terminal authority. "
+    )
+    if texts["no_device"].count(marker_prefix) != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: bulk terminal authority marker must appear exactly once."
+        )
+    if "Android treats every bulk lifecycle terminal as authority-bound." not in texts["protocol"]:
+        failures.append(
+            f"{paths['protocol'].relative_to(ROOT)}: missing Android bulk terminal authority protocol boundary."
+        )
+
+    document_headings = {
+        "roadmap": "v0.2 Android Chat Sessions Bulk Terminal Authority",
+        "progress": "2026-07-17 v0.2 Android Chat Sessions Bulk Terminal Authority",
+        "qa": "2026-07-17 v0.2 Android Chat Sessions Bulk Terminal Authority No-Device Checklist",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+    required_patterns = (
+        (r"chatSessionsBulkLifecycleRequiresExactTerminalAuthority", "regression name"),
+        (
+            r"chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority",
+            "malformed regression name",
+        ),
+        (
+            r"chatSessionsBulkSendFailureRequiresExactDispatchAuthority",
+            "send-failure regression name",
+        ),
+        (r"request id", "request authority"),
+        (r"channel", "channel authority"),
+        (r"connection generation", "connection authority"),
+        (r"authenticat", "authentication authority"),
+        (r"send.failure|send-failure|send failure", "send-failure authority"),
+        (r"597", "ViewModel test count"),
+        (r"1,071", "app test count"),
+        (
+            r"build/qa/check-no-device-quality-chat-sessions-bulk-terminal-authority-final-reviewed-20260717\.log",
+            "aggregate evidence path",
+        ),
+        (r"no-device", "no-device evidence boundary"),
+        (r"physical", "physical-device non-proof boundary"),
+        (r"Phase B", "controlled-spike Phase B boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in required_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} bulk terminal authority section is missing {description}."
+                )
+    return failures
+
+
+def android_persistent_memory_mutation_authority_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "production_deadline_tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelProductionDeadlineTest.kt",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "protocol": ROOT / "docs/protocol.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Android persistent-memory mutation authority guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    viewmodel = texts["viewmodel"]
+
+    def bounded_section(
+        text: str,
+        start_marker: str,
+        end_marker: str,
+        description: str,
+    ) -> str:
+        start = text.find(start_marker)
+        end = text.find(end_marker, start + len(start_marker)) if start >= 0 else -1
+        if start < 0 or end <= start:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: cannot locate {description}."
+            )
+            return ""
+        return text[start:end]
+
+    def require_snippets(
+        section: str,
+        snippets: tuple[str, ...],
+        description: str,
+        path_label: str = "viewmodel",
+    ) -> None:
+        for snippet in snippets:
+            if snippet not in section:
+                failures.append(
+                    f"{paths[path_label].relative_to(ROOT)}: {description} is missing {snippet!r}."
+                )
+
+    def require_order(
+        section: str,
+        snippets: tuple[str, ...],
+        description: str,
+    ) -> None:
+        cursor = 0
+        for snippet in snippets:
+            offset = section.find(snippet, cursor)
+            if offset < 0:
+                failures.append(
+                    f"{paths['viewmodel'].relative_to(ROOT)}: {description} must contain {snippet!r} in authority-safe order."
+                )
+                return
+            cursor = offset + len(snippet)
+
+    pending_start = viewmodel.find("private data class PendingMemoryMutation(")
+    pending_end = viewmodel.find("\n)", pending_start)
+    pending = (
+        viewmodel[pending_start:pending_end]
+        if pending_start >= 0 and pending_end > pending_start
+        else ""
+    )
+    require_snippets(
+        pending,
+        (
+            "val requestId: String",
+            "val type: String",
+            "val target: PendingMemoryMutationTarget",
+            "val expectedEntryId: String?",
+            "val expectedContent: String?",
+            "val expectedEnabled: Boolean?",
+            "val channel: RuntimeProtocolChannel",
+            "val connectionGeneration: Long",
+            "val authorityGeneration: Long",
+        ),
+        "pending memory mutation correlation",
+    )
+    require_snippets(
+        viewmodel,
+        (
+            "private sealed interface PendingMemoryMutationTarget",
+            "data class NewEntry(val content: String) : PendingMemoryMutationTarget",
+            "data class ExistingEntry(val entryId: String) : PendingMemoryMutationTarget",
+            "private val pendingMemoryMutationsByRequestId = mutableMapOf<String, PendingMemoryMutation>()",
+            "private val memoryMutationRequestTimeoutJobsByRequestId = mutableMapOf<String, Job>()",
+            'private const val MEMORY_UPSERT_REQUEST_ID_PREFIX = "memory-upsert-"',
+            'private const val MEMORY_DELETE_REQUEST_ID_PREFIX = "memory-delete-"',
+            "internal const val MEMORY_MUTATION_REQUEST_TIMEOUT_MS = 15_000L",
+            "memoryMutationRequestTimeoutMillis = MEMORY_MUTATION_REQUEST_TIMEOUT_MS",
+        ),
+        "persistent-memory mutation authority structure",
+    )
+
+    request_bound_start = viewmodel.find("private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(")
+    request_bound_end = viewmodel.find("\n)", request_bound_start)
+    request_bound = (
+        viewmodel[request_bound_start:request_bound_end]
+        if request_bound_start >= 0 and request_bound_end > request_bound_start
+        else ""
+    )
+    for request_type in ("MessageType.MemoryUpsert,", "MessageType.MemoryDelete,"):
+        if request_bound.count(request_type) != 1:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: request-bound send-failure types must contain {request_type} exactly once."
+            )
+
+    command_sections = {
+        "memory add": bounded_section(
+            viewmodel,
+            "fun addMemoryEntry(content: String)",
+            "\n    fun removeMemoryEntry(",
+            "memory add command",
+        ),
+        "memory delete": bounded_section(
+            viewmodel,
+            "fun removeMemoryEntry(entryId: String)",
+            "\n    fun setMemoryEntryEnabled(",
+            "memory delete command",
+        ),
+        "memory enabled update": bounded_section(
+            viewmodel,
+            "fun setMemoryEntryEnabled(entryId: String, enabled: Boolean)",
+            "\n    fun refreshRuntimeMemory()",
+            "memory enabled-update command",
+        ),
+    }
+    command_requirements = {
+        "memory add": (
+            "PendingMemoryMutationTarget.NewEntry(cleanContent)",
+            "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()",
+            "type = MessageType.MemoryUpsert",
+            "expectedEntryId = null",
+            "expectedContent = cleanContent",
+            "expectedEnabled = true",
+            "channel = channel",
+            "connectionGeneration = activeConnectionGeneration",
+            "authorityGeneration = runtimeSessionAuthorityGeneration",
+            "pendingMemoryMutationsByRequestId[requestId] = pending",
+            "scheduleMemoryMutationTimeout(pending)",
+            "MemoryUpsertPayload(",
+            "requestId = requestId",
+        ),
+        "memory delete": (
+            "PendingMemoryMutationTarget.ExistingEntry(cleanId)",
+            "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "MEMORY_DELETE_REQUEST_ID_PREFIX + UUID.randomUUID()",
+            "type = MessageType.MemoryDelete",
+            "expectedEntryId = cleanId",
+            "expectedContent = null",
+            "expectedEnabled = null",
+            "channel = channel",
+            "connectionGeneration = activeConnectionGeneration",
+            "authorityGeneration = runtimeSessionAuthorityGeneration",
+            "pendingMemoryMutationsByRequestId[requestId] = pending",
+            "scheduleMemoryMutationTimeout(pending)",
+            "MemoryDeletePayload(id = cleanId)",
+            "requestId = requestId",
+        ),
+        "memory enabled update": (
+            "PendingMemoryMutationTarget.ExistingEntry(entry.id)",
+            "pendingMemoryMutationsByRequestId.values.any { it.target == target }",
+            "MEMORY_UPSERT_REQUEST_ID_PREFIX + UUID.randomUUID()",
+            "type = MessageType.MemoryUpsert",
+            "expectedEntryId = entry.id",
+            "expectedContent = entry.content",
+            "expectedEnabled = enabled",
+            "channel = channel",
+            "connectionGeneration = activeConnectionGeneration",
+            "authorityGeneration = runtimeSessionAuthorityGeneration",
+            "pendingMemoryMutationsByRequestId[requestId] = pending",
+            "scheduleMemoryMutationTimeout(pending)",
+            "MemoryUpsertPayload(",
+            "requestId = requestId",
+        ),
+    }
+    for description, section in command_sections.items():
+        require_snippets(section, command_requirements[description], description)
+
+    matcher = bounded_section(
+        viewmodel,
+        "private fun PendingMemoryMutation.matchesCurrentMemoryMutationAuthority(",
+        "\n    private fun hasPendingMemorySummaryDraftAction(",
+        "memory mutation authority matcher",
+    )
+    require_snippets(
+        matcher,
+        (
+            "channel === sourceChannel",
+            "connectionGeneration == sourceConnectionGeneration",
+            "authorityGeneration == runtimeSessionAuthorityGeneration",
+            "activeChannel === sourceChannel",
+            "activeConnectionGeneration == sourceConnectionGeneration",
+            "isSessionAuthenticated",
+        ),
+        "memory mutation authority matcher",
+    )
+
+    close_helper = bounded_section(
+        viewmodel,
+        "private fun closePendingMemoryMutation(pending: PendingMemoryMutation): Boolean",
+        "\n    private fun scheduleMemoryMutationTimeout(",
+        "memory mutation exact-close helper",
+    )
+    require_order(
+        close_helper,
+        (
+            "pendingMemoryMutationsByRequestId[pending.requestId] !== pending",
+            "pendingMemoryMutationsByRequestId.remove(pending.requestId)",
+            "memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()",
+            "return true",
+        ),
+        "memory mutation exact-close helper",
+    )
+
+    handlers = {
+        "memory.upsert result handler": (
+            bounded_section(
+                viewmodel,
+                "private fun handleMemoryUpsert(",
+                "\n    private fun handleMemoryDelete(",
+                "memory.upsert result handler",
+            ),
+            (
+                "pendingMemoryMutationsByRequestId[envelope.requestId] ?: return",
+                "pending.matchesCurrentMemoryMutationAuthority(",
+                "closePendingMemoryMutation(pending)",
+                "pending.type != MessageType.MemoryUpsert",
+                "memoryUpsertResultUnknownMetadataKey()",
+                "decodePayload(MemoryUpsertResultPayload.serializer()",
+                "val matchesExpectedEntry =",
+                "pending.expectedEntryId == null || payload.entry.id == pending.expectedEntryId",
+                "payload.entry.content == pending.expectedContent",
+                "payload.entry.enabled == pending.expectedEnabled",
+                "if (!matchesExpectedEntry)",
+                "publishPersistedRuntimeData(",
+                "persistedRuntimeData.withRuntimeMemoryEntry(",
+            ),
+        ),
+        "memory.delete result handler": (
+            bounded_section(
+                viewmodel,
+                "private fun handleMemoryDelete(",
+                "\n    private fun handleCancelAck(",
+                "memory.delete result handler",
+            ),
+            (
+                "pendingMemoryMutationsByRequestId[envelope.requestId] ?: return",
+                "pending.matchesCurrentMemoryMutationAuthority(",
+                "closePendingMemoryMutation(pending)",
+                "pending.type != MessageType.MemoryDelete",
+                "memoryDeleteResultUnknownMetadataKey()",
+                "decodePayload(MemoryDeleteResultPayload.serializer()",
+                "payload.id != pending.expectedEntryId",
+                "publishPersistedRuntimeData(",
+                "persistedRuntimeData.withoutRuntimeMemoryEntry(payload.id)",
+            ),
+        ),
+    }
+    for description, (handler, ordered_snippets) in handlers.items():
+        require_snippets(
+            handler,
+            (
+                "sourceChannel: RuntimeProtocolChannel",
+                "sourceConnectionGeneration: Long",
+            ),
+            description,
+        )
+        require_order(handler, ordered_snippets, description)
+
+    handle_error = bounded_section(
+        viewmodel,
+        "private fun handleError(",
+        "\n    private fun sendEnvelope(",
+        "runtime error handler",
+    )
+    mutation_error_start = handle_error.find("val memoryMutationType = when {")
+    mutation_error_end = handle_error.find(
+        "\n        if (shouldIgnoreClosedMemoryDuplicateSuggestionsError(",
+        mutation_error_start,
+    )
+    mutation_error = (
+        handle_error[mutation_error_start:mutation_error_end]
+        if mutation_error_start >= 0 and mutation_error_end > mutation_error_start
+        else ""
+    )
+    require_order(
+        mutation_error,
+        (
+            "envelope.requestId.startsWith(MEMORY_UPSERT_REQUEST_ID_PREFIX)",
+            "envelope.requestId.startsWith(MEMORY_DELETE_REQUEST_ID_PREFIX)",
+            "val pending = pendingMemoryMutationsByRequestId[envelope.requestId] ?: return",
+            "pending.matchesCurrentMemoryMutationAuthority(",
+            "sourceChannel = sourceChannel",
+            "sourceConnectionGeneration = sourceConnectionGeneration",
+            "closePendingMemoryMutation(pending)",
+            "pending.type != memoryMutationType",
+            "errorPayloadUnknownMetadataKey()",
+            "decodePayload(ErrorPayload.serializer()",
+            "payload.code.isPairingRequiredRuntimeCode()",
+            "mutableState.value = state.value.withRuntimeError(",
+        ),
+        "memory mutation error branch",
+    )
+
+    send_failure = bounded_section(
+        viewmodel,
+        "private suspend fun sendEnvelopeInternal(",
+        "\n    private fun <T> envelope(",
+        "request send-failure handler",
+    )
+    failed_mutation_start = send_failure.find("val failedMemoryMutation = if (")
+    failed_mutation_end = send_failure.find(
+        "\n                val isRuntimeHealthRequest =",
+        failed_mutation_start,
+    )
+    failed_mutation = (
+        send_failure[failed_mutation_start:failed_mutation_end]
+        if failed_mutation_start >= 0 and failed_mutation_end > failed_mutation_start
+        else ""
+    )
+    require_order(
+        failed_mutation,
+        (
+            "envelope.type in setOf(MessageType.MemoryUpsert, MessageType.MemoryDelete)",
+            "pendingMemoryMutationsByRequestId[envelope.requestId]",
+            "pending.type == envelope.type",
+            "pending.matchesCurrentMemoryMutationAuthority(",
+            "sourceChannel = channelAtDispatch",
+            "sourceConnectionGeneration = expectedConnectionGeneration",
+        ),
+        "memory mutation send-failure correlation",
+    )
+    failed_terminal_start = send_failure.find("if (failedMemoryMutation != null) {")
+    failed_terminal = (
+        send_failure[failed_terminal_start:failed_terminal_start + 300]
+        if failed_terminal_start >= 0
+        else ""
+    )
+    require_order(
+        failed_terminal,
+        (
+            "if (failedMemoryMutation != null)",
+            "closePendingMemoryMutation(failedMemoryMutation)",
+            'showError("send_failed", error.message)',
+            "return@onFailure",
+        ),
+        "memory mutation send-failure terminal",
+    )
+
+    clear_helper = bounded_section(
+        viewmodel,
+        "private fun clearPendingMemoryMutations()",
+        "\n    private fun closePendingMemoryMutation(",
+        "memory mutation lifecycle clear helper",
+    )
+    require_order(
+        clear_helper,
+        (
+            "memoryMutationRequestTimeoutJobsByRequestId.values.forEach(Job::cancel)",
+            "memoryMutationRequestTimeoutJobsByRequestId.clear()",
+            "pendingMemoryMutationsByRequestId.clear()",
+        ),
+        "memory mutation lifecycle clear helper",
+    )
+    lifecycle_sections = {
+        "disconnect/connection close": bounded_section(
+            viewmodel,
+            "private fun closeRuntimeConnection()",
+            "\n    fun requestRuntimeHealth()",
+            "runtime connection close lifecycle",
+        ),
+        "successful reauthentication": bounded_section(
+            viewmodel,
+            "if (payload.accepted == true) {",
+            "\n            if (pending.forcePairedClaim == true)",
+            "successful runtime authentication lifecycle",
+        ),
+        "authentication revocation": bounded_section(
+            viewmodel,
+            "private fun revokeAuthenticatedRuntimeSessionState(",
+            "\n    private fun clearResearchNotebookSessionState(",
+            "runtime authentication revocation lifecycle",
+        ),
+    }
+    for description, lifecycle in lifecycle_sections.items():
+        if "clearPendingMemoryMutations()" not in lifecycle:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: {description} must clear pending memory mutations and timers."
+            )
+    read_loop = bounded_section(
+        viewmodel,
+        "private fun startReadLoop()",
+        "\n    private suspend fun handleEnvelope(",
+        "runtime receive loop",
+    )
+    require_snippets(
+        read_loop,
+        (".onFailure { error ->", "revokeAuthenticatedRuntimeSessionState()"),
+        "receive-failure memory mutation cleanup",
+    )
+    on_cleared = bounded_section(
+        viewmodel,
+        "override fun onCleared()",
+        "\n    private companion object",
+        "ViewModel clear lifecycle",
+    )
+    require_order(
+        on_cleared,
+        ("closeRuntimeConnection()", "viewModelScope.cancel()", "super.onCleared()"),
+        "ViewModel clear lifecycle",
+    )
+
+    timeout = bounded_section(
+        viewmodel,
+        "private fun scheduleMemoryMutationTimeout(pending: PendingMemoryMutation)",
+        "\n    private fun PendingMemoryMutation.matchesCurrentMemoryMutationAuthority(",
+        "memory mutation timeout handler",
+    )
+    require_order(
+        timeout,
+        (
+            "dependencies.memoryMutationRequestTimeoutMillis ?: return",
+            "memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)?.cancel()",
+            "memoryMutationRequestTimeoutJobsByRequestId[pending.requestId] = viewModelScope.launch",
+            "delay(timeoutMillis)",
+            "memoryMutationRequestTimeoutJobsByRequestId.remove(pending.requestId)",
+            "pending.matchesCurrentMemoryMutationAuthority(",
+            "closePendingMemoryMutation(pending)",
+            'showError("runtime_error", "Memory mutation timed out")',
+            "clearPendingMemoryListRequest()",
+            "requestRuntimeMemory()",
+        ),
+        "memory mutation timeout handler",
+    )
+    for forbidden in (
+        "addMemoryEntry(",
+        "removeMemoryEntry(",
+        "setMemoryEntryEnabled(",
+        "MemoryUpsertPayload(",
+        "MemoryDeletePayload(",
+    ):
+        if forbidden in timeout:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: memory mutation timeout must not retry a mutation via {forbidden!r}."
+            )
+
+    deadline_test_name = "productionFactoryEnablesHostAlignedMemorySummaryDeadlines"
+    deadline_test_start = texts["production_deadline_tests"].find(
+        f"fun {deadline_test_name}()"
+    )
+    deadline_test_end = texts["production_deadline_tests"].find(
+        "\n    }",
+        deadline_test_start,
+    )
+    deadline_test = (
+        texts["production_deadline_tests"][deadline_test_start:deadline_test_end]
+        if deadline_test_start >= 0 and deadline_test_end > deadline_test_start
+        else ""
+    )
+    if re.search(
+        rf"(?m)^\s*@Test\s*$\n\s*fun {deadline_test_name}\s*\(",
+        texts["production_deadline_tests"],
+    ) is None:
+        failures.append(
+            f"{paths['production_deadline_tests'].relative_to(ROOT)}: missing executable production memory mutation deadline regression."
+        )
+    if re.search(
+        r"assertEquals\(\s*MEMORY_MUTATION_REQUEST_TIMEOUT_MS,\s*"
+        r"dependencies\.memoryMutationRequestTimeoutMillis,?\s*\)",
+        deadline_test,
+        re.DOTALL,
+    ) is None:
+        failures.append(
+            f"{paths['production_deadline_tests'].relative_to(ROOT)}: production factory deadline regression must pin the memory mutation timeout constant."
+        )
+
+    test_names = (
+        "memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation",
+        "memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload",
+        "memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce",
+        "memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority",
+    )
+    test_sections: dict[str, str] = {}
+    for test_name in test_names:
+        if len(re.findall(rf"(?m)^\s*fun {re.escape(test_name)}\s*\(", texts["tests"])) != 1:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: memory mutation authority regression {test_name} must be declared exactly once."
+            )
+        if re.search(
+            rf"(?m)^\s*@Test\s*$\n\s*fun {re.escape(test_name)}\s*\(",
+            texts["tests"],
+        ) is None:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing executable memory mutation authority regression {test_name}."
+            )
+        test_start = texts["tests"].find(f"fun {test_name}()")
+        test_end = texts["tests"].find(
+            "\n    @OptIn(ExperimentalCoroutinesApi::class)",
+            test_start + 1,
+        )
+        test_sections[test_name] = (
+            texts["tests"][test_start:test_end]
+            if test_start >= 0 and test_end > test_start
+            else ""
+        )
+        selector = (
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: memory mutation authority selector for {test_name} must appear exactly once."
+            )
+
+    test_evidence = {
+        test_names[0]: (
+            'contains("entry.source.source_pointers[0].backend_url")',
+            "assertExistingMemoryPreserved()",
+            "assertNotEquals(upsertRequest.requestId, replacementUpsertRequest.requestId)",
+        ),
+        test_names[1]: (
+            'contains("workspace_id")',
+            "assertDeleteTargetPreserved()",
+            "assertNotEquals(deleteRequest.requestId, replacementDeleteRequest.requestId)",
+        ),
+        test_names[2]: (
+            'assertTrue(request.requestId.startsWith("memory-upsert-"))',
+            "sourceChannel = ScriptedRuntimeProtocolChannel()",
+            "authorityGeneration + 1L",
+            "assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())",
+        ),
+        test_names[3]: (
+            'runtimeError(request.requestId, "authentication_required")',
+            'put("backend_url", "http://127.0.0.1:11434")',
+            "assertEquals(2, fixture.viewModel.pendingMemoryMutationCountForTest())",
+            "assertFalse(fixture.viewModel.privateField<Boolean>(\"isSessionAuthenticated\") == true)",
+        ),
+        test_names[4]: (
+            'throw IllegalStateException("current memory mutation send failure")',
+            'throw IllegalStateException("stale upsert send failure")',
+            'throw IllegalStateException("stale delete send failure")',
+            'privateField<Map<String, Job>>("memoryMutationRequestTimeoutJobsByRequestId")',
+            "advanceTimeBy(1_000L)",
+            "memoryListCountBeforeTimeout + 1",
+            "upsertCountBeforeTimeout",
+            "receiveFailureFixture.channel.failReceive(",
+            "clearedFixture.viewModel.clearForTest()",
+        ),
+    }
+    for test_name, snippets in test_evidence.items():
+        require_snippets(
+            test_sections[test_name],
+            snippets,
+            f"memory mutation regression {test_name}",
+            path_label="tests",
+        )
+    for helper in (
+        "private fun RuntimeClientViewModel.handleMemoryMutationForTest(",
+        "private fun RuntimeClientViewModel.pendingMemoryMutationCountForTest()",
+    ):
+        if helper not in texts["tests"]:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing memory mutation authority test helper {helper!r}."
+            )
+
+    junit_start = texts["no_device"].find(
+        "check_android_memory_mutation_authority_junit() {"
+    )
+    junit_end = texts["no_device"].find("\n}\n", junit_start)
+    junit = (
+        texts["no_device"][junit_start:junit_end]
+        if junit_start >= 0 and junit_end > junit_start
+        else ""
+    )
+    require_snippets(
+        junit,
+        (
+            "expected_names = (",
+            "TEST-com.localagentbridge.android.runtime.RuntimeClientViewModelTest.xml",
+            'root.findall("testcase")',
+            'case.get("classname") == "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"',
+            'case.get("name") == expected_name',
+            '("skipped", "failure", "error")',
+            "5 executed tests, 0 skipped, 0 failures, 0 errors.",
+        ),
+        "memory mutation authority JUnit execution guard",
+        path_label="no_device",
+    )
+    junit_names_start = junit.find("expected_names = (")
+    junit_names_end = junit.find("\n)\n\ntry:", junit_names_start)
+    junit_names_section = (
+        junit[junit_names_start:junit_names_end]
+        if junit_names_start >= 0 and junit_names_end > junit_names_start
+        else ""
+    )
+    junit_test_names = tuple(
+        re.findall(r'(?m)^\s*"([^"]+)",\s*$', junit_names_section)
+    )
+    if junit_test_names != test_names:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: memory mutation JUnit names must exactly match the canonical five tests in order."
+        )
+    if len(junit_test_names) != len(set(junit_test_names)):
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: memory mutation JUnit names must not contain duplicates."
+        )
+    if len(
+        re.findall(
+            r"(?m)^run check_android_memory_mutation_authority_junit\s*$",
+            texts["no_device"],
+        )
+    ) != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: memory mutation authority JUnit proof must run exactly once."
+        )
+
+    marker = (
+        "Covered v0.2 addendum: Android persistent-memory mutation current-request authority. "
+        "memory.upsert and memory.delete use namespaced request ids bound to the exact operation, "
+        "target, expected result fields, channel, connection generation, and authenticated authority "
+        "generation. Only one exact-current result, error, or send failure may close a mutation or "
+        "change device memory state; unsolicited, mismatched, stale, duplicate, and delayed terminals "
+        "are inert. Same-target mutations serialize while different targets remain independent. The "
+        "15-second local timeout closes only the exact current request, never automatically retries the "
+        "mutation, and forces fresh memory.list reconciliation; reauthentication, revocation, "
+        "disconnect, receive failure, and ViewModel clear cancel pending authority and timeout jobs. "
+        "This is Android JVM no-device proof, not physical-device, optical QR, peer receipt or "
+        "exactly-once host mutation, real lost-response recovery beyond the deterministic timeout, "
+        "live-provider, external-network, production-relay/P2P/NAT, Phase B, or deployment proof."
+    )
+    if texts["no_device"].count(f'echo "{marker}"') != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: persistent-memory mutation authority marker must appear exactly once."
+        )
+
+    document_headings = {
+        "protocol": "Android Persistent-Memory Mutation Current-Request Authority",
+        "roadmap": "v0.2 Android Persistent-Memory Mutation Current-Request Authority",
+        "progress": "2026-07-17 v0.2 Android Persistent-Memory Mutation Current-Request Authority",
+        "qa": "2026-07-17 v0.2 Android Persistent-Memory Mutation Current-Request Authority No-Device Checklist",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+
+    required_document_patterns = (
+        (r"memory-upsert-<UUID>", "upsert request namespace"),
+        (r"memory-delete-<UUID>", "delete request namespace"),
+        (r"memory\.upsert", "upsert operation"),
+        (r"memory\.delete", "delete operation"),
+        (r"NewEntry", "new-entry target"),
+        (r"ExistingEntry", "existing-entry target"),
+        (r"expected", "expected-result binding"),
+        (r"channel", "channel authority"),
+        (r"connection generation", "connection-generation authority"),
+        (r"authenticat(?:ed|ion).*authority|authority generation", "authentication authority"),
+        (r"exact-current", "exact-current terminal"),
+        (r"malformed", "malformed terminal"),
+        (r"send.failure|send failure", "send-failure terminal"),
+        (r"same(?: logical)?[- ]target", "same-target serialization"),
+        (r"independent|different targets", "independent-target boundary"),
+        (r"15[- ]second", "production timeout"),
+        (r"memory\.list", "authoritative reconciliation"),
+        (r"does not automatically|no automatic|never automatically", "no automatic mutation retry"),
+        (r"reauthentication", "reauthentication cleanup"),
+        (r"revocation", "authentication-revocation cleanup"),
+        (r"disconnect", "disconnect cleanup"),
+        (r"receive.failure|receive failure", "receive-failure cleanup"),
+        (r"ViewModel clear", "ViewModel cleanup"),
+        (r"no-device", "no-device evidence boundary"),
+        (r"physical", "physical-device non-proof boundary"),
+        (r"exactly-once host mutation", "host exactly-once non-proof boundary"),
+        (r"lost-response recovery", "lost-response non-proof boundary"),
+        (r"live-provider", "live-provider non-proof boundary"),
+        (r"production relay/P2P/NAT", "production-network non-proof boundary"),
+        (r"Phase B", "controlled-spike Phase B boundary"),
+        (r"deployment", "deployment boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in required_document_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} persistent-memory mutation authority section is missing {description}."
+                )
+        for test_name in test_names:
+            if test_name not in section:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: persistent-memory mutation authority section must name {test_name}."
+                )
+    return failures
+
+
+def android_runtime_health_current_request_authority_guard_failures() -> list[str]:
+    failures: list[str] = []
+    paths = {
+        "viewmodel": ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt",
+        "tests": ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "no_device": ROOT / "script/check_no_device_quality.sh",
+        "protocol": ROOT / "docs/protocol.md",
+        "roadmap": ROOT / "docs/roadmap.md",
+        "progress": ROOT / "docs/progress.md",
+        "qa": ROOT / "docs/qa-evidence.md",
+    }
+    missing = [path for path in paths.values() if not path.exists()]
+    if missing:
+        return [
+            "Android runtime.health authority guard files are missing: "
+            + ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        ]
+    texts = {
+        label: path.read_text(encoding="utf-8", errors="replace")
+        for label, path in paths.items()
+    }
+    viewmodel = texts["viewmodel"]
+    required_viewmodel_snippets = (
+        "private data class PendingRuntimeHealthRequest(",
+        "private var pendingRuntimeHealthRequest: PendingRuntimeHealthRequest? = null",
+        "val requestId = RUNTIME_HEALTH_REQUEST_ID_PREFIX + UUID.randomUUID()",
+        "pendingRuntimeHealthRequest = PendingRuntimeHealthRequest(",
+        "MessageType.RuntimeHealth -> handleRuntimeHealth(",
+        "val pending = pendingRuntimeHealthRequest ?: return",
+        "pending.matchesCurrentRuntimeHealthAuthority(",
+        "if (envelope.requestId.startsWith(RUNTIME_HEALTH_REQUEST_ID_PREFIX)) return",
+        "val isRuntimeHealthRequest = envelope.type == MessageType.RuntimeHealth &&",
+        "private fun clearPendingRuntimeHealthRequest()",
+        "private fun PendingRuntimeHealthRequest.matchesCurrentRuntimeHealthAuthority(",
+        "authorityGeneration == runtimeSessionAuthorityGeneration",
+        "activeChannel === sourceChannel",
+        "activeConnectionGeneration == sourceConnectionGeneration",
+        "isSessionAuthenticated",
+        'private const val RUNTIME_HEALTH_REQUEST_ID_PREFIX = "runtime-health-"',
+    )
+    for snippet in required_viewmodel_snippets:
+        if snippet not in viewmodel:
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: missing runtime.health authority guard {snippet!r}."
+            )
+
+    request_bound_start = viewmodel.find("private val REQUEST_BOUND_SEND_FAILURE_TYPES = setOf(")
+    request_bound_end = viewmodel.find("\n)", request_bound_start)
+    if (
+        request_bound_start < 0
+        or request_bound_end < request_bound_start
+        or "MessageType.RuntimeHealth" not in viewmodel[request_bound_start:request_bound_end]
+    ):
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: superseded runtime.health send failures must stay request-bound."
+        )
+
+    handler_start = viewmodel.find("private fun handleRuntimeHealth(")
+    handler_end = viewmodel.find("\n    private fun handleModels(", handler_start)
+    if handler_start < 0 or handler_end < handler_start:
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: cannot locate runtime.health handler boundary."
+        )
+    else:
+        handler = viewmodel[handler_start:handler_end]
+        authority_offset = handler.find("matchesCurrentRuntimeHealthAuthority(")
+        metadata_offset = handler.find("runtimeHealthUnknownMetadataKey()")
+        clear_offset = handler.find("clearPendingRuntimeHealthRequest()", metadata_offset)
+        publication_offset = handler.find("mutableState.update", clear_offset)
+        if (
+            authority_offset < 0
+            or metadata_offset < authority_offset
+            or clear_offset < metadata_offset
+            or publication_offset < clear_offset
+        ):
+            failures.append(
+                f"{paths['viewmodel'].relative_to(ROOT)}: runtime.health must validate current authority before metadata and close before publication."
+            )
+
+    if viewmodel.count("clearPendingRuntimeHealthRequest()") < 6:
+        failures.append(
+            f"{paths['viewmodel'].relative_to(ROOT)}: runtime.health authority must clear on exact terminals, disconnect, reauthentication, and revocation."
+        )
+
+    test_names = (
+        "runtimeHealthPublishesOnlyLatestCurrentRequestOnce",
+        "runtimeHealthRejectsWrongChannelConnectionAndReauthenticatedAuthority",
+        "runtimeHealthExactCurrentTerminalsCloseBeforeDuplicateAndRetry",
+        "runtimeHealthClearsPendingOnDisconnectRevocationAndViewModelClear",
+        "runtimeHealthIgnoresSupersededErrorAndDelayedSendFailure",
+    )
+    for test_name in test_names:
+        if f"fun {test_name}" not in texts["tests"]:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing runtime.health authority regression {test_name}."
+            )
+        selector = (
+            "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest."
+            + test_name
+        )
+        if texts["no_device"].count(selector) != 1:
+            failures.append(
+                f"{paths['no_device'].relative_to(ROOT)}: selector for {test_name} must appear exactly once."
+            )
+    for snippet in (
+        'assertTrue(runtimeHealthRequest.requestId.startsWith("runtime-health-"))',
+        'private fun RuntimeClientViewModel.pendingRuntimeHealthRequestIdForTest()',
+        'private fun RuntimeClientViewModel.revokeAuthenticatedRuntimeSessionStateForTest()',
+        '"runtimeSessionAuthorityGeneration",\n                oldAuthorityGeneration + 1L,',
+        'throw IllegalStateException("current runtime health send failure")',
+    ):
+        if snippet not in texts["tests"]:
+            failures.append(
+                f"{paths['tests'].relative_to(ROOT)}: missing runtime.health evidence guard {snippet!r}."
+            )
+
+    marker = (
+        "Covered v0.2 addendum: Android runtime.health current-request authority. Each authenticated "
+        "request uses a namespaced id bound to the exact channel, connection generation, and "
+        "authenticated authority generation; only the latest exact result, error, or send failure "
+        "can close or mutate state, while stale, duplicate, wrong-channel, old-connection, and "
+        "prior-auth terminals are inert. Disconnect, revocation, reauthentication, and ViewModel "
+        "clear remove pending authority. This is Android JVM no-device proof, not physical-device, "
+        "peer-receipt, live-provider, external-network, production-relay/P2P, Phase B, or deployment proof."
+    )
+    if texts["no_device"].count(f'echo "{marker}"') != 1:
+        failures.append(
+            f"{paths['no_device'].relative_to(ROOT)}: runtime.health authority marker must appear exactly once."
+        )
+
+    document_headings = {
+        "protocol": "Android `runtime.health` Current-Request Authority",
+        "roadmap": "v0.2 Android `runtime.health` Current-Request Authority",
+        "progress": "2026-07-17 v0.2 Android `runtime.health` Current-Request Authority",
+        "qa": "2026-07-17 v0.2 Android `runtime.health` Current-Request Authority",
+    }
+    document_sections: dict[str, str] = {}
+    for label, heading in document_headings.items():
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"{paths[label].relative_to(ROOT)}: missing section {heading!r}.")
+            continue
+        document_sections[label] = match.group("body")
+
+    required_document_patterns = (
+        (r"runtime-health-<UUID>", "namespaced request id"),
+        (r"channel", "channel authority"),
+        (r"connection generation", "connection-generation authority"),
+        (r"authenticat(?:ed|ion).*authority|authority generation", "authentication authority"),
+        (r"stale", "stale terminal rejection"),
+        (r"duplicate", "duplicate terminal rejection"),
+        (r"send failure", "send-failure authority"),
+        (r"no-device", "no-device evidence boundary"),
+        (r"physical", "physical-device non-proof boundary"),
+        (r"Phase B", "controlled-spike Phase B boundary"),
+    )
+    for label, section in document_sections.items():
+        for pattern, description in required_document_patterns:
+            if re.search(pattern, section, re.IGNORECASE | re.DOTALL) is None:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)} runtime.health authority section is missing {description}."
+                )
+    for test_name in test_names:
+        qa_section = document_sections.get("qa", "")
+        if test_name not in qa_section:
+            failures.append(
+                f"{paths['qa'].relative_to(ROOT)}: runtime.health QA section must name {test_name}."
+            )
+    for label in ("roadmap", "progress", "qa"):
+        section = document_sections.get(label, "")
+        for snippet in (
+            "build/qa/check-no-device-quality-runtime-health-authority-final-20260717.log",
+            "12,081",
+            "1,054",
+            "no remaining P0-P3",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: runtime.health final evidence is missing {snippet!r}."
+                )
+    return failures
+
+
 def main() -> int:
+    authenticated_read_authority_failures = (
+        android_authenticated_read_authority_guard_failures()
+    )
+    if authenticated_read_authority_failures:
+        print("Android authenticated read authority guard failed:", file=sys.stderr)
+        for failure in authenticated_read_authority_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    authenticated_read_rollover_authority_failures = (
+        android_authenticated_read_rollover_authority_guard_failures()
+    )
+    if authenticated_read_rollover_authority_failures:
+        print(
+            "Android authenticated read rollover authority guard failed:",
+            file=sys.stderr,
+        )
+        for failure in authenticated_read_rollover_authority_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    bulk_terminal_authority_failures = (
+        android_chat_sessions_bulk_terminal_authority_guard_failures()
+    )
+    if bulk_terminal_authority_failures:
+        print(
+            "Android chat sessions bulk terminal authority guard failed:",
+            file=sys.stderr,
+        )
+        for failure in bulk_terminal_authority_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    memory_mutation_authority_failures = (
+        android_persistent_memory_mutation_authority_guard_failures()
+    )
+    if memory_mutation_authority_failures:
+        print(
+            "Android persistent-memory mutation current-request authority guard failed:",
+            file=sys.stderr,
+        )
+        for failure in memory_mutation_authority_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_health_authority_failures = (
+        android_runtime_health_current_request_authority_guard_failures()
+    )
+    if runtime_health_authority_failures:
+        print("Android runtime.health current-request authority guard failed:", file=sys.stderr)
+        for failure in runtime_health_authority_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    provider_catalog_failures = provider_model_catalog_context_window_guard_failures()
+    if provider_catalog_failures:
+        print("Provider model-catalog/context-window trust guard failed:", file=sys.stderr)
+        for failure in provider_catalog_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     runtime_python_sandbox_failures = runtime_python_sandbox_review_guard_failures()
     if runtime_python_sandbox_failures:
         print("Runtime Python sandbox review guard failed:", file=sys.stderr)

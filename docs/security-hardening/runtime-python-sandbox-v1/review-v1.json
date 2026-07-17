@@ -7,7 +7,7 @@
   "execution_status": "not_started",
   "source_evidence": {
     "manifest_path": "docs/security-hardening/runtime-python-sandbox-v1/evidence.sha256",
-    "manifest_sha256": "9bff16c06ca8d36dea4b1a0933547f6e46ddb287c6c84de8df1783f53b91e2d5",
+    "manifest_sha256": "351c2830f3113a2362a84c2bc7ac3e084ee7cfb8e1e92977ec9410eb62187fa1",
     "artifact_count": 6,
     "source_drift": "absent"
   },

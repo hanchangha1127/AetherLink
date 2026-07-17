@@ -14,6 +14,96 @@ final class LMStudioBackendTests: XCTestCase {
         super.tearDown()
     }
 
+    func testNativeCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOneWithoutFallback() async throws {
+        let body = #"{"models":[]}"#
+        let exactBackend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { _ in
+            self.response(statusCode: 200, body: body)
+        }
+        let exactModels = try await exactBackend.listModels()
+        XCTAssertEqual(exactModels, [])
+
+        var paths: [String] = []
+        let oversizedBackend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: body + " ")
+        }
+        await assertBadCatalogResponse(from: oversizedBackend, endpoint: "GET /api/v1/models")
+        XCTAssertEqual(paths, ["/api/v1/models"])
+    }
+
+    func testFallbackCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne() async throws {
+        let fallbackBody = #"{"data":[]}"#
+        let limit = Data(fallbackBody.utf8).count
+        let exactBackend = makeBackend(catalogResponseByteLimit: limit) { request in
+            if request.url?.path == "/api/v1/models" {
+                return self.response(statusCode: 404, body: "x")
+            }
+            return self.response(statusCode: 200, body: fallbackBody)
+        }
+        let exactModels = try await exactBackend.listModels()
+        XCTAssertEqual(exactModels, [])
+
+        let oversizedBackend = makeBackend(catalogResponseByteLimit: limit) { request in
+            if request.url?.path == "/api/v1/models" {
+                return self.response(statusCode: 404, body: "x")
+            }
+            return self.response(statusCode: 200, body: fallbackBody + " ")
+        }
+        await assertBadCatalogResponse(from: oversizedBackend, endpoint: "GET /v1/models")
+    }
+
+    func testNativeCatalogRejectsOversizedPositiveContentLengthWithoutFallback() async {
+        var paths: [String] = []
+        let backend = makeBackend(catalogResponseByteLimit: 64) { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(
+                statusCode: 200,
+                body: #"{"models":[]}"#,
+                headers: ["Content-Length": "65"]
+            )
+        }
+
+        await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+        XCTAssertEqual(paths, ["/api/v1/models"])
+    }
+
+    func testNativeCatalogAccepts256RowsAndRejects257Rows() async throws {
+        let acceptedRows = (0..<ModelInfo.maximumCatalogModelCount).map { "{\"key\":\"model-\($0)\"}" }.joined(separator: ",")
+        let acceptedBackend = makeBackend { _ in
+            self.response(statusCode: 200, body: "{\"models\":[\(acceptedRows)]}")
+        }
+        let acceptedModels = try await acceptedBackend.listModels()
+        XCTAssertEqual(acceptedModels.count, ModelInfo.maximumCatalogModelCount)
+
+        let rejectedRows = (0...ModelInfo.maximumCatalogModelCount).map { "{\"key\":\"model-\($0)\"}" }.joined(separator: ",")
+        var paths: [String] = []
+        let rejectedBackend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: "{\"models\":[\(rejectedRows)]}")
+        }
+        await assertBadCatalogResponse(from: rejectedBackend, endpoint: "GET /api/v1/models")
+        XCTAssertEqual(paths, ["/api/v1/models"])
+    }
+
+    func testNativeCatalogRejectsInvalidPublicationMetadataWithoutFallback() async {
+        let invalidBodies = [
+            #"{"models":[{"key":"   "}]}"#,
+            "{\"models\":[{\"key\":\"\(String(repeating: "m", count: 513))\"}]}",
+            #"{"models":[{"key":"model","display_name":" \n\t "}]}"#,
+            #"{"models":[{"key":"model","size_bytes":-1}]}"#,
+            "{\"models\":[{\"key\":\"model\",\"type\":\"\(String(repeating: " ", count: 128))x\"}]}",
+        ]
+        for body in invalidBodies {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(statusCode: 200, body: body)
+            }
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        }
+    }
+
     func testHealthCheckUsesNativeLocalModelsEndpoint() async {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.host, "127.0.0.1")
@@ -102,6 +192,272 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(models.map(\.kind), [.chat, .embedding])
         XCTAssertEqual(models.map(\.capabilities), [["chat"], ["embedding"]])
         XCTAssertEqual(models.first?.contextWindowTokens, 32768)
+    }
+
+    func testListModelsFallsBackForExplicitNativeEndpointIncompatibility() async throws {
+        for statusCode in [405, 501] {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                switch request.url?.path {
+                case "/api/v1/models":
+                    return self.response(statusCode: statusCode, body: "unsupported")
+                case "/v1/models":
+                    return self.response(statusCode: 200, body: #"{"data":[{"id":"fallback-model"}]}"#)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            let models = try await backend.listModels()
+
+            XCTAssertEqual(paths, ["/api/v1/models", "/v1/models"])
+            XCTAssertEqual(models.map(\.id), ["fallback-model"])
+        }
+    }
+
+    func testListModelsDoesNotFallbackForNativeAuthClientOrServerFailures() async {
+        for statusCode in [400, 401, 403, 422, 500, 503] {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(statusCode: statusCode, body: "failure")
+            }
+
+            do {
+                _ = try await backend.listModels()
+                XCTFail("Expected HTTP \(statusCode) rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .httpStatus(_, let actualStatusCode, _) = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(actualStatusCode, statusCode)
+                XCTAssertEqual(paths, ["/api/v1/models"])
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testListModelsDoesNotFallbackForNativeTransportFailure() async {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            throw URLError(.timedOut)
+        }
+
+        do {
+            _ = try await backend.listModels()
+            XCTFail("Expected transport rejection")
+        } catch let error as LMStudioBackendError {
+            guard case .unavailable = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testListModelsRejectsDuplicateAndEscapeEquivalentNativeObjectKeysWithoutFallback() async {
+        let bodies = [
+            #"{"models":[],"models":[]}"#,
+            #"{"models":[],"mod\u0065ls":[]}"#,
+        ]
+        for body in bodies {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(statusCode: 200, body: body)
+            }
+
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        }
+    }
+
+    func testListModelsRejectsDuplicateAndEscapeEquivalentFallbackObjectKeys() async {
+        let bodies = [
+            #"{"data":[],"data":[]}"#,
+            #"{"data":[],"d\u0061ta":[]}"#,
+        ]
+        for body in bodies {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                if request.url?.path == "/api/v1/models" {
+                    return self.response(statusCode: 404, body: "missing")
+                }
+                return self.response(statusCode: 200, body: body)
+            }
+
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /v1/models")
+            XCTAssertEqual(paths, ["/api/v1/models", "/v1/models"])
+        }
+    }
+
+    func testListModelsRejectsExactAndCanonicalDuplicateModelIdentities() async {
+        let nativeBodies = [
+            #"{"models":[{"key":"duplicate"},{"key":"duplicate"}]}"#,
+            #"{"models":[{"key":"caf\u00e9"},{"key":"cafe\u0301"}]}"#,
+        ]
+        for body in nativeBodies {
+            let backend = makeBackend { _ in self.response(statusCode: 200, body: body) }
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+        }
+
+        let fallbackBodies = [
+            #"{"data":[{"id":"duplicate"},{"id":"duplicate"}]}"#,
+            #"{"data":[{"id":"caf\u00e9"},{"id":"cafe\u0301"}]}"#,
+        ]
+        for body in fallbackBodies {
+            let backend = makeBackend { request in
+                if request.url?.path == "/api/v1/models" {
+                    return self.response(statusCode: 404, body: "missing")
+                }
+                return self.response(statusCode: 200, body: body)
+            }
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /v1/models")
+        }
+    }
+
+    func testListModelsRejectsConflictingNativeModelIdentityAliases() async {
+        let bodies = [
+            #"{"models":[{"key":"model-a","id":"model-b"}]}"#,
+            "{\"models\":[{\"key\":\"caf\u{00E9}\",\"id\":\"cafe\u{0301}\"}]}",
+        ]
+        for body in bodies {
+            let backend = makeBackend { _ in
+                self.response(statusCode: 200, body: body)
+            }
+
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+        }
+    }
+
+    func testListModelsAcceptsExactIntegralContextAliasesAtSharedCeiling() async throws {
+        let ceiling = ModelInfo.maximumContextWindowTokens
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 405, body: "unsupported")
+            case "/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    {"data":[{"id":"model","context_window_tokens":\(ceiling),"context_length":\(ceiling).0,"max_context_length":1.6777216e7}]}
+                    """
+                )
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(models.first?.contextWindowTokens, ceiling)
+    }
+
+    func testListModelsAcceptsMatchingNativeContextAliases() async throws {
+        let backend = makeBackend { _ in
+            self.response(
+                statusCode: 200,
+                body: #"{"models":[{"key":"model","context_window_tokens":32768,"context_length":32768.0,"max_context_length":3.2768e4,"n_ctx":32768}]}"#
+            )
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(models.first?.contextWindowTokens, 32768)
+    }
+
+    func testListModelsRejectsInvalidNativeContextWindowValuesWithoutFallback() async {
+        let invalidValues = [
+            "true",
+            #""32768""#,
+            "32768.5",
+            "16777215.9999999999",
+            "16777216.0000000001",
+            "NaN",
+            "Infinity",
+            "-Infinity",
+            "1e309",
+            "9223372036854775808",
+            "0",
+            "-1",
+            "\(ModelInfo.maximumContextWindowTokens + 1)",
+            "null",
+        ]
+        for invalidValue in invalidValues {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                let body = #"{"models":[{"key":"model","context_length":\#(invalidValue)}]}"#
+                return self.response(statusCode: 200, body: body)
+            }
+
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /api/v1/models")
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        }
+    }
+
+    func testListModelsRejectsInvalidFallbackContextWindowValues() async {
+        let invalidValues = [
+            "true",
+            #""32768""#,
+            "32768.5",
+            "16777215.9999999999",
+            "16777216.0000000001",
+            "NaN",
+            "Infinity",
+            "-Infinity",
+            "1e309",
+            "9223372036854775808",
+            "0",
+            "-1",
+            "\(ModelInfo.maximumContextWindowTokens + 1)",
+            "null",
+        ]
+        for invalidValue in invalidValues {
+            let backend = makeBackend { request in
+                if request.url?.path == "/api/v1/models" {
+                    return self.response(statusCode: 404, body: "missing")
+                }
+                let body = #"{"data":[{"id":"model","context_length":\#(invalidValue)}]}"#
+                return self.response(statusCode: 200, body: body)
+            }
+
+            await assertBadCatalogResponse(from: backend, endpoint: "GET /v1/models")
+        }
+    }
+
+    func testListModelsRejectsConflictingContextWindowAliases() async {
+        let nativeBackend = makeBackend { _ in
+            self.response(
+                statusCode: 200,
+                body: #"{"models":[{"key":"model","context_window_tokens":32768,"context_length":65536}]}"#
+            )
+        }
+        await assertBadCatalogResponse(from: nativeBackend, endpoint: "GET /api/v1/models")
+
+        let fallbackBackend = makeBackend { request in
+            if request.url?.path == "/api/v1/models" {
+                return self.response(statusCode: 404, body: "missing")
+            }
+            return self.response(
+                statusCode: 200,
+                body: #"{"data":[{"id":"model","context_window_tokens":32768,"max_context_length":65536}]}"#
+            )
+        }
+        await assertBadCatalogResponse(from: fallbackBackend, endpoint: "GET /v1/models")
+
+        let precisionBackend = makeBackend { _ in
+            self.response(
+                statusCode: 200,
+                body: #"{"models":[{"key":"model","context_window_tokens":16777216,"context_length":16777215.9999999999}]}"#
+            )
+        }
+        await assertBadCatalogResponse(from: precisionBackend, endpoint: "GET /api/v1/models")
     }
 
     func testEmbedPostsBatchAndRestoresIndexOrder() async throws {
@@ -211,6 +567,138 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertTrue(result.unloaded)
     }
 
+    func testUnloadModelAcceptsMaximumLoadedInstanceFanout() async throws {
+        let instanceIDs = (0..<ModelInfo.maximumCatalogModelCount).map { "instance-\($0)" }
+        let instances = instanceIDs.map { #"{"id":"\#($0)"}"# }.joined(separator: ",")
+        var modelRequestCount = 0
+        var postedInstanceIDs: [String] = []
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                modelRequestCount += 1
+                let loadedInstances = modelRequestCount == 1 ? "[\(instances)]" : "[]"
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":\#(loadedInstances)}]}"#
+                )
+            case "/api/v1/models/unload":
+                let posted = try JSONDecoder().decode(
+                    PostedUnloadRequest.self,
+                    from: self.requestBodyData(from: request)
+                )
+                postedInstanceIDs.append(posted.instanceID)
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"instance_id":"\#(posted.instanceID)"}"#
+                )
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "model-key")
+
+        XCTAssertEqual(postedInstanceIDs, instanceIDs)
+        XCTAssertEqual(result, .unloaded(provider: .lmStudio, modelID: "model-key"))
+    }
+
+    func testUnloadModelRejectsInvalidLoadedInstanceFanoutBeforePosting() async {
+        let excessiveInstances = (0...ModelInfo.maximumCatalogModelCount)
+            .map { #"{"id":"instance-\#($0)"}"# }
+            .joined(separator: ",")
+        let oversizedInstanceID = String(
+            repeating: "i",
+            count: ModelInfo.maximumModelIdentityCodePoints + 1
+        )
+        let canonicallyEquivalentInstances =
+            #"[{"id":"caf\#("\u{00E9}")"},{"id":"cafe\#("\u{0301}")"}]"#
+        let invalidInstances = [
+            "[\(excessiveInstances)]",
+            #"[{"id":"duplicate"},{"id":"duplicate"}]"#,
+            canonicallyEquivalentInstances,
+            #"[{"id":"   "}]"#,
+            #"[{"id":"\#(oversizedInstanceID)"}]"#,
+        ]
+
+        for instances in invalidInstances {
+            var paths: [String] = []
+            let backend = makeBackend { request in
+                paths.append(request.url?.path ?? "")
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"key":"model-key","loaded_instances":\#(instances)}]}"#
+                )
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "model-key")
+                XCTFail("Expected invalid loaded-instance fanout rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(paths, ["/api/v1/models"])
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testUnloadModelRejectsInvalidLoadedInstanceMetadataDuringPolling() async {
+        let excessiveInstances = (0...ModelInfo.maximumCatalogModelCount)
+            .map { #"{"id":"instance-\#($0)"}"# }
+            .joined(separator: ",")
+        let oversizedInstanceID = String(
+            repeating: "i",
+            count: ModelInfo.maximumModelIdentityCodePoints + 1
+        )
+        let canonicallyEquivalentInstances =
+            #"[{"id":"caf\#("\u{00E9}")"},{"id":"cafe\#("\u{0301}")"}]"#
+        let invalidInstances = [
+            "[\(excessiveInstances)]",
+            #"[{"id":"duplicate"},{"id":"duplicate"}]"#,
+            canonicallyEquivalentInstances,
+            #"[{"id":"   "}]"#,
+            #"[{"id":"\#(oversizedInstanceID)"}]"#,
+        ]
+
+        for instances in invalidInstances {
+            var modelRequestCount = 0
+            var unloadRequestCount = 0
+            let backend = makeBackend { request in
+                switch request.url?.path {
+                case "/api/v1/models":
+                    modelRequestCount += 1
+                    let loadedInstances = modelRequestCount == 1
+                        ? #"[{"id":"instance-a"}]"#
+                        : instances
+                    return self.response(
+                        statusCode: 200,
+                        body: #"{"models":[{"key":"model-key","loaded_instances":\#(loadedInstances)}]}"#
+                    )
+                case "/api/v1/models/unload":
+                    unloadRequestCount += 1
+                    return self.response(statusCode: 200, body: #"{"instance_id":"instance-a"}"#)
+                default:
+                    return self.response(statusCode: 500, body: "{}")
+                }
+            }
+
+            do {
+                _ = try await backend.unloadModel(providerModelID: "model-key")
+                XCTFail("Expected invalid polling loaded-instance metadata rejection")
+            } catch let error as LMStudioBackendError {
+                guard case .unloadNotConfirmed = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+                XCTAssertEqual(modelRequestCount, 2)
+                XCTAssertEqual(unloadRequestCount, 1)
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
     func testUnloadModelReturnsAlreadyAbsentForMissingModelWithoutRawIDFallback() async throws {
         var paths: [String] = []
         let backend = makeBackend { request in
@@ -223,6 +711,27 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(paths, ["/api/v1/models"])
         XCTAssertEqual(result.outcome, .alreadyAbsent)
         XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelRejectsOversizedNativeCatalogBeforePosting() async {
+        let body = #"{"models":[]}"#
+        var paths: [String] = []
+        let backend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: body + " ")
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model")
+            XCTFail("Expected oversized native catalog rejection")
+        } catch let error as LMStudioBackendError {
+            guard case .unloadNotConfirmed = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(paths, ["/api/v1/models"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testUnloadModelReturnsAlreadyAbsentWhenExactModelHasNoInstances() async throws {
@@ -246,6 +755,9 @@ final class LMStudioBackendTests: XCTestCase {
             #"{"models":[{"key":"model-key"}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":null}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":[]},{"key":"model-key","loaded_instances":[]}]}"#,
+            #"{"models":[{"key":"model-key","id":"other","loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]},{"key":"other","loaded_instances":[]},{"key":"other","loaded_instances":[]}]}"#,
+            "{\"models\":[{\"key\":\"model-key\",\"loaded_instances\":[{\"id\":\"instance-a\"}]},{\"key\":\"caf\u{00E9}\",\"loaded_instances\":[]},{\"key\":\"cafe\u{0301}\",\"loaded_instances\":[]}]}",
             #"{"models":[{"key":"model-key","loaded_instances":[],"loaded_instances":[{"id":"instance-a"}]}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}],"loaded_instances":[]}]}"#,
             #"{"models":[],"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#,
@@ -278,6 +790,9 @@ final class LMStudioBackendTests: XCTestCase {
             #"{"models":[{"key":"model-key"}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":null}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":[]},{"key":"model-key","loaded_instances":[]}]}"#,
+            #"{"models":[{"key":"model-key","id":"other","loaded_instances":[{"id":"instance-a"}]}]}"#,
+            #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]},{"key":"other","loaded_instances":[]},{"key":"other","loaded_instances":[]}]}"#,
+            "{\"models\":[{\"key\":\"model-key\",\"loaded_instances\":[{\"id\":\"instance-a\"}]},{\"key\":\"caf\u{00E9}\",\"loaded_instances\":[]},{\"key\":\"cafe\u{0301}\",\"loaded_instances\":[]}]}",
             #"{"models":[{"key":"model-key","loaded_instances":[],"loaded_instances":[{"id":"instance-a"}]}]}"#,
             #"{"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}],"loaded_instances":[]}]}"#,
             #"{"models":[],"models":[{"key":"model-key","loaded_instances":[{"id":"instance-a"}]}]}"#,
@@ -384,16 +899,20 @@ final class LMStudioBackendTests: XCTestCase {
         let acknowledgements = [
             "not-json",
             #"{"instance_id":"different-instance"}"#,
+            "{\"instance_id\":\"cafe\u{0301}\"}",
             #"{"instance_id":"exact-instance","instance_id":"different-instance"}"#,
             #"{"instance_id":"different-instance","instance_id":"exact-instance"}"#,
         ]
         for acknowledgement in acknowledgements {
+            let requestedInstanceID = acknowledgement.contains("cafe")
+                ? "caf\u{00E9}"
+                : "exact-instance"
             let backend = makeBackend { request in
                 switch request.url?.path {
                 case "/api/v1/models":
                     return self.response(
                         statusCode: 200,
-                        body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"exact-instance"}]}]}"#
+                        body: #"{"models":[{"key":"model-key","loaded_instances":[{"id":"\#(requestedInstanceID)"}]}]}"#
                     )
                 case "/api/v1/models/unload":
                     return self.response(statusCode: 200, body: acknowledgement)
@@ -655,6 +1174,36 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
+    func testChatStreamsFinalNativeJSONLineWithoutTrailingBlankSeparator() async throws {
+        let terminalPayload = #"{"type":"chat.end","result":{"model_instance_id":"qwen-local","output":[],"stats":{"input_tokens":2,"total_output_tokens":1}}}"#
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"key":"qwen-local"}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: "event: chat.end\ndata: \(terminalPayload)"
+                )
+            default:
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        let request = ChatRequest(
+            generationID: "lm-final-line",
+            sessionID: "session-final-line",
+            model: "qwen-local",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.done(inputTokens: 2, outputTokens: 1)])
+    }
+
     func testChatStreamsNativeReasoningSeparatelyFromAnswerContent() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {
@@ -768,6 +1317,105 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
         let streamOptions = try XCTUnwrap(postedPayload?["stream_options"] as? [String: Any])
         XCTAssertEqual(streamOptions["include_usage"] as? Bool, true)
+    }
+
+    func testChatDoesNotFallbackAfterMalformedNativeStreamEmitsContent() async {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"type":"llm","key":"qwen-local","loaded_instances":[]}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    event: message.delta
+                    data: {"type":"message.delta","content":"Native"}
+
+                    event: message.delta
+                    data: not-json
+
+                    """
+                )
+            case "/v1/chat/completions":
+                XCTFail("Malformed native output must not trigger a second provider dispatch")
+                return self.response(statusCode: 500, body: "{}")
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        let request = ChatRequest(
+            generationID: "lm-generation-malformed-native",
+            sessionID: "session-1",
+            model: "qwen-local",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        do {
+            for try await event in backend.chat(request: request) {
+                events.append(event)
+            }
+            XCTFail("Expected malformed native stream rejection")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(error.code, "lm_studio_stream_decoding")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(events, [.delta("Native")])
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat"])
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
+    }
+
+    func testChatRejectsNativeStreamEOFWithoutTerminalAndDoesNotFallback() async {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"type":"llm","key":"qwen-local","loaded_instances":[]}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    event: message.delta
+                    data: {"type":"message.delta","content":"Native"}
+
+                    """
+                )
+            case "/v1/chat/completions":
+                XCTFail("A terminal-less native stream must not trigger a second provider dispatch")
+                return self.response(statusCode: 500, body: "{}")
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+        let request = ChatRequest(
+            generationID: "lm-generation-native-eof",
+            sessionID: "session-1",
+            model: "qwen-local",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        do {
+            for try await event in backend.chat(request: request) {
+                events.append(event)
+            }
+            XCTFail("Expected terminal-less native stream rejection")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(error.code, "lm_studio_bad_response")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(events, [.delta("Native")])
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat"])
+        XCTAssertNil(backend.takeProviderUsageSource(generationID: request.generationID))
     }
 
     func testChatStreamsOpenAICompatibleReasoningSeparatelyFromAnswerContent() async throws {
@@ -1051,8 +1699,28 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertTrue(instancesAfter.isEmpty)
     }
 
+    private func assertBadCatalogResponse(
+        from backend: LMStudioBackend,
+        endpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await backend.listModels()
+            XCTFail("Expected malformed catalog rejection", file: file, line: line)
+        } catch let error as LMStudioBackendError {
+            guard case .badResponse(let actualEndpoint, _) = error else {
+                return XCTFail("Unexpected error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(actualEndpoint, endpoint, file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
     private func makeBackend(
         unloadPollAttempts: Int = 3,
+        catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> LMStudioBackend {
@@ -1064,6 +1732,7 @@ final class LMStudioBackendTests: XCTestCase {
             baseURL: URL(string: "http://127.0.0.1:1234")!,
             session: session,
             unloadPollAttempts: unloadPollAttempts,
+            catalogResponseByteLimit: catalogResponseByteLimit,
             unloadSleeper: unloadSleeper
         )
     }
@@ -1078,13 +1747,19 @@ final class LMStudioBackendTests: XCTestCase {
         return try XCTUnwrap(payload["models"] as? [[String: Any]])
     }
 
-    private func response(statusCode: Int, body: String) -> (HTTPURLResponse, Data) {
+    private func response(
+        statusCode: Int,
+        body: String,
+        headers: [String: String] = [:]
+    ) -> (HTTPURLResponse, Data) {
         let url = URL(string: "http://127.0.0.1:1234")!
+        var responseHeaders = ["Content-Type": "application/json"]
+        responseHeaders.merge(headers) { _, new in new }
         let response = HTTPURLResponse(
             url: url,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         return (response, Data(body.utf8))
     }

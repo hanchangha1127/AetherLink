@@ -261,6 +261,11 @@
       "minLength": 1,
       "pattern": "\\S"
     },
+    "modelCatalogNonBlankString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "[^\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680\\u2000-\\u200B\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
+    },
     "transportBinding": {
       "type": "string",
       "minLength": 64,
@@ -571,25 +576,64 @@
       "type": "object",
       "required": ["id", "name"],
       "properties": {
-        "id": { "$ref": "#/$defs/nonEmptyString" },
-        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "id": {
+          "allOf": [
+            { "$ref": "#/$defs/modelCatalogNonBlankString" },
+            { "maxLength": 512 }
+          ]
+        },
+        "name": {
+          "allOf": [
+            { "$ref": "#/$defs/modelCatalogNonBlankString" },
+            { "maxLength": 512 }
+          ]
+        },
         "backend": { "enum": ["ollama", "lm_studio"] },
         "provider": { "enum": ["ollama", "lm_studio"] },
-        "provider_model_id": { "type": "string" },
-        "qualified_id": { "type": "string" },
+        "provider_model_id": {
+          "allOf": [
+            { "$ref": "#/$defs/modelCatalogNonBlankString" },
+            { "maxLength": 512 }
+          ]
+        },
+        "qualified_id": {
+          "allOf": [
+            { "$ref": "#/$defs/modelCatalogNonBlankString" },
+            { "maxLength": 522 }
+          ]
+        },
         "model_kind": { "enum": ["chat", "embedding"] },
         "capabilities": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/modelCatalogNonBlankString" },
+              { "maxLength": 128 }
+            ]
+          },
+          "maxItems": 32,
           "uniqueItems": true
         },
-        "size_bytes": { "type": "integer", "minimum": 0 },
-        "context_window_tokens": { "type": "integer", "minimum": 1 },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "context_window_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
         "modified_at": { "type": "string", "format": "date-time" },
         "installed": { "type": "boolean" },
         "running": { "type": "boolean" },
         "source": { "enum": ["local", "cloud"] },
-        "remote_model": { "type": "string" }
+        "remote_model": {
+          "allOf": [
+            { "$ref": "#/$defs/modelCatalogNonBlankString" },
+            { "maxLength": 512 }
+          ]
+        }
       },
       "additionalProperties": false
     },
@@ -605,7 +649,8 @@
       "properties": {
         "models": {
           "type": "array",
-          "items": { "$ref": "#/$defs/modelInfo" }
+          "items": { "$ref": "#/$defs/modelInfo" },
+          "maxItems": 256
         }
       },
       "additionalProperties": false

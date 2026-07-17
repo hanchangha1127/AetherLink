@@ -4235,6 +4235,151 @@ def check_empty_request_payload_schema_contracts(schema: dict[str, object]) -> l
     return failures
 
 
+def check_models_result_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include the closed models.result catalog schemas"]
+
+    catalog_nonblank_pattern = (
+        "[^\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680"
+        "\\u2000-\\u200B\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
+    )
+    expected_catalog_nonblank = {
+        "type": "string",
+        "minLength": 1,
+        "pattern": catalog_nonblank_pattern,
+    }
+    if not json_values_equal(
+        defs.get("modelCatalogNonBlankString"),
+        expected_catalog_nonblank,
+    ):
+        failures.append(
+            "$defs.modelCatalogNonBlankString must use the shared fixed Unicode blank code-point set"
+        )
+    else:
+        blank_only = (
+            "\u0009\u000A\u000B\u000C\u000D\u0020\u0085\u00A0\u1680"
+            "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009"
+            "\u200A\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF"
+        )
+        if re.search(catalog_nonblank_pattern, blank_only):
+            failures.append(
+                "$defs.modelCatalogNonBlankString accepts a shared blank-only regression vector"
+            )
+        if not re.search(catalog_nonblank_pattern, blank_only + "x"):
+            failures.append(
+                "$defs.modelCatalogNonBlankString rejects a value containing visible content"
+            )
+
+    model_info = defs.get("modelInfo")
+    if not isinstance(model_info, dict):
+        failures.append("$defs.modelInfo schema is missing")
+    else:
+        if model_info.get("required") != ["id", "name"]:
+            failures.append("$defs.modelInfo must require exactly id and name")
+        if model_info.get("additionalProperties") is not False:
+            failures.append("$defs.modelInfo additionalProperties must be false")
+
+        properties = model_info.get("properties")
+        if not isinstance(properties, dict):
+            failures.append("$defs.modelInfo.properties must be an object")
+        else:
+            bounded_nonblank_512 = {
+                "allOf": [
+                    {"$ref": "#/$defs/modelCatalogNonBlankString"},
+                    {"maxLength": 512},
+                ]
+            }
+            for field in ("id", "name"):
+                if not json_values_equal(properties.get(field), bounded_nonblank_512):
+                    failures.append(
+                        f"$defs.modelInfo {field} must be nonblank and at most 512 Unicode code points"
+                    )
+
+            for field in ("provider_model_id", "remote_model"):
+                expected = {
+                    "allOf": [
+                        {"$ref": "#/$defs/modelCatalogNonBlankString"},
+                        {"maxLength": 512},
+                    ]
+                }
+                if not json_values_equal(properties.get(field), expected):
+                    failures.append(
+                        f"$defs.modelInfo {field} must be an optional nonblank string of at most 512 Unicode code points"
+                    )
+
+            qualified_id = {
+                "allOf": [
+                    {"$ref": "#/$defs/modelCatalogNonBlankString"},
+                    {"maxLength": 522},
+                ]
+            }
+            if not json_values_equal(properties.get("qualified_id"), qualified_id):
+                failures.append(
+                    "$defs.modelInfo qualified_id must be an optional nonblank string of at most 522 Unicode code points"
+                )
+
+            capabilities = {
+                "type": "array",
+                "items": {
+                    "allOf": [
+                        {"$ref": "#/$defs/modelCatalogNonBlankString"},
+                        {"maxLength": 128},
+                    ]
+                },
+                "maxItems": 32,
+                "uniqueItems": True,
+            }
+            if not json_values_equal(properties.get("capabilities"), capabilities):
+                failures.append(
+                    "$defs.modelInfo capabilities must contain at most 32 unique nonblank strings of at most 128 Unicode code points"
+                )
+
+            size_bytes = {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9_223_372_036_854_775_807,
+            }
+            if not json_values_equal(properties.get("size_bytes"), size_bytes):
+                failures.append(
+                    "$defs.modelInfo size_bytes must stay within the nonnegative signed Int64 range"
+                )
+
+            context_window_tokens = {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16_777_216,
+            }
+            if not json_values_equal(
+                properties.get("context_window_tokens"),
+                context_window_tokens,
+            ):
+                failures.append(
+                    "$defs.modelInfo context_window_tokens must stay within 1...16777216"
+                )
+
+    models_result = defs.get("modelsResultPayload")
+    expected_models_result = {
+        "type": "object",
+        "required": ["models"],
+        "properties": {
+            "models": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/modelInfo"},
+                "maxItems": 256,
+            }
+        },
+        "additionalProperties": False,
+    }
+    if not json_values_equal(models_result, expected_models_result):
+        failures.append(
+            "$defs.modelsResultPayload must be a closed response with at most 256 modelInfo rows"
+        )
+
+    return failures
+
+
 def check_models_pull_payload_schema_contract(schema: dict[str, object]) -> list[str]:
     failures: list[str] = []
     defs = schema.get("$defs", {})
@@ -6062,6 +6207,7 @@ def main() -> int:
 
         failures.extend(check_pre_auth_payload_schema_contracts(schema))
         failures.extend(check_empty_request_payload_schema_contracts(schema))
+        failures.extend(check_models_result_payload_schema_contract(schema))
         failures.extend(check_models_pull_payload_schema_contract(schema))
         failures.extend(check_chat_cancel_payload_schema_contract(schema))
         failures.extend(check_chat_sessions_list_payload_schema_contract(schema))

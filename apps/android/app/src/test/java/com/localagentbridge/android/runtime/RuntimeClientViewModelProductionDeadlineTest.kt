@@ -17,6 +17,10 @@ class RuntimeClientViewModelProductionDeadlineTest {
         )
 
         assertEquals(
+            MEMORY_MUTATION_REQUEST_TIMEOUT_MS,
+            dependencies.memoryMutationRequestTimeoutMillis,
+        )
+        assertEquals(
             MEMORY_SUMMARY_CONTROL_REQUEST_TIMEOUT_MS,
             dependencies.memorySummaryControlRequestTimeoutMillis,
         )

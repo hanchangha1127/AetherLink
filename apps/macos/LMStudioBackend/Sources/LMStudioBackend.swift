@@ -13,6 +13,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     private let unloadPollAttempts: Int
     private let unloadPollIntervalNanoseconds: UInt64
     private let unloadSleeper: @Sendable (UInt64) async throws -> Void
+    private let catalogResponseByteLimit: Int
     private let registry = LMStudioGenerationRegistry()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -23,25 +24,28 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         self.unloadPollAttempts = Self.defaultUnloadPollAttempts
         self.unloadPollIntervalNanoseconds = Self.defaultUnloadPollIntervalNanoseconds
         self.unloadSleeper = { try await Task.sleep(nanoseconds: $0) }
+        self.catalogResponseByteLimit = ModelInfo.maximumCatalogResponseBytes
     }
 
     init(
         baseURL: URL,
         session: URLSession,
         unloadPollAttempts: Int,
+        catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         unloadPollIntervalNanoseconds: UInt64 = 0,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in }
     ) {
         self.baseURL = baseURL
         self.session = session
         self.unloadPollAttempts = max(1, unloadPollAttempts)
+        self.catalogResponseByteLimit = max(0, catalogResponseByteLimit)
         self.unloadPollIntervalNanoseconds = unloadPollIntervalNanoseconds
         self.unloadSleeper = unloadSleeper
     }
 
     public func healthCheck() async -> BackendStatus {
         do {
-            _ = try await fetchReachabilityModelData()
+            _ = try await listModels()
             return .available
         } catch let error as LMStudioBackendError {
             return .unavailable(error.backendError)
@@ -56,18 +60,27 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     public func listModels() async throws -> [ModelInfo] {
         let data: Data
         do {
-            data = try await performDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
-        } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
+            data = try await performCatalogDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
+        } catch let error as LMStudioBackendError where error.shouldFallbackModelCatalogToOpenAICompatible {
             return try await listOpenAICompatibleModels()
         }
         do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             let response = try decoder.decode(LMStudioNativeModelsResponse.self, from: data)
-            return response.models.map { model in
+            guard response.models.count <= ModelInfo.maximumCatalogModelCount else {
+                throw LMStudioCatalogValidationError.tooManyModels
+            }
+            try Self.validateUniqueModelIdentities(response.models.map(\.key))
+            return try response.models.map { model in
+                try Self.validateLoadedInstances(model.loadedInstances)
+                guard model.hasValidCapabilitySource else {
+                    throw ModelCatalogPublicationValidationError.invalidCapabilities
+                }
                 let kind = ModelKind.from(
                     capabilities: model.capabilities,
                     fallbackName: model.displayName ?? model.key
                 )
-                return ModelInfo(
+                let modelInfo = ModelInfo(
                     id: model.key,
                     name: model.displayName ?? model.key,
                     provider: .lmStudio,
@@ -80,9 +93,13 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                     source: .local,
                     contextWindowTokens: model.contextWindowTokens
                 )
+                try ModelInfo.validateForCatalogPublication(modelInfo)
+                return modelInfo
             }
+        } catch let error as LMStudioBackendError {
+            throw error
         } catch {
-            return try await listOpenAICompatibleModels()
+            throw LMStudioBackendError.badResponse(endpoint: "GET /api/v1/models", reason: error.localizedDescription)
         }
     }
 
@@ -181,7 +198,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                             registry: registry,
                             continuation: continuation
                         )
-                    } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
+                    } catch let error as LMStudioBackendError where error.shouldFallbackNativeEndpointToOpenAICompatible {
                         try Task.checkCancellation()
                         try await Self.streamOpenAICompatibleChat(
                             request: request,
@@ -236,21 +253,18 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         registry.takeUsageSource(id: generationID)
     }
 
-    private func fetchReachabilityModelData() async throws -> Data {
-        do {
-            return try await performDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
-        } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
-            return try await performDataRequest(endpoint: "GET /v1/models", url: baseURL.appending(path: "v1/models"))
-        }
-    }
-
     private func listOpenAICompatibleModels() async throws -> [ModelInfo] {
-        let data = try await performDataRequest(endpoint: "GET /v1/models", url: baseURL.appending(path: "v1/models"))
+        let data = try await performCatalogDataRequest(endpoint: "GET /v1/models", url: baseURL.appending(path: "v1/models"))
         do {
+            try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             let response = try decoder.decode(OpenAIModelsResponse.self, from: data)
-            return response.data.map { model in
+            guard response.data.count <= ModelInfo.maximumCatalogModelCount else {
+                throw LMStudioCatalogValidationError.tooManyModels
+            }
+            try Self.validateUniqueModelIdentities(response.data.map(\.id))
+            return try response.data.map { model in
                 let kind = ModelKind.from(capabilities: [], fallbackName: model.id)
-                return ModelInfo(
+                let modelInfo = ModelInfo(
                     id: model.id,
                     name: model.id,
                     provider: .lmStudio,
@@ -262,25 +276,64 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                     source: .local,
                     contextWindowTokens: model.contextWindowTokens
                 )
+                try ModelInfo.validateForCatalogPublication(modelInfo)
+                return modelInfo
             }
         } catch {
             throw LMStudioBackendError.badResponse(endpoint: "GET /v1/models", reason: error.localizedDescription)
         }
     }
 
+    private static func validateUniqueModelIdentities(_ identities: [String]) throws {
+        var exactIdentities = Set<Data>()
+        var canonicalIdentities = Set<String>()
+        for identity in identities {
+            guard exactIdentities.insert(Data(identity.utf8)).inserted else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "The model catalog contains a duplicate model identity."
+                ))
+            }
+            let canonicalIdentity = identity.precomposedStringWithCanonicalMapping
+            guard canonicalIdentities.insert(canonicalIdentity).inserted else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [],
+                    debugDescription: "The model catalog contains canonically equivalent model identities."
+                ))
+            }
+        }
+    }
+
     private func nativeModelLookup(for modelID: String) async throws -> LMStudioNativeModelLookup {
         do {
-            let data = try await performDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
+            let data = try await performCatalogDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
             try StrictJSONValidator.validateNoDuplicateObjectKeys(in: data)
             let response = try decoder.decode(LMStudioUnloadModelsResponse.self, from: data)
-            let matches = response.models.filter { $0.key == modelID }
+            guard response.models.count <= ModelInfo.maximumCatalogModelCount else {
+                throw LMStudioCatalogValidationError.tooManyModels
+            }
+            try Self.validateUniqueModelIdentities(response.models.map(\.key))
+            try response.models.forEach { model in
+                let candidate = ModelInfo(
+                    id: model.key,
+                    name: model.key,
+                    provider: .lmStudio,
+                    providerModelID: model.key
+                )
+                try ModelInfo.validateForCatalogPublication(candidate)
+                try Self.validateLoadedInstances(model.loadedInstances)
+            }
+            let requestedModelIdentity = Data(modelID.utf8)
+            let matches = response.models.filter {
+                Data($0.key.utf8) == requestedModelIdentity
+            }
             guard matches.count <= 1 else {
                 throw LMStudioBackendError.unloadNotConfirmed(
                     reason: "Native model state contained an ambiguous model key."
                 )
             }
             return .model(matches.first)
-        } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
+        } catch let error as LMStudioBackendError where error.shouldFallbackNativeEndpointToOpenAICompatible {
             return .unsupported
         } catch is DecodingError {
             throw LMStudioBackendError.unloadNotConfirmed(
@@ -290,6 +343,21 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
             throw LMStudioBackendError.unloadNotConfirmed(
                 reason: "Native model residency state was malformed."
             )
+        } catch is LMStudioCatalogValidationError {
+            throw LMStudioBackendError.unloadNotConfirmed(
+                reason: "Native model residency state was malformed."
+            )
+        } catch let error as ModelCatalogPublicationValidationError {
+            throw LMStudioBackendError.unloadNotConfirmed(
+                reason: error.localizedDescription
+            )
+        } catch let error as LMStudioBackendError {
+            if case .badResponse = error {
+                throw LMStudioBackendError.unloadNotConfirmed(
+                    reason: "Native model residency state was malformed."
+                )
+            }
+            throw error
         }
     }
 
@@ -311,13 +379,82 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         } catch {
             throw LMStudioBackendError.unloadNotConfirmed(reason: "The provider acknowledgement was malformed.")
         }
-        guard acknowledgement.instanceID == instanceID else {
+        guard Data(acknowledgement.instanceID.utf8) == Data(instanceID.utf8) else {
             throw LMStudioBackendError.unloadNotConfirmed(reason: "The provider acknowledgement did not match the requested instance.")
         }
     }
 
-    private func performDataRequest(endpoint: String, url: URL) async throws -> Data {
-        try await performDataRequest(endpoint: endpoint, request: URLRequest(url: url))
+    private static func validateLoadedInstances(_ instances: [LMStudioLoadedInstance]) throws {
+        guard instances.count <= ModelInfo.maximumCatalogModelCount else {
+            throw LMStudioCatalogValidationError.tooManyLoadedInstances
+        }
+        var exactIdentifiers = Set<Data>()
+        var canonicalIdentifiers = Set<String>()
+        for instance in instances {
+            guard ModelInfo.isValidRequiredModelIdentity(instance.id),
+                  exactIdentifiers.insert(Data(instance.id.utf8)).inserted,
+                  canonicalIdentifiers.insert(
+                      instance.id.precomposedStringWithCanonicalMapping
+                  ).inserted else {
+                throw LMStudioCatalogValidationError.invalidLoadedInstanceIdentity
+            }
+        }
+    }
+
+    private func performCatalogDataRequest(endpoint: String, url: URL) async throws -> Data {
+        do {
+            return try await performBoundedCatalogDataRequest(
+                endpoint: endpoint,
+                request: URLRequest(url: url)
+            )
+        } catch LMStudioCatalogIngestionError.responseTooLarge {
+            throw LMStudioBackendError.badResponse(
+                endpoint: endpoint,
+                reason: "The provider response exceeds the supported byte limit."
+            )
+        }
+    }
+
+    private func performBoundedCatalogDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
+        do {
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw LMStudioBackendError.transport(endpoint: endpoint, reason: "Missing HTTP response")
+            }
+            let isSuccess = (200..<300).contains(http.statusCode)
+            if http.expectedContentLength > Int64(catalogResponseByteLimit) {
+                if isSuccess {
+                    throw LMStudioCatalogIngestionError.responseTooLarge
+                }
+                throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+            }
+
+            var data = Data()
+            data.reserveCapacity(min(catalogResponseByteLimit, 64 * 1_024))
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > catalogResponseByteLimit {
+                    if isSuccess {
+                        throw LMStudioCatalogIngestionError.responseTooLarge
+                    }
+                    throw LMStudioBackendError.httpStatus(endpoint: endpoint, statusCode: http.statusCode, body: nil)
+                }
+            }
+            try Self.validate(response, endpoint: endpoint, body: data)
+            return data
+        } catch let error as LMStudioCatalogIngestionError {
+            throw error
+        } catch let error as LMStudioBackendError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
+        } catch let error as URLError {
+            throw LMStudioBackendError.unavailable(endpoint: endpoint, reason: error.localizedDescription)
+        } catch {
+            throw LMStudioBackendError.transport(endpoint: endpoint, reason: error.localizedDescription)
+        }
     }
 
     private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
@@ -388,8 +525,15 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                 continuation: continuation,
                 endpoint: endpoint
             )
+            if event.name == "chat.end" {
+                continuation.finish()
+                return
+            }
         }
-        continuation.finish()
+        throw LMStudioBackendError.badResponse(
+            endpoint: endpoint,
+            reason: "The native stream ended without chat.end."
+        )
     }
 
     private static func streamOpenAICompatibleChat(
@@ -622,14 +766,39 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
 }
 
 private extension LMStudioBackendError {
-    var shouldFallbackToOpenAICompatible: Bool {
-        switch self {
-        case .httpStatus(_, let statusCode, _):
-            return statusCode == 400 || statusCode == 404 || statusCode == 405 || statusCode == 422
-        case .badResponse, .streamDecoding:
-            return true
-        case .unavailable, .noModels, .requestEncoding, .unloadNotConfirmed, .generationCancelled, .generationNotFound, .transport:
+    var shouldFallbackModelCatalogToOpenAICompatible: Bool {
+        guard case .httpStatus(_, let statusCode, _) = self else {
             return false
+        }
+        return statusCode == 404 || statusCode == 405 || statusCode == 501
+    }
+
+    var shouldFallbackNativeEndpointToOpenAICompatible: Bool {
+        guard case .httpStatus(_, let statusCode, _) = self else {
+            return false
+        }
+        return statusCode == 400 || statusCode == 404 || statusCode == 405
+            || statusCode == 422 || statusCode == 501
+    }
+}
+
+private enum LMStudioCatalogIngestionError: Error {
+    case responseTooLarge
+}
+
+private enum LMStudioCatalogValidationError: Error, LocalizedError {
+    case tooManyModels
+    case tooManyLoadedInstances
+    case invalidLoadedInstanceIdentity
+
+    var errorDescription: String? {
+        switch self {
+        case .tooManyModels:
+            return "The provider returned too many model rows."
+        case .tooManyLoadedInstances:
+            return "The provider returned too many loaded model instances."
+        case .invalidLoadedInstanceIdentity:
+            return "The provider returned invalid loaded model instance metadata."
         }
     }
 }
@@ -711,6 +880,9 @@ private struct LMStudioNativeModel: Decodable {
     var sizeBytes: Int64?
     var contextWindowTokens: Int?
     var loadedInstances: [LMStudioLoadedInstance]
+    var hasValidCapabilitySource: Bool {
+        type.map { ModelInfo.areValidCapabilities([$0]) } ?? true
+    }
     var capabilities: [String] {
         let normalizedType = type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch normalizedType {
@@ -741,21 +913,28 @@ private struct LMStudioNativeModel: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         type = try container.decodeIfPresent(String.self, forKey: .type)
-        key = try container.decodeIfPresent(String.self, forKey: .key)
-            ?? container.decode(String.self, forKey: .id)
+        let keyAlias = try container.decodeIfPresent(String.self, forKey: .key)
+        let idAlias = try container.decodeIfPresent(String.self, forKey: .id)
+        if let keyAlias, let idAlias, Data(keyAlias.utf8) != Data(idAlias.utf8) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "The model identity aliases conflict."
+            )
+        }
+        guard let resolvedKey = keyAlias ?? idAlias else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.key,
+                .init(codingPath: decoder.codingPath, debugDescription: "A model identity is required.")
+            )
+        }
+        key = resolvedKey
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         sizeBytes = try container.decodeIfPresent(Int64.self, forKey: .sizeBytes)
-        contextWindowTokens = Self.firstPositive(
-            try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
-            try container.decodeIfPresent(Int.self, forKey: .contextLength),
-            try container.decodeIfPresent(Int.self, forKey: .maxContextLength),
-            try container.decodeIfPresent(Int.self, forKey: .nContext)
+        contextWindowTokens = try container.decodeContextWindowTokens(
+            aliases: [.contextWindowTokens, .contextLength, .maxContextLength, .nContext]
         )
         loadedInstances = try container.decodeIfPresent([LMStudioLoadedInstance].self, forKey: .loadedInstances) ?? []
-    }
-
-    private static func firstPositive(_ values: Int?...) -> Int? {
-        values.first { ($0 ?? 0) > 0 } ?? nil
     }
 }
 
@@ -773,7 +952,32 @@ private struct LMStudioUnloadModel: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case key
+        case id
         case loadedInstances = "loaded_instances"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let keyAlias = try container.decodeIfPresent(String.self, forKey: .key)
+        let idAlias = try container.decodeIfPresent(String.self, forKey: .id)
+        if let keyAlias, let idAlias, Data(keyAlias.utf8) != Data(idAlias.utf8) {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "The model identity aliases conflict."
+            )
+        }
+        guard let resolvedKey = keyAlias ?? idAlias else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.key,
+                .init(codingPath: decoder.codingPath, debugDescription: "A model identity is required.")
+            )
+        }
+        key = resolvedKey
+        loadedInstances = try container.decode(
+            [LMStudioLoadedInstance].self,
+            forKey: .loadedInstances
+        )
     }
 }
 
@@ -815,15 +1019,36 @@ private struct OpenAIModel: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        contextWindowTokens = Self.firstPositive(
-            try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
-            try container.decodeIfPresent(Int.self, forKey: .contextLength),
-            try container.decodeIfPresent(Int.self, forKey: .maxContextLength)
+        contextWindowTokens = try container.decodeContextWindowTokens(
+            aliases: [.contextWindowTokens, .contextLength, .maxContextLength]
         )
     }
+}
 
-    private static func firstPositive(_ values: Int?...) -> Int? {
-        values.first { ($0 ?? 0) > 0 } ?? nil
+private extension KeyedDecodingContainer {
+    func decodeContextWindowTokens(aliases: [Key]) throws -> Int? {
+        var decodedValues: [Int] = []
+        for alias in aliases where contains(alias) {
+            let value = try decode(Decimal.self, forKey: alias)
+            guard let validatedValue = ModelInfo.validatedContextWindowTokens(decimal: value) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: alias,
+                    in: self,
+                    debugDescription: "Context-window metadata must be a positive integer no greater than \(ModelInfo.maximumContextWindowTokens)."
+                )
+            }
+            decodedValues.append(validatedValue)
+        }
+        guard let firstValue = decodedValues.first else {
+            return nil
+        }
+        guard decodedValues.dropFirst().allSatisfy({ $0 == firstValue }) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: codingPath,
+                debugDescription: "Context-window metadata aliases conflict."
+            ))
+        }
+        return firstValue
     }
 }
 

@@ -19,6 +19,11 @@ SESSION_CRYPTO_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_session_crypto_vect
 HARNESS_EGRESS_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_phase_a_harness_egress.py"
 OFFLINE_SOURCE_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libjuice_offline_source.py"
 COMPILE_ONLY_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libjuice_compile_only.py"
+PHASE_A_PROGRESS_PATH = (
+    DESIGN_ROOT / "controlled-network-spike/phase-a/progress-v1.json"
+)
+PHASE_A_PROGRESS_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_phase_a_progress.py"
+PHASE_A_PROGRESS_TEST_PATH = ROOT / "script/test_p2p_nat_phase_a_progress.py"
 PHASE_A_STATIC_PYTHON_PATHS = (
     SESSION_CRYPTO_VALIDATOR_PATH,
     ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
@@ -28,6 +33,8 @@ PHASE_A_STATIC_PYTHON_PATHS = (
     ROOT / "script/test_p2p_nat_libjuice_offline_source.py",
     COMPILE_ONLY_VALIDATOR_PATH,
     ROOT / "script/test_p2p_nat_libjuice_compile_only.py",
+    PHASE_A_PROGRESS_VALIDATOR_PATH,
+    PHASE_A_PROGRESS_TEST_PATH,
 )
 PHASE_A_STATIC_EVIDENCE_SHA256 = {
     ROOT / "apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift": "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb",
@@ -49,8 +56,12 @@ PHASE_A_STATIC_EVIDENCE_SHA256 = {
     DESIGN_ROOT / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.md": "6e181de962f961ccf1b35f020e83e2cceb3829e13bf824c7fa68f17677d09420",
     COMPILE_ONLY_VALIDATOR_PATH: "2fd88bf6aa418920cb13f244215ce91a97f135a94c6a9c79d3658b62e3d570eb",
     ROOT / "script/test_p2p_nat_libjuice_compile_only.py": "df9dfd78cd2b35274d5fe5d08c4114d091fd27db75f5856794e3cf215b134c13",
+    PHASE_A_PROGRESS_PATH: "3e0d98c2c03e97f7f16e63cca9c545553234ab05ff7d233bae607e09f13738a3",
+    PHASE_A_PROGRESS_VALIDATOR_PATH: "4ece30b0f87ed1f6a0bd798c3197160be63be21902ffa24b9298d1351cfbffd3",
+    PHASE_A_PROGRESS_TEST_PATH: "e79635ed2c5aa730d82e5f9f1e75b393b0606506b85a8e34a7d484c15f1364e9",
 }
-EVIDENCE_COLLECTION_SHA256 = "dd26adc9070c878d72a4e4299bcb241e7fc856f85a3f570419bd84509ace99ba"
+EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 22
+EVIDENCE_COLLECTION_SHA256 = "7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
     "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt",
@@ -154,6 +165,112 @@ EXPECTED_PHASE_A_EVIDENCE = [
     "static_harness_and_egress_policy",
     "phase_a_security_review",
 ]
+EXPECTED_PHASE_A_PROGRESS_BOUNDED_AUTHORITY = {
+    "offlineSourceInspectionAuthorized": True,
+    "compileOnlyIntegrationAuthorized": True,
+    "sessionCryptoVectorImplementationAuthorized": True,
+    "staticHarnessImplementationAuthorized": True,
+}
+EXPECTED_PHASE_A_PROGRESS_EXECUTION_AUTHORITY = {
+    "sourceAcquisitionNetworkIOAllowed": False,
+    "sourceExecutionAllowed": False,
+    "compilerInvocationAuthorized": False,
+    "archiveInvocationAuthorized": False,
+    "socketCreationAllowed": False,
+    "runtimeNetworkIOAllowed": False,
+    "harnessNetworkIOAllowed": False,
+    "controlledSpikeNetworkIOAllowed": False,
+    "controlledSpikeSocketExecutionAuthorized": False,
+    "phaseBExecutionAuthorized": False,
+    "phaseBNetworkIOAllowed": False,
+    "phaseBSocketExecutionAuthorized": False,
+    "externalEgressAllowed": False,
+    "productionNetworkIOAllowed": False,
+    "productionDeploymentAuthorized": False,
+}
+EXPECTED_PHASE_A_PROGRESS_EVIDENCE = {
+    "libjuice_supply_chain_and_source_audit": {
+        "status": "blocked_missing_offline_source",
+        "proofScope": "blocked_state_only_no_source_present_or_consumed",
+        "artifacts": [
+            {
+                "path": "offline-source-intake-v1.json",
+                "sha256": "3359624f1fa1474b2bfd2acd4e3591fd1e0a8cd5840cda4372327f25dfc68850",
+            },
+            {
+                "path": "offline-source-intake-v1.md",
+                "sha256": "c186c4bed45a6edd9d270062ac9927839ab1f5c8f5c66eab966dfc9a61c0d2ee",
+            },
+        ],
+    },
+    "android_macos_compile_only_integration": {
+        "status": "blocked_missing_reviewed_source",
+        "proofScope": "blocked_contract_only_no_compiler_archive_or_native_wiring",
+        "artifacts": [
+            {
+                "path": "libjuice-compile-only-contract-v1.json",
+                "sha256": "2664736c7b783d650eabcd8bc4ad5391babd456d3b7df596dff2171eba7d84b4",
+            },
+            {
+                "path": "libjuice-compile-only-contract-v1.md",
+                "sha256": "6e181de962f961ccf1b35f020e83e2cceb3829e13bf824c7fa68f17677d09420",
+            },
+        ],
+    },
+    "cross_platform_session_crypto_vectors": {
+        "status": "completed_bounded_no_device_vectors",
+        "proofScope": "bounded_no_device_fixed_vector_interoperability_only",
+        "artifacts": [
+            {
+                "path": "../../../../../apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift",
+                "sha256": "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb",
+            },
+            {
+                "path": "../../../../../apps/macos/P2PNATContracts/Tests/P2PNATSessionCryptoVectorTests.swift",
+                "sha256": "c39c4e37a3f022698d9994804972a0bafd14000d010baa99bc6928066ef87acd",
+            },
+            {
+                "path": "../../../../../apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCrypto.kt",
+                "sha256": "a7222474e0b38e061a1d04ba5993af844f8f1cebaed36496403ae3bf47bd5b93",
+            },
+            {
+                "path": "../../../../../apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/p2pnat/P2pNatSessionCryptoVectorTest.kt",
+                "sha256": "3a28cef4d942dac397bd443ec3b7e0f9c96e2a0c9ccda836ec3c49f178367bf4",
+            },
+            {
+                "path": "../../../../../shared/protocol/fixtures/production-p2p-nat-v1-session-crypto-vectors.json",
+                "sha256": "4693f71330b5f40f9b99b4445c24fba8fa0939c4ae76f8b9bf3c9644b08f29c9",
+            },
+            {
+                "path": "../../../../../script/check_p2p_nat_session_crypto_vectors.py",
+                "sha256": "c8f51de5a77599617eb24df3f767569e778e3ac327a8eae7e3fdad6fcad949ee",
+            },
+            {
+                "path": "../../../../../script/test_p2p_nat_session_crypto_vectors.py",
+                "sha256": "37ba5844a7822d65bca27b312718c7a43c30febc2c0ca83976b91a246e09b526",
+            },
+        ],
+    },
+    "static_harness_and_egress_policy": {
+        "status": "static_design_complete",
+        "proofScope": "non_executable_static_design_only",
+        "artifacts": [
+            {
+                "path": "static-harness-egress-policy-v1.json",
+                "sha256": "6934995f310449fa675348c0314ea5bac2991693f1e1d080aa469d7d856ec9f5",
+            },
+            {
+                "path": "static-harness-egress-policy-v1.md",
+                "sha256": "0578c5f6b89bc3db5cb1ce6ed24f62bad32898b923411759dbf55f946d2fb61b",
+            },
+        ],
+    },
+    "phase_a_security_review": {
+        "status": "blocked_on_source_and_compile_evidence",
+        "proofScope": "whole_phase_a_review_not_started",
+        "artifacts": [],
+    },
+}
 EXPECTED_SELECTION_PROFILE_KEYS = {
     "documentType",
     "schemaVersion",
@@ -1666,6 +1783,234 @@ def validate_current_controlled_spike_handoff(handoff: object | None = None) -> 
         fail("handoff-v4 immutability boundary drifted")
 
 
+def validate_current_phase_a_progress(progress: object | None = None) -> None:
+    if progress is None:
+        progress = load_json(
+            PHASE_A_PROGRESS_PATH,
+            "controlled-network-spike/phase-a/progress-v1.json",
+        )
+    root = require_exact_keys(
+        progress,
+        {
+            "documentType", "schemaVersion", "artifactId", "profileId", "recordedAt",
+            "sourceDecision", "sourceHandoff", "approvalSnapshot", "overallStatus",
+            "statusSummary", "evidenceStatus", "boundedPhaseAAuthority",
+            "executionAuthority", "phaseBDecisionEligible", "measurementStatus",
+            "nextStep", "immutability",
+        },
+        "controlled-network-spike/phase-a/progress-v1.json",
+    )
+    expected_root = {
+        "documentType": "aetherlink.p2p-nat-phase-a-progress",
+        "schemaVersion": "1.0",
+        "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v1",
+        "profileId": SELECTION_PROFILE_ID,
+        "recordedAt": "2026-07-17",
+        "overallStatus": "blocked_incomplete_phase_a",
+        "phaseBDecisionEligible": False,
+        "measurementStatus": "not_started",
+        "nextStep": "provide_reviewed_offline_libjuice_source_then_publish_new_versioned_intake_and_compile_contract_before_whole_phase_a_review",
+    }
+    for field, expected in expected_root.items():
+        if not type_exact_equal(root[field], expected):
+            fail(f"phase A progress {field} drifted")
+
+    expected_decision_reference = {
+        "path": "../decision-v1.json",
+        "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v1",
+        "sha256": "1fd24be7252e25381552d1732c5282f141ef0e9b02118f8c65b246b81a055228",
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["sourceDecision"],
+            set(expected_decision_reference),
+            "phase A progress source decision",
+        ),
+        expected_decision_reference,
+    ):
+        fail("phase A progress decision reference drifted")
+    expected_handoff_reference = {
+        "path": "../../implementation/handoff-v4.json",
+        "handoffId": "production_p2p_nat_v1_handoff_v4",
+        "sha256": "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd",
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["sourceHandoff"],
+            set(expected_handoff_reference),
+            "phase A progress source handoff",
+        ),
+        expected_handoff_reference,
+    ):
+        fail("phase A progress handoff reference drifted")
+    for path, expected_digest in (
+        (
+            DESIGN_ROOT / "controlled-network-spike/decision-v1.json",
+            expected_decision_reference["sha256"],
+        ),
+        (CURRENT_HANDOFF_PATH, expected_handoff_reference["sha256"]),
+    ):
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_digest:
+            fail(f"phase A progress source hash drifted for {path.relative_to(ROOT)}")
+
+    expected_approval_snapshot = {
+        "count": 4,
+        "approvalSource": "explicit_user_instruction",
+        "decisionOrder": EXPECTED_SPIKE_REVIEWS,
+        "resolutions": EXPECTED_SPIKE_RESOLUTIONS,
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["approvalSnapshot"],
+            set(expected_approval_snapshot),
+            "phase A progress approval snapshot",
+        ),
+        expected_approval_snapshot,
+    ):
+        fail("phase A progress approval snapshot drifted")
+    decision = load_json(
+        DESIGN_ROOT / "controlled-network-spike/decision-v1.json",
+        "controlled-network-spike/decision-v1.json",
+    )
+    approvals = decision.get("approvals") if isinstance(decision, dict) else None
+    if not isinstance(approvals, list) or len(approvals) != len(EXPECTED_SPIKE_REVIEWS):
+        fail("phase A progress source decision must retain exactly four approvals")
+    for approval, decision_id in zip(approvals, EXPECTED_SPIKE_REVIEWS):
+        if not isinstance(approval, dict) or not type_exact_equal(
+            {
+                "decisionId": approval.get("decisionId"),
+                "status": approval.get("status"),
+                "resolution": approval.get("resolution"),
+                "approvalSource": approval.get("approvalSource"),
+            },
+            {
+                "decisionId": decision_id,
+                "status": "approved_for_bounded_phase_a_evidence",
+                "resolution": EXPECTED_SPIKE_RESOLUTIONS[decision_id],
+                "approvalSource": "explicit_user_instruction",
+            },
+        ):
+            fail(f"phase A progress source approval drifted for {decision_id}")
+
+    expected_summary = {
+        "requiredBoundedEvidenceGroupCount": 4,
+        "boundedEvidenceCompletedCount": 2,
+        "blockedBoundedEvidenceCount": 2,
+        "phaseASecurityReviewStatus": "blocked_on_source_and_compile_evidence",
+    }
+    summary = require_exact_keys(
+        root["statusSummary"], set(expected_summary), "phase A progress summary"
+    )
+    if not type_exact_equal(summary, expected_summary):
+        fail("phase A progress summary drifted")
+
+    evidence = require_exact_keys(
+        root["evidenceStatus"],
+        set(EXPECTED_PHASE_A_PROGRESS_EVIDENCE),
+        "phase A progress evidence",
+    )
+    if list(evidence) != EXPECTED_PHASE_A_EVIDENCE:
+        fail("phase A progress evidence order drifted")
+    if not type_exact_equal(evidence, EXPECTED_PHASE_A_PROGRESS_EVIDENCE):
+        fail("phase A progress evidence status, scope, or reference drifted")
+    bounded_statuses = [
+        evidence[evidence_id]["status"]
+        for evidence_id in list(EXPECTED_PHASE_A_PROGRESS_EVIDENCE)[:-1]
+    ]
+    completed_count = sum(
+        status in {"completed_bounded_no_device_vectors", "static_design_complete"}
+        for status in bounded_statuses
+    )
+    blocked_count = sum(status.startswith("blocked_") for status in bounded_statuses)
+    if summary["requiredBoundedEvidenceGroupCount"] != len(bounded_statuses):
+        fail("phase A progress bounded evidence requirement count drifted")
+    if summary["boundedEvidenceCompletedCount"] != completed_count:
+        fail("phase A progress bounded completion count drifted")
+    if summary["blockedBoundedEvidenceCount"] != blocked_count:
+        fail("phase A progress bounded blocker count drifted")
+
+    if not type_exact_equal(
+        require_exact_keys(
+            root["boundedPhaseAAuthority"],
+            set(EXPECTED_PHASE_A_PROGRESS_BOUNDED_AUTHORITY),
+            "phase A progress bounded authority",
+        ),
+        EXPECTED_PHASE_A_PROGRESS_BOUNDED_AUTHORITY,
+    ):
+        fail("phase A progress bounded authority drifted")
+    if not type_exact_equal(
+        require_exact_keys(
+            root["executionAuthority"],
+            set(EXPECTED_PHASE_A_PROGRESS_EXECUTION_AUTHORITY),
+            "phase A progress execution authority",
+        ),
+        EXPECTED_PHASE_A_PROGRESS_EXECUTION_AUTHORITY,
+    ):
+        fail("phase A progress execution authority drifted")
+    expected_immutability = {
+        "recordState": "closed",
+        "amendmentPolicy": "supersede_with_new_versioned_progress",
+    }
+    if not type_exact_equal(
+        require_exact_keys(
+            root["immutability"],
+            set(expected_immutability),
+            "phase A progress immutability",
+        ),
+        expected_immutability,
+    ):
+        fail("phase A progress immutability drifted")
+
+    offline = load_json(
+        DESIGN_ROOT / "controlled-network-spike/phase-a/offline-source-intake-v1.json",
+        "controlled-network-spike/phase-a/offline-source-intake-v1.json",
+    )
+    for field, expected in {
+        "artifactStatus": "blocked_missing_offline_source",
+        "sourcePresence": "absent",
+        "auditStatus": "not_started",
+        "compileStatus": "not_started",
+    }.items():
+        if not isinstance(offline, dict) or not type_exact_equal(offline.get(field), expected):
+            fail(f"phase A progress offline-source cross-check drifted for {field}")
+
+    compile_only = load_json(
+        DESIGN_ROOT / "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json",
+        "controlled-network-spike/phase-a/libjuice-compile-only-contract-v1.json",
+    )
+    compile_status = compile_only.get("currentStatus") if isinstance(compile_only, dict) else None
+    compile_authority = compile_only.get("authorization") if isinstance(compile_only, dict) else None
+    if not isinstance(compile_status, dict) or any((
+        not type_exact_equal(
+            compile_status.get("android_macos_compile_only_integration"),
+            "blocked_missing_reviewed_source",
+        ),
+        not type_exact_equal(compile_status.get("executionStatus"), "not_executed"),
+        not type_exact_equal(compile_status.get("compilationEvidence"), []),
+    )):
+        fail("phase A progress compile-only blocked-state cross-check drifted")
+    if not isinstance(compile_authority, dict) or any((
+        not type_exact_equal(
+            compile_authority.get("currentCompilerInvocationAuthorized"), False
+        ),
+        not type_exact_equal(
+            compile_authority.get("currentArchiveInvocationAuthorized"), False
+        ),
+    )):
+        fail("phase A progress compile-only execution gate drifted")
+
+    static_harness = load_json(
+        DESIGN_ROOT / "controlled-network-spike/phase-a/static-harness-egress-policy-v1.json",
+        "controlled-network-spike/phase-a/static-harness-egress-policy-v1.json",
+    )
+    if not isinstance(static_harness, dict) or any((
+        not type_exact_equal(static_harness.get("artifactStatus"), "static_design_complete"),
+        not type_exact_equal(static_harness.get("executionStatus"), "not_executed"),
+        not type_exact_equal(static_harness.get("measurementStatus"), "not_started"),
+    )):
+        fail("phase A progress static-harness cross-check drifted")
+
+
 def qualified_ast_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
@@ -1687,6 +2032,7 @@ def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
         "script": {
             "check_p2p_nat_libjuice_compile_only",
             "check_p2p_nat_libjuice_offline_source",
+            "check_p2p_nat_phase_a_progress",
             "check_p2p_nat_phase_a_harness_egress",
             "check_p2p_nat_security_design",
             "check_p2p_nat_session_crypto_vectors",
@@ -1695,6 +2041,10 @@ def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
     forbidden_names = {
         "__builtins__", "__import__", "compile", "delattr", "eval", "exec", "getattr",
         "globals", "locals", "open", "setattr", "vars",
+    }
+    forbidden_dynamic_attribute_names = {
+        "__class__", "__closure__", "__code__", "__dict__", "__getattribute__",
+        "__globals__", "__mro__", "__subclasses__",
     }
     forbidden_method_names = {
         "CDLL", "PyDLL", "accept", "bind", "call", "check_call", "check_output",
@@ -1731,6 +2081,8 @@ def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
         elif isinstance(node, ast.Attribute):
             name = qualified_ast_name(node)
             final_name = name.rsplit(".", 1)[-1] if name else ""
+            if final_name in forbidden_dynamic_attribute_names:
+                fail(f"{label} contains forbidden dynamic attribute reference {name}")
             if final_name in forbidden_method_names or any(
                 name == prefix or name.startswith(f"{prefix}.")
                 for prefix in forbidden_qualified_prefixes
@@ -1739,11 +2091,19 @@ def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
         elif isinstance(node, ast.Call):
             name = qualified_ast_name(node.func)
             final_name = name.rsplit(".", 1)[-1] if name else ""
+            if name is None:
+                fail(f"{label} contains forbidden dynamic call target")
             if name in forbidden_names or final_name in forbidden_method_names:
                 fail(f"{label} contains forbidden dynamic/network/process/file call {name}")
 
 
 def validate_phase_a_static_evidence_preflight() -> None:
+    if len(PHASE_A_STATIC_EVIDENCE_SHA256) != EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT:
+        fail(
+            "Phase A static evidence preflight count drifted: "
+            f"expected {EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT}, "
+            f"got {len(PHASE_A_STATIC_EVIDENCE_SHA256)}"
+        )
     for path, expected_digest in PHASE_A_STATIC_EVIDENCE_SHA256.items():
         actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual_digest != expected_digest:
@@ -1768,6 +2128,7 @@ def main() -> int:
         validate_current_pre_network_handoff()
         validate_current_controlled_spike_handoff()
         validate_phase_a_static_evidence_preflight()
+        validate_current_phase_a_progress()
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         print(f"Production P2P NAT security design check failed: {error}", file=sys.stderr)
         return 1
@@ -1776,7 +2137,7 @@ def main() -> int:
         "Production P2P NAT security design OK: "
         "13 evidence artifacts, 2 opportunities, 6 options, "
         "8 structurally distinct diagrams; bounded phase-A handoff approved; "
-        "offline source/compile blocked state, session crypto, and static harness policy verified; "
+        "phase-A progress records 2 bounded evidence groups complete, 2 blocked, and whole review blocked; "
         "socket gate closed."
     )
     return 0

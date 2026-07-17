@@ -21,6 +21,8 @@ public enum StrictJSONDocumentValidator {
 
 public struct ProtocolCodec: Sendable {
     public static let maxFrameBytes = 1024 * 1024
+    public static let maxRelayPlaintextFrameBytes =
+        maxFrameBytes - RelayFrameCipher.authenticationTagBytes
 
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -81,6 +83,12 @@ public struct ProtocolCodec: Sendable {
 
     public func validateFrameBodyLength(_ bodyLength: Int) throws {
         guard bodyLength > 0 && bodyLength <= Self.maxFrameBytes else {
+            throw ProtocolCodecError.invalidFrameLength(bodyLength)
+        }
+    }
+
+    public func validateRelayPlaintextBodyLength(_ bodyLength: Int) throws {
+        guard bodyLength > 0 && bodyLength <= Self.maxRelayPlaintextFrameBytes else {
             throw ProtocolCodecError.invalidFrameLength(bodyLength)
         }
     }
@@ -264,7 +272,7 @@ public struct RelayFrameCipher: Sendable {
     private static let framesPerEpoch: Int64 = 65_536
     private static let aadPrefix = Data("AETHERLINK_RELAY_FRAME_V2".utf8)
     private static let epochPrefix = Data("AetherLink relay frame epoch v2\n".utf8)
-    private static let authenticationTagBytes = 16
+    public static let authenticationTagBytes = 16
 
     private let bindingDigest: Data
     private let clientTrafficSecret: Data

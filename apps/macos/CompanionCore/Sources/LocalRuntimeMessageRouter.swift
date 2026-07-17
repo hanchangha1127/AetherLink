@@ -10,6 +10,8 @@ import Transport
 import TrustedDevices
 
 public final class LocalRuntimeMessageRouter: @unchecked Sendable {
+    static let maximumConcurrentModelCatalogWaiters = 8
+
     private let backend: any RuntimeModelServingBackend
     private let modelPullApprovalBroker: RuntimeModelPullApprovalBroker?
     private let requiresAuthentication: Bool
@@ -53,6 +55,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let chatTitleCancellationDispatcher = RuntimeChatTitleCancellationDispatcher()
     private let requestTaskLock = NSLock()
     private var requestTasksByConnection: [UUID: [UUID: TrackedRuntimeRequestTask]] = [:]
+    private let modelCatalogCoordinator: RuntimeModelCatalogCoordinator
     private let semanticSearchLock = NSLock()
     private var activeSemanticSearchConnections = Set<UUID>()
     private let semanticEmbeddingModelCatalogLock = NSLock()
@@ -70,6 +73,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private var latestChatSessionInitialRequestGenerations: [UUID: UInt64] = [:]
     private var latestResearchNotebookInitialRequestGenerations: [UUID: UInt64] = [:]
     private let requestTaskRegistrationCheckpoint: (@Sendable () -> Void)?
+    private let modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryPublicationCheckpoint: (@Sendable () -> Void)?
     private let memorySummaryWaiterRegistrationCheckpoint: (@Sendable () -> Void)?
@@ -132,6 +136,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         runtimeChallengeSigner: (any RuntimeChallengeSigning & InitialPairingRuntimeResultSigning)? = nil,
         pairedRelayAuthorizationTimeout: TimeInterval = 5,
         requestTaskRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
+        modelsListWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryCacheCommitCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryPublicationCheckpoint: (@Sendable () -> Void)? = nil,
         memorySummaryWaiterRegistrationCheckpoint: (@Sendable () -> Void)? = nil,
@@ -198,6 +203,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.runtimeChallengeSigner = runtimeChallengeSigner
         self.pairedRelayAuthorizationTimeout = max(0.01, min(pairedRelayAuthorizationTimeout, 60))
         self.requestTaskRegistrationCheckpoint = requestTaskRegistrationCheckpoint
+        self.modelsListWaiterRegistrationCheckpoint = modelsListWaiterRegistrationCheckpoint
+        self.modelCatalogCoordinator = RuntimeModelCatalogCoordinator(
+            maximumWaiterCount: Self.maximumConcurrentModelCatalogWaiters
+        )
         self.memorySummaryCacheCommitCheckpoint = memorySummaryCacheCommitCheckpoint
         self.memorySummaryPublicationCheckpoint = memorySummaryPublicationCheckpoint
         self.memorySummaryWaiterRegistrationCheckpoint =
@@ -374,7 +383,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             await handleRuntimeHealth(envelope, sink: sink)
         case MessageType.modelsList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
-            await handleModelsList(envelope, sink: sink)
+            await handleModelsList(
+                envelope,
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
         case MessageType.modelsPull:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleModelsPull(envelope, sink: sink)
@@ -970,11 +983,56 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func handleModelsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+    private func handleModelsList(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink,
+        requestTaskID: UUID
+    ) async {
         do {
             try validateEmptyRequestPayload(envelope)
-            let models = try await backend.listModels()
-            sink.send(ProtocolEnvelope(
+        } catch {
+            sendIfRequestActive(
+                errorEnvelope(requestID: envelope.requestID, error: error),
+                sink: sink,
+                requestTaskID: requestTaskID
+            )
+            return
+        }
+
+        let publicationAuthority: RuntimeModelsListPublicationAuthority?
+        do {
+            publicationAuthority = try modelsListPublicationAuthority(sink: sink)
+        } catch {
+            return
+        }
+
+        var responseEnvelope: ProtocolEnvelope
+        do {
+            let models = try await modelCatalogCoordinator.listModels(
+                waiterRegistered: { [modelsListWaiterRegistrationCheckpoint] in
+                    modelsListWaiterRegistrationCheckpoint?()
+                },
+                operation: { [backend] in
+                    try await backend.listModels()
+                }
+            )
+            try Task.checkCancellation()
+            guard models.count <= ModelInfo.maximumCatalogModelCount else {
+                throw invalidModelCatalogError()
+            }
+            do {
+                for model in models {
+                    guard model.provider != .aggregate else {
+                        throw invalidModelCatalogError()
+                    }
+                    try ModelInfo.validateForCatalogPublication(model)
+                }
+            } catch {
+                throw invalidModelCatalogError()
+            }
+            let responseDateFormatter = ISO8601DateFormatter()
+            responseDateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            responseEnvelope = ProtocolEnvelope(
                 type: MessageType.modelsList,
                 requestID: envelope.requestID,
                 payload: [
@@ -993,23 +1051,135 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             "source": .string(model.source.rawValue)
                         ]
                         if let sizeBytes = model.sizeBytes {
-                            payload["size_bytes"] = .number(Double(sizeBytes))
+                            payload["size_bytes"] = .integer(sizeBytes)
                         }
                         if let modifiedAt = model.modifiedAt {
-                            payload["modified_at"] = .string(dateFormatter.string(from: modifiedAt))
+                            payload["modified_at"] = .string(responseDateFormatter.string(from: modifiedAt))
                         }
                         if let remoteModel = model.remoteModel, !remoteModel.isEmpty {
                             payload["remote_model"] = .string(remoteModel)
                         }
-                        if let contextWindowTokens = model.contextWindowTokens, contextWindowTokens > 0 {
+                        if let contextWindowTokens = ModelInfo.validatedContextWindowTokens(
+                            model.contextWindowTokens
+                        ) {
                             payload["context_window_tokens"] = .number(Double(contextWindowTokens))
                         }
                         return .object(payload)
                     })
                 ]
-            ))
+            )
+            do {
+                let codec = ProtocolCodec()
+                let encodedBody = try codec.encodeEnvelopeBody(responseEnvelope)
+                try codec.validateRelayPlaintextBodyLength(encodedBody.count)
+            } catch {
+                throw invalidModelCatalogError()
+            }
+        } catch RuntimeModelCatalogCoordinatorError.waiterLimitExceeded {
+            responseEnvelope = errorEnvelope(
+                requestID: envelope.requestID,
+                code: "backend_unavailable",
+                message: "AetherLink Runtime is currently refreshing the model catalog.",
+                retryable: true
+            )
         } catch {
-            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+            responseEnvelope = errorEnvelope(requestID: envelope.requestID, error: error)
+        }
+
+        await publishModelsListEnvelope(
+            responseEnvelope,
+            authority: publicationAuthority,
+            sink: sink,
+            requestTaskID: requestTaskID
+        )
+    }
+
+    private func invalidModelCatalogError() -> BackendError {
+        BackendError(
+            provider: backend.provider,
+            code: "bad_backend_response",
+            message: "AetherLink Runtime rejected an invalid model catalog.",
+            retryable: false
+        )
+    }
+
+    private func modelsListPublicationAuthority(
+        sink: any RuntimeMessageSink
+    ) throws -> RuntimeModelsListPublicationAuthority? {
+        guard requiresAuthentication else { return nil }
+        let currentBinding = try currentTransportBinding(sink: sink)
+        return try chatSessionLifecycleLock.withLock {
+            let authenticationGeneration = chatSessionAuthenticationGenerations[
+                sink.connectionID,
+                default: 0
+            ]
+            guard let authSession = authLock.withLock({ authSessions[sink.connectionID] }),
+                  case .authenticated(
+                    let deviceID,
+                    let publicKeyBase64,
+                    let transportBinding,
+                    _
+                  ) = authSession,
+                  transportBinding == currentBinding else {
+                throw RuntimeModelsListPublicationAuthorityError.authenticationChanged
+            }
+            return RuntimeModelsListPublicationAuthority(
+                connectionID: sink.connectionID,
+                authenticationGeneration: authenticationGeneration,
+                authSession: authSession,
+                deviceID: deviceID,
+                publicKeyBase64: publicKeyBase64,
+                transportBinding: transportBinding
+            )
+        }
+    }
+
+    private func publishModelsListEnvelope(
+        _ envelope: ProtocolEnvelope,
+        authority: RuntimeModelsListPublicationAuthority?,
+        sink: any RuntimeMessageSink,
+        requestTaskID: UUID
+    ) async {
+        guard let authority else {
+            sendIfRequestActive(envelope, sink: sink, requestTaskID: requestTaskID)
+            return
+        }
+        guard sink.connectionID == authority.connectionID else { return }
+
+        do {
+            try await trustedDeviceStore.withTrustedDeviceSnapshot(
+                deviceID: authority.deviceID
+            ) { trustedDevice in
+                try sink.withTransportSecurityContextTransaction { securityContext in
+                    try self.chatSessionLifecycleLock.withLock {
+                        guard !Task.isCancelled,
+                              try Self.currentTransportBinding(in: securityContext)
+                                == authority.transportBinding,
+                              self.chatSessionAuthenticationGenerations[
+                                authority.connectionID,
+                                default: 0
+                              ] == authority.authenticationGeneration,
+                              self.authLock.withLock({
+                                self.authSessions[authority.connectionID]
+                              }) == authority.authSession,
+                              let trustedDevice,
+                              trustedDevice.publicKeyBase64 == authority.publicKeyBase64 else {
+                            throw RuntimeModelsListPublicationAuthorityError.authenticationChanged
+                        }
+                        try self.requestTaskLock.withLock {
+                            guard !Task.isCancelled,
+                                  self.requestTasksByConnection[
+                                    authority.connectionID
+                                  ]?[requestTaskID] != nil else {
+                                throw CancellationError()
+                            }
+                            sink.send(envelope)
+                        }
+                    }
+                }
+            }
+        } catch {
+            return
         }
     }
 
@@ -2559,7 +2729,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             providerModelID: providerModelID,
             kind: kind,
             capabilities: capabilities,
-            contextWindowTokens: contextWindowTokens
+            contextWindowTokens: ModelInfo.validatedContextWindowTokens(contextWindowTokens)
         )
     }
 
@@ -11241,6 +11411,19 @@ private extension String {
 
 private func currentRouteRefreshEpochMillis() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1000).rounded())
+}
+
+private struct RuntimeModelsListPublicationAuthority: Sendable {
+    var connectionID: UUID
+    var authenticationGeneration: UInt64
+    var authSession: AuthSessionState
+    var deviceID: String
+    var publicKeyBase64: String
+    var transportBinding: String?
+}
+
+private enum RuntimeModelsListPublicationAuthorityError: Error {
+    case authenticationChanged
 }
 
 private struct TrackedRuntimeRequestTask {

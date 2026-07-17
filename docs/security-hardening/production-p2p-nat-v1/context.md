@@ -25,6 +25,33 @@ socket execution, Phase B, measurement, and production deployment unauthorized.
 `route.refresh` remains the only active
 traversal-related namespace.
 
+## Current Phase A Progress Authority
+
+`implementation/handoff-v4.json` is the immutable approval-time snapshot for
+the four bounded Phase A recommendations. The closed, versioned
+`controlled-network-spike/phase-a/progress-v1.json` is the current versioned Phase A evidence-status authority; later evidence status does not rewrite `handoff-v4`.
+
+Phase A progress: 4 recommendations are approved for bounded Phase A; 2 bounded evidence groups are complete (cross_platform_session_crypto_vectors and static_harness_and_egress_policy); 2 are blocked (libjuice_supply_chain_and_source_audit=blocked_missing_offline_source and android_macos_compile_only_integration=blocked_missing_reviewed_source); the final Phase A security review is blocked_on_source_and_compile_evidence.
+
+The new current static contract extends the execution-before-import SHA-256
+preflight to 22 files and adds a 7-test progress mutation suite. The final
+no-device aggregate log
+`build/qa/check-no-device-quality-p2p-phase-a-progress-v1-final-reviewed-20260717.log`
+exits 0 across 12,108 lines with one overall success marker, one Phase A
+progress addendum, two successful progress validator runs, 88 local
+development-relay match lines, freshness across 56 authenticated relay
+connections, and 905 encrypted frame bodies. The 2026-07-13 aggregate remains
+an actual 19-file preflight result and is not retroactively changed.
+
+Source acquisition and source execution, compiler/archive invocation, socket
+creation, runtime/harness/controlled-spike network I/O, Phase B
+execution/network/socket authority, external egress, production network I/O,
+and production deployment are all `false`. This is current no-device static and
+local regression evidence only, not physical Android or live-network proof; it
+establishes no source acquisition, compilation, library execution, sockets,
+ICE/STUN/TURN traffic, NAT traversal, Phase B, external egress, production
+networking, or deployment.
+
 ## Source Identity
 
 - Local source root: `/Users/hanchangha/Desktop/project`
@@ -32,7 +59,7 @@ traversal-related namespace.
 - Git HEAD: `1f839e44b261f7fdc86009bd6389777eda0f65e5`
 - Evidence manifest: `evidence.sha256`
 - Evidence manifest SHA-256:
-  `dd26adc9070c878d72a4e4299bcb241e7fc856f85a3f570419bd84509ace99ba`
+  `7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721`
 - Evidence artifacts: 13 source, schema, and fixture files.
 - Manifest verification: all 13 entries matched the current files when this
   portfolio was prepared.

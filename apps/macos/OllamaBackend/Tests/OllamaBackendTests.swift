@@ -24,7 +24,260 @@ final class OllamaBackendTests: XCTestCase {
         MockURLProtocol.handler = nil
         SuspendingURLProtocol.onStart = nil
         SuspendingURLProtocol.onStop = nil
+        SuspendingCatalogURLProtocol.onShowStart = nil
+        SuspendingCatalogURLProtocol.onStop = nil
         super.tearDown()
+    }
+
+    func testModelInfoCatalogPublicationLimitsAcceptExactBoundariesAndRejectLimitPlusOne() throws {
+        XCTAssertEqual(ModelInfo.maximumCatalogModelCount, 256)
+        XCTAssertEqual(ModelInfo.maximumCatalogResponseBytes, 4_194_304)
+        XCTAssertEqual(ModelInfo.maximumModelIdentityCodePoints, 512)
+        XCTAssertEqual(ModelInfo.maximumQualifiedModelIDCodePoints, 522)
+        XCTAssertEqual(ModelInfo.maximumCapabilityCount, 32)
+        XCTAssertEqual(ModelInfo.maximumCapabilityCodePoints, 128)
+        XCTAssertEqual(ModelInfo.maximumSizeBytes, Int64.max)
+
+        let exactIdentity = String(repeating: "m", count: ModelInfo.maximumModelIdentityCodePoints)
+        let exactCapability = String(repeating: "c", count: ModelInfo.maximumCapabilityCodePoints)
+        let exactModel = ModelInfo(
+            id: exactIdentity,
+            name: exactIdentity,
+            capabilities: [exactCapability],
+            providerModelID: exactIdentity,
+            sizeBytes: ModelInfo.maximumSizeBytes,
+            remoteModel: exactIdentity,
+            contextWindowTokens: ModelInfo.maximumContextWindowTokens
+        )
+        XCTAssertNoThrow(try ModelInfo.validateForCatalogPublication(exactModel))
+        XCTAssertNoThrow(try ModelInfo.validateQualifiedModelID(
+            String(repeating: "q", count: ModelInfo.maximumQualifiedModelIDCodePoints)
+        ))
+
+        var oversizedIdentityModel = exactModel
+        oversizedIdentityModel.id.append("x")
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(oversizedIdentityModel))
+
+        var oversizedCapabilityModel = exactModel
+        oversizedCapabilityModel.capabilities = [exactCapability + "x"]
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(oversizedCapabilityModel))
+
+        var paddedCapabilityModel = exactModel
+        paddedCapabilityModel.capabilities = [String(repeating: " ", count: 128) + "x"]
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(paddedCapabilityModel))
+
+        var duplicateCapabilityModel = exactModel
+        duplicateCapabilityModel.capabilities = ["chat", "chat"]
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(duplicateCapabilityModel))
+
+        var exactDistinctCapabilitiesModel = exactModel
+        exactDistinctCapabilitiesModel.capabilities = [
+            "chat",
+            " CHAT ",
+            "caf\u{00E9}",
+            "cafe\u{0301}",
+        ]
+        XCTAssertNoThrow(try ModelInfo.validateForCatalogPublication(exactDistinctCapabilitiesModel))
+
+        var tooManyCapabilitiesModel = exactModel
+        tooManyCapabilitiesModel.capabilities = (0...ModelInfo.maximumCapabilityCount).map { "capability-\($0)" }
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(tooManyCapabilitiesModel))
+
+        var invalidSizeModel = exactModel
+        invalidSizeModel.sizeBytes = -1
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(invalidSizeModel))
+
+        for keyPath in [\ModelInfo.id, \ModelInfo.name, \ModelInfo.providerModelID] {
+            var blankIdentityModel = exactModel
+            blankIdentityModel[keyPath: keyPath] = " \n\t "
+            XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(blankIdentityModel))
+        }
+        var blankRemoteModel = exactModel
+        blankRemoteModel.remoteModel = " \n\t "
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(blankRemoteModel))
+        let sharedBlankCodePoints =
+            "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{0085}\u{00A0}\u{1680}" +
+            "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}" +
+            "\u{2008}\u{2009}\u{200A}\u{200B}\u{2028}\u{2029}\u{202F}\u{205F}" +
+            "\u{3000}\u{FEFF}"
+        for keyPath in [\ModelInfo.id, \ModelInfo.name, \ModelInfo.providerModelID] {
+            var blankIdentityModel = exactModel
+            blankIdentityModel[keyPath: keyPath] = sharedBlankCodePoints
+            XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(blankIdentityModel))
+        }
+        var blankSharedCapabilityModel = exactModel
+        blankSharedCapabilityModel.capabilities = [sharedBlankCodePoints]
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(blankSharedCapabilityModel))
+        var blankSharedRemoteModel = exactModel
+        blankSharedRemoteModel.remoteModel = sharedBlankCodePoints
+        XCTAssertThrowsError(try ModelInfo.validateForCatalogPublication(blankSharedRemoteModel))
+        var contentAfterBlankModel = exactModel
+        contentAfterBlankModel.name = sharedBlankCodePoints + "x"
+        XCTAssertNoThrow(try ModelInfo.validateForCatalogPublication(contentAfterBlankModel))
+        XCTAssertThrowsError(try ModelInfo.validateQualifiedModelID(sharedBlankCodePoints))
+        XCTAssertThrowsError(try ModelInfo.validateQualifiedModelID(
+            String(repeating: "q", count: ModelInfo.maximumQualifiedModelIDCodePoints + 1)
+        ))
+    }
+
+    func testCatalogStreamingReadAcceptsExactByteLimitAndRejectsLimitPlusOne() async throws {
+        let body = #"{"models":[]}"#
+        let exactBackend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { _ in
+            self.response(statusCode: 200, body: body)
+        }
+        let exactModels = try await exactBackend.listModels()
+        XCTAssertEqual(exactModels, [])
+
+        var paths: [String] = []
+        let oversizedBackend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: body + " ")
+        }
+        await assertListModelsResponseDecodingError(from: oversizedBackend, endpoint: "GET /api/tags")
+        XCTAssertEqual(paths, ["/api/tags"])
+    }
+
+    func testCatalogStreamingReadRejectsOversizedPositiveContentLength() async {
+        let backend = makeBackend(catalogResponseByteLimit: 64) { _ in
+            self.response(
+                statusCode: 200,
+                body: #"{"models":[]}"#,
+                headers: ["Content-Length": "65"]
+            )
+        }
+        await assertListModelsResponseDecodingError(from: backend, endpoint: "GET /api/tags")
+    }
+
+    func testTagsCatalogRejectsInvalidPublicationMetadata() async {
+        let invalidRows = [
+            #"{"name":"   "}"#,
+            "{\"name\":\"\(String(repeating: "m", count: 513))\"}",
+            #"{"name":"model","remote_model":" \n\t "}"#,
+            "{\"name\":\"model\",\"remote_model\":\"\(String(repeating: "r", count: 513))\"}",
+            #"{"name":"model","size":-1}"#,
+        ]
+        for row in invalidRows {
+            await assertCatalogRejected(
+                tagsBody: "{\"models\":[\(row)]}",
+                runningBody: #"{"models":[]}"#,
+                expectedEndpoint: "GET /api/tags"
+            )
+        }
+    }
+
+    func testShowStreamingReadAcceptsExactByteLimitAndExcludesOnlyLimitPlusOneDetail() async throws {
+        let limit = 64
+        let showJSON = #"{"capabilities":["embedding"]}"#
+        let exactShowBody = showJSON + String(repeating: " ", count: limit - Data(showJSON.utf8).count)
+        let exactBackend = makeBackend(catalogResponseByteLimit: limit) { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"model"}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: exactShowBody)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        let exactModels = try await exactBackend.listModels()
+        XCTAssertEqual(exactModels.map(\.id), ["model"])
+
+        let oversizedBackend = makeBackend(catalogResponseByteLimit: limit) { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"model"}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: exactShowBody + " ")
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        let oversizedModels = try await oversizedBackend.listModels()
+        XCTAssertEqual(oversizedModels, [])
+    }
+
+    func testListModelsPropagatesCancellationDuringShowFanout() async {
+        let showStarted = expectation(description: "show request started")
+        let loadingStopped = expectation(description: "show request stopped")
+        SuspendingCatalogURLProtocol.onShowStart = {
+            showStarted.fulfill()
+        }
+        SuspendingCatalogURLProtocol.onStop = {
+            loadingStopped.fulfill()
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SuspendingCatalogURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let backend = OllamaBackend(
+            baseURL: URL(string: "http://127.0.0.1:11434")!,
+            session: session
+        )
+        let task = Task {
+            try await backend.listModels()
+        }
+
+        await fulfillment(of: [showStarted], timeout: 1)
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected catalog cancellation")
+        } catch is CancellationError {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        await fulfillment(of: [loadingStopped], timeout: 1)
+    }
+
+    func testListModelsAccepts256RowsAndRejects257RowsOrUniqueDetailFanout() async throws {
+        let acceptedRows = (0..<ModelInfo.maximumCatalogModelCount).map { "{\"name\":\"model-\($0)\"}" }.joined(separator: ",")
+        var acceptedShowCalls = 0
+        let acceptedBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: "{\"models\":[\(acceptedRows)]}")
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                acceptedShowCalls += 1
+                return self.response(statusCode: 200, body: "{}")
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        let acceptedModels = try await acceptedBackend.listModels()
+        XCTAssertEqual(acceptedModels.count, ModelInfo.maximumCatalogModelCount)
+        XCTAssertEqual(acceptedShowCalls, ModelInfo.maximumCatalogModelCount)
+
+        let rejectedRows = (0...ModelInfo.maximumCatalogModelCount).map { "{\"name\":\"model-\($0)\"}" }.joined(separator: ",")
+        let tooManyRowsBackend = makeBackend { _ in
+            self.response(statusCode: 200, body: "{\"models\":[\(rejectedRows)]}")
+        }
+        await assertListModelsResponseDecodingError(from: tooManyRowsBackend, endpoint: "GET /api/tags")
+
+        let installedRows = (0..<128).map { "{\"name\":\"installed-\($0)\"}" }.joined(separator: ",")
+        let runningRows = (0..<129).map { "{\"name\":\"running-\($0)\"}" }.joined(separator: ",")
+        var rejectedShowCalls = 0
+        let fanoutBackend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: "{\"models\":[\(installedRows)]}")
+            case "/api/ps":
+                return self.response(statusCode: 200, body: "{\"models\":[\(runningRows)]}")
+            case "/api/show":
+                rejectedShowCalls += 1
+                return self.response(statusCode: 200, body: "{}")
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        await assertListModelsResponseDecodingError(from: fanoutBackend, endpoint: "GET /api/tags")
+        XCTAssertEqual(rejectedShowCalls, 0)
     }
 
     func testHealthCheckUsesLocalTagsEndpoint() async {
@@ -36,6 +289,21 @@ final class OllamaBackendTests: XCTestCase {
         let status = await backend.healthCheck()
 
         XCTAssertEqual(status, .available)
+    }
+
+    func testHealthCheckRejectsMalformedTagsCatalog() async {
+        let backend = makeBackend { _ in
+            self.response(statusCode: 200, body: #"{"models":[],"\u006dodels":[]}"#)
+        }
+
+        let status = await backend.healthCheck()
+
+        guard case .unavailable(let error) = status else {
+            XCTFail("Expected malformed catalog to be unavailable")
+            return
+        }
+        XCTAssertEqual(error.code, "bad_backend_response")
+        XCTAssertFalse(error.retryable)
     }
 
     func testListModelsMergesTagsRunningAndCloudModelsWithoutRecommendedDefaults() async throws {
@@ -163,6 +431,245 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.contextWindowTokens, 8192)
         XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.kind, .chat)
         XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.contextWindowTokens, 32768)
+    }
+
+    func testListModelsRejectsDuplicateAndEscapeEquivalentKeysInTagsAndRunningCatalogs() async {
+        let cases: [(tags: String, running: String, endpoint: String)] = [
+            (#"{"models":[],"models":[]}"#, #"{"models":[]}"#, "GET /api/tags"),
+            (#"{"models":[],"\u006dodels":[]}"#, #"{"models":[]}"#, "GET /api/tags"),
+            (#"{"models":[]}"#, #"{"models":[],"models":[]}"#, "GET /api/ps"),
+            (#"{"models":[]}"#, #"{"models":[],"\u006dodels":[]}"#, "GET /api/ps"),
+        ]
+
+        for testCase in cases {
+            await assertCatalogRejected(
+                tagsBody: testCase.tags,
+                runningBody: testCase.running,
+                expectedEndpoint: testCase.endpoint
+            )
+        }
+    }
+
+    func testListModelsRejectsDuplicateExactAndCanonicalModelIdentities() async {
+        let duplicateExact = #"{"models":[{"name":"plain-model"},{"name":"plain-model"}]}"#
+        let duplicateCanonical = #"{"models":[{"name":"plain-model"},{"name":"plain-model:latest"}]}"#
+
+        for body in [duplicateExact, duplicateCanonical] {
+            await assertCatalogRejected(
+                tagsBody: body,
+                runningBody: #"{"models":[]}"#,
+                expectedEndpoint: "GET /api/tags"
+            )
+            await assertCatalogRejected(
+                tagsBody: #"{"models":[]}"#,
+                runningBody: body,
+                expectedEndpoint: "GET /api/ps"
+            )
+        }
+    }
+
+    func testListModelsKeepsByteDistinctUnicodeIdentitiesAcrossCatalogs() async throws {
+        let installedName = "caf\u{00E9}"
+        let runningName = "cafe\u{0301}"
+        var showModelIdentities: [Data] = []
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(
+                    statusCode: 200,
+                    body: "{\"models\":[{\"name\":\"\(installedName)\"}]}"
+                )
+            case "/api/ps":
+                return self.response(
+                    statusCode: 200,
+                    body: "{\"models\":[{\"name\":\"\(runningName)\"}]}"
+                )
+            case "/api/show":
+                let posted = try JSONDecoder().decode(
+                    PostedShowRequest.self,
+                    from: self.requestBodyData(from: request)
+                )
+                showModelIdentities.append(Data(posted.model.utf8))
+                return self.response(statusCode: 200, body: #"{"capabilities":["chat"]}"#)
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(
+            models.map { Data($0.id.utf8) },
+            [Data(installedName.utf8), Data(runningName.utf8)]
+        )
+        XCTAssertEqual(models.map(\.running), [false, true])
+        XCTAssertEqual(
+            showModelIdentities,
+            [Data(installedName.utf8), Data(runningName.utf8)]
+        )
+    }
+
+    func testListModelsPreservesByteDistinctUnicodeCapabilities() async throws {
+        let composedCapability = "caf\u{00E9}"
+        let decomposedCapability = "cafe\u{0301}"
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"model"}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(
+                    statusCode: 200,
+                    body: "{\"capabilities\":[\"\(composedCapability)\",\"\(decomposedCapability)\"]}"
+                )
+            default:
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(models.count, 1)
+        XCTAssertEqual(
+            models[0].capabilities.map { Data($0.utf8) },
+            [Data(composedCapability.utf8), Data(decomposedCapability.utf8)]
+        )
+    }
+
+    func testUnloadModelDoesNotMatchByteDistinctUnicodeRunningIdentity() async throws {
+        let requestedName = "caf\u{00E9}"
+        let runningName = "cafe\u{0301}"
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(
+                statusCode: 200,
+                body: "{\"models\":[{\"name\":\"\(runningName)\"}]}"
+            )
+        }
+
+        let result = try await backend.unloadModel(providerModelID: requestedName)
+
+        XCTAssertEqual(result, .alreadyAbsent(provider: .ollama, modelID: requestedName))
+        XCTAssertEqual(paths, ["/api/ps"])
+    }
+
+    func testListModelsRejectsConflictingNameAndModelIdentityAliases() async {
+        let bodies = [
+            #"{"models":[{"name":"plain-model","model":"plain-model:latest"}]}"#,
+            "{\"models\":[{\"name\":\"caf\u{00E9}\",\"model\":\"cafe\u{0301}\"}]}",
+        ]
+        for body in bodies {
+            await assertCatalogRejected(
+                tagsBody: body,
+                runningBody: #"{"models":[]}"#,
+                expectedEndpoint: "GET /api/tags"
+            )
+        }
+    }
+
+    func testListModelsAcceptsContextWindowBoundariesAndMatchingAliases() async throws {
+        let maximum = ModelInfo.maximumContextWindowTokens
+        let cases: [(body: String, expected: Int)] = [
+            (#"{"context_window_tokens":1}"#, 1),
+            ("{\"context_window_tokens\":\(maximum)}", maximum),
+            (#"{"context_window_tokens":8192,"context_length":8192,"model_info":{"llama.context_length":8192,"num_ctx":8192},"parameters":"num_ctx 8192\n"}"#, 8_192),
+        ]
+
+        for testCase in cases {
+            let model = try await modelFromShow(body: testCase.body)
+            XCTAssertEqual(model.contextWindowTokens, testCase.expected)
+        }
+    }
+
+    func testListModelsPreservesValidMissingContextWindowMetadata() async throws {
+        let model = try await modelFromShow(body: #"{"capabilities":["embedding"]}"#)
+
+        XCTAssertEqual(model.capabilities, ["embedding"])
+        XCTAssertEqual(model.kind, .embedding)
+        XCTAssertNil(model.contextWindowTokens)
+    }
+
+    func testListModelsOmitsInvalidContextMetadataAndPreservesValidCapabilities() async throws {
+        let maximum = ModelInfo.maximumContextWindowTokens
+        let invalidBodies = [
+            #"{"capabilities":["embedding"],"context_window_tokens":true}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":"8192"}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":1.5}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":16777215.9999999999}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":16777216.0000000001}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":1e999}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":9223372036854775808}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":0}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":-1}"#,
+            "{\"capabilities\":[\"embedding\"],\"context_window_tokens\":\(maximum + 1)}",
+            #"{"capabilities":["embedding"],"model_info":{"llama.context_length":null}}"#,
+            #"{"capabilities":["embedding"],"parameters":"num_ctx 8192.0\n"}"#,
+            #"{"capabilities":["embedding"],"parameters":"num_ctx 0\n"}"#,
+            "{\"capabilities\":[\"embedding\"],\"parameters\":\"num_ctx \(maximum + 1)\\n\"}",
+            #"{"capabilities":["embedding"],"parameters":"num_ctx 9223372036854775808\n"}"#,
+        ]
+
+        for body in invalidBodies {
+            let models = try await modelsFromShow(body: body)
+            guard let model = models.first else {
+                XCTFail("Expected valid capabilities to survive invalid context metadata: \(body)")
+                continue
+            }
+            XCTAssertNil(model.contextWindowTokens, "Unexpected context window for: \(body)")
+            XCTAssertEqual(model.capabilities, ["embedding"], "Capabilities changed for: \(body)")
+            XCTAssertEqual(model.kind, .embedding)
+        }
+    }
+
+    func testListModelsOmitsConflictingContextMetadataAndPreservesValidCapabilities() async throws {
+        let conflictingBodies = [
+            #"{"capabilities":["embedding"],"context_window_tokens":8192,"context_length":4096}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":16777216,"context_length":16777215.9999999999}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":8192,"model_info":{"llama.context_length":4096}}"#,
+            #"{"capabilities":["embedding"],"model_info":{"llama.context_length":8192,"general.context_length":4096}}"#,
+            #"{"capabilities":["embedding"],"model_info":{"llama.context_length":8192},"parameters":"num_ctx 4096\n"}"#,
+            #"{"capabilities":["embedding"],"parameters":"num_ctx 8192\nnum_ctx 4096\n"}"#,
+        ]
+
+        for body in conflictingBodies {
+            let model = try await modelFromShow(body: body)
+            XCTAssertNil(model.contextWindowTokens, "Unexpected context window for: \(body)")
+            XCTAssertEqual(model.capabilities, ["embedding"], "Capabilities changed for: \(body)")
+            XCTAssertEqual(model.kind, .embedding)
+        }
+    }
+
+    func testListModelsOmitsShowDetailsWithDuplicateOrEscapeEquivalentKeys() async throws {
+        let untrustedBodies = [
+            #"{"capabilities":["embedding"],"context_length":8192,"context_length":4096}"#,
+            #"{"capabilities":["embedding"],"context_length":8192,"\u0063ontext_length":4096}"#,
+            #"{"capabilities":["embedding"],"model_info":{"num_ctx":8192,"\u006eum_ctx":4096}}"#,
+            #"{"capabilities":["embedding"],"context_window_tokens":NaN}"#,
+        ]
+
+        for body in untrustedBodies {
+            let models = try await modelsFromShow(body: body)
+            XCTAssertTrue(models.isEmpty, "Untrusted model details were admitted for: \(body)")
+        }
+    }
+
+    func testListModelsExcludesShowDetailsWithInvalidCapabilities() async throws {
+        let tooManyCapabilities = (0...ModelInfo.maximumCapabilityCount)
+            .map { "\"capability-\($0)\"" }
+            .joined(separator: ",")
+        let invalidBodies = [
+            #"{"capabilities":["   "]}"#,
+            #"{"capabilities":["chat"," CHAT "]}"#,
+            "{\"capabilities\":[\"\(String(repeating: " ", count: 128))x\"]}",
+            "{\"capabilities\":[\(tooManyCapabilities)]}",
+        ]
+
+        for body in invalidBodies {
+            let models = try await modelsFromShow(body: body)
+            XCTAssertTrue(models.isEmpty, "Invalid capability metadata was admitted for: \(body)")
+        }
     }
 
     func testListModelsExposesNamespacedTagsDigestAsPersistentEmbeddingRevision() async throws {
@@ -429,6 +936,28 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(paths, ["/api/ps"])
         XCTAssertEqual(result.outcome, .alreadyAbsent)
         XCTAssertTrue(result.unloaded)
+    }
+
+    func testUnloadModelRejectsOversizedRunningCatalogBeforePosting() async {
+        let body = #"{"models":[]}"#
+        var paths: [String] = []
+        let backend = makeBackend(catalogResponseByteLimit: Data(body.utf8).count) { request in
+            paths.append(request.url?.path ?? "")
+            return self.response(statusCode: 200, body: body + " ")
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "model")
+            XCTFail("Expected oversized running catalog rejection")
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let endpoint, _) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(endpoint, "GET /api/ps")
+            XCTAssertEqual(paths, ["/api/ps"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testUnloadModelRejectsDuplicateRunningStateKeysAtInitialLookup() async {
@@ -906,6 +1435,7 @@ final class OllamaBackendTests: XCTestCase {
 
     private func makeBackend(
         unloadPollAttempts: Int = 3,
+        catalogResponseByteLimit: Int = ModelInfo.maximumCatalogResponseBytes,
         unloadSleeper: @escaping @Sendable (UInt64) async throws -> Void = { _ in },
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
     ) -> OllamaBackend {
@@ -917,8 +1447,83 @@ final class OllamaBackendTests: XCTestCase {
             baseURL: URL(string: "http://127.0.0.1:11434")!,
             session: session,
             unloadPollAttempts: unloadPollAttempts,
+            catalogResponseByteLimit: catalogResponseByteLimit,
             unloadSleeper: unloadSleeper
         )
+    }
+
+    private func assertListModelsResponseDecodingError(
+        from backend: OllamaBackend,
+        endpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await backend.listModels()
+            XCTFail("Expected catalog rejection", file: file, line: line)
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let actualEndpoint, _) = error else {
+                return XCTFail("Unexpected Ollama error: \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(actualEndpoint, endpoint, file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func assertCatalogRejected(
+        tagsBody: String,
+        runningBody: String,
+        expectedEndpoint: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: tagsBody)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: runningBody)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")", file: file, line: line)
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.listModels()
+            XCTFail("Expected catalog rejection", file: file, line: line)
+        } catch let error as OllamaBackendError {
+            guard case .responseDecoding(let endpoint, _) = error else {
+                XCTFail("Unexpected Ollama error: \(error)", file: file, line: line)
+                return
+            }
+            XCTAssertEqual(endpoint, expectedEndpoint, file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
+    private func modelFromShow(body: String) async throws -> ModelInfo {
+        let models = try await modelsFromShow(body: body)
+        return try XCTUnwrap(models.first)
+    }
+
+    private func modelsFromShow(body: String) async throws -> [ModelInfo] {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"plain-model"}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                return self.response(statusCode: 200, body: body)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+        return try await backend.listModels()
     }
 
     private func liveOllamaModelNames(path: String, session: URLSession) async throws -> [String] {
@@ -939,13 +1544,19 @@ final class OllamaBackendTests: XCTestCase {
         return lhs == rhs || canonical(lhs) == canonical(rhs)
     }
 
-    private func response(statusCode: Int, body: String) -> (HTTPURLResponse, Data) {
+    private func response(
+        statusCode: Int,
+        body: String,
+        headers: [String: String] = [:]
+    ) -> (HTTPURLResponse, Data) {
         let url = URL(string: "http://127.0.0.1:11434")!
+        var responseHeaders = ["Content-Type": "application/json"]
+        responseHeaders.merge(headers) { _, new in new }
         let response = HTTPURLResponse(
             url: url,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: responseHeaders
         )!
         return (response, Data(body.utf8))
     }
@@ -988,6 +1599,10 @@ private struct PostedChatRequest: Decodable {
 private struct PostedPullRequest: Decodable {
     var model: String
     var stream: Bool
+}
+
+private struct PostedShowRequest: Decodable {
+    var model: String
 }
 
 private struct PostedEmbedRequest: Decodable {
@@ -1076,5 +1691,49 @@ private final class SuspendingURLProtocol: URLProtocol {
 
     override func stopLoading() {
         Self.onStop?()
+    }
+}
+
+private final class SuspendingCatalogURLProtocol: URLProtocol {
+    static var onShowStart: (() -> Void)?
+    static var onStop: (() -> Void)?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "http://127.0.0.1:11434")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        switch request.url?.path {
+        case "/api/tags":
+            client?.urlProtocol(
+                self,
+                didLoad: Data(#"{"models":[{"name":"model"}]}"#.utf8)
+            )
+            client?.urlProtocolDidFinishLoading(self)
+        case "/api/ps":
+            client?.urlProtocol(self, didLoad: Data(#"{"models":[]}"#.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        case "/api/show":
+            Self.onShowStart?()
+        default:
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+        }
+    }
+
+    override func stopLoading() {
+        if request.url?.path == "/api/show" {
+            Self.onStop?()
+        }
     }
 }

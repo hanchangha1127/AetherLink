@@ -76,6 +76,13 @@ private const val MAX_DOCUMENT_REQUEST_LIMIT = 100
 private const val MAX_TRUSTED_SOURCE_GRANT_IDS = 8
 private const val MAX_CHAT_SOURCE_ATTRIBUTIONS = 8
 private const val MAX_CLIENT_CAPABILITIES = 64
+private const val MAX_MODEL_CATALOG_SIZE = 256
+private const val MAX_MODEL_IDENTITY_CODE_POINTS = 512
+private const val MAX_MODEL_QUALIFIED_ID_CODE_POINTS = 522
+private const val MAX_MODEL_CAPABILITIES = 32
+private const val MAX_MODEL_CAPABILITY_CODE_POINTS = 128
+private const val MAX_MODEL_CONTEXT_WINDOW_TOKENS = 16_777_216
+private const val MAX_MODEL_SIZE_BYTES = Long.MAX_VALUE
 private const val DEFAULT_RESEARCH_NOTEBOOK_LIST_LIMIT = 100
 private const val MAX_RESEARCH_NOTEBOOK_LIST_LIMIT = 200
 private const val MAX_RESEARCH_NOTEBOOK_CURSOR_BYTES = 512
@@ -210,6 +217,35 @@ private fun requireValidUtf8(value: String, fieldName: String) {
     require(Charsets.UTF_8.newEncoder().canEncode(value)) {
         "$fieldName must be valid UTF-8 encodable Unicode"
     }
+}
+
+private fun String.hasModelCatalogContent(): Boolean {
+    var offset = 0
+    while (offset < length) {
+        val codePoint = codePointAt(offset)
+        if (!isModelCatalogBlankCodePoint(codePoint)) {
+            return true
+        }
+        offset += Character.charCount(codePoint)
+    }
+    return false
+}
+
+private fun isModelCatalogBlankCodePoint(codePoint: Int): Boolean = when (codePoint) {
+    in 0x0009..0x000D,
+    0x0020,
+    0x0085,
+    0x00A0,
+    0x1680,
+    in 0x2000..0x200B,
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+    0xFEFF,
+    -> true
+    else -> false
 }
 
 private fun requireResearchNotebookCursor(value: String, fieldName: String) {
@@ -1039,11 +1075,19 @@ data class ModelInfoPayload(
     @SerialName("remote_model") val remoteModel: String? = null,
 ) {
     init {
-        require(id.isNotEmpty()) {
-            "model info id must be nonempty"
+        requireValidUtf8(id, "model info id")
+        require(id.hasModelCatalogContent()) {
+            "model info id must be nonblank"
         }
-        require(!name.isNullOrEmpty()) {
-            "model info name must be nonempty"
+        require(id.codePointCount(0, id.length) <= MAX_MODEL_IDENTITY_CODE_POINTS) {
+            "model info id must be at most 512 Unicode code points"
+        }
+        require(name != null && name.hasModelCatalogContent()) {
+            "model info name must be nonblank"
+        }
+        requireValidUtf8(name, "model info name")
+        require(name.codePointCount(0, name.length) <= MAX_MODEL_IDENTITY_CODE_POINTS) {
+            "model info name must be at most 512 Unicode code points"
         }
         require(backend == null || backend in MODEL_INFO_PROVIDERS) {
             "model info backend must be ollama or lm_studio"
@@ -1054,17 +1098,62 @@ data class ModelInfoPayload(
         require(modelKind == null || modelKind in MODEL_INFO_KINDS) {
             "model info model_kind must be chat or embedding"
         }
+        require(capabilities.size <= MAX_MODEL_CAPABILITIES) {
+            "model info capabilities must contain at most 32 entries"
+        }
+        capabilities.forEach { capability ->
+            requireValidUtf8(capability, "model info capabilities entry")
+            require(capability.hasModelCatalogContent()) {
+                "model info capabilities entries must be nonblank"
+            }
+            require(
+                capability.codePointCount(0, capability.length) <=
+                    MAX_MODEL_CAPABILITY_CODE_POINTS
+            ) {
+                "model info capabilities entries must be at most 128 Unicode code points"
+            }
+        }
         require(capabilities.distinct() == capabilities) {
             "model info capabilities must be unique"
+        }
+        providerModelId?.let { value ->
+            requireValidUtf8(value, "model info provider_model_id")
+            require(value.hasModelCatalogContent()) {
+                "model info provider_model_id must be nonblank"
+            }
+            require(value.codePointCount(0, value.length) <= MAX_MODEL_IDENTITY_CODE_POINTS) {
+                "model info provider_model_id must be at most 512 Unicode code points"
+            }
+        }
+        qualifiedId?.let { value ->
+            requireValidUtf8(value, "model info qualified_id")
+            require(value.hasModelCatalogContent()) {
+                "model info qualified_id must be nonblank"
+            }
+            require(value.codePointCount(0, value.length) <= MAX_MODEL_QUALIFIED_ID_CODE_POINTS) {
+                "model info qualified_id must be at most 522 Unicode code points"
+            }
         }
         require(source == null || source in MODEL_INFO_SOURCES) {
             "model info source must be local or cloud"
         }
-        require(sizeBytes == null || sizeBytes >= 0) {
-            "model info size_bytes must be nonnegative"
+        require(sizeBytes == null || sizeBytes in 0..MAX_MODEL_SIZE_BYTES) {
+            "model info size_bytes must be between 0 and 9223372036854775807"
         }
-        require(contextWindowTokens == null || contextWindowTokens > 0) {
-            "model info context_window_tokens must be positive"
+        require(
+            contextWindowTokens == null ||
+                contextWindowTokens in 1..MAX_MODEL_CONTEXT_WINDOW_TOKENS
+        ) {
+            "model info context_window_tokens must be between 1 and 16777216"
+        }
+        remoteModel?.let { value ->
+            requireValidUtf8(value, "model info remote_model")
+            require(value.hasModelCatalogContent()) {
+                "model info remote_model must be nonblank"
+            }
+            require(value.codePointCount(0, value.length) <= MAX_MODEL_IDENTITY_CODE_POINTS) {
+                "model info remote_model must be at most 512 Unicode code points"
+            }
         }
         requireProtocolDateTime(modifiedAt, "model info modified_at")
     }
@@ -1073,7 +1162,13 @@ data class ModelInfoPayload(
 @Serializable
 data class ModelsResultPayload(
     val models: List<ModelInfoPayload>,
-)
+) {
+    init {
+        require(models.size <= MAX_MODEL_CATALOG_SIZE) {
+            "models.result models must contain at most 256 entries"
+        }
+    }
+}
 
 @Serializable
 data class ModelPullPayload(

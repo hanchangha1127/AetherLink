@@ -20,6 +20,7 @@ DECISION_PATH = REVIEW_ROOT / "decision-v1.json"
 DECISION_MARKDOWN_PATH = REVIEW_ROOT / "decision-v1.md"
 CURRENT_HANDOFF_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v4.json"
 CURRENT_HANDOFF_MARKDOWN_PATH = ROOT / "docs/security-hardening/production-p2p-nat-v1/implementation/handoff-v4.md"
+PHASE_A_PROGRESS_PATH = REVIEW_ROOT / "phase-a/progress-v1.json"
 HANDOFF_SHA256 = "07a45cd49f6c42fe9c4ad722d78a0bf7595b0d38a0d88287d2e0ceeb94e4513c"
 GENERATED_ARTIFACT_SHA256 = {
     REVIEW_PATH: "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62",
@@ -28,6 +29,7 @@ GENERATED_ARTIFACT_SHA256 = {
     DECISION_MARKDOWN_PATH: "95ecd696a1617989e5f354e76fb58f8cc59aa40b69ed110c7af9a883bee4b7d9",
     CURRENT_HANDOFF_PATH: "b4ecfb30491320383e7ac19cd96fdd7601b91b897bb0fa2019eba187d30509dd",
     CURRENT_HANDOFF_MARKDOWN_PATH: "9d185df0d11b49bcdbd1fe0e623d17f28ca6b41272830a72f9ae2e104e108187",
+    PHASE_A_PROGRESS_PATH: "3e0d98c2c03e97f7f16e63cca9c545553234ab05ff7d233bae607e09f13738a3",
 }
 
 DECISION_ORDER = (
@@ -796,7 +798,11 @@ def main() -> int:
     except (OSError, UnicodeError, ReviewValidationError) as error:
         print(f"P2P/NAT controlled-spike review check failed: {error}", file=sys.stderr)
         return 1
-    print("P2P/NAT controlled-spike approval passed (4 recommendations approved for phase A; handoff-v4 closed; socket gate closed)")
+    print(
+        "P2P/NAT controlled-spike approval passed "
+        "(4 recommendations approved for phase A; handoff-v4 closed; "
+        "progress-v1 blocked incomplete; socket gate closed)"
+    )
     return 0
 
 

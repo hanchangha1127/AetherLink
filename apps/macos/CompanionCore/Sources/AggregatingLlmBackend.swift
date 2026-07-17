@@ -234,8 +234,15 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         var models: [ModelInfo] = []
         var firstError: Error?
         for backend in orderedBackends {
+            try Task.checkCancellation()
             do {
-                models.append(contentsOf: try await backend.listModels())
+                let providerModels = try await backend.listModels()
+                try Task.checkCancellation()
+                models.append(contentsOf: providerModels)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled {
+                throw CancellationError()
             } catch {
                 if firstError == nil {
                     firstError = error
