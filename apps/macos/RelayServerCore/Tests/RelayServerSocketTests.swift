@@ -132,6 +132,51 @@ final class RelayIdentityBoundSocketTests: XCTestCase {
         XCTAssertEqual(receiveAttempts, 1)
     }
 
+    func testRawBufferWriterPreservesPartialSendAndInterruptSemantics() {
+        let payload = (0..<17).map { UInt8($0) }
+        var attempts = 0
+        var requestedByteCounts: [Int] = []
+        var acceptedBytes: [UInt8] = []
+
+        let wroteAll = payload.withUnsafeBytes { rawBuffer in
+            relayWriteAll(rawBuffer: rawBuffer) { baseAddress, byteCount in
+                attempts += 1
+                requestedByteCounts.append(byteCount)
+                if attempts == 1 {
+                    errno = EINTR
+                    return -1
+                }
+                let acceptedByteCount = min(byteCount, attempts == 2 ? 3 : 5)
+                acceptedBytes.append(contentsOf: UnsafeRawBufferPointer(
+                    start: baseAddress,
+                    count: acceptedByteCount
+                ))
+                return acceptedByteCount
+            }
+        }
+
+        XCTAssertTrue(wroteAll)
+        XCTAssertEqual(requestedByteCounts, [17, 17, 14, 9, 4])
+        XCTAssertEqual(acceptedBytes, payload)
+    }
+
+    func testRawBufferWriterPreservesBrokenPipeAndConnectionResetSemantics() {
+        let payload: [UInt8] = [0x41]
+        for expectedError in [EPIPE, ECONNRESET] {
+            var attempts = 0
+            let wroteAll = payload.withUnsafeBytes { rawBuffer in
+                relayWriteAll(rawBuffer: rawBuffer) { _, _ in
+                    attempts += 1
+                    errno = expectedError
+                    return -1
+                }
+            }
+
+            XCTAssertFalse(wroteAll)
+            XCTAssertEqual(attempts, 1)
+        }
+    }
+
     func testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability() throws {
         let logCapture = SocketReasonLogCapture()
         var inspectedServer: RelayServer?
@@ -897,10 +942,18 @@ final class RelayIdentityBoundSocketTests: XCTestCase {
         try write(clientHandshake(relayID: second.relayID), socket: secondClient)
         try assertReadyPair(runtime: secondRuntime, client: secondClient)
 
-        try write("first-active-bridge\n", socket: firstRuntime)
-        XCTAssertEqual(try readLine(socket: firstClient), "first-active-bridge\n")
-        try write("reserved-counterpart-bridge\n", socket: secondClient)
-        XCTAssertEqual(try readLine(socket: secondRuntime), "reserved-counterpart-bridge\n")
+        try assertRelayPayloads(
+            from: firstRuntime,
+            to: firstClient,
+            seed: 0x11,
+            label: "runtime-to-client"
+        )
+        try assertRelayPayloads(
+            from: secondClient,
+            to: secondRuntime,
+            seed: 0xa7,
+            label: "client-to-runtime"
+        )
 
         let metrics = try waitForSourceQuotaMetrics(server) {
             $0.counterpartCandidatesConfirmedTotal == 1 &&
@@ -2642,6 +2695,69 @@ final class RelayIdentityBoundSocketTests: XCTestCase {
             }
             guard sent > 0 else { throw SocketTestError.io }
             offset += sent
+        }
+    }
+
+    private func write(_ bytes: [UInt8], socket: Int32) throws {
+        try bytes.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            var offset = 0
+            while offset < rawBuffer.count {
+                let sent = Darwin.send(
+                    socket,
+                    baseAddress.advanced(by: offset),
+                    rawBuffer.count - offset,
+                    0
+                )
+                if sent < 0 && errno == EINTR {
+                    continue
+                }
+                guard sent > 0 else { throw SocketTestError.io }
+                offset += sent
+            }
+        }
+    }
+
+    private func readExactly(byteCount: Int, socket: Int32) throws -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        var offset = 0
+        while offset < byteCount {
+            let received = bytes.withUnsafeMutableBytes { rawBuffer in
+                Darwin.recv(
+                    socket,
+                    rawBuffer.baseAddress?.advanced(by: offset),
+                    byteCount - offset,
+                    0
+                )
+            }
+            if received < 0 && errno == EINTR {
+                continue
+            }
+            guard received > 0 else { throw SocketTestError.io }
+            offset += received
+        }
+        return bytes
+    }
+
+    private func assertRelayPayloads(
+        from source: Int32,
+        to destination: Int32,
+        seed: UInt8,
+        label: String
+    ) throws {
+        for byteCount in [1, 64 * 1024, 64 * 1024 + 1] {
+            let payload = (0..<byteCount).map { index in
+                UInt8(truncatingIfNeeded: Int(seed) + index * 31)
+            }
+            try write(payload, socket: source)
+            let received = try readExactly(byteCount: byteCount, socket: destination)
+
+            XCTAssertEqual(received, payload, "\(label) byte_count=\(byteCount)")
+            XCTAssertEqual(
+                Data(SHA256.hash(data: Data(received))),
+                Data(SHA256.hash(data: Data(payload))),
+                "\(label) digest byte_count=\(byteCount)"
+            )
         }
     }
 

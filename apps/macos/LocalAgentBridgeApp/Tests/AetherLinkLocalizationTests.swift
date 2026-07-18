@@ -332,6 +332,58 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testLocalizedStringReflectsConsecutiveRuntimeLanguageChangesAndKeepsKeyFallback() {
+        let previousLanguage = UserDefaults.standard.string(forKey: AetherLinkAppLanguageStorageKey)
+        defer {
+            if let previousLanguage {
+                UserDefaults.standard.set(previousLanguage, forKey: AetherLinkAppLanguageStorageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AetherLinkAppLanguageStorageKey)
+            }
+        }
+
+        let missingKey = "AetherLink localization cache missing key probe"
+        let sequence: [(languageTag: String, expectedLanguageTitle: String)] = [
+            ("en", "Language"),
+            ("ko", "언어"),
+            ("ja", "言語"),
+            ("zh-Hans", "语言"),
+            ("fr", "Langue"),
+            ("ko", "언어"),
+            ("en", "Language"),
+        ]
+
+        for step in sequence {
+            UserDefaults.standard.set(step.languageTag, forKey: AetherLinkAppLanguageStorageKey)
+            XCTAssertEqual(AetherLinkAppLanguage.selected.rawValue, step.languageTag)
+            XCTAssertEqual(
+                NSLocalizedString("Language", comment: ""),
+                step.expectedLanguageTitle,
+                step.languageTag
+            )
+            XCTAssertEqual(
+                NSLocalizedString(missingKey, comment: ""),
+                missingKey,
+                step.languageTag
+            )
+        }
+    }
+
+    func testLocalizedBundleCacheResolvesEachSupportedLanguageOnce() {
+        var resolutionCounts: [AetherLinkAppLanguage: Int] = [:]
+
+        let cache = makeAetherLinkLocalizedBundleCache { language in
+            resolutionCounts[language, default: 0] += 1
+            return Bundle.main
+        }
+
+        XCTAssertEqual(cache.count, AetherLinkAppLanguage.allCases.count)
+        for language in AetherLinkAppLanguage.allCases {
+            XCTAssertEqual(resolutionCounts[language], 1, language.rawValue)
+            XCTAssertTrue(cache[language] === Bundle.main, language.rawValue)
+        }
+    }
+
     func testLocalizedVisibleAnchorsAcrossInitialLanguages() {
         let expectations: [(String, [String: String])] = [
             (

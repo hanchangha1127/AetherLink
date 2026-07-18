@@ -13,8 +13,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_ROOT = ROOT / "docs/security-hardening/production-relay-v1"
 EVIDENCE_COLLECTION_SHA256 = (
-    "08b0e039f20c9a50c0252e35c7e5f82507a53c7d1e0678a16724eb3d5ac691f1"
+    "ca0f77f0ae8781e8492d7cca909a69651a8348e130240f1d491687da37774586"
 )
+EVIDENCE_BASE_REVISION = "abd638482ea01d2b5f4d38eb78be04f734814c71"
 EXPECTED_EVIDENCE_PATHS = {
     "apps/macos/CompanionCore/Sources/RemoteRelayAllocationClient.swift",
     "apps/macos/Protocol/Sources/RelaySessionCrypto.swift",
@@ -317,6 +318,7 @@ def validate_json(artifact_count: int) -> tuple[dict[str, object], list[Path]]:
     expected_source_fields = {
         "collectionSha256": EVIDENCE_COLLECTION_SHA256,
         "artifactCount": artifact_count,
+        "targetRevision": EVIDENCE_BASE_REVISION,
         "sourceDrift": "present",
     }
     for field, expected in expected_source_fields.items():
@@ -559,6 +561,7 @@ def validate_documents(referenced_paths: list[Path]) -> None:
         {
             "Source Identity": (
                 EVIDENCE_COLLECTION_SHA256,
+                EVIDENCE_BASE_REVISION,
                 "17 source/schema files",
                 "phone is disconnected",
             ),
@@ -568,6 +571,16 @@ def validate_documents(referenced_paths: list[Path]) -> None:
                 "RelaySourceQuotaLimiter.swift",
                 "RelayWaitingPeerPolicy.swift",
                 "RelayServer.swift",
+                "RelayServer.swift:327",
+                "RelayServer.swift:811",
+                "RelaySourceQuotaLimiter.swift:181",
+                "RelaySourceQuotaLimiter.swift:316",
+                "RelayMatcher.swift:576",
+                "RelayServer.swift:1101",
+                "RelayWaitingPeerPolicy.swift:134",
+                "RelayMatcher.swift:455",
+                "RelayMatcher.swift:579",
+                "RelayServer.swift:483",
             ),
             "Evidence Limits": (
                 "in-process, restart-local",

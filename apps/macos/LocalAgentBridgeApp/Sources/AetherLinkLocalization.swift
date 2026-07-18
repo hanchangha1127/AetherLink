@@ -113,8 +113,21 @@ enum AetherLinkAppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-func NSLocalizedString(_ key: String, comment: String) -> String {
-    let language = AetherLinkAppLanguage.selected
+typealias AetherLinkLocalizedBundleResolver = (AetherLinkAppLanguage) -> Bundle?
+
+func makeAetherLinkLocalizedBundleCache(
+    resolvingWith resolver: AetherLinkLocalizedBundleResolver
+) -> [AetherLinkAppLanguage: Bundle] {
+    var bundles: [AetherLinkAppLanguage: Bundle] = [:]
+    for language in AetherLinkAppLanguage.allCases {
+        if let bundle = resolver(language) {
+            bundles[language] = bundle
+        }
+    }
+    return bundles
+}
+
+private let aetherLinkLocalizedBundles = makeAetherLinkLocalizedBundleCache { language in
     let resourceCandidates = [language.localeIdentifier, language.localeIdentifier.lowercased()]
     for resourceName in resourceCandidates {
         if let localizedBundleURL = Bundle.module.url(
@@ -122,8 +135,16 @@ func NSLocalizedString(_ key: String, comment: String) -> String {
             withExtension: "lproj"
         ),
            let localizedBundle = Bundle(url: localizedBundleURL) {
-            return localizedBundle.localizedString(forKey: key, value: key, table: nil)
+            return localizedBundle
         }
+    }
+    return nil
+}
+
+func NSLocalizedString(_ key: String, comment: String) -> String {
+    let language = AetherLinkAppLanguage.selected
+    if let localizedBundle = aetherLinkLocalizedBundles[language] {
+        return localizedBundle.localizedString(forKey: key, value: key, table: nil)
     }
     return Bundle.module.localizedString(forKey: key, value: key, table: nil)
 }

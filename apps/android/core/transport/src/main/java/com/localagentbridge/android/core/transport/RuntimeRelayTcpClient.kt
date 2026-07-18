@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
@@ -162,8 +163,7 @@ class RuntimeRelayTcpClient(
             sendMutex.withLock {
                 try {
                     val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
-                    val frame = codec.encodeFrameBody(framedBody)
-                    socket.outputStream.write(frame)
+                    socket.outputStream.writeProtocolFrameBody(framedBody)
                     socket.outputStream.flush()
                 } catch (failure: Throwable) {
                     close()
@@ -236,6 +236,20 @@ class RuntimeRelayTcpClient(
             val ephemeralKey: String,
         )
     }
+}
+
+internal fun OutputStream.writeProtocolFrameBody(body: ByteArray) {
+    require(body.size in 1..ProtocolCodec.MAX_FRAME_BYTES) { "Invalid frame body length: ${body.size}" }
+    val size = body.size
+    write(
+        byteArrayOf(
+            (size ushr 24).toByte(),
+            (size ushr 16).toByte(),
+            (size ushr 8).toByte(),
+            size.toByte(),
+        ),
+    )
+    write(body)
 }
 
 fun interface RelayClientRegistrationAuthorizer {

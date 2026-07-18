@@ -664,7 +664,12 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             throw SQLiteRuntimeChatEventStoreError("Runtime chat SQLite event already exists: \(sanitized.id)")
         }
         try insertEventUnlocked(sanitized, database: database, skipExisting: false)
-        try rebuildSearchIndexUnlocked(database)
+        let validatedEvents = try readEventsUnlocked(database)
+        try refreshSearchIndexUnlocked(
+            database,
+            affectedKeys: [RuntimeChatFTSSessionKey(event: sanitized)],
+            validatedEvents: validatedEvents
+        )
         try deleteSemanticEmbeddingsUnlocked(
             database,
             ownerDeviceID: sanitized.ownerDeviceID.sqliteNormalizedOwnerDeviceID,
@@ -687,7 +692,12 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
             }
             try insertEventUnlocked(event, database: database, skipExisting: false)
         }
-        try rebuildSearchIndexUnlocked(database)
+        let validatedEvents = try readEventsUnlocked(database)
+        try refreshSearchIndexUnlocked(
+            database,
+            affectedKeys: Set(sanitizedEvents.map(RuntimeChatFTSSessionKey.init(event:))),
+            validatedEvents: validatedEvents
+        )
         for event in sanitizedEvents {
             try deleteSemanticEmbeddingsUnlocked(
                 database,
@@ -1143,28 +1153,82 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
     private func rebuildSearchIndexUnlocked(_ database: OpaquePointer) throws {
         try Self.execute(database, "DELETE FROM runtime_chat_session_fts")
         let events = try readEventsUnlocked(database)
-        let ownerDeviceIDs = Array(Set(events.map(\.ownerDeviceID)))
-        for ownerDeviceID in ownerDeviceIDs {
-            let ownerEvents = events.filter { $0.ownerDeviceID == ownerDeviceID }
-            let sessions = try JSONLRuntimeChatEventStore.sessions(
-                from: ownerEvents,
-                limit: Int.max,
-                includeArchived: true
+        let eventsByKey = searchEventsByKey(events)
+        for key in Self.sortedSearchKeys(eventsByKey.keys) {
+            try insertSearchRowUnlocked(
+                database,
+                key: key,
+                events: eventsByKey[key] ?? []
             )
-            for session in sessions {
-                let messages = JSONLRuntimeChatEventStore.messages(
-                    from: ownerEvents,
-                    sessionID: session.sessionID,
-                    limit: Int.max
-                )
-                try insertSearchRowUnlocked(
-                    database,
-                    ownerDeviceID: ownerDeviceID,
-                    session: session,
-                    messages: messages
-                )
-            }
         }
+    }
+
+    private func refreshSearchIndexUnlocked(
+        _ database: OpaquePointer,
+        affectedKeys: Set<RuntimeChatFTSSessionKey>,
+        validatedEvents: [RuntimeChatStoredEvent]
+    ) throws {
+        guard !affectedKeys.isEmpty else { return }
+        let eventsByKey = searchEventsByKey(validatedEvents, including: affectedKeys)
+        for key in Self.sortedSearchKeys(affectedKeys) {
+            try deleteSearchRowUnlocked(
+                database,
+                ownerDeviceID: key.ownerDeviceID,
+                sessionID: key.sessionID
+            )
+            try insertSearchRowUnlocked(
+                database,
+                key: key,
+                events: eventsByKey[key] ?? []
+            )
+        }
+    }
+
+    private func searchEventsByKey(
+        _ events: [RuntimeChatStoredEvent],
+        including includedKeys: Set<RuntimeChatFTSSessionKey>? = nil
+    ) -> [RuntimeChatFTSSessionKey: [RuntimeChatStoredEvent]] {
+        var eventsByKey: [RuntimeChatFTSSessionKey: [RuntimeChatStoredEvent]] = [:]
+        for event in events {
+            let key = RuntimeChatFTSSessionKey(event: event)
+            guard includedKeys?.contains(key) ?? true else { continue }
+            eventsByKey[key, default: []].append(event)
+        }
+        return eventsByKey
+    }
+
+    private static func sortedSearchKeys<S: Sequence>(
+        _ keys: S
+    ) -> [RuntimeChatFTSSessionKey] where S.Element == RuntimeChatFTSSessionKey {
+        keys.sorted { lhs, rhs in
+            let lhsOwner = lhs.ownerDeviceID ?? ""
+            let rhsOwner = rhs.ownerDeviceID ?? ""
+            if lhsOwner != rhsOwner { return lhsOwner < rhsOwner }
+            return lhs.sessionID < rhs.sessionID
+        }
+    }
+
+    private func insertSearchRowUnlocked(
+        _ database: OpaquePointer,
+        key: RuntimeChatFTSSessionKey,
+        events: [RuntimeChatStoredEvent]
+    ) throws {
+        guard let session = try JSONLRuntimeChatEventStore.sessions(
+            from: events,
+            limit: 1,
+            includeArchived: true
+        ).first else { return }
+        let messages = JSONLRuntimeChatEventStore.messages(
+            from: events,
+            sessionID: key.sessionID,
+            limit: Int.max
+        )
+        try insertSearchRowUnlocked(
+            database,
+            ownerDeviceID: key.ownerDeviceID,
+            session: session,
+            messages: messages
+        )
     }
 
     private func insertSearchRowUnlocked(
@@ -2267,6 +2331,16 @@ private enum RuntimeChatLegacyCompactionTiming: Equatable {
 private struct RuntimeChatRetentionSessionKey: Hashable {
     var ownerDeviceID: String?
     var sessionID: String
+}
+
+private struct RuntimeChatFTSSessionKey: Hashable {
+    var ownerDeviceID: String?
+    var sessionID: String
+
+    init(event: RuntimeChatStoredEvent) {
+        ownerDeviceID = event.ownerDeviceID.sqliteNormalizedOwnerDeviceID
+        sessionID = event.sessionID
+    }
 }
 
 private struct RuntimeChatRetentionCandidate {

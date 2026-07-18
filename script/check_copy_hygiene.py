@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import errno
@@ -10,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import stat
 import sys
 import xml.etree.ElementTree as ET
@@ -7567,7 +7569,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             runtime_store_text,
             runtime_store_path,
-            "val relaySecret = pending.relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "val cleanRelaySecret = relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)",
             "Android pending relay secret-store writes must not trim invalid relay secrets into handles.",
         ),
         (
@@ -32429,7 +32431,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android unreachable route-refresh QR retention regression.",
         ),
         (
-            "RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+            "RuntimeClientViewModelTest.relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
             "Default no-device gate must run the Android relay route-level preflight failure regression.",
         ),
         (
@@ -34645,7 +34647,17 @@ def code_tokens_without_comments_or_literals(source: str) -> str:
 
         if string_delimiter is not None:
             closing = string_delimiter * (3 if triple_quoted else 1)
-            if source.startswith(closing, index):
+            if triple_quoted and source[index] == string_delimiter:
+                run_end = index + 1
+                while run_end < len(source) and source[run_end] == string_delimiter:
+                    run_end += 1
+                delimiter_run = source[index:run_end]
+                hide(delimiter_run)
+                index = run_end
+                if len(delimiter_run) >= len(closing):
+                    string_delimiter = None
+                    triple_quoted = False
+            elif source.startswith(closing, index):
                 hide(closing)
                 index += len(closing)
                 string_delimiter = None
@@ -34685,14 +34697,20 @@ def code_tokens_without_comments_or_literals(source: str) -> str:
 
 def cross_codebase_optimization_guard_failures() -> list[str]:
     failures: list[str] = []
-    scanner_probe = """let live = 1
+    scanner_probe = '''let live = 1
 /* outer guardedToken /* nested guardedToken */ guardedToken */
-let quoted = \"guardedToken\"
-let multiline = \"\"\"guardedToken\"\"\"
+let quoted = "guardedToken"
+let multiline = """guardedToken"""
+let quotedRaw = """"guardedToken""""
+let afterQuotedRaw = 2
 // guardedToken
-"""
+'''
     scanner_output = code_tokens_without_comments_or_literals(scanner_probe)
-    if "let live = 1" not in scanner_output or "guardedToken" in scanner_output:
+    if (
+        "let live = 1" not in scanner_output
+        or "let afterQuotedRaw = 2" not in scanner_output
+        or "guardedToken" in scanner_output
+    ):
         failures.append("Cross-codebase optimization lexical scanner self-test failed.")
 
     code_regions = (
@@ -34778,6 +34796,151 @@ let multiline = \"\"\"guardedToken\"\"\"
             ),
             "Android exact-buffer frame regression",
         ),
+        (
+            "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
+            "    private func appendUnlocked(_ event: RuntimeChatStoredEvent, database: OpaquePointer) throws {",
+            "    private func appendBatchUnlocked(",
+            (
+                "let validatedEvents = try readEventsUnlocked(database)",
+                "try refreshSearchIndexUnlocked(",
+                "affectedKeys: [RuntimeChatFTSSessionKey(event: sanitized)]",
+            ),
+            "SQLite affected-session FTS append integration",
+        ),
+        (
+            "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift",
+            "    private func refreshSearchIndexUnlocked(",
+            "    private func searchEventsByKey(",
+            (
+                "guard !affectedKeys.isEmpty else { return }",
+                "let eventsByKey = searchEventsByKey(validatedEvents, including: affectedKeys)",
+                "try deleteSearchRowUnlocked(",
+                "try insertSearchRowUnlocked(",
+            ),
+            "SQLite affected-session FTS refresh implementation",
+        ),
+        (
+            "apps/macos/CompanionCore/Tests/SQLiteRuntimeChatEventStoreTests.swift",
+            "    func testSQLiteAppendRewritesOnlyAffectedFTSSessionRow() throws {",
+            "    func testSQLiteStoreUsesFTSSearchWithRankSnippetsAndRuntimeContextExclusion() throws {",
+            (
+                "func testSQLiteIncrementalFTSMatchesJSONLForSingleAndBatchMultiSessionUpdates() throws",
+                "func testSQLiteIncrementalAppendRejectsUnrelatedCorruptEventAndRollsBack() throws",
+                "XCTAssertEqual(try rawFTSSessionRowIDs(at: databaseURL), rowIDsBefore)",
+            ),
+            "SQLite incremental FTS regressions",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/AetherLinkLocalization.swift",
+            "typealias AetherLinkLocalizedBundleResolver = (AetherLinkAppLanguage) -> Bundle?",
+            "func localizedTrustedDeviceCount(_ count: Int) -> String {",
+            (
+                "func makeAetherLinkLocalizedBundleCache(",
+                "private let aetherLinkLocalizedBundles = makeAetherLinkLocalizedBundleCache",
+                "if let localizedBundle = aetherLinkLocalizedBundles[language]",
+            ),
+            "macOS localized Bundle cache implementation",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift",
+            "    func testLocalizedStringReflectsConsecutiveRuntimeLanguageChangesAndKeepsKeyFallback() {",
+            "    func testLocalizedVisibleAnchorsAcrossInitialLanguages() {",
+            (
+                "func testLocalizedBundleCacheResolvesEachSupportedLanguageOnce()",
+                "resolutionCounts[language, default: 0] += 1",
+                "XCTAssertEqual(resolutionCounts[language], 1, language.rawValue)",
+            ),
+            "macOS localized Bundle cache regressions",
+        ),
+        (
+            "apps/macos/RelayServerCore/Sources/RelayServer.swift",
+            "func relayWriteAll(",
+            "private func shortID(_ value: String) -> String {",
+            (
+                "rawBuffer: UnsafeRawBufferPointer",
+                "writeAll(socket: socket, rawBuffer: rawBuffer)",
+                "buffer.withUnsafeMutableBytes",
+                "buffer.withUnsafeBytes",
+            ),
+            "relay direct raw-buffer forwarding implementation",
+        ),
+        (
+            "apps/macos/RelayServerCore/Tests/RelayServerSocketTests.swift",
+            "    func testRawBufferWriterPreservesPartialSendAndInterruptSemantics() {",
+            "    func testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability() throws {",
+            (
+                "func testRawBufferWriterPreservesBrokenPipeAndConnectionResetSemantics()",
+                "XCTAssertEqual(acceptedBytes, payload)",
+                "XCTAssertFalse(wroteAll)",
+            ),
+            "relay raw-buffer write regressions",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt",
+            "class RuntimeLocalStore(",
+            "@Serializable\ndata class PersistedRuntimeData(",
+            (
+                "val previousPendingSecretRef = preferences.getString(STORE_KEY, null)",
+                "val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()",
+                "json.encodeToString(dataForDisk)",
+            ),
+            "Android runtime local-store persistence optimization",
+        ),
+        (
+            "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeLocalStoreTest.kt",
+            "class RuntimeLocalStoreTest {",
+            "    private fun runtimeDataWithPendingRelay(",
+            (
+                "fun emptyAndCorruptStoresLoadAsDefaultsAndRemainWritable()",
+                "fun processRecreationLoadsPendingSecretAndReplacementRemovesPreviousHandle()",
+                "fun interleavedStoreInstancesRemoveTheLatestPersistedSecretReference()",
+                "fun saveWritesOneSanitizedDiskProjectionWithoutRuntimeMessagesOrPlaintextSecret()",
+            ),
+            "Android runtime local-store regressions",
+        ),
+        (
+            "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeTransportClient.kt",
+            "    override suspend fun send(envelope: ProtocolEnvelope) {",
+            "    override suspend fun receive(): ProtocolEnvelope {",
+            (
+                "val frame = codec.encode(envelope)",
+                "active.outputStream.write(frame)",
+            ),
+            "Android direct transport atomic frame write",
+        ),
+        (
+            "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClient.kt",
+            "internal fun OutputStream.writeProtocolFrameBody(body: ByteArray) {",
+            "fun interface RuntimeRelaySocketFactory",
+            (
+                "require(body.size in 1..ProtocolCodec.MAX_FRAME_BYTES)",
+                "write(body)",
+            ),
+            "Android relay protocol frame writer",
+        ),
+        (
+            "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeTransportClientTest.kt",
+            "class RuntimeTransportClientTest {",
+            "    fun queuedSendDoesNotCrossReconnectOnSameClientObject() = runBlocking {",
+            (
+                "fun sendWritesOneCompleteProtocolFrame()",
+                "fun concurrentSendsRemainSerializedAsCompleteProtocolFrames()",
+                "fun frameWriteFailurePropagatesWithoutClosingDirectSocketOrWritingAPrefix()",
+            ),
+            "Android direct atomic frame writer regressions",
+        ),
+        (
+            "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClientTest.kt",
+            "class RuntimeRelayTcpClientTest {",
+            "    fun initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames() = runBlocking {",
+            (
+                "fun relayFrameWriterEmitsExactPrefixThenBodyAtBoundarySizes()",
+                "fun relayFrameWriterRejectsEmptyAndOversizedBodiesBeforeWriting()",
+                "assertTrue(socket.isClosed)",
+                "assertEquals(4, socket.successfulWriteLengths.last())",
+            ),
+            "Android relay split frame failure regression",
+        ),
     )
 
     for relative_path, start, end, snippets, label in code_regions:
@@ -34814,22 +34977,29 @@ let multiline = \"\"\"guardedToken\"\"\"
         "docs/progress.md": (
             "2026-07-18 Cross-Codebase Optimization Pass",
             "complete disjoint inventory of 302 tracked first-party code files",
+            "affected-session FTS refresh",
+            "Gradle invocations fall from 11 to 5",
         ),
         "docs/qa-evidence.md": (
             "2026-07-18 Cross-Codebase Optimization No-Device Checklist",
             "Final aggregate no-device verification and post-change wall-time comparison",
+            "730 unique suite-subsumed named selectors",
         ),
         "docs/roadmap.md": (
             "Cross-Codebase Optimization Pass",
             "coalesce Android draft and streaming whole-state persistence",
+            "affected-session incremental FTS refresh",
         ),
         "docs/architecture.md": (
             "Hot-Path Efficiency Invariants",
             "sequence-specific nonce and AAD suffixes are still rebuilt for every frame",
+            "affected owner/session keys",
+            "prefix and body are written separately",
         ),
         "docs/security.md": (
             "Optimization Security Invariants",
             "no derived key is persisted or shared across sessions",
+            "Full event-log validation remains inside each SQLite append transaction",
         ),
     }
 
@@ -34849,6 +35019,73 @@ let multiline = \"\"\"guardedToken\"\"\"
     if android_codec_path.exists() and "ByteArrayOutputStream" in android_codec_path.read_text(encoding="utf-8"):
         failures.append(
             f"{android_codec_path.relative_to(ROOT)}: frame reads must not restore ByteArrayOutputStream staging."
+        )
+
+    relay_server_path = ROOT / "apps/macos/RelayServerCore/Sources/RelayServer.swift"
+    if relay_server_path.exists():
+        relay_server_text = relay_server_path.read_text(encoding="utf-8", errors="replace")
+        if "Data(buffer.prefix(count))" in relay_server_text:
+            failures.append(
+                f"{relay_server_path.relative_to(ROOT)}: direct relay forwarding must not restore per-chunk Data copies."
+            )
+
+    sqlite_chat_store_path = ROOT / "apps/macos/CompanionCore/Sources/SQLiteRuntimeChatEventStore.swift"
+    if sqlite_chat_store_path.exists():
+        sqlite_chat_store_text = sqlite_chat_store_path.read_text(encoding="utf-8", errors="replace")
+        append_start = sqlite_chat_store_text.find("    private func appendUnlocked(")
+        insert_start = sqlite_chat_store_text.find("    @discardableResult", append_start)
+        if append_start < 0 or insert_start < 0:
+            failures.append(
+                f"{sqlite_chat_store_path.relative_to(ROOT)}: SQLite append optimization boundary is missing."
+            )
+        elif "rebuildSearchIndexUnlocked(database)" in sqlite_chat_store_text[append_start:insert_start]:
+            failures.append(
+                f"{sqlite_chat_store_path.relative_to(ROOT)}: append paths must not restore full FTS rebuilds."
+            )
+
+    runtime_local_store_path = (
+        ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
+    )
+    if runtime_local_store_path.exists():
+        runtime_local_store_text = runtime_local_store_path.read_text(encoding="utf-8", errors="replace")
+        save_start = runtime_local_store_text.find("    fun save(data: PersistedRuntimeData)")
+        store_end = runtime_local_store_text.find("\n}\n\n@Serializable", save_start)
+        if save_start < 0 or store_end < 0:
+            failures.append(
+                f"{runtime_local_store_path.relative_to(ROOT)}: Android local-store save optimization boundary is missing."
+            )
+        elif "preferences.getString(STORE_KEY, null)" not in runtime_local_store_text[save_start:store_end]:
+            failures.append(
+                f"{runtime_local_store_path.relative_to(ROOT)}: every save must re-read the latest persisted secret reference."
+            )
+        for forbidden in ("pendingSecretRefInitialized", "private var pendingSecretRef"):
+            if forbidden in runtime_local_store_text:
+                failures.append(
+                    f"{runtime_local_store_path.relative_to(ROOT)}: instance-local secret-ref caches are forbidden ({forbidden!r})."
+                )
+
+    direct_transport_path = (
+        ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeTransportClient.kt"
+    )
+    if direct_transport_path.exists():
+        direct_transport_text = direct_transport_path.read_text(encoding="utf-8", errors="replace")
+        send_start = direct_transport_text.find("    override suspend fun send(envelope: ProtocolEnvelope) {")
+        receive_start = direct_transport_text.find("    override suspend fun receive(): ProtocolEnvelope {", send_start)
+        if send_start < 0 or receive_start < 0:
+            failures.append(f"{direct_transport_path.relative_to(ROOT)}: direct send boundary is missing.")
+        elif "writeProtocolFrameBody" in direct_transport_text[send_start:receive_start]:
+            failures.append(
+                f"{direct_transport_path.relative_to(ROOT)}: direct sends must preserve one complete frame write."
+            )
+
+    relay_transport_path = (
+        ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClient.kt"
+    )
+    if relay_transport_path.exists() and "codec.encodeFrameBody(framedBody)" in relay_transport_path.read_text(
+        encoding="utf-8", errors="replace"
+    ):
+        failures.append(
+            f"{relay_transport_path.relative_to(ROOT)}: relay outbound transport must not restore combined frame allocation."
         )
 
     return failures
@@ -35144,6 +35381,77 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
             if command != full_suite_command
         ]
 
+    def active_gradle_commands(source_lines: list[str]) -> list[tuple[int, str]]:
+        return [
+            (index, command)
+            for index, command in logical_shell_lines(source_lines)
+            if command.startswith("run ./gradlew --no-daemon ")
+        ]
+
+    def gradle_command_tokens(command: str) -> list[str]:
+        try:
+            return shlex.split(command)
+        except ValueError:
+            return []
+
+    def gradle_test_selectors(command: str) -> list[str]:
+        tokens = gradle_command_tokens(command)
+        selectors: list[str] = []
+        for index, token in enumerate(tokens):
+            if token == "--tests" and index + 1 < len(tokens):
+                selectors.append(tokens[index + 1])
+        return selectors
+
+    android_full_class_tasks = {
+        "com.localagentbridge.android.AppNavigationTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.PairingQrScanResultTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.ResearchNotebookDrawerTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.core.pairing.PairingStoreTest": ":core:pairing:testDebugUnitTest",
+        "com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest": ":core:pairing:testDebugUnitTest",
+        "com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest": ":core:protocol:testDebugUnitTest",
+        "com.localagentbridge.android.core.protocol.ProtocolCodecTest": ":core:protocol:testDebugUnitTest",
+        "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest": ":core:transport:testDebugUnitTest",
+        "com.localagentbridge.android.core.transport.RuntimeTransportClientTest": ":core:transport:testDebugUnitTest",
+        "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.runtime.RuntimeLocalStoreTest": ":app:testDebugUnitTest",
+        "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest": ":app:testDebugUnitTest",
+    }
+    android_subsumed_named_counts = {
+        "com.localagentbridge.android.AppNavigationTest": 7,
+        "com.localagentbridge.android.PairingQrScanResultTest": 1,
+        "com.localagentbridge.android.core.pairing.PairingStoreTest": 3,
+        "com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest": 15,
+        "com.localagentbridge.android.core.protocol.ProtocolCodecTest": 92,
+        "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest": 17,
+        "com.localagentbridge.android.core.transport.RuntimeTransportClientTest": 1,
+        "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest": 2,
+        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest": 437,
+        "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest": 155,
+    }
+    android_subsumed_test_sources = {
+        "com.localagentbridge.android.AppNavigationTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt",
+        "com.localagentbridge.android.PairingQrScanResultTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScanResultTest.kt",
+        "com.localagentbridge.android.core.pairing.PairingStoreTest":
+            ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt",
+        "com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest":
+            ROOT / "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt",
+        "com.localagentbridge.android.core.protocol.ProtocolCodecTest":
+            ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt",
+        "com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest":
+            ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayTcpClientTest.kt",
+        "com.localagentbridge.android.core.transport.RuntimeTransportClientTest":
+            ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeTransportClientTest.kt",
+        "com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientChatSessionMutationFailureTest.kt",
+        "com.localagentbridge.android.runtime.RuntimeClientViewModelTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt",
+        "com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest":
+            ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
+    }
+
     for suite in ("AetherLinkLocalizationTests", "AetherLinkRenderSmokeTests"):
         full_suite_command = f"run swift test --filter {suite}"
         suite_commands = active_suite_commands(lines, suite)
@@ -35175,6 +35483,284 @@ def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
             failures.append(
                 f"No-device suite-subsumed guard self-test failed for an exact multiline {suite} command."
             )
+
+    gradle_commands = active_gradle_commands(lines)
+    if len(gradle_commands) != 5:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: expected 5 active Gradle invocations after "
+            f"Android suite deduplication; found {len(gradle_commands)}."
+        )
+
+    active_selectors = [
+        (line_number, command, selector)
+        for line_number, command in gradle_commands
+        for selector in gradle_test_selectors(command)
+    ]
+
+    protocol_test_root = (
+        ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol"
+    )
+    expected_protocol_inventory = {
+        "PairedClientRelayRegistrationAuthorizationTest.kt": (
+            "com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest"
+        ),
+        "ProtocolCodecTest.kt": "com.localagentbridge.android.core.protocol.ProtocolCodecTest",
+        "p2pnat/P2pNatCanonicalCodecTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.P2pNatCanonicalCodecTest"
+        ),
+        "p2pnat/P2pNatSessionCryptoVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.P2pNatSessionCryptoVectorTest"
+        ),
+        "p2pnat/P2pNatSharedVectorTest.kt": (
+            "com.localagentbridge.android.core.protocol.p2pnat.P2pNatSharedVectorTest"
+        ),
+    }
+    observed_protocol_files = {
+        path.relative_to(protocol_test_root).as_posix()
+        for path in protocol_test_root.rglob("*Test.kt")
+    }
+    if observed_protocol_files != set(expected_protocol_inventory):
+        failures.append(
+            "Android protocol test inventory changed; update the no-device unique coverage contract "
+            f"after review (expected {sorted(expected_protocol_inventory)}, "
+            f"found {sorted(observed_protocol_files)})."
+        )
+    observed_protocol_classes: set[str] = set()
+    for relative_path in observed_protocol_files:
+        source = (protocol_test_root / relative_path).read_text(encoding="utf-8")
+        package_match = re.search(r"^package\s+([A-Za-z0-9_.]+)\s*$", source, re.MULTILINE)
+        class_names = re.findall(
+            r"^(?:internal\s+)?class\s+([A-Za-z0-9_]+Test)\b",
+            source,
+            re.MULTILINE,
+        )
+        if package_match is None:
+            failures.append(f"{relative_path}: Android protocol test package declaration is missing.")
+            continue
+        observed_protocol_classes.update(
+            f"{package_match.group(1)}.{class_name}" for class_name in class_names
+        )
+    if observed_protocol_classes != set(expected_protocol_inventory.values()):
+        failures.append(
+            "Android protocol top-level test class inventory changed; update the no-device unique "
+            f"coverage contract after review (expected {sorted(expected_protocol_inventory.values())}, "
+            f"found {sorted(observed_protocol_classes)})."
+        )
+
+    protocol_task = ":core:protocol:testDebugUnitTest"
+    protocol_package = "com.localagentbridge.android.core.protocol."
+    expected_protocol_selectors = {
+        "com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest",
+        "com.localagentbridge.android.core.protocol.ProtocolCodecTest",
+        "com.localagentbridge.android.core.protocol.p2pnat.*",
+    }
+    protocol_commands = [
+        (line_number, command, gradle_test_selectors(command))
+        for line_number, command in gradle_commands
+        if protocol_task in gradle_command_tokens(command)
+    ]
+    if len(protocol_commands) != 2:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: expected exactly two protocol Gradle commands "
+            f"(focused full classes plus p2pnat); found {len(protocol_commands)}."
+        )
+    observed_protocol_selectors = [
+        selector
+        for _, _, selectors in protocol_commands
+        for selector in selectors
+        if selector.startswith(protocol_package)
+    ]
+    if Counter(observed_protocol_selectors) != Counter(expected_protocol_selectors):
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: protocol selectors must cover the unique inventory "
+            "exactly once with PairedClient, ProtocolCodec, and p2pnat.*."
+        )
+
+    focused_protocol_selectors = expected_protocol_selectors - {
+        "com.localagentbridge.android.core.protocol.p2pnat.*"
+    }
+    focused_protocol_commands = [
+        (line_number, selectors)
+        for line_number, _, selectors in protocol_commands
+        if focused_protocol_selectors.issubset(selectors)
+    ]
+    if len(focused_protocol_commands) != 1:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: PairedClient and ProtocolCodec full-class selectors "
+            "must execute together in exactly one protocol command."
+        )
+    elif set(focused_protocol_commands[0][1]) != focused_protocol_selectors:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}:{focused_protocol_commands[0][0]}: focused protocol "
+            "command must contain only the two reviewed full-class selectors."
+        )
+
+    covered_protocol_inventory: set[str] = set()
+    for selector in observed_protocol_selectors:
+        if selector == "com.localagentbridge.android.core.protocol.p2pnat.*":
+            covered_protocol_inventory.update(
+                full_class
+                for relative_path, full_class in expected_protocol_inventory.items()
+                if relative_path.startswith("p2pnat/")
+            )
+        else:
+            covered_protocol_inventory.add(selector)
+    if covered_protocol_inventory != set(expected_protocol_inventory.values()):
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: active protocol selectors do not preserve the "
+            "complete five-class test inventory."
+        )
+
+    for full_class, task in android_full_class_tasks.items():
+        full_class_occurrences = [
+            (line_number, command)
+            for line_number, command, selector in active_selectors
+            if selector == full_class
+        ]
+        if len(full_class_occurrences) != 1:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: expected exactly one active {full_class} "
+                f"full-class selector; found {len(full_class_occurrences)}."
+            )
+        elif task not in gradle_command_tokens(full_class_occurrences[0][1]):
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}:{full_class_occurrences[0][0]}: "
+                f"{full_class} must run under {task}."
+            )
+
+        for line_number, _, selector in active_selectors:
+            if selector.startswith(f"{full_class}."):
+                failures.append(
+                    f"{no_device_path.relative_to(ROOT)}:{line_number}: active named selector "
+                    f"{selector} is already covered by the required {full_class} full-class selector."
+                )
+
+    evidence_start = ": <<'ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE'"
+    evidence_end = "ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE"
+    try:
+        evidence_start_index = lines.index(evidence_start)
+        evidence_end_index = lines.index(evidence_end, evidence_start_index + 1)
+    except ValueError:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Android suite-subsumed named-selector evidence block is missing."
+        )
+        evidence_lines: list[str] = []
+    else:
+        evidence_lines = lines[evidence_start_index + 1 : evidence_end_index]
+
+    evidence_selectors = [
+        line.removeprefix("--tests ").strip()
+        for line in evidence_lines
+        if line.startswith("--tests ")
+    ]
+    expected_evidence_count = sum(android_subsumed_named_counts.values())
+    if len(evidence_selectors) != expected_evidence_count:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: expected {expected_evidence_count} Android "
+            f"suite-subsumed named-selector evidence entries; found {len(evidence_selectors)}."
+        )
+    duplicate_evidence_selectors = sorted(
+        selector for selector, count in Counter(evidence_selectors).items() if count > 1
+    )
+    if duplicate_evidence_selectors:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Android suite-subsumed named-selector evidence "
+            f"contains duplicates: {duplicate_evidence_selectors}."
+        )
+    evidence_digest = hashlib.sha256("\n".join(evidence_selectors).encode("utf-8")).hexdigest()
+    expected_evidence_digest = "aebaa4fd794131c956852fe2fc0dfebb7a15c8f343e86f913442f1c5a0e9ba9a"
+    if evidence_digest != expected_evidence_digest:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Android suite-subsumed named-selector evidence "
+            "does not match the reviewed pre-deduplication selection snapshot."
+        )
+
+    if set(android_subsumed_test_sources) != set(android_subsumed_named_counts):
+        failures.append("Android suite-subsumed source inventory does not match the reviewed class inventory.")
+    android_test_methods: dict[str, set[str]] = {}
+    junit_test_method_pattern = re.compile(
+        r"(?ms)^\s*@Test\b[^\n]*(?:\n\s*@[^\n]+)*\s*\n?\s*"
+        r"(?:(?:public|private|protected|internal|suspend|open|final)\s+)*"
+        r"fun\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("
+    )
+    for full_class, path in android_subsumed_test_sources.items():
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)}: reviewed Android test source is missing.")
+            android_test_methods[full_class] = set()
+            continue
+        source = code_tokens_without_comments_or_literals(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        android_test_methods[full_class] = set(junit_test_method_pattern.findall(source))
+
+    observed_evidence_counts = {full_class: 0 for full_class in android_subsumed_named_counts}
+    for selector in evidence_selectors:
+        owners = [
+            full_class
+            for full_class in android_subsumed_named_counts
+            if selector.startswith(f"{full_class}.")
+        ]
+        if len(owners) != 1:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: evidence selector {selector!r} is not an exact "
+                "named method under one approved full-class selector."
+            )
+            continue
+        owner = owners[0]
+        observed_evidence_counts[owner] += 1
+        method_name = selector.removeprefix(f"{owner}.")
+        if method_name not in android_test_methods.get(owner, set()):
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: evidence selector {selector!r} does not name "
+                "an @Test method in the reviewed Kotlin source."
+            )
+
+    for full_class, expected_count in android_subsumed_named_counts.items():
+        observed_count = observed_evidence_counts[full_class]
+        if observed_count != expected_count:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: expected {expected_count} suite-subsumed "
+                f"named-selector evidence entries for {full_class}; found {observed_count}."
+            )
+
+    runtime_view_model_class = "com.localagentbridge.android.runtime.RuntimeClientViewModelTest"
+    runtime_view_model_commands = [
+        (line_number, command)
+        for line_number, command, selector in active_selectors
+        if selector == runtime_view_model_class
+    ]
+    junit_check_lines = [
+        line_number
+        for line_number, command in logical_shell_lines(lines)
+        if command.startswith("run check_android_") and command.endswith("_junit")
+    ]
+    if len(runtime_view_model_commands) == 1 and junit_check_lines:
+        if runtime_view_model_commands[0][0] >= min(junit_check_lines):
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: RuntimeClientViewModelTest must execute before "
+                "the dynamic Android JUnit XML checks."
+            )
+    elif not junit_check_lines:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: dynamic Android JUnit XML checks are missing."
+        )
+
+    android_parser_sample = [
+        "run ./gradlew --no-daemon \\",
+        "  :app:testDebugUnitTest \\",
+        "  --tests com.example.ExampleTest \\",
+        "  --tests com.example.ExampleTest.namedMethod",
+        "# run ./gradlew --no-daemon :app:testDebugUnitTest --tests com.example.CommentedTest",
+        "--tests com.example.EvidenceOnlyTest.namedMethod",
+    ]
+    sample_commands = active_gradle_commands(android_parser_sample)
+    if len(sample_commands) != 1 or gradle_test_selectors(sample_commands[0][1]) != [
+        "com.example.ExampleTest",
+        "com.example.ExampleTest.namedMethod",
+    ]:
+        failures.append("No-device Android Gradle selector parser self-test failed.")
+    if "com.example.ExampleTestExtra.namedMethod".startswith("com.example.ExampleTest."):
+        failures.append("No-device Android exact class-boundary self-test failed.")
 
     return failures
 
@@ -42199,13 +42785,22 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
                 f"{no_device_path.relative_to(ROOT)}: Default no-device Swift selector must execute "
                 f"{qualified_test}."
             )
-    expected_android_authoritative_gate_line = (
-        "\trun ./gradlew --no-daemon :app:testDebugUnitTest "
-        "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest "
-        "--tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest "
-        "--tests com.localagentbridge.android.AppNavigationTest"
+    android_authoritative_selectors = (
+        "--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest",
+        "--tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest",
+        "--tests com.localagentbridge.android.AppNavigationTest",
     )
-    if expected_android_authoritative_gate_line not in no_device_text.splitlines():
+    logical_no_device_text = re.sub(r"\\\n[ \t]*", " ", no_device_text)
+    android_authoritative_commands = [
+        " ".join(line.split())
+        for line in logical_no_device_text.splitlines()
+        if line.lstrip().startswith("run ./gradlew --no-daemon ")
+    ]
+    if not any(
+        ":app:testDebugUnitTest" in command
+        and all(selector in command for selector in android_authoritative_selectors)
+        for command in android_authoritative_commands
+    ):
         failures.append(
             f"{no_device_path.relative_to(ROOT)}: Default no-device gate must keep the complete "
             "three-class Android authoritative command so both shared-fixture regressions execute."

@@ -3668,6 +3668,242 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    func testSQLiteAppendRewritesOnlyAffectedFTSSessionRow() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try store.append(RuntimeChatStoredEvent(
+            id: "incremental-affected-request",
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "incremental-affected-turn",
+            sessionID: "incremental-affected",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Affected searchable content")],
+            ownerDeviceID: "device-a"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            id: "incremental-unaffected-request",
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .request,
+            requestID: "incremental-unaffected-turn",
+            sessionID: "incremental-unaffected",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Unaffected searchable content")],
+            ownerDeviceID: "device-a"
+        ))
+        let before = try rawFTSSessionRowIDs(at: databaseURL)
+
+        try store.append(RuntimeChatStoredEvent(
+            id: "incremental-affected-delta",
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .assistantDelta,
+            requestID: "incremental-affected-turn",
+            sessionID: "incremental-affected",
+            model: "ollama:llama3.1:8b",
+            delta: "Affected follow-up",
+            ownerDeviceID: "device-a"
+        ))
+
+        let after = try rawFTSSessionRowIDs(at: databaseURL)
+        XCTAssertEqual(after.count, 2)
+        XCTAssertNotEqual(before["device-a|incremental-affected"], after["device-a|incremental-affected"])
+        XCTAssertEqual(before["device-a|incremental-unaffected"], after["device-a|incremental-unaffected"])
+        XCTAssertEqual(
+            try store.listSessions(
+                ownerDeviceID: "device-a",
+                limit: 10,
+                includeArchived: true,
+                query: "affected follow-up"
+            ).map(\.sessionID),
+            ["incremental-affected"]
+        )
+    }
+
+    func testSQLiteIncrementalFTSMatchesJSONLForSingleAndBatchMultiSessionUpdates() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let sqliteStore: any RuntimeChatEventStore = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        let jsonlStore: any RuntimeChatEventStore = JSONLRuntimeChatEventStore(fileURL: try temporaryJSONLURL())
+        let initialEvents = [
+            RuntimeChatStoredEvent(
+                id: "incremental-alpha-request",
+                timestamp: Date(timeIntervalSince1970: 200),
+                kind: .request,
+                requestID: "incremental-alpha-turn",
+                sessionID: "incremental-alpha",
+                model: "ollama:llama3.1:8b",
+                messages: [ChatMessage(
+                    role: "user",
+                    content: "Alpha searchable transcript",
+                    attachments: [ChatAttachment(
+                        type: "text",
+                        mimeType: "text/plain",
+                        name: "alpha.txt",
+                        text: "Alpha searchable attachment"
+                    )]
+                )],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-alpha-reasoning",
+                timestamp: Date(timeIntervalSince1970: 201),
+                kind: .reasoningDelta,
+                requestID: "incremental-alpha-turn",
+                sessionID: "incremental-alpha",
+                model: "ollama:llama3.1:8b",
+                reasoningDelta: "Alpha searchable reasoning",
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-beta-request",
+                timestamp: Date(timeIntervalSince1970: 210),
+                kind: .request,
+                requestID: "incremental-beta-turn",
+                sessionID: "incremental-beta",
+                model: "lmstudio:qwen3:8b",
+                messages: [ChatMessage(role: "user", content: "Beta searchable transcript")],
+                ownerDeviceID: "device-a"
+            ),
+            RuntimeChatStoredEvent(
+                id: "incremental-gamma-request",
+                timestamp: Date(timeIntervalSince1970: 220),
+                kind: .request,
+                requestID: "incremental-gamma-turn",
+                sessionID: "incremental-gamma",
+                model: "ollama:gemma3:4b",
+                messages: [ChatMessage(role: "user", content: "Gamma searchable transcript")],
+                ownerDeviceID: "device-a"
+            )
+        ]
+        for event in initialEvents {
+            try sqliteStore.append(event)
+            try jsonlStore.append(event)
+        }
+        let singleUpdate = RuntimeChatStoredEvent(
+            id: "incremental-alpha-answer",
+            timestamp: Date(timeIntervalSince1970: 230),
+            kind: .assistantDelta,
+            requestID: "incremental-alpha-turn",
+            sessionID: "incremental-alpha",
+            model: "ollama:llama3.1:8b",
+            delta: "Single incremental answer",
+            ownerDeviceID: "device-a"
+        )
+        try sqliteStore.append(singleUpdate)
+        try jsonlStore.append(singleUpdate)
+
+        for query in ["single incremental", "searchable attachment", "searchable reasoning", "beta"] {
+            XCTAssertEqual(
+                try sqliteStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true,
+                    query: query
+                ),
+                try jsonlStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true,
+                    query: query
+                )
+            )
+        }
+
+        let rowIDsBeforeBatch = try rawFTSSessionRowIDs(at: databaseURL)
+        let sqliteMutation = try sqliteStore.mutateSessions(
+            ownerDeviceID: "device-a",
+            scope: .allActive,
+            limit: 2,
+            requestID: "incremental-batch-archive",
+            timestamp: Date(timeIntervalSince1970: 240)
+        )
+        let jsonlMutation = try jsonlStore.mutateSessions(
+            ownerDeviceID: "device-a",
+            scope: .allActive,
+            limit: 2,
+            requestID: "incremental-batch-archive",
+            timestamp: Date(timeIntervalSince1970: 240)
+        )
+        XCTAssertEqual(sqliteMutation, jsonlMutation)
+
+        let rowIDsAfterBatch = try rawFTSSessionRowIDs(at: databaseURL)
+        let affectedKeys = Set(sqliteMutation.affectedSessionIDs.map { "device-a|\($0)" })
+        for key in rowIDsBeforeBatch.keys where !affectedKeys.contains(key) {
+            XCTAssertEqual(rowIDsBeforeBatch[key], rowIDsAfterBatch[key], key)
+        }
+        XCTAssertEqual(rowIDsAfterBatch.count, rowIDsBeforeBatch.count)
+        for query in ["archived", "single incremental", "gamma searchable", "beta searchable"] {
+            XCTAssertEqual(
+                try sqliteStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true,
+                    query: query
+                ),
+                try jsonlStore.listSessions(
+                    ownerDeviceID: "device-a",
+                    limit: 10,
+                    includeArchived: true,
+                    query: query
+                )
+            )
+        }
+    }
+
+    func testSQLiteIncrementalAppendRejectsUnrelatedCorruptEventAndRollsBack() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = SQLiteRuntimeChatEventStore(databaseURL: databaseURL)
+        try store.append(RuntimeChatStoredEvent(
+            id: "incremental-valid-request",
+            timestamp: Date(timeIntervalSince1970: 300),
+            kind: .request,
+            requestID: "incremental-valid-turn",
+            sessionID: "incremental-valid",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Valid session")],
+            ownerDeviceID: "device-a"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            id: "incremental-corrupt-request",
+            timestamp: Date(timeIntervalSince1970: 301),
+            kind: .request,
+            requestID: "incremental-corrupt-turn",
+            sessionID: "incremental-corrupt",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Unrelated session")],
+            ownerDeviceID: "device-a"
+        ))
+        let rowIDsBefore = try rawFTSSessionRowIDs(at: databaseURL)
+        try executeRawSQLite(
+            "UPDATE runtime_chat_events SET event_json = '{not-json' " +
+                "WHERE event_id = 'incremental-corrupt-request'",
+            at: databaseURL
+        )
+
+        XCTAssertThrowsError(try store.append(RuntimeChatStoredEvent(
+            id: "incremental-rolled-back-delta",
+            timestamp: Date(timeIntervalSince1970: 302),
+            kind: .assistantDelta,
+            requestID: "incremental-valid-turn",
+            sessionID: "incremental-valid",
+            model: "ollama:llama3.1:8b",
+            delta: "Must roll back",
+            ownerDeviceID: "device-a"
+        ))) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog = error else {
+                return XCTFail("Expected corrupt event log, got \(error).")
+            }
+        }
+        XCTAssertEqual(
+            try rawSQLiteInt(
+                "SELECT COUNT(*) FROM runtime_chat_events " +
+                    "WHERE event_id = 'incremental-rolled-back-delta'",
+                at: databaseURL
+            ),
+            0
+        )
+        XCTAssertEqual(try rawFTSSessionRowIDs(at: databaseURL), rowIDsBefore)
+    }
+
     func testSQLiteStoreUsesFTSSearchWithRankSnippetsAndRuntimeContextExclusion() throws {
         let concreteStore = SQLiteRuntimeChatEventStore(databaseURL: try temporaryDatabaseURL())
         let store: any RuntimeChatEventStore = concreteStore
@@ -5652,6 +5888,42 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
             keys.append("\(String(cString: ownerKey))|\(String(cString: sessionID))")
         }
         return keys
+    }
+
+    private func rawFTSSessionRowIDs(at databaseURL: URL) throws -> [String: Int64] {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 41)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT rowid, owner_key, session_id FROM runtime_chat_session_fts",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK,
+              let statement else {
+            throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 42)
+        }
+        defer { sqlite3_finalize(statement) }
+        var rowIDs: [String: Int64] = [:]
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { break }
+            guard result == SQLITE_ROW,
+                  let ownerKey = sqlite3_column_text(statement, 1),
+                  let sessionID = sqlite3_column_text(statement, 2) else {
+                throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 43)
+            }
+            let key = "\(String(cString: ownerKey))|\(String(cString: sessionID))"
+            guard rowIDs.updateValue(sqlite3_column_int64(statement, 0), forKey: key) == nil else {
+                throw NSError(domain: "SQLiteRuntimeChatEventStoreTests", code: 44)
+            }
+        }
+        return rowIDs
     }
 
     private func writeRawLegacyEvents(_ events: [RuntimeChatStoredEvent], to fileURL: URL) throws {

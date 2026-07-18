@@ -11,12 +11,18 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.math.BigInteger
 import java.net.ServerSocket
 import java.net.Socket
@@ -35,6 +41,34 @@ import kotlin.concurrent.thread
 import kotlin.system.measureTimeMillis
 
 class RuntimeRelayTcpClientTest {
+    @Test
+    fun relayFrameWriterEmitsExactPrefixThenBodyAtBoundarySizes() {
+        val codec = ProtocolCodec()
+        listOf(1, 64 * 1024, ProtocolCodec.MAX_FRAME_BYTES).forEach { size ->
+            val body = ByteArray(size) { index -> (index * 31).toByte() }
+            val output = RecordingWritesOutputStream()
+
+            output.writeProtocolFrameBody(body)
+
+            assertEquals(listOf(4, size), output.writeLengths)
+            assertArrayEquals(codec.encodeFrameBody(body), output.bytes.toByteArray())
+        }
+    }
+
+    @Test
+    fun relayFrameWriterRejectsEmptyAndOversizedBodiesBeforeWriting() {
+        listOf(ByteArray(0), ByteArray(ProtocolCodec.MAX_FRAME_BYTES + 1)).forEach { body ->
+            val output = RecordingWritesOutputStream()
+
+            assertThrows(IllegalArgumentException::class.java) {
+                output.writeProtocolFrameBody(body)
+            }
+
+            assertEquals(0, output.bytes.size())
+            assertEquals(emptyList<Int>(), output.writeLengths)
+        }
+    }
+
     @Test
     fun relaySessionCryptoMatchesP256ScalarOneAndTwoVectors() {
         val clientKeyPair = fixedClientKeyPair()
@@ -176,6 +210,22 @@ class RuntimeRelayTcpClientTest {
             server.close()
             serverThread.join(1_500)
         }
+    }
+
+    @Test
+    fun relayBodyWriteFailureClosesSocketAfterPrefixWrite() = runBlocking {
+        val socket = RelayBodyWriteFailingSocket()
+        val channel = RuntimeRelayTcpClient(
+            socketFactory = RuntimeRelaySocketFactory { _, _ -> socket },
+        ).connect(legacyRoute(443), timeoutMillis = 1_000)
+
+        val failure = runCatching {
+            channel.send(ProtocolEnvelope(type = MessageType.ModelsList, requestId = "write-failure"))
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        assertTrue(socket.isClosed)
+        assertEquals(4, socket.successfulWriteLengths.last())
     }
 
     @Test
@@ -684,6 +734,50 @@ class RuntimeRelayTcpClientTest {
         challenge = PAIRED_CHALLENGE,
         challengeExpiresAtEpochMillis = Long.MAX_VALUE,
     )
+
+    private class RecordingWritesOutputStream : OutputStream() {
+        val bytes = ByteArrayOutputStream()
+        val writeLengths = mutableListOf<Int>()
+
+        override fun write(value: Int) {
+            writeLengths += 1
+            bytes.write(value)
+        }
+
+        override fun write(buffer: ByteArray, offset: Int, length: Int) {
+            writeLengths += length
+            bytes.write(buffer, offset, length)
+        }
+    }
+
+    private class RelayBodyWriteFailingSocket : Socket() {
+        private val input = ByteArrayInputStream("AETHERLINK_RELAY ready\n".encodeToByteArray())
+        val successfulWriteLengths = mutableListOf<Int>()
+        private var closed = false
+        private var arrayWriteCount = 0
+
+        override fun isConnected(): Boolean = true
+
+        override fun isClosed(): Boolean = closed
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getOutputStream(): OutputStream = object : OutputStream() {
+            override fun write(value: Int) {
+                throw IOException("Unexpected single-byte write")
+            }
+
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                arrayWriteCount += 1
+                if (arrayWriteCount == 3) throw IOException("Body write failed")
+                successfulWriteLengths += length
+            }
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
 
     private fun challengeControlLine(challenge: PairedClientRelayRegistrationChallenge): String =
         PAIRED_CLIENT_RELAY_REGISTRATION_CHALLENGE_PREFIX +

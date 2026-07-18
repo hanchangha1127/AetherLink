@@ -5,9 +5,9 @@
   "sourceEvidence": {
     "kind": "source_tree_collection",
     "label": "AetherLink development-relay source snapshot supporting a production security design review",
-    "collectionSha256": "08b0e039f20c9a50c0252e35c7e5f82507a53c7d1e0678a16724eb3d5ac691f1",
+    "collectionSha256": "ca0f77f0ae8781e8492d7cca909a69651a8348e130240f1d491687da37774586",
     "artifactCount": 17,
-    "targetRevision": "72d5d7b740099a6c7937910dd4cb7ad378245e21",
+    "targetRevision": "abd638482ea01d2b5f4d38eb78be04f734814c71",
     "sourceDrift": "present"
   },
   "implementationBoundary": {

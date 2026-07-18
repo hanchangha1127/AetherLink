@@ -1549,38 +1549,59 @@ enum RelayServerLineFraming {
     }
 }
 
-private func writeAll(socket: Int32, data: Data) -> Bool {
-    data.withUnsafeBytes { rawBuffer in
-        guard let base = rawBuffer.baseAddress else { return true }
-        var sent = 0
-        while sent < rawBuffer.count {
-            let count = Darwin.send(socket, base.advanced(by: sent), rawBuffer.count - sent, 0)
-            if count > 0 {
-                sent += count
-                continue
-            }
-            if count < 0 && errno == EINTR {
-                continue
-            }
-            if count < 0 && (errno == EPIPE || errno == ECONNRESET) {
-                return false
-            }
+func relayWriteAll(
+    rawBuffer: UnsafeRawBufferPointer,
+    send: (_ baseAddress: UnsafeRawPointer, _ byteCount: Int) -> Int
+) -> Bool {
+    guard let base = rawBuffer.baseAddress else { return true }
+    var sent = 0
+    while sent < rawBuffer.count {
+        let count = send(base.advanced(by: sent), rawBuffer.count - sent)
+        if count > 0 {
+            sent += count
+            continue
+        }
+        if count < 0 && errno == EINTR {
+            continue
+        }
+        if count < 0 && (errno == EPIPE || errno == ECONNRESET) {
             return false
         }
-        return true
+        return false
+    }
+    return true
+}
+
+private func writeAll(socket: Int32, rawBuffer: UnsafeRawBufferPointer) -> Bool {
+    relayWriteAll(rawBuffer: rawBuffer) { baseAddress, byteCount in
+        Darwin.send(socket, baseAddress, byteCount, 0)
+    }
+}
+
+private func writeAll(socket: Int32, data: Data) -> Bool {
+    data.withUnsafeBytes { rawBuffer in
+        writeAll(socket: socket, rawBuffer: rawBuffer)
     }
 }
 
 private func forwardBytes(from source: Int32, to destination: Int32) {
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while true {
-        let count = Darwin.recv(source, &buffer, buffer.count, 0)
+        let count = buffer.withUnsafeMutableBytes { rawBuffer in
+            Darwin.recv(source, rawBuffer.baseAddress, rawBuffer.count, 0)
+        }
         if count < 0 && errno == EINTR {
             continue
         }
         guard count > 0 else { return }
-        let data = Data(buffer.prefix(count))
-        guard writeAll(socket: destination, data: data) else { return }
+        let wroteAll = buffer.withUnsafeBytes { rawBuffer in
+            let validBuffer = UnsafeRawBufferPointer(
+                start: rawBuffer.baseAddress,
+                count: count
+            )
+            return writeAll(socket: destination, rawBuffer: validBuffer)
+        }
+        guard wroteAll else { return }
     }
 }
 

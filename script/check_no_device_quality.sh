@@ -3656,24 +3656,6 @@ run ./gradlew --no-daemon \
 	  --tests 'com.localagentbridge.android.core.transport.p2pnat.*' \
 	  -Pkotlin.incremental=false
 run swift test --filter 'P2PNATContractsTests|P2PNATSharedVectorTests|P2PNATConformanceTests'
-run ./gradlew --no-daemon \
-	  :core:pairing:testDebugUnitTest \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesAllowedDiscoveryServiceTypeHints \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsBackendProviderOrUrlShapedServiceTypeHints \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsDuplicateQueryKeysBeforeFieldSelection \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsUnknownQueryKeysBeforeFieldSelection \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedSemanticAliasesBeforeFieldSelection \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRouteExpirationAliasesInQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayPortAliasesInQrPayload \
-		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.preservesLiteralPlusInOpaqueQrValues \
-	  -Pkotlin.incremental=false
 run python3 script/check_copy_hygiene.py
 run python3 script/check_docs_hygiene.py
 run python3 script/check_license.py
@@ -4487,110 +4469,12 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifierTest \
   --tests com.localagentbridge.android.core.pairing.DeviceIdentityStoreTest \
   --tests com.localagentbridge.android.core.pairing.PairingStoreTest \
-  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead \
-  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead \
-  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalTrustedIdentityOnWrite \
   -Pkotlin.incremental=false
 
 run ./gradlew --no-daemon \
   :core:protocol:testDebugUnitTest \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRoundTripsExactWireShape \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRoundTripsExactWireShape \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples \
 	  --tests com.localagentbridge.android.core.protocol.PairedClientRelayRegistrationAuthorizationTest \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes \
-	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadDecodesNonRetryableChatContextWindowExceeded \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadRejectsUnknownCodes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesSharedCatalogBlankCodePointSet \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactSizeByteMaximum \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactContextWindowMaximum \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidModelResidencyBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSendRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatStreamResponsePayloadsRejectInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListResponseRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatAndMemoryPayloadsRejectInvalidTimestampMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRejectsInlineStoredAttachmentBytes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionResolvePayloadsRoundTripExactExistingSourceShapes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionResolvePayloadsRejectUnknownMalformedAndMismatchedValues \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionsUseExactSafeWireShapeAndRemainOptional \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionsRejectInvalidBoundsOrderFinishReasonAndForbiddenMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatTitleAndSessionMutationRequestsRejectInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelPullAndChatCancelRequestsRejectInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolvePayloadUsesProtocolFieldNames \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryMatchKindDefaultsLexicalAndControlsMatchedTermsBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryRequestSerializesEmbeddingModelHintAndRejectsBlankHint \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryListRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesClosedCanonicalContract \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsMalformedOrNoncanonicalGroups \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesUnsignedUtf8OrderingForBmpAndAstralIds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsJsonEscapedUnpairedSurrogateId \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesSharedAggregateUtf8IdBudget \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsUnknownFields \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsPayloadUsesCanonicalWireContract \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsRequestRejectsBoundsAndInvalidTypes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsResponseRejectsBoundsAndInvalidTypes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsEnforcesPairShapeOrderAndDuplicates \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsUsesUnsignedUtf8AndAllowsIdsAcrossPairs \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsEnforcesAggregateUtf8IdBudget \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsWireRejectsDuplicateObjectKeysBeforeMaterialization \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersRequestRejectsBoundsUnknownFieldsAndInvalidTypes \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersWireRejectsDuplicateObjectKeysAndDeepNesting \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersEnforcesShapeDisjointnessCountsAndOrder \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersRejectsResponseTypesMetadataUnicodeAndIdBudget \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsJsonNestingBeyondProtocolLimitWithoutStackOverflow \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryCrudRequestsRejectInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListRequestRejectsInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftGeneratePayloadRoundTripsExactWireShape \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftGeneratePayloadRejectsBoundsMalformedValuesAndUnknownMetadata \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftApprovePayloadUsesProtocolFieldNamesAndAcceptsGeneratedSource \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftDecisionRequestsRejectInvalidBounds \
-  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds \
-  -Pkotlin.incremental=false
-
-run ./gradlew --no-daemon \
-  :core:protocol:testDebugUnitTest \
+	  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest \
   -Pkotlin.incremental=false
 
 run ./gradlew --no-daemon \
@@ -4601,7 +4485,7 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtMetadataSanitizesLegacyIdentityHints \
   --tests com.localagentbridge.android.core.transport.RuntimePeerToPeerRoutePreparationTest \
   --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest \
-  --tests com.localagentbridge.android.core.transport.RuntimeTransportClientTest.queuedSendDoesNotCrossReconnectOnSameClientObject \
+  --tests com.localagentbridge.android.core.transport.RuntimeTransportClientTest \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.identityOnlyTargetResolvesRoutesButNoConnectableRoute \
@@ -4616,23 +4500,7 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.expiredRemoteRoutesAreRejectedBeforeConnectorAttempt \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoMatchesP256ScalarOneAndTwoVectors \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2MatchesEpochBoundaryVectors \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsReplayWithoutAdvancingAfterFailedAuthentication \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsExhaustedCounterBeforeCrypt \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayEphemeralKeyRequiresCanonicalOnCurveP256Point \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.plaintextRelayPreservesLegacyRegistrationAndFrames \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsInvalidRuntimeConfirmationAndClosesSocket \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRelayAuthorizesMatchingChallengeThenCompletesStrictCrypto \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMissingChallengeAsDowngradeBeforeAuthorizer \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsChallengeMismatchesBeforeAuthorizer \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMatchingChallengeWhenAuthorizerIsMissing \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayAuthenticationFailureClosesTransport \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesStrictEncryptionWithConcurrentSends \
-	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives \
+	  --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest \
   -Pkotlin.incremental=false
 
 run ./gradlew --no-daemon \
@@ -4640,631 +4508,761 @@ run ./gradlew --no-daemon \
 		  :app:testDebugUnitTest \
 		  --tests com.localagentbridge.android.AppNavigationTest \
 		  --tests com.localagentbridge.android.ResearchNotebookDrawerTest \
-			  --tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages \
-				  --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner \
-					  --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult \
 					  --tests com.localagentbridge.android.PairingQrScanResultTest \
-					  --tests com.localagentbridge.android.PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid \
-					  --tests com.localagentbridge.android.AppNavigationTest.routeNoticeActionIgnoresTrustedLastKnownEndpointForNormalQrFirstRecovery \
 				  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
 			  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchNotebookDrawerFitsCompactHeightAtLargeFontScale \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatArchiveUndoSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusRouteNoticesStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePickerStaysInPreferencesAfterPairingFirstAcrossLaunchLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsQrPairingPanelStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPendingPairingRouteStatusStaysBoundedAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerSearchMatchesModelAndRuntimeMetadata \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerGroupsPreviousChatsByLocalDateAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryStaysBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerShowsSavedMissingChatModelRecovery \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerKeepsLongModelNamesCompact \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarActiveTitleStaysBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarNewChatActionStaysBoundedAtLargeFontAcrossSupportedStates \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerStreamingDisabledStateStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsExposeAccessibilitySummaries \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerDisablesUninstalledLocalChatModelPendingRuntimeHostApproval \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerVisionRecoveryRowsStayBoundedAtLargeFontOnNarrowSurface \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarShowsNamedActiveChatTitleAndHidesDefaultNewChatFallback \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedModelMetadata \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryActiveRowCanOpenChatWithHapticFeedback \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRefreshUsesCurrentSearchQuery \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryShowsRuntimeSearchSnippetForQueryResults \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySearchResultActionsKeepFilteredContext \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowActionsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryBulkActionsStayBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDiscoveredRuntimeRowsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsStayBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsHistoryAndMemoryRenderRepresentativeNarrowPhoneAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsConnectionStatusTalkBackOrderProxyKeepsVisibleControlsReachableAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAutoReconnectRowStaysBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsExposeSelectedStateToAccessibility \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelControlsAreDisabledWhileStreaming \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsShowApprovedSourceMetadataWithoutFullTranscript \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataLocalizesAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsSemanticDocumentSearchUsesLocalizedMetadataAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchSourceReviewActionUsesNamedTalkBackLabelAndHidesOpaqueCanaries \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsSourceReviewDialogShowsLoadingAndSafeUntrustedMetadataWithDisabledBusyControls \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedSourceReviewAndListSupportRefreshAndRevokeWithoutOpaqueExposure \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedSourcesDistinguishNotLoadedFromLoadedEmpty \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTrustedSourcePickerUsesCheckboxesCapsSelectionAndRemovesSafeDocumentChips \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSourceAttributionsRenderBetweenAnswerAndActionsWithLocalizedTalkBackSummaries \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.historicalSourceAttributionRowOpensReviewAndKeepsStableLoadingDimensions \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftApprovalAction \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelDisablesPendingSummaryDraftApproval \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftDismissAction \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelDisablesPendingSummaryDraftDismissal \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelGenerateSummaryActionTransitionsToLockedGeneratingState \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelGeneratedSummaryShowsReviewLabelWithoutGenerateAction \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryDraftRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsRegenerateActionOnlyForLatestAssistantAndHidesWhileStreaming \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsReuseDraftActionOnlyForLatestEligibleUserMessage \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenLatestMessageActionsExposeLocalizedStateAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenLatestMessageActionsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTranscriptUsesCompactSameRoleSpacingAndWiderRoleChanges \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries \
-				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantIdentityMarkerStaysLegibleAndSeparateAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenReadOnlyAttachmentChipsWrapOnCompactWidthAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenPendingAttachmentChipsWrapOnCompactWidthAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTextOnlyDraftControlsStayBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages \
-					  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteRefreshSavedNoticeStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages \
-						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsRouteRefreshSavedNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatContextWindowExceededErrorLocalizesAndStaysBoundedAtLargeFont \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads \
-							  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelStaysBoundedAtLargeFontAcrossSupportedLanguages \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyNoModelGuidesUsersToHeaderModelPickerAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyUninstalledModelGuidesUsersToInstallOrChooseAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusScreenKeepsDiagnosticRoutesStatusOnly \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusTrustedLastKnownOnlyRouteScansLatestQrWithHaptic \
-			  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsDisableWhileConnectingAcrossSupportedLanguages \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayRestoreMarksConnectingBeforeRelayDialCompletes \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelAutoReconnectsTrustedRelayOnInitAndRefreshesRuntimeState \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelShowsExpiredRemoteRouteWhenTrustedRelayLeaseExpiredOnInit \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrAcceptedPairingRestoresRelayReconnectWithoutManualEndpoint \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimSignsExactAuthorizationAndPersistsFinalGeneration \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRenewalPersistsNextGeneration \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimsUnversionedRouteAfterRuntimeOnlyBootstrapRenewals \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsWrongMutatedExpiredSecretBearingAndDuplicateChallenges \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsFinalBeforeProofMismatchAndMissingGeneration \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationTimeoutDisconnectAndPlaintextChannelClearWithoutSigning \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveUntrustedConnection \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveDifferentTrustedRuntimeConnection \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameRuntimePairingQrDoesNotPreemptActiveTrustedConnection \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayReconnectAttemptsRelayBeforeMatchingBonjourFallback \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.macosCompactRelayQrFixtureParsesAndPreparesRelayRoute \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.unsignedRejectedPairingResultKeepsPendingRouteAndSecretForAuthenticatedRetry \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteRelayRouteInsteadOfDirectFallback \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.currentAuthenticationErrorWithChatHistoryPrefixIsNotIgnored \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultDropsQrDirectEndpointFromTrustedRuntimeStorage \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetDropsTrustedLastKnownEndpoint \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionRequiresTrustedIdentityMetadata \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionCanUsePendingPairingIdentityBeforeTrustIsSaved \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseDiscoveredEndpointInsteadOfTrustedLastKnownFallback \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesDoNotAutoUseMetadataLessDiscoveryForTrustedIdentity \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectUnpinnedDiscoveryRouteTokenEvenWhenLegacyIdentityMatches \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRequiresMatchingDiscoveryIdentity \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreSelectedBonjourEndpointWithMismatchedIdentityMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectMetadataLessSelectedBonjourEndpoint \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetWaitsForFreshRouteWhenOnlyTrustedLastKnownEndpointExists \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectRouteCandidatesDoNotUseTrustedLastKnownEndpointAsFallback \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectDirectModelProviderPortsFromSelectedAndDiscoveredRoutes \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.transportBoundAuthenticationRejectsDowngradeMismatchAndOldBindingReplay \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.privateOverlayRelayQrPairingUsesRealRelayTcpClientAndPersistsOverlayRoute \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromMacosPrivateOverlayQrConnectsRelayAndSendsPairingRequest \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRuntimePublicKey \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRelayRouteMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalSavedRelayMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalPendingRelayMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerPlansPendingP2pRendezvousBeforeRelayRoute \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingP2pRendezvousRecord \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeP2pReconnectUsesStoredQrRendezvousMetadata \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedP2pRendezvousRecord \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedP2pRouteWithoutManualEndpoint \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserAcceptsP2pRendezvousQrWhenRemoteRouteIsRequired \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsMismatchedRuntimeIdentity \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultPreservesP2pRendezvousForTrustedRuntimeRestore \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRelayQrIsNotSavedAsTrustedRuntime \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredP2pQrIsNotSavedAsTrustedRuntime \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeSchedulesRouteRefreshBeforeRecordExpiry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshErrorBeforeRecordExpiry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataDropsDirectEndpointFromPendingPairingRouteStorage \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrRetriesAndSendsPairingRequestAfterRelayBecomesReady \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.recreatedViewModelRestoresPendingRelayPairingAndSendsPairingRequest \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.releasePairingParserRejectsMacosLocalDiagnosticQrRoute \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthPublishesOnlyLatestCurrentRequestOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsWrongChannelConnectionAndReauthenticatedAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthExactCurrentTerminalsCloseBeforeDuplicateAndRetry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthClearsPendingOnDisconnectRevocationAndViewModelClear \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthIgnoresSupersededErrorAndDelayedSendFailure \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldDocumentSendFailureCannotCloseReplacementRequest \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationTombstonesOldChatMessagesAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkLifecycleRequiresExactTerminalAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkSendFailureRequiresExactDispatchAuthority \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectedModelSendStateRejectsEmbeddingModelAsChatModel \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.requestModelInstallRejectsUnknownModelWithoutPersistingOrPulling \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectModelRejectsUnknownModelWithoutPersistingOrPulling \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelsResultRejectsUnknownMetadataBeforeModelStatePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.updateChatInputRejectsWhileStreamingAndPreservesDraft \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksModelSelectionAndInstallRequests \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksReentrantChatSendRequests \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksMemoryMutations \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksRuntimeRouteTrustAndConnectionMutations \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectEmbeddingModelRejectsUninstalledRuntimeModelWithoutChangingSelection \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsPersistedSelectionsWhileModelListIsRestoring \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsMissingPersistedSelectionsTypedAcrossRefresh \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationClearsSelectionsWhenRefreshedModelHasWrongKind \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationClearsEmbeddingSelectionWhenModelIsNotInstalled \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsExplicitEmbeddingSelection \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelKindNormalizationSeparatesChatAndEmbeddingModels \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.embeddingCapabilityPreventsModelFromBeingTreatedAsChat \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresSelectedChatAndEmbeddingModelsSeparately \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataCanClearSelectedEmbeddingModel \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateBuildsAfterFirstCompletedExchange \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateUsesEnglishWhenLanguagePreferenceIsLegacyBlank \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateRejectsUnsafeOrAlreadyTitledSessions \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleCurrentSuccessPublishesAndReconcilesOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationCoalescesBothAuthoritativeResponseOrders \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationRejectsLegacySnapshotsForBothLegsAndResponseOrders \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.emptyChatTitleResultClosesAndReconcilesWithoutLocalPublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedChatTitleResultIsTerminalAndLateSameIdFramesAreInert \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleFramesCannotCrossChannelConnectionOrReauthenticationAuthority \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationClosesPendingTitleAndReconcilesOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationReplacesHeldTitleReconciliationAuthorityOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.currentTitleAuthenticationErrorRevokesAndRecoversWithOneReconciliation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleOrdinaryErrorClosesAndReconcilesOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedAndUnknownChatTitleErrorsAreTerminalBeforeAuthInterpretation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleTombstonesCapAt128AndRetainedOrEvictedFramesRemainInert \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleSendFailureAndTimeoutCloseOnceAndIgnoreLateResults \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleResultSkipsStalePublicationAfterLocalSessionRace \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.secondChatTitleCandidateDrainsAfterFirstTerminalWithoutOverwritingCorrelation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationAllLegTerminalsReleaseForOneFreshGeneration \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleDeferredCandidatesCapEvictAndDrainRetainedFifoOnce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationTimeoutJobsCancelOnAuthConnectionAndClear \
-  --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPersistedMessagesDoNotUseFirstUserPromptAsTitle \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedMigratesLegacyPromptTitleToDefaultTitle \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedPreservesExplicitAndRuntimeGeneratedPromptTitles \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generatedChatTitleAppliesOnlyUntilUserRenamesSession \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clearChatDraftClearsActiveSessionTextAndPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveActiveChatClearsNoActiveDraftAndPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveAllChatsClearsNoActiveDraftAndPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sendChatMessageClearsOnlyActiveSessionComposerDraft \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedCapsSessionScopedComposerDrafts \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedDropsArchivedSessionComposerDrafts \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sendChatMessageClearsPersistedComposerDraft \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponseExcludesOldAssistantFromPayloadAndHistory \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponsePreservesComposerDraftAndPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponseBlocksAttachmentBackedPriorPrompt \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftCopiesLatestTextWithoutSendingOrMutatingHistory \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftRejectsAttachmentBackedPromptAndPreservesDraft \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftRejectsWhileStreamingAndPreservesDraft \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.deviceStorageSnapshotRedactsArchivedRuntimeOwnedBodiesButKeepsLocalArchivedBodies \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteRequiresArchivedChatSession \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveAllChatSessionsRetainsSessionsAsArchivedAndKeepsMemoryCandidatesEmpty \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsDoesNotDeleteActivePreviousChats \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsSuppressesOnlyRuntimeOwnedArchivedSessions \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesReplaceSessionTranscriptAndPreserveReasoningWithStableIds \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesReplaceRuntimeOwnedCacheAndPreserveLocalSessions \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingRuntimeOwnedChatRendersInMemoryButRedactsDeviceStorage \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryListRendersInMemoryButRedactsDeviceStorage \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsRejectsMalformedDuplicateUnknownIdsAndMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsIgnoresStaleResponsesAndClearsAcrossAuthorityChanges \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsClosedCorrelationHistoryIsBounded \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsResetsAcrossDisconnectAndReplacementChannelAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsDisablesOldRuntimeUnsupportedOperationsForCurrentAuthority \
-		  --tests com.localagentbridge.android.AppNavigationTest.memoryDuplicateReviewRequiresAuthenticatedFeatureAvailability \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memoryDuplicateReviewShowsLocalizedReviewOnlyAndTruncatedState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsAdvertisesSeparatelyAndRequiresCurrentAuthorityAndLocalModel \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsPublishesTransientReviewStateWithoutPersistence \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsRejectsLowScoresUnknownIdsAndUnknownMetadata \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsIgnoresSupersededResponsesAndNamespacedErrors \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsUnsupportedDisablesOnlySemanticForCurrentAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClearsOnModelChangeMutationAndAuthoritativeRefresh \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClearsAcrossDisconnectAndReplacementAuthentication \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClosedCorrelationHistoryIsBounded \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsRejectsResponseAfterSelectedModelLeavesCurrentCatalog \
-		  --tests com.localagentbridge.android.AppNavigationTest.memorySemanticDuplicateReviewRequiresCurrentInstalledLocalEmbeddingModel \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memoryExactAndSemanticDuplicateActionsStayDistinctAndUseExactBasisPoints \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateResultIsReviewOnlyAndKeepsManualControls \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateControlsExposeDisabledReasonAndScanningState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersAdvertisesCanonicalRequestAndPublishesTransientReviewState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRejectsLowScoresUnknownIdsMetadataAndIdenticalContents \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersIgnoresStaleResponsesAndUnsupportedDisablesOnlyClusters \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRejectsStaleCatalogAndClearsOnModelMutationAndDisconnect \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRequiresCurrentAuthorityCorrelatedModelCatalog \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersIgnoresSupersededModelListSendFailure \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersMalformedCorrelatedErrorPreservesInvalidPayload \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersClosedCorrelationHistoryIsBounded \
-		  --tests com.localagentbridge.android.AppNavigationTest.memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateClustersControlsStayDistinctAndUseExactBasisPoints \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListIgnoresSupersededDuplicateAndUnsolicitedResponsesAfterGeneration \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftReconciliationWaitsForConcurrentActionAndDrainsAfterLastCompletion \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftDeferredReconciliationDrainsOnTerminalErrorAndSendFailure \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.staleMemorySummaryApproveAndDismissReconcileOnceAfterLastPendingAction \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedMemorySummaryDecisionResultsClearPendingAndDrainDeferredRefreshOnce \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListSameChannelReauthenticationReplacesOldAuthorityRequest \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedMemorySummaryActionResultsCannotCrossSameChannelReauthentication \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummarySourceIdentityRejectsEveryAuthoritativeFieldMutationExceptInactivity \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDecisionFramesRequireExactChannelAndIgnoreLateDuplicates \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelProductionDeadlineTest.productionFactoryEnablesHostAlignedMemorySummaryDeadlines \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryGenerationAcceptsResultAfterControlDeadlineBeforeHostAlignedDeadline \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryProtocolErrorMalformedResultAndSendFailureCancelExactTimeoutJobs \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryListAndActionsTimeoutClosePendingAndAllowRetry \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryActionTimeoutDrainsDeferredRefreshOnceAndIgnoresLateTerminals \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryTimeoutJobsStayAuthorityBoundAndCancelOnDisconnectAndClear \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryApproveAndDismissPendingStateClearsOnReceiveFailure \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryListAndActionErrorsRejectUnknownMetadataBeforeAuthRevocation \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.evictedClosedMemorySummaryListErrorCannotReachGenericErrorHandling \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftSendsStaleGuardsBlocksDuplicateDecisionsAndStaysTransient \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftRejectsCanonicalResultFromDifferentRequestedModelAndRefreshesDrafts \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftRejectsBusyOrIneligibleModelAndRetainsMalformedResult \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftStaleErrorClearsPendingKeepsPreviewAndRefreshesDrafts \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftSendFailureClearsPendingAndKeepsDeterministicPreview \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftOmitsExpectedMethodForLegacyRuntime \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftRejectsResultsNotBoundToExactGeneratedDraftAndCanonicalEntry \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftErrorClearsPendingAndAllowsRetry \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftSendsExpectedDecisionAndRemovesDraft \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftRejectsNoncanonicalResultBinding \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftErrorClearsPendingAndAllowsRetry \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryEntriesReplaceAndMutateCachedMemory \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemoryRequestsFreshListAfterPendingListCompletes \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryRequestsFreshListAfterPendingListCompletes \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryCanSendTrimmedQuery \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatSearchResultsStayTransientAndDoNotReplaceFullHistoryCache \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authoritativeSearchOnlyRuntimeChatCanOpenAndLoadTranscript \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedRuntimeChatSearchResponseCannotReplayAsFullHistorySync \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureRevokesSearchOnlySessionAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionReplacementRevokesSearchOnlySessionAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedRevokedSessionSendFailureCannotMutateReauthenticatedState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedMutationDelayedSendFailureCannotMutateActiveStream \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedHelloSendFailureCannotMutateAuthenticatedState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedPairingSendFailureCannotMutateAuthenticatedState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatHistoryAuthenticationLossRevokesSearchOnlySessionAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryAuthenticationLossRevokesSearchAndPendingHistoryAuthority \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMutationFailureSupersedesPendingSearchAndRestoresOptimisticState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeAuthenticationLossRollsBackConcurrentChatSessionMutations \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.promotedSearchSummaryIsConsumedBeforeRuntimeLifecycleActions \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteSearchSummaryCannotReplaceLocalOnlySessionWithSameId \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySearchSendsSelectedEmbeddingModelHint \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemorySearchResultsStayTransientAndIgnoreLateResponses \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticSearchRetriesLexicallyWhenRuntimeRejectsEmbeddingHint \
-		  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchUsesMatchingRemoteSemanticResultsOnlyForCurrentQuery \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatMessagesListErrorClearsLoadingAndShowsChatHistoryLoadFailed \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryErrorShowsLoadFailureAndAllowsRetry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemoryErrorShowsFailureAndAllowsRetry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySummaryDraftsErrorShowsFailureAndAllowsRetry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination \
+  --tests com.localagentbridge.android.runtime.RuntimeLocalStoreTest \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest \
   --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.deviceStorageSnapshotDropsRuntimeOwnedDataButKeepsLocalDrafts \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeLifecycleAckDoesNotMutateLocalOnlySessionWithSameId \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenRelayRouteIsSaved \
-					  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenP2pRouteIsSaved \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectUsesStoredQrLeaseMetadata \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsMismatchedPinnedIdentity \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectIgnoresLoopbackRelayRoute \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsPrivateOverlayRelayRoute \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsScopeLessPrivateRelayRoute \
-							  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedRelayLease \
-									  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingPairingRelayLease \
-									  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint \
-									  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenRelayQrAlsoHasIt \
-									  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenP2pQrAlsoHasIt \
-								  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingRelayQrOverridesSavedRelayRoute \
-					  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsExpiredSavedRelayLease \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity \
-				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsScopedRelayHostScopeMismatch \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRelayMaterial \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteP2pMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalP2pMaterial \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedP2pRendezvousRecordOrNonce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingP2pExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedP2pRecord \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingP2pExpiry \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsIncompletePendingPairingRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsReusedOrNonAdvancingRemoteRouteMaterial \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsRelayRouteWithoutSecret \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsExpiredOrIncompleteP2pRoute \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsP2pRouteWithRelayScopeOnly \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrKeepsUnreachableRelayRouteForRetryOrFreshQrRecovery \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayReceiveAuthenticationFailureClearsStoredRelayAndStopsAutoReconnect \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedRelayNonce \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingRelayExpiry \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeCompletionCancellationAndErrorRemoveOnlyBlankAssistantPlaceholder \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureClearsStreamingAndRemovesOnlyBlankAssistantPlaceholder \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeAuthenticationErrorTransitionsToPairingRequiredState \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection \
   --tests com.localagentbridge.android.runtime.RuntimeAttachmentPromptResourceTest.attachmentOnlyPromptHeaderUsesLocalizedAndroidResources \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentOnlyPromptUsesSelectedAppLanguageAndEnglishFallback \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentOnlySendUsesSelectedLanguagePromptInChatSendPayload \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentSendAttachesMetadataOnlyToFinalUserPayloadMessage \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.imageAttachmentSendRequiresVisionModelAndKeepsPendingAttachmentsWhenBlocked \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.validAttachmentSendClearsPendingAttachmentsAndRetainsReadonlyMessageChips \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksPendingAttachmentMutation \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.removePendingAttachmentDropsOnlySelectedAttachmentAndClearsError \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.blankMessageWithoutAttachmentsDoesNotSend \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsLoadsDocumentAndImageUrisIntoPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsStopsBeforeReadingReportedOversizeFile \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsBoundsReadWhenReportedSizeIsUnknown \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsKeepsAtMostFourPendingAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsWithExistingPendingAttachmentsReadsOnlyRemainingSlotsAndShowsLimit \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryEntriesReplaceAndMutateCachedMemory \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySearchDoesNotSendSelectedEmbeddingModelHint \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsSelectedEmbeddingModelHint \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchAcceptsSemanticMatchKindAndPreservesEmptyTerms \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchIgnoresVeryLateErrorsAfterManyCompletedSearches \
-		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceFullLifecycleKeepsOpaqueValuesOutOfUiPersistenceAndChat \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionCapsAtEightCurrentListedSources \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDoneAttributionsRequireSafeMetadataPreserveMalformedStreamsAndPersistOnlyProjection \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.historicalSourceAttributionResolveCorrelatesCanonicalLocatorAndReusesTrustedReviewTokens \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.historicalSourceAttributionResolveRejectsMismatchedProjectionAndCleansUpOnSessionChange \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedChatSourceAttributionSanitizerRejectsIsoControlDocumentNames \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingMalformedChallengeRetriesWithFreshHelloAndRejectsOldFinalResponse \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingMalformedFinalResponseClearsAttemptAndBoundsRetry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingRetryableRuntimeErrorClearsAttemptAndUsesFreshHello \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedPostPairIdentityLoadCannotSendHelloOrAuthenticateAcrossReplacementConnection \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionClearsOnChatSwitchListOmissionRevokeAndDisconnect \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceChatFailureInvalidatesStaleGrantListWithoutPersistingOpaqueIds \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceChatSendDoesNotCrossAReplacedTransportChannel \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.staleTrustedSourceListResponseCannotResurrectRevokedGrant \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.revokingTrustedCitationReviewClearsPendingConfirmationCapability \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedCitationResponseReleasesPendingRequestWithoutLeakingOpaqueDetail \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesAdvertiseRuntimeOwnedHistoryMemoryAndAttachments \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectUninstalledChatModelKeepsCurrentSelectionAndDoesNotRequestRuntimePull \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.unsolicitedModelPullResultCannotMutateSelectionOrRefreshCatalog \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatCancelAckRejectsUnknownMetadataBeforeStreamingClear \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaRejectsUnknownMetadataBeforeMessagePublication \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaAppendsReasoningWithoutMixingIntoAnswerContent \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.thinkingDeltaAliasAppendsReasoning \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.inlineThinkTagsAreSeparatedFromAnswerContent \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkTagsKeepReasoningCollapsedOutOfAnswerContent \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeStreamTerminationClosesTrailingAssistantReasoningState \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkOpeningTagAcrossDeltasDoesNotLeakTagToAnswer \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkClosingTagAcrossDeltasDoesNotLeakTagToReasoning \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.incompleteInlineThinkTagPlaceholderIsClearedOnDone \
   -Pkotlin.incremental=false
 
 run check_android_authenticated_read_authority_junit
 run check_android_authenticated_read_rollover_authority_junit
 run check_android_chat_sessions_bulk_terminal_authority_junit
 run check_android_memory_mutation_authority_junit
+
+# Suite-subsumed Android named evidence: every selector below is executed by the active full-class selector.
+# The checker proves all 730 unique entries still name real @Test methods and that none remains an active Gradle selector.
+: <<'ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE'
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesAllowedDiscoveryServiceTypeHints
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsBackendProviderOrUrlShapedServiceTypeHints
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsDuplicateQueryKeysBeforeFieldSelection
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsUnknownQueryKeysBeforeFieldSelection
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedSemanticAliasesBeforeFieldSelection
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRouteExpirationAliasesInQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayPortAliasesInQrPayload
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial
+--tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.preservesLiteralPlusInOpaqueQrValues
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead
+--tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalTrustedIdentityOnWrite
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRejectsInvalidScalarRouteMaterial
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.routeRefreshPayloadRequiresCompleteRouteMaterialFamilies
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRoundTripsExactWireShape
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationChallengePayloadRejectsMalformedAndSecretBearingSamples
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRoundTripsExactWireShape
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.relayAllocationAuthorizationPayloadRejectsMalformedAndSecretBearingSamples
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadAcceptsKnownProtocolCodes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadDecodesNonRetryableChatContextWindowExceeded
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.errorPayloadRejectsUnknownCodes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelsResultPayloadEnforcesExactCatalogRowLimitWithoutTruncation
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitsForIdentityStrings
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesUnicodeCodePointLimitForQualifiedId
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadUsesSharedCatalogBlankCodePointSet
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesCapabilityCountAndUnicodeItemLimits
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactSizeByteMaximum
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadEnforcesExactContextWindowMaximum
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidScalarMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidModifiedAtMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadRejectsInvalidNumericMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthBackendStatusAcceptsSchemaMinimalPayload
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidStatus
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadRejectsInvalidModelResidencyBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSendRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatStreamResponsePayloadsRejectInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSessionsListResponseRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatAndMemoryPayloadsRejectInvalidTimestampMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatMessagesListRejectsInlineStoredAttachmentBytes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionResolvePayloadsRoundTripExactExistingSourceShapes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionResolvePayloadsRejectUnknownMalformedAndMismatchedValues
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionsUseExactSafeWireShapeAndRemainOptional
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatSourceAttributionsRejectInvalidBoundsOrderFinishReasonAndForbiddenMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatTitleAndSessionMutationRequestsRejectInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelPullAndChatCancelRequestsRejectInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListPayloadUsesProtocolFieldNames
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidDocumentMetadataBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListResponseRejectsInvalidSummaryBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryPayloadUsesProtocolFieldNames
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalAndSourceAnchorDocumentMetadataRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResponseRejectsTooManyResults
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolvePayloadUsesProtocolFieldNames
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.indexDocumentsListRejectsNonCanonicalContentFingerprints
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalDocumentContentFingerprints
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalDocumentContentFingerprints
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsNonCanonicalSourceAnchorIds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsNonCanonicalSourceAnchorIds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsNonCanonicalSourceAnchorIds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveRequestRejectsMissingRequiredField
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsMissingRequiredFields
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.sourceAnchorResolveResultRejectsInvalidChunkSummaryValues
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidCoordinatesAndRank
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsInvalidLexicalMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryMatchKindDefaultsLexicalAndControlsMatchedTermsBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryRequestSerializesEmbeddingModelHintAndRejectsBlankHint
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingSourceAnchorId
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.retrievalQueryResultRejectsMissingMatchedTerms
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryListRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesClosedCanonicalContract
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsMalformedOrNoncanonicalGroups
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesUnsignedUtf8OrderingForBmpAndAstralIds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsJsonEscapedUnpairedSurrogateId
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadUsesSharedAggregateUtf8IdBudget
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryDuplicateSuggestionsPayloadRejectsUnknownFields
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsPayloadUsesCanonicalWireContract
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsRequestRejectsBoundsAndInvalidTypes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsResponseRejectsBoundsAndInvalidTypes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsEnforcesPairShapeOrderAndDuplicates
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsUsesUnsignedUtf8AndAllowsIdsAcrossPairs
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsEnforcesAggregateUtf8IdBudget
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateSuggestionsWireRejectsDuplicateObjectKeysBeforeMaterialization
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersPayloadUsesCanonicalWireContract
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersRequestRejectsBoundsUnknownFieldsAndInvalidTypes
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersWireRejectsDuplicateObjectKeysAndDeepNesting
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersEnforcesShapeDisjointnessCountsAndOrder
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySemanticDuplicateClustersRejectsResponseTypesMetadataUnicodeAndIdBudget
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsJsonNestingBeyondProtocolLimitWithoutStackOverflow
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryCrudRequestsRejectInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListRequestRejectsInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftGeneratePayloadRoundTripsExactWireShape
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftGeneratePayloadRejectsBoundsMalformedValuesAndUnknownMetadata
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftApprovePayloadUsesProtocolFieldNamesAndAcceptsGeneratedSource
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftDecisionRequestsRejectInvalidBounds
+--tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftResponsePayloadsRejectInvalidBounds
+--tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages
+--tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner
+--tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult
+--tests com.localagentbridge.android.PairingQrScanResultTest.validCompactPrivateOverlayRouteQrReturnsValid
+--tests com.localagentbridge.android.AppNavigationTest.routeNoticeActionIgnoresTrustedLastKnownEndpointForNormalQrFirstRecovery
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerVirtualizesAuthoritativeTenThousandNotebookSnapshot
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerKeepsNotebookMenuBoundToSessionAcrossActiveArchivedMove
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerHoistedChatMenuTracksStreamingLockoutAndFilteredAuthority
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerSeparatesResearchNotebooksAndRunsLifecycleConfirmation
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchNotebookDrawerFitsCompactHeightAtLargeFontScale
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogKeepsContentReachableAtCompactHeightAndLargeFont
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelPickerProjectsRuntimeCapabilitiesAndLocksDuringStreaming
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.researchBriefDialogModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.researchBriefCreateRejectsNonRuntimeHostLocalChatModelsBeforeDispatch
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatArchiveUndoSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusRouteNoticesStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePickerStaysInPreferencesAfterPairingFirstAcrossLaunchLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsQrPairingPanelStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPendingPairingRouteStatusStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerSearchMatchesModelAndRuntimeMetadata
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerGroupsPreviousChatsByLocalDateAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerShowsSavedMissingChatModelRecovery
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerKeepsLongModelNamesCompact
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarActiveTitleStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarNewChatActionStaysBoundedAtLargeFontAcrossSupportedStates
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerStreamingDisabledStateStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsExposeAccessibilitySummaries
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerDisablesUninstalledLocalChatModelPendingRuntimeHostApproval
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerVisionRecoveryRowsStayBoundedAtLargeFontOnNarrowSurface
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarShowsNamedActiveChatTitleAndHidesDefaultNewChatFallback
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedModelMetadata
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryActiveRowCanOpenChatWithHapticFeedback
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRefreshUsesCurrentSearchQuery
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryShowsRuntimeSearchSnippetForQueryResults
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySearchResultActionsKeepFilteredContext
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowActionsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryBulkActionsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDiscoveredRuntimeRowsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsHistoryAndMemoryRenderRepresentativeNarrowPhoneAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsConnectionStatusTalkBackOrderProxyKeepsVisibleControlsReachableAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAutoReconnectRowStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.embeddingModelMenuModelsKeepsOnlyRuntimeHostLocalEmbeddingModels
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsExposeSelectedStateToAccessibility
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelControlsAreDisabledWhileStreaming
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsShowApprovedSourceMetadataWithoutFullTranscript
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataLocalizesAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentPanelShowsCatalogSummaryAndRows
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchCallsRuntimeQueryAndShowsResults
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchKeepsSourceAnchorIdsHiddenFromUi
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsSemanticDocumentSearchUsesLocalizedMetadataAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentSearchSourceReviewActionUsesNamedTalkBackLabelAndHidesOpaqueCanaries
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsSourceReviewDialogShowsLoadingAndSafeUntrustedMetadataWithDisabledBusyControls
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedSourceReviewAndListSupportRefreshAndRevokeWithoutOpaqueExposure
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedSourcesDistinguishNotLoadedFromLoadedEmpty
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTrustedSourcePickerUsesCheckboxesCapsSelectionAndRemovesSafeDocumentChips
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTrustedSourceErrorsUseActionableCopyInsteadOfUnknownFallback
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSourceAttributionsRenderBetweenAnswerAndActionsWithLocalizedTalkBackSummaries
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.historicalSourceAttributionRowOpensReviewAndKeepsStableLoadingDimensions
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRefreshActionFollowsConnectionStateAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDocumentRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftApprovalAction
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelDisablesPendingSummaryDraftApproval
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftDismissAction
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelDisablesPendingSummaryDraftDismissal
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelGenerateSummaryActionTransitionsToLockedGeneratingState
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelGeneratedSummaryShowsReviewLabelWithoutGenerateAction
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryDraftRowsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsRegenerateActionOnlyForLatestAssistantAndHidesWhileStreaming
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsReuseDraftActionOnlyForLatestEligibleUserMessage
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenLatestMessageActionsExposeLocalizedStateAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenLatestMessageActionsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTranscriptUsesCompactSameRoleSpacingAndWiderRoleChanges
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantIdentityMarkerStaysLegibleAndSeparateAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenReadOnlyAttachmentChipsWrapOnCompactWidthAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenPendingAttachmentChipsWrapOnCompactWidthAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTextOnlyDraftControlsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteRefreshSavedNoticeStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsRouteRefreshSavedNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatContextWindowExceededErrorLocalizesAndStaysBoundedAtLargeFont
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelStaysBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyNoModelGuidesUsersToHeaderModelPickerAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyUninstalledModelGuidesUsersToInstallOrChooseAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusScreenKeepsDiagnosticRoutesStatusOnly
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusTrustedLastKnownOnlyRouteScansLatestQrWithHaptic
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsDisableWhileConnectingAcrossSupportedLanguages
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayRestoreMarksConnectingBeforeRelayDialCompletes
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelAutoReconnectsTrustedRelayOnInitAndRefreshesRuntimeState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelShowsExpiredRemoteRouteWhenTrustedRelayLeaseExpiredOnInit
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrAcceptedPairingRestoresRelayReconnectWithoutManualEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimSignsExactAuthorizationAndPersistsFinalGeneration
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRenewalPersistsNextGeneration
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationClaimsUnversionedRouteAfterRuntimeOnlyBootstrapRenewals
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsWrongMutatedExpiredSecretBearingAndDuplicateChallenges
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationRejectsFinalBeforeProofMismatchAndMissingGeneration
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairedRelayAllocationTimeoutDisconnectAndPlaintextChannelClearWithoutSigning
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveUntrustedConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveDifferentTrustedRuntimeConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameRuntimePairingQrDoesNotPreemptActiveTrustedConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayReconnectAttemptsRelayBeforeMatchingBonjourFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.macosCompactRelayQrFixtureParsesAndPreparesRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.unsignedRejectedPairingResultKeepsPendingRouteAndSecretForAuthenticatedRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingResultRejectsUnknownMetadataBeforeTrustMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteRelayRouteInsteadOfDirectFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.currentAuthenticationErrorWithChatHistoryPrefixIsNotIgnored
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedAuthChallengeTerminatesAttemptAndFreshAcceptedResponseCannotAuthenticate
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authResponseResultRejectsUnknownMetadataBeforeAuthenticationStateMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultDropsQrDirectEndpointFromTrustedRuntimeStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetDropsTrustedLastKnownEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionRequiresTrustedIdentityMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionCanUsePendingPairingIdentityBeforeTrustIsSaved
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseDiscoveredEndpointInsteadOfTrustedLastKnownFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesDoNotAutoUseMetadataLessDiscoveryForTrustedIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectUnpinnedDiscoveryRouteTokenEvenWhenLegacyIdentityMatches
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRequiresMatchingDiscoveryIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreSelectedBonjourEndpointWithMismatchedIdentityMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectMetadataLessSelectedBonjourEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetWaitsForFreshRouteWhenOnlyTrustedLastKnownEndpointExists
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectRouteCandidatesDoNotUseTrustedLastKnownEndpointAsFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectDirectModelProviderPortsFromSelectedAndDiscoveredRoutes
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.transportBoundAuthenticationRejectsDowngradeMismatchAndOldBindingReplay
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromMacosPrivateOverlayQrConnectsRelayAndSendsPairingRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRuntimePublicKey
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRelayRouteMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalSavedRelayMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalPendingRelayMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerPlansPendingP2pRendezvousBeforeRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesOnlyMatchingPendingDualRouteMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingP2pRendezvousRecord
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeP2pReconnectUsesStoredQrRendezvousMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedP2pRendezvousRecord
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedP2pRouteWithoutManualEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserAcceptsP2pRendezvousQrWhenRemoteRouteIsRequired
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsMismatchedRuntimeIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultPreservesP2pRendezvousForTrustedRuntimeRestore
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRelayQrIsNotSavedAsTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredP2pQrIsNotSavedAsTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeSchedulesRouteRefreshBeforeRecordExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshErrorBeforeRecordExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeMarksRouteExpiredWhenRefreshCannotRetryBeforeRecordExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentRelayAndRetryWithinP2pLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedMixedRoutesRefreshUrgentP2pAfterRelayFallbackAndRetryWithinRelayLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataDropsDirectEndpointFromPendingPairingRouteStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrRetriesAndSendsPairingRequestAfterRelayBecomesReady
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.recreatedViewModelRestoresPendingRelayPairingAndSendsPairingRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.releasePairingParserRejectsMacosLocalDiagnosticQrRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsUnknownMetadataBeforeRuntimeStatePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthPublishesOnlyLatestCurrentRequestOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthRejectsWrongChannelConnectionAndReauthenticatedAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthExactCurrentTerminalsCloseBeforeDuplicateAndRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthClearsPendingOnDisconnectRevocationAndViewModelClear
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthIgnoresSupersededErrorAndDelayedSendFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequiresExactCurrentAuthorityAndConsumesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRequiresExactCurrentAuthorityAndConsumesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldDocumentSendFailureCannotCloseReplacementRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingDocumentAuthorityClearsOnDisconnectRevocationAndViewModelClear
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRequiresExactCurrentAuthorityAndConsumesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationTombstonesOldChatMessagesAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogErrorConsumesOnlyExactCurrentAuthorityAllowsRetryAndKeepsDuplicatesInert
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogImmediateSendFailureAllowsRetryAndKeepsLateFramesInert
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedOldChatMessagesListSendFailureCannotCloseReplacementRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingChatMessagesAuthorityClearsOnDisconnectRevocationAndViewModelClear
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRequiresExactCurrentAuthorityAndConsumesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListWrongSourceCannotAdvancePaginationOrTriggerTerminalFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationReplacesPendingMemoryAndResearchListAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.siblingAuthenticationErrorClearsConcurrentPendingMemoryListAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkLifecycleRequiresExactTerminalAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkMalformedCurrentErrorConsumesOnlyExactAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsBulkSendFailureRequiresExactDispatchAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeProviderSafeMessageTreatsMissingAndUnsafeMessagesAsEmpty
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectedModelSendStateRejectsEmbeddingModelAsChatModel
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.requestModelInstallRejectsUnknownModelWithoutPersistingOrPulling
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectModelRejectsUnknownModelWithoutPersistingOrPulling
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelsResultRejectsUnknownMetadataBeforeModelStatePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSessionsListRejectsUnknownMetadataBeforeHistoryStatePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.updateChatInputRejectsWhileStreamingAndPreservesDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksModelSelectionAndInstallRequests
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksReentrantChatSendRequests
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksMemoryMutations
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksRuntimeRouteTrustAndConnectionMutations
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectEmbeddingModelRejectsUninstalledRuntimeModelWithoutChangingSelection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsPersistedSelectionsWhileModelListIsRestoring
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsMissingPersistedSelectionsTypedAcrossRefresh
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationClearsSelectionsWhenRefreshedModelHasWrongKind
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationClearsEmbeddingSelectionWhenModelIsNotInstalled
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelSelectionReconciliationKeepsExplicitEmbeddingSelection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.modelKindNormalizationSeparatesChatAndEmbeddingModels
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.embeddingCapabilityPreventsModelFromBeingTreatedAsChat
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresSelectedChatAndEmbeddingModelsSeparately
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataCanClearSelectedEmbeddingModel
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateBuildsAfterFirstCompletedExchange
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateUsesEnglishWhenLanguagePreferenceIsLegacyBlank
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleRequestCandidateRejectsUnsafeOrAlreadyTitledSessions
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleResultRejectsUnknownMetadataBeforeGeneratedTitlePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleCurrentSuccessPublishesAndReconcilesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationCoalescesBothAuthoritativeResponseOrders
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationRejectsLegacySnapshotsForBothLegsAndResponseOrders
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.emptyChatTitleResultClosesAndReconcilesWithoutLocalPublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedChatTitleResultIsTerminalAndLateSameIdFramesAreInert
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleFramesCannotCrossChannelConnectionOrReauthenticationAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationClosesPendingTitleAndReconcilesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameChannelReauthenticationReplacesHeldTitleReconciliationAuthorityOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.currentTitleAuthenticationErrorRevokesAndRecoversWithOneReconciliation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleOrdinaryErrorClosesAndReconcilesOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedAndUnknownChatTitleErrorsAreTerminalBeforeAuthInterpretation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleTombstonesCapAt128AndRetainedOrEvictedFramesRemainInert
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleSendFailureAndTimeoutCloseOnceAndIgnoreLateResults
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleResultSkipsStalePublicationAfterLocalSessionRace
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.secondChatTitleCandidateDrainsAfterFirstTerminalWithoutOverwritingCorrelation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationAllLegTerminalsReleaseForOneFreshGeneration
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleDeferredCandidatesCapEvictAndDrainRetainedFifoOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatTitleReconciliationTimeoutJobsCancelOnAuthConnectionAndClear
+--tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionRenameResultRejectsUnknownMetadataBeforeCachePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest.chatSessionLifecycleResultRejectsUnknownMetadataBeforeCachePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPersistedMessagesDoNotUseFirstUserPromptAsTitle
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedMigratesLegacyPromptTitleToDefaultTitle
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedPreservesExplicitAndRuntimeGeneratedPromptTitles
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generatedChatTitleAppliesOnlyUntilUserRenamesSession
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clearChatDraftClearsActiveSessionTextAndPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveActiveChatClearsNoActiveDraftAndPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveAllChatsClearsNoActiveDraftAndPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sendChatMessageClearsOnlyActiveSessionComposerDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedCapsSessionScopedComposerDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sanitizedDropsArchivedSessionComposerDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sendChatMessageClearsPersistedComposerDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponseExcludesOldAssistantFromPayloadAndHistory
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponsePreservesComposerDraftAndPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.regenerateLatestResponseBlocksAttachmentBackedPriorPrompt
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftCopiesLatestTextWithoutSendingOrMutatingHistory
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftRejectsAttachmentBackedPromptAndPreservesDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.reuseLatestUserMessageAsDraftRejectsWhileStreamingAndPreservesDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.deviceStorageSnapshotRedactsArchivedRuntimeOwnedBodiesButKeepsLocalArchivedBodies
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteRequiresArchivedChatSession
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveAllChatSessionsRetainsSessionsAsArchivedAndKeepsMemoryCandidatesEmpty
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsDoesNotDeleteActivePreviousChats
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.permanentDeleteArchivedChatSessionsSuppressesOnlyRuntimeOwnedArchivedSessions
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesReplaceSessionTranscriptAndPreserveReasoningWithStableIds
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListIgnoresRuntimeOnlyCompactionMetadataInRawPayload
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsUnknownMetadataBeforeTranscriptPublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatMessagesListRejectsInlineStoredAttachmentBytesBeforeTranscriptPublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesReplaceRuntimeOwnedCacheAndPreserveLocalSessions
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingRuntimeOwnedChatRendersInMemoryButRedactsDeviceStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryListRendersInMemoryButRedactsDeviceStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryListRejectsUnknownMetadataBeforeMemoryStatePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryUpsertResultRejectsUnknownMetadataBeforeMemoryMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDeleteResultRejectsUnknownMetadataBeforeMemoryMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationResultsRequireExactCurrentAuthorityAndExpectedPayload
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationErrorsRequireExactCurrentAuthorityAndConsumeOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryMutationSendFailureAndLifecycleCleanupRequireExactAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsPublishesReviewOnlyStateWithoutPersistence
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsRejectsMalformedDuplicateUnknownIdsAndMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsIgnoresStaleResponsesAndClearsAcrossAuthorityChanges
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsClosesSendFailuresBeforeIgnoringStaleErrors
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsClosedCorrelationHistoryIsBounded
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsResetsAcrossDisconnectAndReplacementChannelAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memoryDuplicateSuggestionsDisablesOldRuntimeUnsupportedOperationsForCurrentAuthority
+--tests com.localagentbridge.android.AppNavigationTest.memoryDuplicateReviewRequiresAuthenticatedFeatureAvailability
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memoryDuplicateReviewShowsLocalizedReviewOnlyAndTruncatedState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsAdvertisesSeparatelyAndRequiresCurrentAuthorityAndLocalModel
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsPublishesTransientReviewStateWithoutPersistence
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsRejectsLowScoresUnknownIdsAndUnknownMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsIgnoresSupersededResponsesAndNamespacedErrors
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsUnsupportedDisablesOnlySemanticForCurrentAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClearsOnModelChangeMutationAndAuthoritativeRefresh
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClearsAcrossDisconnectAndReplacementAuthentication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsClosedCorrelationHistoryIsBounded
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateSuggestionsRejectsResponseAfterSelectedModelLeavesCurrentCatalog
+--tests com.localagentbridge.android.AppNavigationTest.memorySemanticDuplicateReviewRequiresCurrentInstalledLocalEmbeddingModel
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memoryExactAndSemanticDuplicateActionsStayDistinctAndUseExactBasisPoints
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateResultIsReviewOnlyAndKeepsManualControls
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateControlsExposeDisabledReasonAndScanningState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersAdvertisesCanonicalRequestAndPublishesTransientReviewState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRejectsLowScoresUnknownIdsMetadataAndIdenticalContents
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersIgnoresStaleResponsesAndUnsupportedDisablesOnlyClusters
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRejectsStaleCatalogAndClearsOnModelMutationAndDisconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersRequiresCurrentAuthorityCorrelatedModelCatalog
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersIgnoresSupersededModelListSendFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersMalformedCorrelatedErrorPreservesInvalidPayload
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticDuplicateClustersClosedCorrelationHistoryIsBounded
+--tests com.localagentbridge.android.AppNavigationTest.memorySemanticDuplicateClustersReviewRequiresSeparateCapabilityAndCurrentLocalModel
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateClustersControlsStayDistinctAndUseExactBasisPoints
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.memorySemanticDuplicateClustersResultIsReviewOnlyAndKeepsManualRowControls
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListRejectsUnknownMetadataBeforeReviewStatePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListIgnoresSupersededDuplicateAndUnsolicitedResponsesAfterGeneration
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftReconciliationWaitsForConcurrentActionAndDrainsAfterLastCompletion
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftDeferredReconciliationDrainsOnTerminalErrorAndSendFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.staleMemorySummaryApproveAndDismissReconcileOnceAfterLastPendingAction
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedMemorySummaryDecisionResultsClearPendingAndDrainDeferredRefreshOnce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftsListSameChannelReauthenticationReplacesOldAuthorityRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedMemorySummaryActionResultsCannotCrossSameChannelReauthentication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummarySourceIdentityRejectsEveryAuthoritativeFieldMutationExceptInactivity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDecisionFramesRequireExactChannelAndIgnoreLateDuplicates
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryGenerationAcceptsResultAfterControlDeadlineBeforeHostAlignedDeadline
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryProtocolErrorMalformedResultAndSendFailureCancelExactTimeoutJobs
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryListAndActionsTimeoutClosePendingAndAllowRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryActionTimeoutDrainsDeferredRefreshOnceAndIgnoresLateTerminals
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryTimeoutJobsStayAuthorityBoundAndCancelOnDisconnectAndClear
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryApproveAndDismissPendingStateClearsOnReceiveFailure
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryListAndActionErrorsRejectUnknownMetadataBeforeAuthRevocation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.evictedClosedMemorySummaryListErrorCannotReachGenericErrorHandling
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftSendsStaleGuardsBlocksDuplicateDecisionsAndStaysTransient
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftRejectsCanonicalResultFromDifferentRequestedModelAndRefreshesDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftRejectsBusyOrIneligibleModelAndRetainsMalformedResult
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftStaleErrorClearsPendingKeepsPreviewAndRefreshesDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.generateMemorySummaryDraftSendFailureClearsPendingAndKeepsDeterministicPreview
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftSendsExpectedApprovalAndRendersRuntimeMemoryOnly
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftOmitsExpectedMethodForLegacyRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftRejectsResultsNotBoundToExactGeneratedDraftAndCanonicalEntry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftApproveResultRejectsUnknownMetadataBeforeMemoryMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.approveMemorySummaryDraftErrorClearsPendingAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftSendsExpectedDecisionAndRemovesDraft
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftRejectsNoncanonicalResultBinding
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySummaryDraftDismissResultRejectsUnknownMetadataBeforeReviewStateMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.dismissMemorySummaryDraftErrorClearsPendingAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryEntriesReplaceAndMutateCachedMemory
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemoryRequestsFreshListAfterPendingListCompletes
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryCanSendTrimmedQuery
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatSearchResultsStayTransientAndDoNotReplaceFullHistoryCache
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authoritativeSearchOnlyRuntimeChatCanOpenAndLoadTranscript
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedRuntimeChatSearchResponseCannotReplayAsFullHistorySync
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureRevokesSearchOnlySessionAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionReplacementRevokesSearchOnlySessionAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedRevokedSessionSendFailureCannotMutateReauthenticatedState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedMutationDelayedSendFailureCannotMutateActiveStream
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedHelloSendFailureCannotMutateAuthenticatedState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.completedPairingSendFailureCannotMutateAuthenticatedState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatHistoryAuthenticationLossRevokesSearchOnlySessionAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemoryAuthenticationLossRevokesSearchAndPendingHistoryAuthority
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMutationFailureSupersedesPendingSearchAndRestoresOptimisticState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeAuthenticationLossRollsBackConcurrentChatSessionMutations
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.promotedSearchSummaryIsConsumedBeforeRuntimeLifecycleActions
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteSearchSummaryCannotReplaceLocalOnlySessionWithSameId
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySearchSendsSelectedEmbeddingModelHint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeMemorySearchResultsStayTransientAndIgnoreLateResponses
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedMemoryListResponsesReleasePendingRequestAndIgnoreLateResults
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.memorySemanticSearchRetriesLexicallyWhenRuntimeRejectsEmbeddingHint
+--tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchUsesMatchingRemoteSemanticResultsOnlyForCurrentQuery
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeChatMessagesListErrorClearsLoadingAndShowsChatHistoryLoadFailed
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryErrorShowsLoadFailureAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemoryErrorShowsFailureAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySummaryDraftsErrorShowsFailureAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforePendingStateMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.errorPayloadRejectsUnknownMetadataBeforeActiveStreamTermination
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.deviceStorageSnapshotDropsRuntimeOwnedDataButKeepsLocalDrafts
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeLifecycleAckDoesNotMutateLocalOnlySessionWithSameId
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenRelayRouteIsSaved
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenP2pRouteIsSaved
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectUsesStoredQrLeaseMetadata
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsMismatchedPinnedIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectIgnoresLoopbackRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsPrivateOverlayRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsScopeLessPrivateRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedRelayLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingPairingRelayLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenRelayQrAlsoHasIt
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenP2pQrAlsoHasIt
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingRelayQrOverridesSavedRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsExpiredSavedRelayLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayRefreshesImmediatelyWhenMinimumDelayWouldOutliveLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.remoteRouteLeaseHelpersSelectEarliestEligibleMixedRouteLease
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeDoesNotRetryNonRetryableRouteRefreshError
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsScopedRelayHostScopeMismatch
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRelayMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteP2pMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalP2pMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedP2pRendezvousRecordOrNonce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingP2pExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedP2pRecord
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedP2pRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingP2pExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsIncompletePendingPairingRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsReusedOrNonAdvancingRemoteRouteMaterial
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsRelayRouteWithoutSecret
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsExpiredOrIncompleteP2pRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsP2pRouteWithRelayScopeOnly
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrKeepsUnreachableRelayRouteForRetryOrFreshQrRecovery
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayReceiveAuthenticationFailureClearsStoredRelayAndStopsAutoReconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedRelayNonce
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingRelayExpiry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeCompletionCancellationAndErrorRemoveOnlyBlankAssistantPlaceholder
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeReceiveFailureClearsStreamingAndRemovesOnlyBlankAssistantPlaceholder
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeAuthenticationErrorTransitionsToPairingRequiredState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentOnlyPromptUsesSelectedAppLanguageAndEnglishFallback
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentOnlySendUsesSelectedLanguagePromptInChatSendPayload
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.attachmentSendAttachesMetadataOnlyToFinalUserPayloadMessage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.imageAttachmentSendRequiresVisionModelAndKeepsPendingAttachmentsWhenBlocked
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.validAttachmentSendClearsPendingAttachmentsAndRetainsReadonlyMessageChips
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingBlocksPendingAttachmentMutation
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.removePendingAttachmentDropsOnlySelectedAttachmentAndClearsError
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.blankMessageWithoutAttachmentsDoesNotSend
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsLoadsDocumentAndImageUrisIntoPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsStopsBeforeReadingReportedOversizeFile
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsBoundsReadWhenReportedSizeIsUnknown
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsKeepsAtMostFourPendingAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.addAttachmentsWithExistingPendingAttachmentsReadsOnlyRemainingSlotsAndShowsLimit
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogRequestStoresTransientCatalogWithoutDeviceStorage
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogClearsTransientRowsOnDisconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentCatalogSummaryBoundsTransientCountsFromRuntimeResponses
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesCapTransientRowsToRequestLimits
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataRejectsNonCanonicalContentFingerprintsBeforeTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentResponsesRejectUnknownFutureMetadataBeforeTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataReplacesNonCanonicalMimeTypesInTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataDerivesQualityFromChunkCountInTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentMetadataBoundsIdsAndDisplayNamesInTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsBoundedQueryAndStaysOutOfChatContext
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchSendsSelectedEmbeddingModelHint
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsOverlongQueryBeforeSendingRetrievalRequest
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchInvalidQueryCancelsPendingRequestAndIgnoresStaleResponses
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchBoundsTransientLexicalMetadataFromRuntimeResponses
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidLexicalMetadataBeforeTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchAcceptsSemanticMatchKindAndPreservesEmptyTerms
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSemanticSearchRetriesLexicallyOnceAndIgnoresLateSemanticResponses
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchIgnoresVeryLateErrorsAfterManyCompletedSearches
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSemanticSearchDoesNotFallbackForNonCompatibilityErrors
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchRejectsInvalidCoordinatesAndRankBeforeTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchDropsNonCanonicalSourceAnchorIdsFromTransientState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeIgnoresUnsolicitedSourceAnchorResolveResultWithoutAdvertisingOrPersisting
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchClearsTransientResultsAndSourceAnchorsOnDisconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeDocumentSearchErrorClearsPendingAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceFullLifecycleKeepsOpaqueValuesOutOfUiPersistenceAndChat
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionCapsAtEightCurrentListedSources
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionIsTransientOneShotAndRegenerateRequiresNewSelection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDoneAttributionsRequireSafeMetadataPreserveMalformedStreamsAndPersistOnlyProjection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.historicalSourceAttributionResolveCorrelatesCanonicalLocatorAndReusesTrustedReviewTokens
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.historicalSourceAttributionResolveRejectsMismatchedProjectionAndCleansUpOnSessionChange
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingMalformedChallengeRetriesWithFreshHelloAndRejectsOldFinalResponse
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingMalformedFinalResponseClearsAttemptAndBoundsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.postPairingRetryableRuntimeErrorClearsAttemptAndUsesFreshHello
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.delayedPostPairIdentityLoadCannotSendHelloOrAuthenticateAcrossReplacementConnection
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceSelectionClearsOnChatSwitchListOmissionRevokeAndDisconnect
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceChatFailureInvalidatesStaleGrantListWithoutPersistingOpaqueIds
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceChatSendDoesNotCrossAReplacedTransportChannel
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceAuthenticationLossClearsSessionCapabilitiesBeforeOperationErrorHandling
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedSourceTerminalReviewAndRevokeErrorsRemoveDeadCapabilities
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedTrustedSourceErrorClearsPendingCapabilityAndAllowsRetry
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.staleTrustedSourceListResponseCannotResurrectRevokedGrant
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.revokingTrustedCitationReviewClearsPendingConfirmationCapability
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.malformedCitationResponseReleasesPendingRequestWithoutLeakingOpaqueDetail
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesAdvertiseRuntimeOwnedHistoryMemoryAndAttachments
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clientCapabilitiesDoNotAdvertiseFutureWorkspaceRagSourceProtocols
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectUninstalledChatModelKeepsCurrentSelectionAndDoesNotRequestRuntimePull
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.unsolicitedModelPullResultCannotMutateSelectionOrRefreshCatalog
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatCancelAckRejectsUnknownMetadataBeforeStreamingClear
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaRejectsUnknownMetadataBeforeMessagePublication
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDoneRejectsUnknownMetadataBeforeCompletionSideEffects
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatDeltaAppendsReasoningWithoutMixingIntoAnswerContent
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.thinkingDeltaAliasAppendsReasoning
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.inlineThinkTagsAreSeparatedFromAnswerContent
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkTagsKeepReasoningCollapsedOutOfAnswerContent
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.activeStreamTerminationClosesTrailingAssistantReasoningState
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkOpeningTagAcrossDeltasDoesNotLeakTagToAnswer
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.splitInlineThinkClosingTagAcrossDeltasDoesNotLeakTagToReasoning
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.incompleteInlineThinkTagPlaceholderIsClearedOnDone
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnsupportedProbeContinuesToRelayConnector
+--tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResultRejectsMalformedDuplicateAndUnknownFieldsAsUnsupported
+--tests com.localagentbridge.android.core.transport.RuntimeTransportClientTest.queuedSendDoesNotCrossReconnectOnSameClientObject
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoMatchesP256ScalarOneAndTwoVectors
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relaySessionCryptoBindsRouteNonceIntoBindingAndTrafficKeys
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2MatchesEpochBoundaryVectors
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsReplayWithoutAdvancingAfterFailedAuthentication
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameV2RejectsExhaustedCounterBeforeCrypt
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayEphemeralKeyRequiresCanonicalOnCurveP256Point
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.plaintextRelayPreservesLegacyRegistrationAndFrames
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.initialStrictRelayWithNullGenerationUsesExactV2HandshakeAndEncryptedFrames
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsLegacyAndNonCanonicalReadyWithoutV1Fallback
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayRejectsInvalidRuntimeConfirmationAndClosesSocket
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRelayAuthorizesMatchingChallengeThenCompletesStrictCrypto
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMissingChallengeAsDowngradeBeforeAuthorizer
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsChallengeMismatchesBeforeAuthorizer
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.pairedRouteRejectsMatchingChallengeWhenAuthorizerIsMissing
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.strictRelayAuthenticationFailureClosesTransport
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesStrictEncryptionWithConcurrentSends
+--tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives
+ANDROID_SUITE_SUBSUMED_NAMED_EVIDENCE
 
 run swift build --product AetherLink
 run swift build --product AetherLinkRelay
@@ -5276,12 +5274,6 @@ run swift test --filter 'RelayIdentityBoundSocketTests/testControlLineReaderUses
 run swift test --filter 'RelaySourceRateLimiterTests|RelayIdentityBoundSocketTests/testLoopbackPreflightRateLimitSilentlyClosesWithStableSourceFreeObservability|RelayIdentityBoundSocketTests/testMalformedAllocationControlRecordsConsumeClassifiedSourceBudgets|RelayIdentityBoundSocketTests/testAllocationMutationBucketIsSeparateFromPreflightBucket|RelayIdentityBoundSocketTests/testPairedRenewalSharesAllocationMutationBucket|RelayIdentityBoundSocketTests/testRateLimitedSourceStillUsesPeerAdmissionAndBridgeTraffic'
 run swift test --filter 'RelaySourceQuotaLimiterTests|RelayMatcherTests/testSourceWaitingQuotaRejectsOnlyNewWaitersAndAllowsImmediateMatch|RelayMatcherTests/testCrossSourceReplacementRejectionPreservesOriginalWaiter|RelayMatcherTests/testWaitingQuotaReleasesOnInvalidation|RelayMatcherTests/testCounterpartOnlyRegistrationAllowsMatchOrSameSourceReplacement|RelayMatcherTests/testSourceReserveCandidateCannotDischargeAnotherSourcesWaiter|RelayIdentityBoundSocketTests/testSourceConnectionQuotaRejectsExcessWhileActiveBridgeStillForwards|RelayIdentityBoundSocketTests/testSourceWaitingQuotaRejectsOnlyNewWaiterAndAllowsImmediateCounterpart|RelayIdentityBoundSocketTests/testWaitingDisconnectReleasesSourceQuotaBeforeConnectionPermit|RelayIdentityBoundSocketTests/testCounterpartReserveSurvivesActiveBridgeAndRejectsNonmatchingCandidate'
 run swift test --filter 'RelayWaitingPeerPolicyTests|RelayMatcherTests/testWaitingDeadlinePersistsAcrossSameRoleReplacement|RelayMatcherTests/testExpiredWaitingRoomCannotMatchLateCounterpart|RelayMatcherTests/testExpiredWaitingRoomCannotBeReplacedOrReportedByProbe|RelayMatcherTests/testWaitingRegistrationAttemptRetainsDeadlineAfterCounterpartMatches|RelayMatcherTests/testAuthenticatedIdentityQuotaIsCrossSourceAndReleasesEveryWaitingPath|RelayIdentityBoundSocketTests/testWaitingTimeoutReleasesSourceAndIdentityCapacityAndAllowsRetry|RelayIdentityBoundSocketTests/testMatchedBridgeCancelsWaitingTimeoutAndContinuesForwarding|RelayIdentityBoundSocketTests/testAuthenticatedIdentityWaitingQuotaRejectsOnlySameIdentity|RelayIdentityBoundSocketTests/testPairedClientIdentityWaitingQuotaRequiresVerifiedClientProof|RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime'
-run ./gradlew --no-daemon \
-  :app:testDebugUnitTest \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnavailableProbeFailsBeforeConnectWhenDeviceCannotReachRelayRoute \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingUnsupportedProbeContinuesToRelayConnector \
-  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResultRejectsMalformedDuplicateAndUnknownFieldsAsUnsupported \
-  -Pkotlin.incremental=false
 run swift test --filter 'RelayIdentityBoundSocketTests/testUnsignedPreflightReturnsExactClosedResponseAndNoUsableRoute|RelayIdentityBoundSocketTests/testChallengeAllocationAndRuntimeAdmissionSucceeds|RelayIdentityBoundSocketTests/testAllocationProofReplayAndFieldMutationFailClosed|RelayIdentityBoundSocketTests/testWrongKeyAndRegistrationProofReplayCannotReplaceWaitingRuntime|RelayIdentityBoundSocketTests/testConcurrentServerWithSameDurableAllocationStoreThrowsAlreadyOwned|RelayIdentityBoundSocketTests/testSecondRunOnSameServerThrowsAlreadyRunningAndOriginalListenerStillWorks|RelayIdentityBoundSocketTests/testBindFailureReleasesAllocationStoreOwnershipForRetainedServer|RelayAllocationTests/testSchemaV4StorePersistsAuthorizationModeAndConsumptionEnvelope|RelayAllocationTests/testSchemaV3PairedBindingRotatesToPairScopedRoomAndPersistsTombstone|RelayAllocationTests/testSchemaV2MigrationPersistenceFailureFailsClosed|RelayAllocationTests/testStoreReloadsActiveBindingAndRetainsExpiredTombstone|RelayAllocationTests/testRenewalRequiresSameKeyAndGenerationCAS|RelayAllocationTests/testLegacyCorruptAndUnknownStoresFailClosed|RelayAllocationTests/testStrictNonLoopbackRelayRejectsEphemeralAllocationStore|RelayAllocationTests/testStaleBootstrapCreateCannotRecreateConsumedPairClaim|RelayAllocationTests/testRepeatedRegistryCreationReusesPooledLockDescriptor|RelayAllocationTests/testClosingSiblingTransactionLockDoesNotReleaseActiveProcessRecordLock|RelayAllocationTests/testStoreOwnershipCanonicalizesSymlinkedParentAliases|RelayAllocationTests/testDeletedEstablishedDurableStoreFailsClosedForLiveAndRestartedRegistries|RelayAllocationTests/testGroupOrWorldWritableStoreParentFailsClosed|RelayAllocationTests/testValidUnversionedV1StoreIsRevokedIntoEmptyTokenBoundV4Store|RelayAllocationTests/testDanglingDurableStoreSymlinkFailsClosed|RelayAllocationTests/testHardLinkedStoreAliasFailsClosedWithoutDivergingAtomicWrites|RelayAllocationTests/testPostRenameDirectorySyncFailureReconcilesCommittedEnvelopeBeforeSuccess|RelayAllocationTests/testUninitializedMarkerRecoversTokenMatchedDurableStoreAfterInterruptedInitialization|RelayAllocationTests/testEstablishedLockReplacementQuarantinesLiveAndReplacementRegistries|RelayAllocationTests/testCaseVariantStorePathSharesOneOwnerOnCaseInsensitiveVolumes'
 run ./script/relay_allocation_store_ownership_smoke.sh
 run swift test --filter RelayIdentityAuthorizationTests
@@ -5445,9 +5437,6 @@ run swift test --filter 'RuntimeMemoryStoreGeneratedDraftTests|RuntimeMemoryStor
 run swift test --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsRenamedSameCountSourceBeforeMemoryMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRevalidatesSourceAtMutationCommit|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRevalidatesSourceAtMutationCommit|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveHoldsSQLiteSourceLockThroughMemoryMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHoldsSQLiteSourceLockThroughMemoryMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDecisionMutationErrorsRemainMemoryStoreErrors|LocalRuntimeMessageRouterTests/testMemorySummaryDraftGenerateRejectsStaleGuardsBeforeModelLookup|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresV2ReviewForLegacyRecordsAndRejectsLegacyRequestAuthority'
 run swift test --filter 'LocalPeerServerTests/testLocalPeerConnectionCompletion|RelayPeerClientTests/testRelayPeerConnectionCompletion'
 run swift test --filter 'RelayPeerClientTests/testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect|RelayPeerClientTests/testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup|RelayPeerClientTests/testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives|RelayPeerClientTests/testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration'
-	run ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest
-	run ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest --tests com.localagentbridge.android.AppNavigationTest
-	run ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ResearchNotebookDrawerTest
 	run swift test --filter 'ResearchNotebook|ResearchBrief|ResearchPromotion|ExpiredLifecycleCannotTakeOver|ChatSessionsList.*Research|ChatTitleRequest|AutomaticChatTitle|RuntimeChatSessionRenameStoresRuntimeTitle|ChatSessionRenameRejectsInvalidTitles|ChatEventStoresRejectInvalidTitleEvents|SameTimestampTitleAppendOrder|ReverseTimestampTitle|LegacyInvalidTitles'
 	run swift test --filter 'LocalRuntimeMessageRouterTests/testAuthoritativeSessionSyncWireTranscriptMatchesSharedExactPayloads|LocalRuntimeMessageRouterTests/testAuthoritativeSessionSyncMatchesSharedLifecycleFixtureAcrossPaginationAndBulkLifecycle|LocalRuntimeMessageRouterTests/testAuthoritativeChatSessionCursorTraversesSnapshotWithAbsoluteRanksAndRejectsTampering|LocalRuntimeMessageRouterTests/testAuthoritativePaginationRejectsExpiredEvictedAndCrossOwnerCursors|LocalRuntimeMessageRouterTests/testAuthoritativePaginationExpiresAfterMonotonicTTLWhenWallClockRollsBack|LocalRuntimeMessageRouterTests/testReauthenticationChallengeInvalidatesCursorAndSuppressesInFlightInitialPublication|LocalRuntimeMessageRouterTests/testNewerAuthoritativeInitialRequestRetainsAuthorityOverOlderSlowRequest|LocalRuntimeMessageRouterTests/testAuthoritativeBulkLifecycleUsesBoundedFreshRequestBatchesAndReportsRemaining|LocalRuntimeMessageRouterTests/testAuthoritativeBulkLifecycleRejectsAuthorityCapturedBeforeCapabilityDowngrade|LocalRuntimeMessageRouterTests/testSingleSessionLifecycleRejectsAuthorityCapturedBeforeReauthentication|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsAuthorityCapturedBeforeDifferentOwnerReauthentication|LocalRuntimeMessageRouterTests/testDevelopmentChatSessionRenameRejectsConnectionClosedAfterAuthorityCapture|LocalRuntimeMessageRouterTests/testDevelopmentChatSessionRenameRejectsCloseDuringRequestTaskRegistration|LocalRuntimeMessageRouterTests/testDevelopmentSingleSessionLifecycleRejectsConnectionClosedAfterAuthorityCapture|LocalRuntimeMessageRouterTests/testTrustedAuthResponseRejectsChallengeSupersededDuringTrustedDeviceLookup|LocalRuntimeMessageRouterTests/testAuthoritativeSessionListRejectsOversizedCursorAndSnapshotOverflow|LocalRuntimeMessageRouterTests/testAuthoritativeBulkDeletePurgeFailurePreventsLifecycleMutation|SQLiteRuntimeChatEventStoreTests/testSQLiteBulkLifecycleProcessesDeterministicBoundedBatchesBeyondFirstPage|SQLiteRuntimeChatEventStoreTests/testJSONLBulkLifecycleHoldsOwnerScopedDeterministicBatchState|SQLiteRuntimeChatEventStoreTests/testSQLiteBulkLifecycleRollsBackEntireBatchOnInsertFailure|SQLiteRuntimeChatEventStoreTests/testBulkLifecyclePreCommitFailureReceivesExactTargetsAndWritesNothing'
 	run swift test --filter SQLiteRuntimeChatEventStoreTests
@@ -5458,7 +5447,7 @@ run swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests
 echo
 echo "No-device quality checks passed."
 echo "Covered cross-platform readiness UI addendum: one primary pairing task before trust, compact macOS QR renewal, and Android pairing/chat-entry hierarchy"
-echo "Covered cross-codebase optimization addendum: relay epoch material cache, exact-payload Pairing QR cache, exact-buffer Android frame reads, and single-run macOS localization/render suites"
+echo "Covered cross-codebase optimization addendum: relay epoch material cache, exact-payload Pairing QR cache, exact-buffer Android frame reads, affected-session chat FTS, localized Bundle cache, direct relay raw-buffer forwarding, single-pass Android disk projection, relay-only split frame writes, and source-validated deduplicated no-device suites"
 echo "Covered v0.4 addendum: Android runtime-mediated model capability display"
 echo "Covered v0.4 addendum: macOS runtime model capability display"
 echo "Covered v0.4 addendum: Android memory indexing model capability display"

@@ -62,7 +62,8 @@ class RuntimeLocalStore(
             }
             ?.pendingPairingRoute
             ?.relaySecretRef
-        val dataForDisk = data.withStoredPendingPairingRelaySecret(relaySecretStore)
+        val diskProjection = data.sanitized().withoutRuntimeOwnedLocalData()
+        val dataForDisk = diskProjection.withStoredPendingPairingRelaySecretFromSanitized(relaySecretStore)
         val currentPendingSecretRef = dataForDisk.pendingPairingRoute?.relaySecretRef
         if (previousPendingSecretRef != null && previousPendingSecretRef != currentPendingSecretRef) {
             relaySecretStore.removeSecret(previousPendingSecretRef)
@@ -70,7 +71,7 @@ class RuntimeLocalStore(
         preferences.edit()
             .putString(
                 STORE_KEY,
-                json.encodeToString(dataForDisk.sanitized().withoutRuntimeOwnedLocalData()),
+                json.encodeToString(dataForDisk),
             )
             .apply()
     }
@@ -564,8 +565,14 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
 internal fun PersistedRuntimeData.withStoredPendingPairingRelaySecret(
     relaySecretStore: RelaySecretStore,
 ): PersistedRuntimeData {
-    val pending = pendingPairingRoute?.sanitizedOrNull() ?: return withoutPendingPairingRoute()
-    val relaySecret = pending.relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)
+    return sanitized().withStoredPendingPairingRelaySecretFromSanitized(relaySecretStore)
+}
+
+private fun PersistedRuntimeData.withStoredPendingPairingRelaySecretFromSanitized(
+    relaySecretStore: RelaySecretStore,
+): PersistedRuntimeData {
+    val pending = pendingPairingRoute ?: return this
+    val relaySecret = pending.relaySecret
     val relaySecretRef = when {
         relaySecret != null -> pending.relaySecretRef
             ?: pendingPairingRelaySecretHandle(
@@ -583,7 +590,7 @@ internal fun PersistedRuntimeData.withStoredPendingPairingRelaySecret(
             relaySecret = null,
             relaySecretRef = relaySecretRef,
         ),
-    ).sanitized()
+    )
 }
 
 internal fun PersistedRuntimeData.withLoadedPendingPairingRelaySecret(

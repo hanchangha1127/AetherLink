@@ -7,12 +7,12 @@ production relay protocol has been implemented.
 ## Source Identity
 
 - Local source root: `/Users/hanchangha/Desktop/project`
-- Git HEAD: `72d5d7b740099a6c7937910dd4cb7ad378245e21`
+- Git base revision observed before this source refresh: `abd638482ea01d2b5f4d38eb78be04f734814c71`
 - Source drift: present. The roadmap worktree intentionally contains uncommitted
   relay, pairing, protocol, Android, script, and documentation changes.
 - Evidence manifest: `evidence.sha256`
 - Evidence collection SHA-256:
-  `08b0e039f20c9a50c0252e35c7e5f82507a53c7d1e0678a16724eb3d5ac691f1`
+  `ca0f77f0ae8781e8492d7cca909a69651a8348e130240f1d491687da37774586`
 - Evidence artifacts: 17 source/schema files.
 - Runtime constraint: the Android phone is disconnected. No physical optical QR,
   public relay, or real different-network evidence was used.
@@ -30,9 +30,9 @@ production relay protocol has been implemented.
 | `E007` | Durable lease generation and consumed-bootstrap CAS | `apps/macos/RelayServerCore/Sources/RelayAllocation.swift:920`, `apps/macos/RelayServerCore/Sources/RelayAllocation.swift:1002`, `apps/macos/RelayServerCore/Sources/RelayAllocation.swift:1044` |
 | `E008` | Client route identity, lease, nonce, and secret persistence | `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt:70`, `apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt:172` |
 | `E009` | Schema reserves transport binding but has no service lease or recovery epoch | `packages/protocol-schema/protocol.schema.json:204`, `packages/protocol-schema/protocol.schema.json:686` |
-| `E010` | Development-relay source-aware allocation/preflight throttling | `apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift:4`, `apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift:194`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:253`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:689` |
-| `E011` | Development-relay source connection and waiting-peer quotas | `apps/macos/RelayServerCore/Sources/RelaySourceQuotaLimiter.swift:4`, `apps/macos/RelayServerCore/Sources/RelaySourceQuotaLimiter.swift:166`, `apps/macos/RelayServerCore/Sources/RelayMatcher.swift:260`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:219` |
-| `E012` | Development-relay bounded waiting and authenticated identity fairness | `apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift:4`, `apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift:105`, `apps/macos/RelayServerCore/Sources/RelayMatcher.swift:319`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:259` |
+| `E010` | Development-relay source-aware allocation/preflight throttling | `apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift:4`, `apps/macos/RelayServerCore/Sources/RelaySourceRateLimiter.swift:194`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:327`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:811` |
+| `E011` | Development-relay source connection and waiting-peer quotas | `apps/macos/RelayServerCore/Sources/RelaySourceQuotaLimiter.swift:181`, `apps/macos/RelayServerCore/Sources/RelaySourceQuotaLimiter.swift:316`, `apps/macos/RelayServerCore/Sources/RelayMatcher.swift:576`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:1101` |
+| `E012` | Development-relay bounded waiting and authenticated identity fairness | `apps/macos/RelayServerCore/Sources/RelayWaitingPeerPolicy.swift:134`, `apps/macos/RelayServerCore/Sources/RelayMatcher.swift:455`, `apps/macos/RelayServerCore/Sources/RelayMatcher.swift:579`, `apps/macos/RelayServerCore/Sources/RelayServer.swift:483` |
 
 ## Evidence Limits
 
