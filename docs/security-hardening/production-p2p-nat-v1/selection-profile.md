@@ -18,11 +18,11 @@ The profile status and `initialBoundedHandoffAuthorized` preserve the original
 bounded design approval; they are not a current execution grant. The structured
 `currentExecutionAuthority` object and top-level `implementationAuthorized=false`
 fail closed for machine readers. The latest controlled-spike decision is
-[decision v3](controlled-network-spike/decision-v3.md), and the current handoff
-is [handoff v6](implementation/handoff-v6.md). They reject libjuice v1.7.2 at
-the mandatory source-audit stage before compilation. libnice 0.1.23 is
-`proposed_not_selected`, with no acquisition, compile, socket, runtime-network,
-Phase B, or production authority.
+[decision v6](controlled-network-spike/decision-v6.md), and the current handoff
+is [handoff v9](implementation/handoff-v9.md). The history rejects libjuice
+v1.7.2 and libnice 0.1.23 at their mandatory source-audit stages before
+compilation. No networking library is selected, and acquisition, inspection,
+compile, socket, runtime-network, Phase B, and production authority are closed.
 
 ## Approved Choice
 
@@ -68,12 +68,13 @@ claim.
 
 The handoff history is closed and bounded: `canonical-contracts` and
 `no-network-conformance` are completed, while historical `handoff-v4` records
-the original Phase A approval and historical `handoff-v5` records the consumed
-one-shot source and NDK acquisition authority. Current `handoff-v6` records the
-mandatory libjuice rejection and closes implementation, replacement
-acquisition, compiler, source-fork, runtime, harness, socket, Phase B, and
-production authority. Any libnice source or dependency acquisition requires a
-separate explicit versioned decision.
+the original Phase A approval. Historical `handoff-v5` records the consumed
+libjuice and NDK acquisition authority, while `handoff-v7` and `handoff-v8`
+record the consumed exact libnice and GLib acquisition authorities. Current
+`handoff-v9` records the mandatory libnice rejection and closes implementation,
+library selection, further acquisition, inspection, compiler, source-fork,
+runtime, harness, socket, Phase B, and production authority. Any new candidate
+requires a separate versioned review and explicit decision.
 
 ## Security Floors
 
@@ -133,11 +134,14 @@ conditionally selects all four recommendations for source audit, compile-only,
 cryptographic-vector, and static-harness evidence. `handoff-v4` authorizes that
 historical bounded work. The exact acquisition decision and handoff were then
 closed as `decision-v2` and `handoff-v5`. The resulting source audit rejected
-libjuice, so [fallback review v2](controlled-network-spike/review-v2.md) proposes
-libnice 0.1.23 without selecting it, and `decision-v3` plus `handoff-v6` close
-all current implementation and execution authority. Source or dependency
-acquisition, compilation, runtime/harness network I/O, sockets, Phase B,
-measurement, and deployment require a later explicit versioned decision.
+libjuice, so [fallback review v2](controlled-network-spike/review-v2.md) opened
+libnice 0.1.23 for a separate bounded audit. `decision-v4` through `decision-v5`
+and `handoff-v7` through `handoff-v8` authorized and consumed only exact libnice
+and GLib source acquisition. The completed audit rejected libnice, and
+`decision-v6` plus `handoff-v9` close all current implementation and execution
+authority. A new library review and explicit decision are required before source
+or dependency acquisition, compilation, runtime/harness network I/O, sockets,
+Phase B, measurement, or deployment.
 
 ## Evidence Boundary
 
@@ -145,6 +149,7 @@ This approved bounded handoff refines the existing 13-artifact static design
 portfolio. It does not add production P2P code, activate a new protocol namespace, execute the conditionally selected library, open
 network sockets, exercise STUN/TURN, prove NAT traversal, or provide physical
 Android, optical QR, different-network, latency, memory, battery, or production
-evidence. The latest records prove only exact libjuice and NDK acquisition plus
-static source-audit rejection; they do not prove compilation, ABI compatibility,
-library execution, or network behavior.
+evidence. The latest records prove exact libnice and GLib archive/tree identity,
+minimum dependency-set identification, and static source-audit rejection. They
+do not prove detached-signature trust, pending dependency provenance,
+compilation, ABI compatibility, library execution, or network behavior.

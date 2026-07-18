@@ -1,0 +1,125 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-offline-source-intake",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_phase_a_libnice_offline_source_intake_v3",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "artifactStatus": "closed_libnice_source_present_dependency_closure_partial",
+  "supersedes": {
+    "path": "offline-source-intake-v2.json",
+    "artifactId": "production_p2p_nat_v1_phase_a_libjuice_offline_source_intake_v2",
+    "sha256": "1c1b5ebc47ce15456b3855c008db2aaf5289d38635a78a566cfabc25e2cd8fa0"
+  },
+  "authority": {
+    "decision": {
+      "path": "../decision-v4.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v4",
+      "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v7.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v7",
+      "sha256": "22306a0f057cf9eaf720c865ea7e46ed703a37fba93493eb937f592abefa5a58"
+    },
+    "authorizationWasExactOneShotAcquisition": true,
+    "authorizationConsumed": true,
+    "additionalLibniceAcquisitionAuthorized": false,
+    "dependencyAcquisitionAuthorizedByThisIntake": false
+  },
+  "candidate": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "releaseVersion": "0.1.23",
+    "selectionStatus": "not_selected",
+    "evaluationStatus": "read_only_source_audit_in_progress",
+    "officialReleaseIndexUrl": "https://libnice.freedesktop.org/",
+    "archiveUrl": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz",
+    "signatureUrl": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz.asc"
+  },
+  "intake": {
+    "root": "build/offline-source/libnice-0.1.23",
+    "originalArchive": {
+      "path": "original/libnice-0.1.23.tar.gz",
+      "sizeBytes": 469330,
+      "sha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d"
+    },
+    "detachedSignature": {
+      "path": "original/libnice-0.1.23.tar.gz.asc",
+      "sizeBytes": 195,
+      "sha256": "44292ddf373bc7a962eb3949d4754987d7bbd50cb2d3a2effccb71a2d332727b",
+      "cryptographicVerificationStatus": "not_verified_no_local_openpgp_verifier_or_trusted_signing_key"
+    },
+    "extractedSource": {
+      "path": "source",
+      "regularFileCount": 184,
+      "totalRegularFileBytes": 2197866,
+      "treeSha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+      "archiveMatchesExtractedFiles": true,
+      "unsafeEntryCount": 0
+    },
+    "localSourceProvenance": {
+      "path": "source-provenance.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f",
+      "committedTwinPath": "libnice-source-manifest-v1.json"
+    }
+  },
+  "reviewedArtifacts": {
+    "sourceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_libnice_source_manifest_v1",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "dependencyClosure": {
+      "path": "libnice-dependency-closure-v1.json",
+      "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v1",
+      "sha256": "83604bfc0cbcce3a43cdcc62990ba8698576b219eed51d66c0c077118a0afab4"
+    }
+  },
+  "reviewResults": {
+    "provenance": "complete_exact_official_transport_and_detached_signature_bytes_pinned",
+    "signatureTrust": "incomplete_not_cryptographically_verified",
+    "archiveExtractionEquivalence": "complete",
+    "license": "complete_dual_license_notice_recorded_distribution_review_pending",
+    "generatedFiles": "complete_required_generators_and_outputs_identified_not_executed",
+    "directDependencyClosure": "complete_glib_and_crypto_requirements_identified",
+    "transitiveDependencyClosure": "incomplete_pending_exact_glib_and_openssl_sources",
+    "sourceSecurityAudit": "in_progress"
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "approvedRequestCount": 2,
+    "archiveReadAndExtractionPerformed": true,
+    "archiveCreationPerformed": false,
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "linkOrLoadPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false
+  },
+  "currentAuthorization": {
+    "additionalLibniceSourceAcquisitionNetworkIOAllowed": false,
+    "glibAcquisitionNetworkIOAllowed": false,
+    "opensslAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": "close_dependency_lock_hash_then_create_decision_v5_and_handoff_v8_for_exact_glib_2_64_2_source_only",
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_intake_only",
+    "sourceTreeModified": false
+  }
+}

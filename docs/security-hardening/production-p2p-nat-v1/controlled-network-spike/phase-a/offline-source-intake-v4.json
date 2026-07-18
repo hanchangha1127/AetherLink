@@ -1,0 +1,134 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-offline-source-intake",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_phase_a_libnice_offline_source_intake_v4",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "artifactStatus": "closed_libnice_source_present_audit_rejected",
+  "supersedes": {
+    "path": "offline-source-intake-v3.json",
+    "artifactId": "production_p2p_nat_v1_phase_a_libnice_offline_source_intake_v3",
+    "sha256": "7a8d36474b6704a2e7312fb9697b4b77b555d98945207b421d138834e1b7d4c5"
+  },
+  "consumedAuthority": {
+    "libniceDecision": {
+      "path": "../decision-v4.json",
+      "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+    },
+    "libniceHandoff": {
+      "path": "../../implementation/handoff-v7.json",
+      "sha256": "22306a0f057cf9eaf720c865ea7e46ed703a37fba93493eb937f592abefa5a58"
+    },
+    "glibDecision": {
+      "path": "../decision-v5.json",
+      "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+    },
+    "glibHandoff": {
+      "path": "../../implementation/handoff-v8.json",
+      "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+    },
+    "allOneShotAuthorityConsumed": true,
+    "additionalAcquisitionAuthorized": false
+  },
+  "candidate": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "releaseVersion": "0.1.23",
+    "selectionStatus": "rejected_before_compile",
+    "evaluationStatus": "closed"
+  },
+  "intake": {
+    "libnice": {
+      "archiveSha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d",
+      "treeSha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+      "regularFileCount": 184,
+      "archiveMatchesExtractedFiles": true,
+      "signatureTrust": "not_verified_detached_signature_bytes_pinned_only"
+    },
+    "glib": {
+      "archiveSha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+      "treeSha256": "1c36d535b42d89b62c375b60005dd3c073033ba5bb4928c6825c09a4bc61d3ac",
+      "regularFileCount": 1961,
+      "archiveMatchesExtractedFiles": true,
+      "officialChecksumMatched": true
+    }
+  },
+  "reviewedArtifacts": {
+    "libniceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "glibManifest": {
+      "path": "glib-source-manifest-v1.json",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    },
+    "dependencyClosure": {
+      "path": "libnice-dependency-closure-v2.json",
+      "sha256": "32acfbed04225a09121056db3a19796f804e2e3e3d5dd675cdad5991954f5d52"
+    },
+    "sourceAudit": {
+      "path": "libnice-source-audit-v1.json",
+      "auditId": "production_p2p_nat_v1_libnice_source_audit_v1",
+      "sha256": "2f76f43860e5967403ed2c6bbd7c59aa0b0babc0b5f64b2084b91dc763892ce7"
+    }
+  },
+  "reviewResults": {
+    "libniceProvenance": "complete_exact_archive_and_tree_identity",
+    "libniceSignatureTrust": "incomplete_not_cryptographically_verified",
+    "glibProvenance": "complete_official_checksum_archive_and_tree_identity",
+    "licenseReview": "complete_notices_recorded_distribution_review_pending",
+    "minimumDependencyClosure": "complete_set_identified",
+    "pendingDependencyProvenance": "not_started_cancelled_after_candidate_rejection",
+    "sourceSecurityAudit": "complete_rejected_four_independent_p1_profile_failures",
+    "compileEligibility": "denied"
+  },
+  "auditFailure": {
+    "candidateRejected": true,
+    "independentP1BlockerCount": 4,
+    "compileSkipped": true,
+    "pendingDependencyAcquisitionSkipped": true,
+    "sourceForkAuthorized": false,
+    "fallbackSelected": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "approvedRequestCount": 4,
+    "archiveReadAndExtractionPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceOrGeneratorExecutionPerformed": false,
+    "configureOrBuildSystemExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "linkOrLoadPerformed": false,
+    "symbolInspectionPerformed": false,
+    "testExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false,
+    "measurements": []
+  },
+  "currentAuthorization": {
+    "additionalSourceAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "configureOrBuildSystemExecutionAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": "open_new_versioned_networking_library_review_before_any_further_source_or_compile_authority",
+  "evidenceBoundary": {
+    "proves": "exact_libnice_and_glib_intake_plus_static_source_audit_rejection",
+    "doesNotProve": "signature_trust_pending_dependency_provenance_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_intake_only",
+    "sourceTreesModified": false
+  }
+}

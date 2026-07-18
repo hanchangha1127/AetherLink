@@ -15,7 +15,7 @@
     "selectionProfilePath": "selection-profile.json",
     "selectionProfileStatus": "approved_for_bounded_handoff",
     "selectionDecisionPath": "selection-decision.json",
-    "handoffPath": "implementation/handoff-v6.json",
+    "handoffPath": "implementation/handoff-v9.json",
     "implementationAuthorized": false,
     "networkIOAllowed": false,
     "librarySelectionAuthorized": false,

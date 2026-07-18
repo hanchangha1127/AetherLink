@@ -1,0 +1,122 @@
+{
+  "documentType": "aetherlink.p2p-nat-implementation-handoff",
+  "schemaVersion": 1,
+  "handoffId": "production_p2p_nat_v1_handoff_v9",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_libnice_rejected_no_library_authority",
+  "supersedes": {
+    "path": "handoff-v8.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v8",
+    "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+  },
+  "sourceDecision": {
+    "path": "../controlled-network-spike/decision-v6.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v6",
+    "sha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755"
+  },
+  "evidence": {
+    "sourceAudit": {
+      "path": "../controlled-network-spike/phase-a/libnice-source-audit-v1.json",
+      "sha256": "2f76f43860e5967403ed2c6bbd7c59aa0b0babc0b5f64b2084b91dc763892ce7"
+    },
+    "completedIntake": {
+      "path": "../controlled-network-spike/phase-a/offline-source-intake-v4.json",
+      "sha256": "507b75fc8003f8e73d307e4fb5eded8be5de29215220ce078a38047ea0fc677d"
+    },
+    "closedDependencyClosure": {
+      "path": "../controlled-network-spike/phase-a/libnice-dependency-closure-v3.json",
+      "sha256": "d3dea4d275a689b98f8b848df1134d2078a3817f755b885225a0bf738c600968"
+    },
+    "libniceManifest": {
+      "path": "../controlled-network-spike/phase-a/libnice-source-manifest-v1.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "glibManifest": {
+      "path": "../controlled-network-spike/phase-a/glib-source-manifest-v1.json",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    }
+  },
+  "networkingLibraryDisposition": {
+    "historicalRejectedCandidate": "libjuice-1.7.2-static-c-abi",
+    "latestRejectedCandidate": "libnice-0.1.23-glib-c-abi",
+    "latestRejectionStage": "source_audit_before_compile",
+    "latestIndependentP1BlockerCount": 4,
+    "selectedCandidate": null,
+    "nextCandidate": null,
+    "sourceForkStatus": "not_authorized",
+    "compileStatus": "not_started_candidate_rejected"
+  },
+  "phaseAStatus": {
+    "libnice_and_glib_supply_chain_intake": "complete_bounded",
+    "libnice_source_security_and_abi_audit": "complete_rejected",
+    "pending_dependency_source_intake": "not_run_candidate_rejected",
+    "android_macos_compile_only_integration": "not_run_candidate_rejected_before_compile",
+    "cross_platform_session_crypto_vectors": "complete",
+    "static_harness_and_egress_policy": "complete_static_only",
+    "whole_phase_a_security_review": "blocked_no_networking_library_candidate"
+  },
+  "acquisitionReceipt": {
+    "officialLibniceArchiveAndSignatureAcquired": true,
+    "officialGlibChecksumAndArchiveAcquired": true,
+    "exactOneShotAuthoritiesConsumed": true,
+    "pendingDependencySourcesAcquired": false,
+    "additionalAcquisitionAuthorized": false
+  },
+  "authorization": {
+    "implementationAuthorized": false,
+    "librarySelectionAuthorized": false,
+    "offlineSourceInspectionAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": false,
+    "toolchainAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "configureOrBuildSystemExecutionAllowed": false,
+    "compileOnlyIntegrationAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "phaseBExternalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceOrGeneratorExecutionPerformed": false,
+    "configureOrBuildSystemExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "linkOrLoadPerformed": false,
+    "symbolInspectionPerformed": false,
+    "testExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false,
+    "measurements": []
+  },
+  "nextHandoff": {
+    "creationAuthorized": false,
+    "requiresNewVersionedLibraryReview": true,
+    "requiresExplicitUserDecision": true,
+    "allowedDecisionScope": "new_networking_library_candidate_and_exact_pre_compile_source_audit_scope",
+    "rejectedAuthorityMayBeReused": false,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityAllowed": false
+  },
+  "evidenceBoundary": {
+    "proves": "exact_libnice_and_glib_intake_plus_two-review_static_rejection_before_compile",
+    "doesNotProve": "signature_trust_pending_dependency_provenance_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_handoff_only"
+  }
+}

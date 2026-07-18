@@ -1,0 +1,103 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-phase-a-progress",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v7",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "libnice_and_glib_intakes_complete_security_audit_in_progress",
+  "supersedes": {
+    "path": "progress-v6.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v6",
+    "sha256": "35e96f64476e558c7fe24bdedb9d377f7ec160baccd3a0c264efb87c284b5a21"
+  },
+  "consumedAuthority": {
+    "decision": {
+      "path": "../decision-v5.json",
+      "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v8.json",
+      "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+    },
+    "oneShotAuthorityConsumed": true,
+    "completedRequestCount": 2
+  },
+  "evidence": {
+    "libniceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "glibManifest": {
+      "path": "glib-source-manifest-v1.json",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    },
+    "glibIntake": {
+      "path": "glib-offline-source-intake-v1.json",
+      "sha256": "cec4fd2a71a9b26ab4e0bc4be99e60edbf9f04672a65cca784dede78a6dc8720"
+    },
+    "dependencyClosure": {
+      "path": "libnice-dependency-closure-v2.json",
+      "sha256": "32acfbed04225a09121056db3a19796f804e2e3e3d5dd675cdad5991954f5d52"
+    }
+  },
+  "candidateState": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "libniceSourceIntakeStatus": "complete",
+    "glibSourceIntakeStatus": "complete",
+    "minimumDependencySetStatus": "identified",
+    "sourceSecurityAuditStatus": "in_progress",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "pendingSourceSet": [
+    "libffi-3.7.1",
+    "GNU-libiconv-1.19",
+    "proxy-libintl-0.1",
+    "OpenSSL-3.5.7-LTS"
+  ],
+  "authorization": {
+    "additionalDependencyAcquisitionNetworkIOAllowed": false,
+    "offlineSourceInspectionAuthorized": true,
+    "sourceForkAuthorized": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceOrGeneratorExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionNetworkIOPerformed": false,
+    "measurements": []
+  },
+  "nextStep": {
+    "state": "complete_independent_libnice_source_security_audit",
+    "ifAuditPasses": "request_exact_four_source_scope_expansion",
+    "ifAuditFails": "reject_candidate_before_further_acquisition_or_compile",
+    "compilerSocketRuntimePhaseBOrProductionAuthorityMayBeOpened": false
+  },
+  "evidenceBoundary": {
+    "proves": "exact_libnice_and_glib_intakes_and_minimum_dependency_set_identification",
+    "doesNotProve": "pending_source_provenance_security_audit_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_progress_only"
+  }
+}

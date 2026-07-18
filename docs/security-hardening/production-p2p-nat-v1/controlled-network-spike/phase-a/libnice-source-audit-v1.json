@@ -1,0 +1,339 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-source-audit",
+  "schemaVersion": 1,
+  "auditId": "production_p2p_nat_v1_libnice_source_audit_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_rejected",
+  "scope": "read_only_supply_chain_dependency_security_and_c_abi_source_audit_no_compile_no_execution",
+  "sourceEvidence": {
+    "libniceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_libnice_source_manifest_v1",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "glibManifest": {
+      "path": "glib-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_glib_source_manifest_v1",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    },
+    "glibIntake": {
+      "path": "glib-offline-source-intake-v1.json",
+      "artifactId": "production_p2p_nat_v1_phase_a_glib_offline_source_intake_v1",
+      "sha256": "cec4fd2a71a9b26ab4e0bc4be99e60edbf9f04672a65cca784dede78a6dc8720"
+    },
+    "dependencyClosure": {
+      "path": "libnice-dependency-closure-v2.json",
+      "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v2",
+      "sha256": "32acfbed04225a09121056db3a19796f804e2e3e3d5dd675cdad5991954f5d52"
+    }
+  },
+  "approvalChain": {
+    "latestAcquisitionDecision": {
+      "path": "../decision-v5.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v5",
+      "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+    },
+    "latestAcquisitionHandoff": {
+      "path": "../../implementation/handoff-v8.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v8",
+      "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+    },
+    "preAuditProgress": {
+      "path": "progress-v7.json",
+      "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v7",
+      "sha256": "137c74ecce2ae6504a3bcd0e6ad7328a9e92e461ba514ae01602fcccc1a2d0ce"
+    }
+  },
+  "governingContracts": {
+    "controlledSpikeReview": {
+      "path": "../review-v1.json",
+      "reviewId": "production_p2p_nat_v1_controlled_network_spike_review_v1",
+      "sha256": "744099ec8b0fdd8edf214283661332b0b5deffed7c79211556b98d9ddf544c62"
+    },
+    "fallbackReview": {
+      "path": "../review-v2.json",
+      "reviewId": "production_p2p_nat_v1_controlled_network_spike_fallback_review_v2",
+      "sha256": "d20c9ddcf572edbfeb8df3bf899cb32f0f61c684974ea074f7ed841332c4122b"
+    },
+    "staticDestinationPolicy": {
+      "path": "static-harness-egress-policy-v1.json",
+      "artifactId": "production_p2p_nat_v1_phase_a_static_harness_egress_policy_v1",
+      "sha256": "6934995f310449fa675348c0314ea5bac2991693f1e1d080aa469d7d856ec9f5"
+    }
+  },
+  "method": {
+    "sourceExecution": false,
+    "sourceGeneratorExecution": false,
+    "configureExecution": false,
+    "buildSystemExecution": false,
+    "compilerInvocation": false,
+    "staticLibraryArchiverInvocation": false,
+    "linkOrLoad": false,
+    "symbolInspection": false,
+    "testExecution": false,
+    "socketCreation": false,
+    "runtimeNetworkIO": false,
+    "phaseBExecution": false,
+    "reviewMode": "line_referenced_static_read_only",
+    "independentReviewCount": 2,
+    "independentReviewModel": "gpt-5.6-sol"
+  },
+  "supplyChainResult": {
+    "libniceArchiveSha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d",
+    "libniceTreeSha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+    "libniceRegularFileCount": 184,
+    "libniceSignatureTrust": "not_verified_detached_signature_bytes_pinned_only",
+    "glibArchiveSha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+    "glibTreeSha256": "1c36d535b42d89b62c375b60005dd3c073033ba5bb4928c6825c09a4bc61d3ac",
+    "glibRegularFileCount": 1961,
+    "minimumDependencySetIdentified": true,
+    "pendingSourcesAcquired": false,
+    "pendingSources": [
+      "libffi-3.7.1",
+      "GNU-libiconv-1.19",
+      "proxy-libintl-0.1",
+      "OpenSSL-3.5.7-LTS"
+    ],
+    "pendingSourceAcquisitionDisposition": "cancelled_candidate_rejected_before_scope_expansion"
+  },
+  "requiredTopicResults": [
+    {
+      "topic": "regular_nomination",
+      "result": "mechanism_pass",
+      "evidence": [
+        "agent/conncheck.c:929-1083 selects a highest-priority valid pair and schedules a separate triggered check",
+        "agent/conncheck.c:2900-2918 adds USE-CANDIDATE only according to the configured nomination mode",
+        "agent/conncheck.c:3701-3711 publishes the selected pair only after the pair is nominated"
+      ]
+    },
+    {
+      "topic": "role_handling_and_tie_breaker",
+      "result": "mechanism_pass_entropy_floor_fail",
+      "evidence": [
+        "stun/usages/ice.c:273-300 compares tie-breakers and switches role or sends 487",
+        "agent/conncheck.c:3382-3412 recalculates pair priorities after a role change",
+        "agent/agent.c:1272-1274 generates the tie-breaker through the rejected default NiceRNG"
+      ]
+    },
+    {
+      "topic": "rfc7675_consent_freshness",
+      "result": "fail_response_authentication_and_tuple_binding",
+      "evidence": [
+        "agent/conncheck.c:1227-1263 implements expiry and failure timing",
+        "agent/agent.c:5781-5785 blocks application send after consent is lost",
+        "agent/conncheck.c:4348-4358 updates consent without checking response class, transaction identity, or source tuple",
+        "agent/conncheck.c:4942-4945 routes every otherwise-unmapped validated response to that consent updater",
+        "stun/stunagent.c:218-226 exempts 300, 400, 401, and 438 errors from credential validation"
+      ]
+    },
+    {
+      "topic": "turn_authentication_nonce_and_redirect",
+      "result": "fail_automatic_unapproved_redirect",
+      "evidence": [
+        "stun/stunagent.c:218-226 exempts TRY-ALTERNATE errors from credential validation",
+        "agent/conncheck.c:4027-4042 accepts ALTERNATE-SERVER after transaction-id matching",
+        "agent/conncheck.c:3931-3980 mutates TURN destinations and immediately creates a TCP or TLS TURN socket",
+        "agent/conncheck.c:3770-3811 similarly replaces the STUN discovery destination"
+      ]
+    },
+    {
+      "topic": "stun_turn_parser_limits",
+      "result": "static_bounds_pass_runtime_not_proven",
+      "evidence": [
+        "stun/stunmessage.c:598-665 validates full message length, padding, attribute headers, and attribute bounds",
+        "stun/stunagent.c:161-169 rejects buffers whose parsed length differs from the received length",
+        "stun/stunagent.c:196-215 requires response transaction ids to match a saved request"
+      ]
+    },
+    {
+      "topic": "cancellation_shutdown_and_callbacks",
+      "result": "fail",
+      "evidence": [
+        "agent/agent.c:2765-2769 releases resolver data before later list removal",
+        "agent/agent.c:2789-2819 dereferences the stream returned by agent_find_stream without a null check",
+        "agent/agent.c:4030-4045 removes a stream after cancelling TURN resolution but not the agent-wide STUN resolution",
+        "agent/component.c:343-351 documents a reliably triggerable pseudo-TCP graceful-close race"
+      ]
+    },
+    {
+      "topic": "content_free_diagnostics",
+      "result": "fail",
+      "evidence": [
+        "agent/debug.c:84-112 enables STUN diagnostics from NICE_DEBUG or G_MESSAGES_DEBUG",
+        "stun/stunagent.c:317-320 and 656-658 print HMAC keys and integrity values",
+        "agent/conncheck.c:1415-1425 and 2881-2897 print ICE usernames and passwords",
+        "agent/conncheck.c:4404-4434 and socket/socks5.c:115-124 print credentials"
+      ]
+    },
+    {
+      "topic": "numeric_endpoint_pre_io_policy",
+      "result": "fail",
+      "evidence": [
+        "agent/agent.c:3695-3707 sends configured STUN strings to GResolver",
+        "agent/agent.c:3780-3794 schedules STUN resolution even when the configured string is numeric",
+        "agent/conncheck.c:3931-3980 changes destination and can create a socket without an application authorization callback",
+        "controlled profile requires immutable exact numeric tuple authorization before every library or socket boundary"
+      ]
+    },
+    {
+      "topic": "c_abi_allocator_callback_and_error_boundary",
+      "result": "fail_requires_new_source_or_private_internal_contract",
+      "evidence": [
+        "nice/libnice.sym:1-132 exports agent, STUN, pseudo-TCP, and debug APIs rather than a narrow product ABI",
+        "agent/candidate.h:167-197 exposes credential pointers in NiceCandidate",
+        "agent/address.h:77-92 exposes a sockaddr-backed platform layout",
+        "random/random.c:54-68 provides a global RNG factory setter which is omitted from nice/libnice.sym",
+        "a product adapter would need opaque handles, copied ownership, stable errors, callback serialization, symbol hiding, and an audited RNG boundary"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "findingId": "LN0123-P1-ENTROPY",
+      "severity": "P1",
+      "title": "ICE credentials and tie-breakers use the non-cryptographic GLib global PRNG",
+      "evidence": [
+        "random/random.c:54-59 selects nice_rng_glib_new by default",
+        "random/random-glib.c:45-77 uses g_random_set_seed and g_random_int_range",
+        "agent/stream.c:124-130 generates ICE ufrag and password through NiceRNG",
+        "agent/agent.c:1272-1274 generates the 64-bit tie-breaker through the same NiceRNG",
+        "random/random.c:65-68 exposes only an internal global replacement hook omitted from nice/libnice.sym"
+      ],
+      "disposition": "independent_rejection_blocker_public_abi_cannot_enforce_cryptographic_entropy"
+    },
+    {
+      "findingId": "LN0123-P1-SECRET-DIAGNOSTICS",
+      "severity": "P1",
+      "title": "Reachable diagnostics emit ICE, TURN, SOCKS, and HMAC secret material",
+      "evidence": [
+        "agent/debug.c:94-112 enables STUN logging from process environment flags",
+        "stun/stunagent.c:317-320 and 656-658 emit HMAC key bytes",
+        "agent/conncheck.c:1415-1425 and 2881-2897 emit ICE passwords",
+        "agent/agent.c:2381-2389 and 3288-3291 emit candidate and TURN passwords",
+        "socket/socks5.c:115-124 emits proxy credentials"
+      ],
+      "disposition": "independent_rejection_blocker_content_free_diagnostic_floor_failed"
+    },
+    {
+      "findingId": "LN0123-P1-PRE-IO-REDIRECT",
+      "severity": "P1",
+      "title": "STUN and TURN alternate-server handling changes destinations before caller authorization",
+      "evidence": [
+        "stun/stunagent.c:218-226 skips credential validation for TRY-ALTERNATE",
+        "agent/conncheck.c:3770-3811 applies a STUN alternate server",
+        "agent/conncheck.c:4027-4042 applies a TURN alternate server after transaction-id matching",
+        "agent/conncheck.c:3931-3980 mutates destinations and immediately creates a TCP or TLS TURN socket"
+      ],
+      "disposition": "independent_rejection_blocker_no_redirect_and_exact_tuple_pre_io_floors_failed"
+    },
+    {
+      "findingId": "LN0123-P1-CONSENT-BINDING",
+      "severity": "P1",
+      "title": "Consent freshness accepts otherwise-unmapped responses without success-class or source-tuple binding",
+      "evidence": [
+        "agent/conncheck.c:4348-4358 unconditionally updates selected-pair consent time",
+        "agent/conncheck.c:4942-4945 calls the updater for every otherwise-unmapped validated response",
+        "the updater receives no source address and performs no transaction-id comparison",
+        "stun/stunagent.c:218-226 permits credential-free 300, 400, 401, and 438 error responses"
+      ],
+      "disposition": "independent_rejection_blocker_authenticated_consent_and_exact_tuple_floors_failed"
+    },
+    {
+      "findingId": "LN0123-P2-STUN-RESOLVER-LIFETIME",
+      "severity": "P2",
+      "title": "Stream removal does not safely bound an outstanding STUN resolver callback",
+      "evidence": [
+        "agent/agent.c:2765-2769 frees resolver data before using its pointer for list removal",
+        "agent/agent.c:2789-2819 does not null-check a removed stream before dereference",
+        "agent/agent.c:4030-4045 cancels TURN resolution but not STUN resolution during stream removal"
+      ],
+      "disposition": "rejection_supporting_cancellation_and_callback_lifetime_failure"
+    },
+    {
+      "findingId": "LN0123-P2-GRACEFUL-SHUTDOWN",
+      "severity": "P2",
+      "title": "Pseudo-TCP graceful shutdown contains a documented reliably triggerable race",
+      "evidence": [
+        "agent/component.c:343-351 closes the underlying socket before the FIN handshake can complete"
+      ],
+      "disposition": "rejection_supporting_bounded_shutdown_failure"
+    },
+    {
+      "findingId": "LN0123-P2-ABI-SURFACE",
+      "severity": "P2",
+      "title": "The upstream ABI is too broad and platform-coupled for direct product exposure",
+      "evidence": [
+        "nice/libnice.sym:1-132 exports STUN, pseudo-TCP, and debug controls",
+        "agent/candidate.h:167-197 exposes pointers and caller-visible ownership",
+        "agent/address.h:77-92 exposes sockaddr-backed storage",
+        "random/random.c:65-68 relies on a non-public global RNG replacement hook"
+      ],
+      "disposition": "rejection_supporting_adapter_and_symbol_hiding_contract_missing"
+    }
+  ],
+  "rejectionDecision": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "outcome": "rejected_before_compile",
+    "independentP1BlockerCount": 4,
+    "wrapperOnlyMitigationSufficient": false,
+    "sourceForkOrEquivalentInternalContractRequired": true,
+    "sourceForkAuthorized": false,
+    "compileEligibility": false,
+    "pendingDependencyAcquisitionRequired": false,
+    "pendingDependencyAcquisitionAuthorized": false,
+    "fallbackSelected": false,
+    "nextCandidate": null,
+    "nextAction": "open_new_versioned_library_review_before_any_additional_source_acquisition"
+  },
+  "compileBoundary": {
+    "newCompileContractCreated": false,
+    "compilerInvocationAuthorized": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "linkOrLoadPerformed": false,
+    "symbolInspectionPerformed": false,
+    "androidCompilePerformed": false,
+    "macosCompilePerformed": false,
+    "reason": "candidate_rejected_by_static_source_audit_before_pending_dependency_acquisition_and_compile"
+  },
+  "networkBoundary": {
+    "additionalSourceAcquisitionAuthorized": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "evidenceBoundary": {
+    "proves": [
+      "exact_libnice_and_glib_archive_and_extracted_tree_identity",
+      "license_generated_file_build_input_and_minimum_dependency_inventory",
+      "two_independent_line_referenced_read_only_source_audits",
+      "libnice_candidate_rejection_before_compilation"
+    ],
+    "doesNotProve": [
+      "cryptographic_trust_in_the_libnice_detached_signature",
+      "pending_dependency_source_provenance",
+      "successful_android_or_macos_compilation",
+      "abi_or_symbol_compatibility",
+      "source_or_library_runtime_behavior",
+      "socket_or_network_behavior",
+      "ice_stun_turn_interoperability",
+      "nat_traversal",
+      "physical_android_behavior",
+      "phase_b",
+      "production_readiness"
+    ]
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_audit_only",
+    "libniceSourceTreeModified": false,
+    "glibSourceTreeModified": false
+  }
+}

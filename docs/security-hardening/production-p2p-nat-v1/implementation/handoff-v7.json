@@ -1,0 +1,114 @@
+{
+  "documentType": "aetherlink.p2p-nat-implementation-handoff",
+  "schemaVersion": 1,
+  "handoffId": "production_p2p_nat_v1_handoff_v7",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_libnice_source_acquisition_authorized_dependency_lock_pending",
+  "supersedes": {
+    "path": "handoff-v6.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v6",
+    "sha256": "87af07548bfeb17b54642bb16c00fab2652006ba9401a05ccce8d134bba894e5"
+  },
+  "sourceDecision": {
+    "path": "../controlled-network-spike/decision-v4.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v4",
+    "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+  },
+  "sourceFallbackReview": {
+    "path": "../controlled-network-spike/review-v2.json",
+    "reviewId": "production_p2p_nat_v1_controlled_network_spike_fallback_review_v2",
+    "sha256": "d20c9ddcf572edbfeb8df3bf899cb32f0f61c684974ea074f7ed841332c4122b"
+  },
+  "networkingLibraryEvaluation": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "evaluationStatus": "approved_for_bounded_phase_a_read_only_source_audit",
+    "compileStatus": "not_authorized",
+    "productionStatus": "not_authorized"
+  },
+  "authorizedAcquisition": {
+    "authorityType": "one_shot_exact_artifacts",
+    "networkPurpose": "exact_libnice_release_source_and_detached_signature_acquisition_only",
+    "allowedHost": "libnice.freedesktop.org",
+    "requests": [
+      {
+        "url": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz",
+        "relativePath": "build/offline-source/libnice-0.1.23/original/libnice-0.1.23.tar.gz",
+        "maximumBytes": 33554432
+      },
+      {
+        "url": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz.asc",
+        "relativePath": "build/offline-source/libnice-0.1.23/original/libnice-0.1.23.tar.gz.asc",
+        "maximumBytes": 65536
+      }
+    ],
+    "httpsOnly": true,
+    "redirectFollowingAllowed": false,
+    "environmentProxyAllowed": false,
+    "packageManagerAcquisitionAllowed": false,
+    "archiveExtractionAllowed": true,
+    "manifestGenerationAllowed": true
+  },
+  "authorization": {
+    "implementationAuthorized": false,
+    "fallbackProductionSelectionAuthorized": false,
+    "offlineSourceInspectionAuthorized": true,
+    "libniceSourceAcquisitionAuthorized": true,
+    "libniceDependencyAcquisitionAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": true,
+    "dependencyAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "testExecutableBuildAllowed": false,
+    "testExecutionAllowed": false,
+    "sourceForkAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "phaseBExternalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecordAtHandoff": {
+    "libniceArtifactsAcquired": false,
+    "dependencyArtifactsAcquired": false,
+    "sourceInspected": false,
+    "sourceExecuted": false,
+    "compilerInvoked": false,
+    "staticLibraryArchiverInvoked": false,
+    "buildSystemExecuted": false,
+    "socketCreated": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false,
+    "measurements": []
+  },
+  "nextHandoff": {
+    "creationAuthorizedAfterIntake": true,
+    "requiresNewUserApprovalWithinRecordedGlibFamilyScope": false,
+    "requiredInputs": [
+      "completed_libnice_source_intake",
+      "read_only_dependency_closure_record",
+      "exact_official_dependency_artifact_lock"
+    ],
+    "scopeExpansionRequiresExplicitUserApproval": true,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityAllowed": false
+  },
+  "evidenceBoundary": {
+    "proves": "bounded_authority_for_two_exact_official_libnice_release_artifacts",
+    "doesNotProve": "artifact_receipt_signature_trust_source_quality_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_handoff_only"
+  }
+}

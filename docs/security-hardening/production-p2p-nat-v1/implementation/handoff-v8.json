@@ -1,0 +1,116 @@
+{
+  "documentType": "aetherlink.p2p-nat-implementation-handoff",
+  "schemaVersion": 1,
+  "handoffId": "production_p2p_nat_v1_handoff_v8",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_glib_2_64_2_source_acquisition_authorized",
+  "supersedes": {
+    "path": "handoff-v7.json",
+    "handoffId": "production_p2p_nat_v1_handoff_v7",
+    "sha256": "22306a0f057cf9eaf720c865ea7e46ed703a37fba93493eb937f592abefa5a58"
+  },
+  "sourceDecision": {
+    "path": "../controlled-network-spike/decision-v5.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v5",
+    "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+  },
+  "sourceEvidence": {
+    "libniceIntake": {
+      "path": "../controlled-network-spike/phase-a/offline-source-intake-v3.json",
+      "sha256": "7a8d36474b6704a2e7312fb9697b4b77b555d98945207b421d138834e1b7d4c5"
+    },
+    "dependencyClosure": {
+      "path": "../controlled-network-spike/phase-a/libnice-dependency-closure-v1.json",
+      "sha256": "83604bfc0cbcce3a43cdcc62990ba8698576b219eed51d66c0c077118a0afab4"
+    }
+  },
+  "networkingLibraryEvaluation": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "authorizedAcquisition": {
+    "authorityType": "one_shot_exact_artifacts",
+    "networkPurpose": "exact_glib_2_64_2_source_and_official_checksum_acquisition_only",
+    "allowedHost": "download.gnome.org",
+    "requests": [
+      {
+        "url": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.sha256sum",
+        "relativePath": "build/offline-source/glib-2.64.2/original/glib-2.64.2.sha256sum",
+        "maximumBytes": 4096
+      },
+      {
+        "url": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.tar.xz",
+        "relativePath": "build/offline-source/glib-2.64.2/original/glib-2.64.2.tar.xz",
+        "expectedSha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+        "maximumBytes": 67108864
+      }
+    ],
+    "httpsOnly": true,
+    "redirectFollowingAllowed": false,
+    "environmentProxyAllowed": false,
+    "packageManagerAcquisitionAllowed": false,
+    "archiveExtractionAllowed": true,
+    "manifestGenerationAllowed": true
+  },
+  "authorization": {
+    "implementationAuthorized": false,
+    "fallbackProductionSelectionAuthorized": false,
+    "offlineSourceInspectionAuthorized": true,
+    "glibSourceAcquisitionAuthorized": true,
+    "otherDependencyAcquisitionAuthorized": false,
+    "opensslAcquisitionAuthorized": false,
+    "sourceAcquisitionNetworkIOAllowed": true,
+    "otherDependencyAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "testExecutableBuildAllowed": false,
+    "testExecutionAllowed": false,
+    "sourceForkAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "phaseBExternalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecordAtHandoff": {
+    "glibArtifactsAcquired": false,
+    "glibSourceInspected": false,
+    "sourceOrGeneratorExecuted": false,
+    "compilerInvoked": false,
+    "staticLibraryArchiverInvoked": false,
+    "buildSystemExecuted": false,
+    "socketCreated": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false,
+    "measurements": []
+  },
+  "nextHandoff": {
+    "creationAuthorizedAfterIntake": true,
+    "requiredInputs": [
+      "completed_glib_2_64_2_source_intake",
+      "read_only_glib_transitive_dependency_closure"
+    ],
+    "opensslScopeExpansionRequiresExplicitUserApproval": true,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityAllowed": false
+  },
+  "evidenceBoundary": {
+    "proves": "bounded_authority_for_two_exact_official_glib_release_artifacts",
+    "doesNotProve": "artifact_receipt_dependency_completeness_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_handoff_only"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "documentType": "aetherlink.p2p-nat-glib-offline-source-intake",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_phase_a_glib_offline_source_intake_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_glib_source_present_scope_expansion_required",
+  "authority": {
+    "decision": {
+      "path": "../decision-v5.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v5",
+      "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v8.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v8",
+      "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+    },
+    "oneShotAuthorityConsumed": true,
+    "additionalDependencyAcquisitionAuthorized": false
+  },
+  "dependency": {
+    "name": "GLib",
+    "version": "2.64.2",
+    "officialIndexUrl": "https://download.gnome.org/sources/glib/2.64/",
+    "archiveUrl": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.tar.xz",
+    "checksumUrl": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.sha256sum"
+  },
+  "intake": {
+    "officialChecksum": {
+      "sizeBytes": 168,
+      "sha256": "b7835b3cee483dc22f80cb4e82ad3675aee08a0fc8f81f23257a2a7d10d8a5f9",
+      "archiveEntryVerified": true
+    },
+    "archive": {
+      "sizeBytes": 4760436,
+      "sha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277"
+    },
+    "extractedSource": {
+      "regularFileCount": 1961,
+      "totalRegularFileBytes": 43410608,
+      "treeSha256": "1c36d535b42d89b62c375b60005dd3c073033ba5bb4928c6825c09a4bc61d3ac",
+      "archiveMatchesExtractedFiles": true,
+      "unsafeEntryCount": 0
+    },
+    "sourceManifest": {
+      "path": "glib-source-manifest-v1.json",
+      "manifestId": "production_p2p_nat_v1_glib_source_manifest_v1",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    }
+  },
+  "reviewResults": {
+    "officialChecksum": "complete_exact_match",
+    "archiveExtractionEquivalence": "complete",
+    "license": "complete_lgpl_and_bundled_pcre_notices_recorded_distribution_review_pending",
+    "directDependencyClosure": "complete",
+    "transitiveDependencyClosure": "complete_minimum_source_set_identified_acquisition_pending",
+    "nativeConfigureExecutionRisk": "identified_requires_no_exe_wrapper_cross_configuration"
+  },
+  "minimumExternalSourceSet": [
+    "libffi",
+    "GNU_libiconv_for_Android_minSdk26",
+    "proxy-libintl_stub_only",
+    "OpenSSL_LTS"
+  ],
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "approvedRequestCount": 2,
+    "archiveReadAndExtractionPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceOrGeneratorExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false
+  },
+  "currentAuthorization": {
+    "additionalDependencyAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": "complete_libnice_security_audit_before_requesting_exact_external_dependency_scope_expansion",
+  "evidenceBoundary": {
+    "proves": "exact_glib_source_receipt_checksum_extraction_and_static_dependency_metadata",
+    "doesNotProve": "external_dependency_sources_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_glib_intake_only",
+    "sourceTreeModified": false
+  }
+}

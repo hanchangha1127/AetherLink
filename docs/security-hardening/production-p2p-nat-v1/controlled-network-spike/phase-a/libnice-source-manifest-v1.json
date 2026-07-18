@@ -1,0 +1,1159 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-source-manifest",
+  "schemaVersion": 1,
+  "manifestId": "production_p2p_nat_v1_libnice_source_manifest_v1",
+  "recordedDate": "2026-07-17",
+  "status": "complete_dependency_closure_partial",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "candidate": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "officialReleaseIndexUrl": "https://libnice.freedesktop.org/",
+    "archiveUrl": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz",
+    "signatureUrl": "https://libnice.freedesktop.org/releases/libnice-0.1.23.tar.gz.asc",
+    "releaseVersion": "0.1.23",
+    "mesonDeclaredVersionEvidence": "meson.build:1-4"
+  },
+  "acquisition": {
+    "authorityDecision": "../decision-v4.json",
+    "authorityHandoff": "../../implementation/handoff-v7.json",
+    "transport": "https_only_exact_host_no_redirect_no_environment_proxy",
+    "requestCount": 2,
+    "archive": {
+      "path": "build/offline-source/libnice-0.1.23/original/libnice-0.1.23.tar.gz",
+      "sizeBytes": 469330,
+      "sha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d"
+    },
+    "detachedSignature": {
+      "path": "build/offline-source/libnice-0.1.23/original/libnice-0.1.23.tar.gz.asc",
+      "sizeBytes": 195,
+      "sha256": "44292ddf373bc7a962eb3949d4754987d7bbd50cb2d3a2effccb71a2d332727b",
+      "formatInspection": "openpgp_signature_old_packet_format",
+      "cryptographicVerificationStatus": "not_verified_no_local_openpgp_verifier_or_trusted_signing_key",
+      "coLocatedOfficialTransportIsNotSignatureTrust": true
+    }
+  },
+  "extraction": {
+    "path": "build/offline-source/libnice-0.1.23/source",
+    "archiveRoot": "libnice-0.1.23",
+    "regularFileCount": 184,
+    "totalRegularFileBytes": 2197866,
+    "symlinkCount": 0,
+    "hardlinkCount": 0,
+    "specialFileCount": 0,
+    "pathTraversalCount": 0,
+    "archiveMatchesExtractedFiles": true
+  },
+  "sourceTree": {
+    "digestAlgorithm": "sha256(path_utf8_nul_size_ascii_nul_file_sha256_ascii_lf)_sorted_by_path_utf8",
+    "sha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+    "files": [
+      {
+        "path": ".gitignore",
+        "sizeBytes": 64,
+        "sha256": "833a6bf97d783dfc0f1e53b2130875a170d9bd54db91913534efed878bb4e7a1"
+      },
+      {
+        "path": ".gitlab-ci.yml",
+        "sizeBytes": 11635,
+        "sha256": "2cdd9ec048472a1701e1d90a8f913986dc920d8207ef1f21f57a927fe08280dc"
+      },
+      {
+        "path": ".lcovrc",
+        "sizeBytes": 733,
+        "sha256": "6906082c5920fabb1dc486686d57ae1726899f44e439f827fd7c673294a36f8d"
+      },
+      {
+        "path": "AUTHORS",
+        "sizeBytes": 187,
+        "sha256": "d72eb6fa9d5e93abb11d13b6c6f04fda2ba183d0705e703887cda243f6f1eead"
+      },
+      {
+        "path": "COPYING",
+        "sizeBytes": 292,
+        "sha256": "e5504e5ffe894870ea1a652df957a120ead9c3f9a5e9d314ca41ba06f2d72024"
+      },
+      {
+        "path": "COPYING.LGPL",
+        "sizeBytes": 26527,
+        "sha256": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861"
+      },
+      {
+        "path": "COPYING.MPL",
+        "sizeBytes": 25657,
+        "sha256": "3b3c75ae6c663c4f93987647eb5463d33dc1602a1aded3ac479773f2c3928e3a"
+      },
+      {
+        "path": "NEWS",
+        "sizeBytes": 14559,
+        "sha256": "e6289f8c60bd70e13809c4bc36f9271c252b5c4bb9a1777012372cc09c9f261c"
+      },
+      {
+        "path": "README",
+        "sizeBytes": 1837,
+        "sha256": "d02346bc98ad63ff50ef945626834d5d39dd5cd7e245b5bb9f89bb1387285c58"
+      },
+      {
+        "path": "TODO",
+        "sizeBytes": 603,
+        "sha256": "8758a3fa498f3d3e0bbaed8ceea0891e7a4c68c3dcdc48b52c902b263c006b62"
+      },
+      {
+        "path": "agent/address.c",
+        "sizeBytes": 10769,
+        "sha256": "5f5d64241898d5dbd2b48eaedbba5672c926f371525d9a2e5308ba7401ecee96"
+      },
+      {
+        "path": "agent/address.h",
+        "sizeBytes": 8039,
+        "sha256": "f23da8b7540d6d1475ea1c568427643c02a7eace81552fa2e1ec6dbf7be92fbe"
+      },
+      {
+        "path": "agent/agent-priv.h",
+        "sizeBytes": 13466,
+        "sha256": "fd0da885694dadd51d12b642ab68babc61962b3ca88462d1ca7daebfe95a874f"
+      },
+      {
+        "path": "agent/agent.c",
+        "sizeBytes": 246816,
+        "sha256": "a012b0dd6ebf2608d6a6bf090e679c48be9e6d0b62af2674b7d261ab837c4a05"
+      },
+      {
+        "path": "agent/agent.h",
+        "sizeBytes": 59572,
+        "sha256": "4f7cf7b423fd24ace3876426a210d50d1dff359c99944a4d16e4816c43dace37"
+      },
+      {
+        "path": "agent/candidate-priv.h",
+        "sizeBytes": 4232,
+        "sha256": "9588632f3581105334c14f346dd95690725d2c292d656a9b8b025ecae518d028"
+      },
+      {
+        "path": "agent/candidate.c",
+        "sizeBytes": 15008,
+        "sha256": "c887f296a1bba872a43af2a1d1e69248f5cce377e2349789549d37f4581ecee0"
+      },
+      {
+        "path": "agent/candidate.h",
+        "sizeBytes": 8828,
+        "sha256": "ff241fd1ca2841e797cd5f6c2e62caa7a6b2cf26592829367eb8db16fe7af351"
+      },
+      {
+        "path": "agent/component.c",
+        "sizeBytes": 53800,
+        "sha256": "ec9158aba1cde7f89aa7db95ee8c5ff62c4be9853be8cf0601aba4fed56b4f86"
+      },
+      {
+        "path": "agent/component.h",
+        "sizeBytes": 12828,
+        "sha256": "5e2c0af5ab9219f2aae1bc07105725e2613b40bad385a468a8ffb26f8b1fd4d9"
+      },
+      {
+        "path": "agent/conncheck.c",
+        "sizeBytes": 179452,
+        "sha256": "b778ac56479c0278a6cb6781c02c8c7692fac563c8285f678e9801a7880fc096"
+      },
+      {
+        "path": "agent/conncheck.h",
+        "sizeBytes": 5408,
+        "sha256": "4a7eef2f07cad5c87690718096082f20ca3319eced8184511f4d7a5491e12122"
+      },
+      {
+        "path": "agent/debug.c",
+        "sizeBytes": 5133,
+        "sha256": "91baedcd0d8de78f4eb8ff3ccf9cabc151db1163d6157f82b991facd44b008d7"
+      },
+      {
+        "path": "agent/debug.h",
+        "sizeBytes": 3799,
+        "sha256": "33d4fd0f51dd3eab1ef3b7f370a6218446d25c82078f838377aafa9825d9aae2"
+      },
+      {
+        "path": "agent/discovery.c",
+        "sizeBytes": 46400,
+        "sha256": "3a333427a138586974fbdb5b1fdb3e164a51d76fa90d55eaa2efc3338ddd455c"
+      },
+      {
+        "path": "agent/discovery.h",
+        "sizeBytes": 5407,
+        "sha256": "2f7c0483ff6cda86fd34d98d6a8ecd57bb945554562f68d85a6ca1f2261bca25"
+      },
+      {
+        "path": "agent/inputstream.c",
+        "sizeBytes": 15149,
+        "sha256": "88a45be29796746c467cf9e83df179c99f10a984b5d5be2742e68ee4c114a00e"
+      },
+      {
+        "path": "agent/inputstream.h",
+        "sizeBytes": 2920,
+        "sha256": "2f7e7ea5309b21a4d4698da659e800af75fa3b4c7b6360fddeb3c9607875d5b9"
+      },
+      {
+        "path": "agent/interfaces.c",
+        "sizeBytes": 23593,
+        "sha256": "91be12e36149016d4edf75f5339fda32864c3d46819bba4a1f0a5336dac7818c"
+      },
+      {
+        "path": "agent/interfaces.h",
+        "sizeBytes": 2880,
+        "sha256": "f759495e344e680aa49e1a916302b6ff34623883f528e4b510493e226966d6de"
+      },
+      {
+        "path": "agent/iostream.c",
+        "sizeBytes": 11127,
+        "sha256": "8d65418ce7940c9810510558b706b9a6960000b2fb65750483340849ff550270"
+      },
+      {
+        "path": "agent/iostream.h",
+        "sizeBytes": 2919,
+        "sha256": "69fcbc09922ad328bae8f41a12b71f0d62b8437236f0d661a2f5b566913b95e9"
+      },
+      {
+        "path": "agent/meson.build",
+        "sizeBytes": 1776,
+        "sha256": "685cc6833b589fa4cfa94fa18235022fe0f88154ed18ae4966579a5dd3f18cb1"
+      },
+      {
+        "path": "agent/outputstream.c",
+        "sizeBytes": 20149,
+        "sha256": "2df3b48fece9e89304b1120f8a78efe1139dc87173b039b597a1e6a2f414575d"
+      },
+      {
+        "path": "agent/outputstream.h",
+        "sizeBytes": 2952,
+        "sha256": "07126725e8b29cf8200627e672670d72610f995676a34e61bda3b32eb3d02ab1"
+      },
+      {
+        "path": "agent/pseudotcp.c",
+        "sizeBytes": 80443,
+        "sha256": "d0eb851f16bf546096f8edcc9fce3b3d32cdb4f035d3d35662d615dd28920dee"
+      },
+      {
+        "path": "agent/pseudotcp.h",
+        "sizeBytes": 18139,
+        "sha256": "1e4c0c2317e172bb3513ef0ee68a8dfc3158f8e8e93981d148254d47c19180cb"
+      },
+      {
+        "path": "agent/stream.c",
+        "sizeBytes": 5704,
+        "sha256": "1e54ec8df47097420e12cd6c0ecb8e9d8847d923aaec93de4f1130289e17fdd8"
+      },
+      {
+        "path": "agent/stream.h",
+        "sizeBytes": 4185,
+        "sha256": "53991c624e283c36b48f225dbbfb50481fc215976d01de5b9bf2e3c0980a8c67"
+      },
+      {
+        "path": "docs/design.txt",
+        "sizeBytes": 8989,
+        "sha256": "7d2efe3d4fc82067d1a7763f3039623cfb22855ddb24926ea7cdac227fd0d289"
+      },
+      {
+        "path": "docs/reference/libnice/libnice-docs.xml",
+        "sizeBytes": 4952,
+        "sha256": "bd9dc2959cad43f7baf59557b595550bcacd4755ad6ef6f05aef5bd4ed58d9a0"
+      },
+      {
+        "path": "docs/reference/libnice/libnice-sections.txt",
+        "sizeBytes": 8796,
+        "sha256": "07b17848dbe270ead0c15c7a24db0d4d03a55a809626d3e15a1249a67c642996"
+      },
+      {
+        "path": "docs/reference/libnice/meson.build",
+        "sizeBytes": 2402,
+        "sha256": "cd48026533a47f09b7fc1c8b7a221af8ddac561b9eb39ceda3dbe414458772f6"
+      },
+      {
+        "path": "docs/reference/libnice/states.gv",
+        "sizeBytes": 1154,
+        "sha256": "66140d4bd0765e07fe208d416371a1c0f16b6f664543be64a543d098701d69e4"
+      },
+      {
+        "path": "docs/reference/libnice/states.png",
+        "sizeBytes": 48732,
+        "sha256": "634e42b2cdef20e9e7e53594220c25fc472d90e9402fb46d902f76591c1bfe97"
+      },
+      {
+        "path": "examples/meson.build",
+        "sizeBytes": 251,
+        "sha256": "9fffac6c3232185e4be0e3c9c16538a77ab0826eed303bcf1676d77a8bf31f9f"
+      },
+      {
+        "path": "examples/sdp-example.c",
+        "sizeBytes": 8720,
+        "sha256": "e3309a9cef5431399cf27b73a0941d7310625d441d0d9dc081e3e5bdb3960e81"
+      },
+      {
+        "path": "examples/simple-example.c",
+        "sizeBytes": 12992,
+        "sha256": "388cd5b542e1e62b636c8a4225b8e586eee5838f8d56b234f82150b5e0e2c361"
+      },
+      {
+        "path": "examples/threaded-example.c",
+        "sizeBytes": 13584,
+        "sha256": "a6a9892d6c4d9d1f89c6c150061a7f05c102cfa389cc93bf9e8168547fee1701"
+      },
+      {
+        "path": "gst/gstnice.c",
+        "sizeBytes": 2088,
+        "sha256": "1f24106e507837f12f56b701e01a29ffef1ed7f5c68639cbdfd31faf91b597be"
+      },
+      {
+        "path": "gst/gstnice.h",
+        "sizeBytes": 1628,
+        "sha256": "2b88d79ef8b53664d75f157ddf178bb13332ebb012866c7722d1d866638780dd"
+      },
+      {
+        "path": "gst/gstnicesink.c",
+        "sizeBytes": 15507,
+        "sha256": "872a0f868bacec874ca602d4dbbbd6e546d8fa69a1a1e9bc56523f1488f8c389"
+      },
+      {
+        "path": "gst/gstnicesink.h",
+        "sizeBytes": 2850,
+        "sha256": "390c4afb0bae401fce1a701f3b50325c870ddfdc13d08f4b5aa8424e6252be51"
+      },
+      {
+        "path": "gst/gstnicesrc.c",
+        "sizeBytes": 12480,
+        "sha256": "13ae95c96b9e5fbe11e459862163779d61d087d9c90ad447f08957c424eeaaac"
+      },
+      {
+        "path": "gst/gstnicesrc.h",
+        "sizeBytes": 2689,
+        "sha256": "6c66c4da59cbfd65429c34d290989594f7cebc0bc1bb485a4062bb5addfb8204"
+      },
+      {
+        "path": "gst/meson.build",
+        "sizeBytes": 637,
+        "sha256": "2d0327e5cc75abac58038c0459f2c563bfe34d9ece40da4c532af8bf7f361392"
+      },
+      {
+        "path": "meson.build",
+        "sizeBytes": 10776,
+        "sha256": "b42f4548ab60a498594f13c04eb9aeab62fc2c738cd879b1f22219dbd0ba9a32"
+      },
+      {
+        "path": "meson_options.txt",
+        "sizeBytes": 1585,
+        "sha256": "4b88d6324ab0e599116b2900d33fd5248c51fec041699d7ba91ce093662f419f"
+      },
+      {
+        "path": "nice/gen-def.py",
+        "sizeBytes": 281,
+        "sha256": "894905a079541dd753e4db7e9bfc7c2d0fc797c75c3ca6e34be013bff678a242"
+      },
+      {
+        "path": "nice/gen-map.py",
+        "sizeBytes": 320,
+        "sha256": "a6cc3ef3443191d0310cbc40eaadcf2d7fbb3ab4dcf1999aa769f5b0c4f0a2e2"
+      },
+      {
+        "path": "nice/libnice.sym",
+        "sizeBytes": 4568,
+        "sha256": "5bf8cfed48cbe3fe3d92bf41f2d0eb935a18ccf1416bb3b6b0c222689726dc61"
+      },
+      {
+        "path": "nice/libnice.ver",
+        "sizeBytes": 56,
+        "sha256": "9fa08d1699725ebd597713225b8fd26aeb3ea31d14d05190caeecd083ee74327"
+      },
+      {
+        "path": "nice/meson.build",
+        "sizeBytes": 2497,
+        "sha256": "4e276e53c67bb7bf96a1ff164b56dddbbe702eb8d43fa99cead091e5518caabd"
+      },
+      {
+        "path": "nice/nice-version.h.in",
+        "sizeBytes": 463,
+        "sha256": "7c8e5a532e12ab9978aa8ddb9d14e75b50bf637d98297d00a999004d2ac381a8"
+      },
+      {
+        "path": "nice/nice.h",
+        "sizeBytes": 2377,
+        "sha256": "bb37e49a6c468e0ddb9c212c466090f15ea759d40ff0ddc2720f61a7ed854aa0"
+      },
+      {
+        "path": "nice/nice.pc.in",
+        "sizeBytes": 363,
+        "sha256": "bd265d96ace51368b0a4b9c6dc198636ed17157dd74a0fc517f62473fa2427f0"
+      },
+      {
+        "path": "random/meson.build",
+        "sizeBytes": 452,
+        "sha256": "13638849ac177bacae3e44862adf2b93ce2a0a30e4e5c43854ed44635383125e"
+      },
+      {
+        "path": "random/random-glib.c",
+        "sizeBytes": 2612,
+        "sha256": "52a0c3c502eaa4d6577433b4ff93859de31e6e1ade9920709b3a487e09560e14"
+      },
+      {
+        "path": "random/random-glib.h",
+        "sizeBytes": 1806,
+        "sha256": "503188527ccf4c9edb20b03d71f53637a9dfbf17c9c15b1e32d2ff848a1b201c"
+      },
+      {
+        "path": "random/random.c",
+        "sizeBytes": 3448,
+        "sha256": "248296de2b2f6931de904fe977c43a4233d70025b51d2fc27e6ca584793b3177"
+      },
+      {
+        "path": "random/random.h",
+        "sizeBytes": 2343,
+        "sha256": "fa7bef71dc2302c7ea3b77e42a0902959bb8bfa9f2259e6d0ea51788edc73dcf"
+      },
+      {
+        "path": "random/test.c",
+        "sizeBytes": 2424,
+        "sha256": "1f6e80059e4fb68f33e8338c6b2302b3650f83679ecc65f69738a68b07c7c523"
+      },
+      {
+        "path": "socket/http.c",
+        "sizeBytes": 20641,
+        "sha256": "34fecd3f3ea6199eb9ab9b73ad220c842169cd4c5be441ad405c93f2bb31181f"
+      },
+      {
+        "path": "socket/http.h",
+        "sizeBytes": 1815,
+        "sha256": "c20dad07f942ac17b886148a8c387edcbe095478e2536c9f94cd77afea38e085"
+      },
+      {
+        "path": "socket/meson.build",
+        "sizeBytes": 366,
+        "sha256": "a2bad84388cced33d10e7c274144c5ac90ab825212725c861a28dcf16b2aa8eb"
+      },
+      {
+        "path": "socket/pseudossl.c",
+        "sizeBytes": 10630,
+        "sha256": "f5cdab095daa7697574a26e2e241c69ddb8d200d3b380212f261ed1471bac974"
+      },
+      {
+        "path": "socket/pseudossl.h",
+        "sizeBytes": 2260,
+        "sha256": "efa4a7f41982a7e6bd4bb4c0e81a9bd882526e952f8a6a3a3dc02852e162b285"
+      },
+      {
+        "path": "socket/socket-priv.h",
+        "sizeBytes": 4446,
+        "sha256": "406b49e8998c105575742ad96f10ecf0ddf1337525483770bf1502bb20314cf2"
+      },
+      {
+        "path": "socket/socket.c",
+        "sizeBytes": 15557,
+        "sha256": "7490afbf1953040a893ac4c4f0b0bd62f078e22437840c869b67de736d0f800c"
+      },
+      {
+        "path": "socket/socket.h",
+        "sizeBytes": 5033,
+        "sha256": "db86987c9b5f813b605e1bb142ac1ea190638ecbb8bdda76fa03a52ba8d46954"
+      },
+      {
+        "path": "socket/socks5.c",
+        "sizeBytes": 15069,
+        "sha256": "ab550479ebf1f9c978ae4cb3d66fae94cf8344afa38824e7cd63662d256d93b6"
+      },
+      {
+        "path": "socket/socks5.h",
+        "sizeBytes": 1792,
+        "sha256": "5d25d464cc2b2123b81c66c12fc6c0f71c39ac06ec06eaaae55e19bce7a53147"
+      },
+      {
+        "path": "socket/tcp-active.c",
+        "sizeBytes": 9027,
+        "sha256": "af25dec30f2982ca8060f0fdaf9b0c8a28dbb7247811c258e338c9fd648988dd"
+      },
+      {
+        "path": "socket/tcp-active.h",
+        "sizeBytes": 1783,
+        "sha256": "4002dea9ca689201c8fb368a3e5a1d686ac4e0fe423b4b7626833979014d5d51"
+      },
+      {
+        "path": "socket/tcp-bsd.c",
+        "sizeBytes": 13364,
+        "sha256": "043f69d29b1c3cdc08a3b9ec7b9e75aff93ae9853c59d61b6a4b4c73f99a7522"
+      },
+      {
+        "path": "socket/tcp-bsd.h",
+        "sizeBytes": 2126,
+        "sha256": "9aa156fa59a81bcf74407a192b2dd250d1ed3f124d4dcf3779f74ce013138ba4"
+      },
+      {
+        "path": "socket/tcp-passive.c",
+        "sizeBytes": 9718,
+        "sha256": "e4ba4fe95640c0f3672a80b2d64fc92a5e11f80f3affc2675a4a2ba6222a44b6"
+      },
+      {
+        "path": "socket/tcp-passive.h",
+        "sizeBytes": 1983,
+        "sha256": "5b2112911ac432733c3da6e6f6d3eb08dd4134cc8b29b057cf2392dc252b809e"
+      },
+      {
+        "path": "socket/udp-bsd.c",
+        "sizeBytes": 14414,
+        "sha256": "d6bab9b112e517527a588f4435d69203c7e3d8e170b93dbee3be18a75202dd3c"
+      },
+      {
+        "path": "socket/udp-bsd.h",
+        "sizeBytes": 1819,
+        "sha256": "016ead3e1bd82fc96999b093e17ca853f7b2ea674b9f8ede8206f474414fffad"
+      },
+      {
+        "path": "socket/udp-turn-over-tcp.c",
+        "sizeBytes": 13502,
+        "sha256": "a979809c8ea7ede1f98f35ee3a2a1cdce6c68d50715c74cb077777cdc24fa51e"
+      },
+      {
+        "path": "socket/udp-turn-over-tcp.h",
+        "sizeBytes": 1836,
+        "sha256": "e3b35af76e5a5891ec7f518ac8b08d5709ebb153aa262fc74197e92dee752e07"
+      },
+      {
+        "path": "socket/udp-turn.c",
+        "sizeBytes": 70714,
+        "sha256": "332e1cf39a6baf044d26c467c3d5a660a97f19b618e47a1899a18f1faf2d61df"
+      },
+      {
+        "path": "socket/udp-turn.h",
+        "sizeBytes": 2805,
+        "sha256": "d11b89aaaa468b71335dd0c321c7a8b00c76d0011ce84d6d246ce6334886b765"
+      },
+      {
+        "path": "stun/constants.h",
+        "sizeBytes": 5203,
+        "sha256": "9350e2b26ef54fee3df88f2787fd2b5e4260b103d7922e31ee9044ed195d027c"
+      },
+      {
+        "path": "stun/debug.c",
+        "sizeBytes": 3263,
+        "sha256": "aa05a2d652d45cc01cd9b600e1137f7ecca8f654a8c8d33cf31d33606a7052a7"
+      },
+      {
+        "path": "stun/debug.h",
+        "sizeBytes": 3144,
+        "sha256": "d968f96e1c0e3bd877f6a7c68087a807b1636ee5b3f756795d3af904991d07df"
+      },
+      {
+        "path": "stun/meson.build",
+        "sizeBytes": 778,
+        "sha256": "3ff379e376556e7dfe4568eeb53b0feb677b1f1f91bb29f65ac6c0f7cad8d324"
+      },
+      {
+        "path": "stun/rand.c",
+        "sizeBytes": 2184,
+        "sha256": "d888f7c51f4fb010847a4a5f43c40a6a62bad23efb2a2b52c5a4e1189907bd57"
+      },
+      {
+        "path": "stun/rand.h",
+        "sizeBytes": 1735,
+        "sha256": "98a2771052b23b54f4ebe0f36c683e6fca368d546c51ddef525667c43258dd1d"
+      },
+      {
+        "path": "stun/stun5389.c",
+        "sizeBytes": 3584,
+        "sha256": "ba14b5d3ca3fa249a99bf7dff664166709559b76ff795fb82eea5d7558ddb29b"
+      },
+      {
+        "path": "stun/stun5389.h",
+        "sizeBytes": 2273,
+        "sha256": "9abb3d6613ba762a24e07dcbddb111e775520c7bc348f941c3001933dfc3e670"
+      },
+      {
+        "path": "stun/stunagent.c",
+        "sizeBytes": 25081,
+        "sha256": "b73f019ea211381534c9c6dfb7b04e5c507f25a1f14bfceadcd92db7959a09e1"
+      },
+      {
+        "path": "stun/stunagent.h",
+        "sizeBytes": 22065,
+        "sha256": "fb04bb85a231eff7781eebe446b7d8d31976482f9a16ba7411c28e29ab7f017e"
+      },
+      {
+        "path": "stun/stuncrc32.c",
+        "sizeBytes": 7821,
+        "sha256": "1b593f617b6875b151d000f069e01c72174ef3b94fdd19cc9ef497b1107ffda5"
+      },
+      {
+        "path": "stun/stuncrc32.h",
+        "sizeBytes": 1906,
+        "sha256": "119034f95ae89c77cd47cf0a746fbbe6d01d74358354419327e9990ae42c3246"
+      },
+      {
+        "path": "stun/stunhmac.c",
+        "sizeBytes": 8655,
+        "sha256": "aea1ee800831d2db907b5357d729134f6cc1b889ffff8fc9e91d35da1745c99c"
+      },
+      {
+        "path": "stun/stunhmac.h",
+        "sizeBytes": 2503,
+        "sha256": "63b0af2fe083059927da5e0a02b3dd1a64d3a2f9e2da001a37db91a16e8d974e"
+      },
+      {
+        "path": "stun/stunmessage.c",
+        "sizeBytes": 20492,
+        "sha256": "aa084af9fa088988ccc7cebf123b7baa845e8941d6370bf9733a3b5ff6ad6b57"
+      },
+      {
+        "path": "stun/stunmessage.h",
+        "sizeBytes": 36811,
+        "sha256": "4f2211ebead221e72246a80c6c58b553135be4fdb8aed9f25c953386ccf692f7"
+      },
+      {
+        "path": "stun/tests/check-bind.sh",
+        "sizeBytes": 1060,
+        "sha256": "f7a374d260d565a98a2e53eeeb73a2799af9e7e7ead945550dc753be7c6295e1"
+      },
+      {
+        "path": "stun/tests/meson.build",
+        "sizeBytes": 680,
+        "sha256": "78a685383f7d814962af089e1df9e3492e06c7fb7d6e9121739c4f37e1c44d5e"
+      },
+      {
+        "path": "stun/tests/test-bind.c",
+        "sizeBytes": 12647,
+        "sha256": "c0d1d35590696472be602c5f9b9d6d5c91ea33464bdef8904b42c10b2a66c6cc"
+      },
+      {
+        "path": "stun/tests/test-conncheck.c",
+        "sizeBytes": 12334,
+        "sha256": "013cbb7011707b314b980c60445b1b1fc8684a11b1edb99bc1fd6b5c9583dfee"
+      },
+      {
+        "path": "stun/tests/test-format.c",
+        "sizeBytes": 8870,
+        "sha256": "579f5f614968cbadd4a8d1098d88eba077765be3a5c5f31aa5c958dc7eb26c7a"
+      },
+      {
+        "path": "stun/tests/test-hmac.c",
+        "sizeBytes": 2794,
+        "sha256": "2acccb34df5a4bf7a8bfafc9db6e14a6539d98d7f159bf75d3f01efc4ff21822"
+      },
+      {
+        "path": "stun/tests/test-parse.c",
+        "sizeBytes": 24565,
+        "sha256": "0e540f518af0c352bbccce233189b092df67cb3d0c0e23dd91b46b88c0bc8508"
+      },
+      {
+        "path": "stun/tests/test-turn.c",
+        "sizeBytes": 7267,
+        "sha256": "579539a45d16ab3fb51708a1970254cedbd71f113677ae54c77837407f0ec832"
+      },
+      {
+        "path": "stun/tools/meson.build",
+        "sizeBytes": 264,
+        "sha256": "d676103a01bfa2d236f6e018ae43864e57609016334414d851bf5339554e178b"
+      },
+      {
+        "path": "stun/tools/stunbdc.c",
+        "sizeBytes": 5138,
+        "sha256": "5918baa4bfa2ff7882f52cadcd753253ee6702c290996bb6057d7fa87c8276a3"
+      },
+      {
+        "path": "stun/tools/stund.c",
+        "sizeBytes": 7617,
+        "sha256": "bb04e9ea95c8aed10a4bad66c2559677aa939db2e6917e1d0e6585be97af2d67"
+      },
+      {
+        "path": "stun/tools/stund.h",
+        "sizeBytes": 1848,
+        "sha256": "63bf2fbce65fb82cd4643764c01347688e5583db5caea2bb72c528bc7cedd11b"
+      },
+      {
+        "path": "stun/usages/bind.c",
+        "sizeBytes": 14864,
+        "sha256": "422c77ff5fabbe01ff0915592ae27e002a2213c6e3c3859f329e15a5f57ab73c"
+      },
+      {
+        "path": "stun/usages/bind.h",
+        "sizeBytes": 6199,
+        "sha256": "2392d1e9ab94aea6ee71851ef1cc13a5873a6c7203c5c8086d2a8e38580bac8a"
+      },
+      {
+        "path": "stun/usages/ice.c",
+        "sizeBytes": 12412,
+        "sha256": "e1d8e5a056843bbf1e2b292f6d802c2195a6a2a5fc1702017284e8fa84643c34"
+      },
+      {
+        "path": "stun/usages/ice.h",
+        "sizeBytes": 9421,
+        "sha256": "4ef06df6389d3a3ba069b796516b2a53b015331d7812ce36b9a3240239d16afa"
+      },
+      {
+        "path": "stun/usages/timer.c",
+        "sizeBytes": 4327,
+        "sha256": "376e7c68d7318493b3f0c35021d803a89bbf14d75d528e778fe68ec3cd83b41c"
+      },
+      {
+        "path": "stun/usages/timer.h",
+        "sizeBytes": 7786,
+        "sha256": "f24a10d14b7769a63f233b12f1ea88060823c45bdff4feb98ebceae5333b1f9e"
+      },
+      {
+        "path": "stun/usages/turn.c",
+        "sizeBytes": 15025,
+        "sha256": "38d3dfa41c5900a2504dbedde5980bc577fac2296073e94000800a33a25550a1"
+      },
+      {
+        "path": "stun/usages/turn.h",
+        "sizeBytes": 12168,
+        "sha256": "f485aa76653f718a1d75cdec0107bdb239ed70ce25f40356319884b1a166d53d"
+      },
+      {
+        "path": "stun/utils.c",
+        "sizeBytes": 3539,
+        "sha256": "a4177106bddc663d74b554b10353c22011c8e2d565de1e2afe94ab5abcbf2c26"
+      },
+      {
+        "path": "stun/utils.h",
+        "sizeBytes": 2297,
+        "sha256": "35be8b8cdff2d04aa45db4085e158de75821900162358ca92ad2f49e4477a3d5"
+      },
+      {
+        "path": "stun/win32_common.h",
+        "sizeBytes": 2588,
+        "sha256": "dd1ded52685c618fe7e5d9015ff4457c9ab5fad833f3bea1cd2e17ea5a5ffce4"
+      },
+      {
+        "path": "subprojects/glib.wrap",
+        "sizeBytes": 225,
+        "sha256": "9aed968dec827ce23e0a0fb0c97734042985f09f1e1d7004ea7eda36ba9961aa"
+      },
+      {
+        "path": "subprojects/zlib.wrap",
+        "sizeBytes": 449,
+        "sha256": "688669ca988ae8ae64ecbd6d914ed95eb34739e20d9b2169f9e581b20d1f7da6"
+      },
+      {
+        "path": "tests/docker/centos8/pip-installs.sh",
+        "sizeBytes": 276,
+        "sha256": "fa1d2e6eb545cb9ca72ab0db8f79f66891d9d87299c660d3083ccc05017ad997"
+      },
+      {
+        "path": "tests/docker/fedora42/pip-installs.sh",
+        "sizeBytes": 47,
+        "sha256": "6d72493bae029ce7e0ba425da8d1ba7f9d2abafd8c34e893d2d2d7c98a1613b1"
+      },
+      {
+        "path": "tests/instrument-send.c",
+        "sizeBytes": 6162,
+        "sha256": "22fbc281bcdd3ea404074a09ed720cd9b070fbc9a6399144bacdd375f1f52841"
+      },
+      {
+        "path": "tests/instrument-send.h",
+        "sizeBytes": 1901,
+        "sha256": "2cd2a217dcb449d291d7a7381de664bea00d22e8946779bc8b36a4e36e64ce78"
+      },
+      {
+        "path": "tests/libnice.supp",
+        "sizeBytes": 8097,
+        "sha256": "44410c8f3c13aee321aaa5a0cdf62d40b948d620c7d08958dc2465283f84d85d"
+      },
+      {
+        "path": "tests/meson.build",
+        "sizeBytes": 4072,
+        "sha256": "87b15a7f90a23cf062548a64549d125a72ae2fed7e977e3bcb30c58cd7f9ebf6"
+      },
+      {
+        "path": "tests/slow-resolver.c",
+        "sizeBytes": 4649,
+        "sha256": "32190281394a9bf30f152b446fe5b5735989977ddb94d9d8b68c84cb410f8a28"
+      },
+      {
+        "path": "tests/test-add-remove-stream.c",
+        "sizeBytes": 2540,
+        "sha256": "138d964454f279331479d2507df0472734b085212ebeb0b6fbc3eb1cff21dc43"
+      },
+      {
+        "path": "tests/test-address.c",
+        "sizeBytes": 9750,
+        "sha256": "cf99b15640c08b19851a3be15f164df872095d7f91931bab60cc34d45981e426"
+      },
+      {
+        "path": "tests/test-bsd.c",
+        "sizeBytes": 13907,
+        "sha256": "9c1bc75dab7660be182d91d4ebe9ffa59926d30069e0c1ad6b1e759626da1cb6"
+      },
+      {
+        "path": "tests/test-build-io-stream.c",
+        "sizeBytes": 15524,
+        "sha256": "e961ff6a10b026f54ab387e60a761d43841bb400ab0b2858fdd37ddac01cac97"
+      },
+      {
+        "path": "tests/test-bytestream-tcp.c",
+        "sizeBytes": 3779,
+        "sha256": "7301c2a0cb33549e1dc892f4fdc81d8e09a0aaad43e4f6ba98b583591521fed5"
+      },
+      {
+        "path": "tests/test-common.c",
+        "sizeBytes": 6247,
+        "sha256": "3f29063012336854ce1defe6eb786dd2f82555a543a691e531c71da0cdfe2145"
+      },
+      {
+        "path": "tests/test-common.h",
+        "sizeBytes": 2310,
+        "sha256": "e149653a30dfe49dda53262db572145787d13400a054836ebfb5e99c4c9c68aa"
+      },
+      {
+        "path": "tests/test-consent.c",
+        "sizeBytes": 19593,
+        "sha256": "5c4c51d89a29498d82e0fc33141eaed876a17c8bed948fc8d73cbdddea0dde4e"
+      },
+      {
+        "path": "tests/test-credentials.c",
+        "sizeBytes": 6640,
+        "sha256": "2c32e42631067e40c503ff0267c7ea6914492e564d32b5de18ca13acdabf943f"
+      },
+      {
+        "path": "tests/test-different-number-streams.c",
+        "sizeBytes": 8222,
+        "sha256": "5963272d2f73cd16c6bce4fd07d282f8a9ff8412fe3372f4589223d9f0cc569c"
+      },
+      {
+        "path": "tests/test-drop-invalid.c",
+        "sizeBytes": 20395,
+        "sha256": "bcc32675877f1c018456198480c030f83ca34eea26b71e885c73c85483177357"
+      },
+      {
+        "path": "tests/test-fallback.c",
+        "sizeBytes": 21574,
+        "sha256": "c5dbd4123c76afaca1f65c4163a50104ce4ea584a5e60145d0fcb43cf05e81ac"
+      },
+      {
+        "path": "tests/test-fullmode-with-stun.c",
+        "sizeBytes": 1535,
+        "sha256": "f87f11ae3b2d10d4c56ee0d90245ec7b7c10829dac08eb2a9806e87dae6b1fbb"
+      },
+      {
+        "path": "tests/test-fullmode.c",
+        "sizeBytes": 41794,
+        "sha256": "dfee565511fab1de4300c44f0ca8c3cafea2bc8f053d006d975fa3b0c7214ec6"
+      },
+      {
+        "path": "tests/test-gstreamer.c",
+        "sizeBytes": 22444,
+        "sha256": "22bcde1662acfc41a6c00c7f8cc91390e6b77f984483626a0eea5de352b15e90"
+      },
+      {
+        "path": "tests/test-icetcp.c",
+        "sizeBytes": 17910,
+        "sha256": "3202dbdc4866bb7a791a8bde1487c92f96aa6ba044aab6a4ee99c37324754f94"
+      },
+      {
+        "path": "tests/test-interfaces.c",
+        "sizeBytes": 3375,
+        "sha256": "3f29eb5d18febeda56459996a2ee51e733fc25017b4f45c378baa9d432822ac1"
+      },
+      {
+        "path": "tests/test-io-stream-cancelling.c",
+        "sizeBytes": 4183,
+        "sha256": "9c8c1fe1cd065afa29c203338c43ba96857fd101c9f81c85731b36ed316d5744"
+      },
+      {
+        "path": "tests/test-io-stream-closing-read.c",
+        "sizeBytes": 3641,
+        "sha256": "d5da44ec61e32e07eb4a56f6b21d84bfa26c1747a9e8b84d5b0fd1818dbc2644"
+      },
+      {
+        "path": "tests/test-io-stream-closing-write.c",
+        "sizeBytes": 3682,
+        "sha256": "a2cf2db0b2a67a807c45fc9ebb9ad16b155a62fa46f20dafcbeffe2d4bb73a9b"
+      },
+      {
+        "path": "tests/test-io-stream-common.c",
+        "sizeBytes": 17563,
+        "sha256": "8fcecee2cf85f456a8e6c5d5984dcd0f8b5988a711297063f7119fa407b903e4"
+      },
+      {
+        "path": "tests/test-io-stream-common.h",
+        "sizeBytes": 4073,
+        "sha256": "c6b6d2e805639200c2b08a3973c362083dfc14b2b67535d1f611b71e9e53c043"
+      },
+      {
+        "path": "tests/test-io-stream-pollable.c",
+        "sizeBytes": 6462,
+        "sha256": "77cb81866460fb30e5496e56ec7914cc4f1efafb9492e3180797df59e9cae675"
+      },
+      {
+        "path": "tests/test-io-stream-thread.c",
+        "sizeBytes": 4530,
+        "sha256": "c92f184c6f2034fa91f50d302ea829265ac0b9c2591520b506fd2b8567267e4f"
+      },
+      {
+        "path": "tests/test-new-trickle.c",
+        "sizeBytes": 25766,
+        "sha256": "7c9f72f4ab289c22461aa5db7f417fb90f7bf04559428df3d931b2b2816767f7"
+      },
+      {
+        "path": "tests/test-nomination.c",
+        "sizeBytes": 8390,
+        "sha256": "58c06e4d69669840313b8467f1e488947259e302c05ae38e2e7d2e6c41774e4b"
+      },
+      {
+        "path": "tests/test-priority.c",
+        "sizeBytes": 3997,
+        "sha256": "59fcbfa840dd13f285586e93d8c2aff1bcbf3a65083cd16c8f8a9ebc8a22af85"
+      },
+      {
+        "path": "tests/test-pseudotcp-fin.c",
+        "sizeBytes": 37657,
+        "sha256": "aac94bad729d6f3edd010c9aee5ae1f48d53a85c3bf071afd0031eebd03d5eec"
+      },
+      {
+        "path": "tests/test-pseudotcp-fuzzy.c",
+        "sizeBytes": 13241,
+        "sha256": "a8bb8ba0482af2c2ed2b21dd87d2b2c5f6a8de6edfc690e46a2c3d4d1badfc45"
+      },
+      {
+        "path": "tests/test-pseudotcp-random.sh",
+        "sizeBytes": 200,
+        "sha256": "bfaad4f6f55c1702649d1da8e3e5dfe2c47a8513c546ce54f24cebb9f8e66499"
+      },
+      {
+        "path": "tests/test-pseudotcp.c",
+        "sizeBytes": 7733,
+        "sha256": "71f23060de287bfed2bd8234ae59e98476c941133b45dd7743de912535cf0f4f"
+      },
+      {
+        "path": "tests/test-restart.c",
+        "sizeBytes": 18120,
+        "sha256": "e26083fccc9602a3cf4b9fb5f4f339e2705883bf4e78d7e783221f8ce0078e6b"
+      },
+      {
+        "path": "tests/test-send-recv.c",
+        "sizeBytes": 44353,
+        "sha256": "31a790f463876062f27a41c913d8505c372429294a6f4b01042644e8b0d83c57"
+      },
+      {
+        "path": "tests/test-set-port-range.c",
+        "sizeBytes": 2395,
+        "sha256": "a6f6ed760b7796b9260d531ca2959da77800b48c8383997dee05884068dcd87e"
+      },
+      {
+        "path": "tests/test-slow-resolving.c",
+        "sizeBytes": 8981,
+        "sha256": "9bf31bd3580a352cf5618aec318537a46d5b6c97eaec92c41e849e4890596e6a"
+      },
+      {
+        "path": "tests/test-socket-is-based-on.c",
+        "sizeBytes": 4267,
+        "sha256": "5a1b597d375d9924c9db7207cf2cc62b746ab287436e372d383c7fdfa8f91c2c"
+      },
+      {
+        "path": "tests/test-tcp.c",
+        "sizeBytes": 5222,
+        "sha256": "9753da79e4afb83b2f85fa4e3079bfc68a6d051437265c010e9ae0766841875d"
+      },
+      {
+        "path": "tests/test-thread.c",
+        "sizeBytes": 11544,
+        "sha256": "2b31a1cf8ced7e2bf4aa363a76ca1aef01bc3baacf961c006b3dfa5cde54f5de"
+      },
+      {
+        "path": "tests/test-trickle.c",
+        "sizeBytes": 15544,
+        "sha256": "c73de2851622b89584c02b8e72649848c9728094d247ed359c5335d187b0268a"
+      },
+      {
+        "path": "tests/test-turn.c",
+        "sizeBytes": 10853,
+        "sha256": "206feafa796381b6e02bc025a8da082f46cfed45275bea746dc6d3d9dc0f2693"
+      },
+      {
+        "path": "tests/test-udp-turn-fragmentation.c",
+        "sizeBytes": 6338,
+        "sha256": "62449b4bc696e3b168938e0c4d6a33ea2bae6ec86bdeed5afd780be04e9c7e20"
+      },
+      {
+        "path": "tests/test.c",
+        "sizeBytes": 3997,
+        "sha256": "6d0e44ab2cf92781c01aac39678ff8e147e38e97e7794a309f5fd5e8dd5c57ab"
+      }
+    ]
+  },
+  "licenseReview": {
+    "result": "complete_dual_license_notice_recorded",
+    "projectLicense": "LGPL-2.1-or-later OR MPL-1.1",
+    "evidence": [
+      {
+        "path": "COPYING",
+        "sha256": "e5504e5ffe894870ea1a652df957a120ead9c3f9a5e9d314ca41ba06f2d72024"
+      },
+      {
+        "path": "COPYING.LGPL",
+        "sha256": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861"
+      },
+      {
+        "path": "COPYING.MPL",
+        "sha256": "3b3c75ae6c663c4f93987647eb5463d33dc1602a1aded3ac479773f2c3928e3a"
+      }
+    ],
+    "staticLinkingComplianceDisposition": "requires_product_legal_review_before_distribution"
+  },
+  "buildInputReview": {
+    "authoritativeMesonEvidence": [
+      "meson.build:1-355",
+      "agent/meson.build:1-47",
+      "stun/meson.build:1-36",
+      "socket/meson.build:1-16",
+      "random/meson.build:1-16",
+      "nice/meson.build:1-80"
+    ],
+    "librarySources": [
+      "agent/address.c",
+      "agent/agent.c",
+      "agent/candidate.c",
+      "agent/component.c",
+      "agent/conncheck.c",
+      "agent/debug.c",
+      "agent/discovery.c",
+      "agent/inputstream.c",
+      "agent/interfaces.c",
+      "agent/iostream.c",
+      "agent/outputstream.c",
+      "agent/pseudotcp.c",
+      "agent/stream.c",
+      "random/random.c",
+      "random/random-glib.c",
+      "socket/socket.c",
+      "socket/udp-bsd.c",
+      "socket/tcp-bsd.c",
+      "socket/tcp-active.c",
+      "socket/tcp-passive.c",
+      "socket/pseudossl.c",
+      "socket/socks5.c",
+      "socket/http.c",
+      "socket/udp-turn.c",
+      "socket/udp-turn-over-tcp.c",
+      "stun/stunagent.c",
+      "stun/stunmessage.c",
+      "stun/stun5389.c",
+      "stun/stuncrc32.c",
+      "stun/rand.c",
+      "stun/stunhmac.c",
+      "stun/utils.c",
+      "stun/debug.c",
+      "stun/usages/ice.c",
+      "stun/usages/bind.c",
+      "stun/usages/turn.c",
+      "stun/usages/timer.c"
+    ],
+    "publicHeaders": [
+      "agent/address.h",
+      "agent/agent.h",
+      "agent/candidate.h",
+      "agent/debug.h",
+      "agent/interfaces.h",
+      "agent/pseudotcp.h",
+      "nice/nice.h",
+      "stun/constants.h",
+      "stun/debug.h",
+      "stun/stunagent.h",
+      "stun/stunmessage.h",
+      "stun/usages/bind.h",
+      "stun/usages/ice.h",
+      "stun/usages/timer.h",
+      "stun/usages/turn.h",
+      "stun/win32_common.h"
+    ],
+    "requiredGeneratedBuildInputs": [
+      "config.h",
+      "agent/agent-enum-types.c",
+      "agent/agent-enum-types.h",
+      "nice/libnice.map_or_platform_equivalent",
+      "nice/libnice.def_on_windows_only",
+      "nice/nice-version.h"
+    ],
+    "sourceProvidedGenerators": [
+      "nice/gen-def.py",
+      "nice/gen-map.py"
+    ],
+    "minimumOptions": [
+      "default_library=static",
+      "crypto-library=openssl",
+      "gstreamer=disabled",
+      "gupnp=disabled",
+      "tests=disabled",
+      "examples=disabled",
+      "gtk_doc=disabled",
+      "introspection=disabled"
+    ],
+    "mesonExecutionAllowed": false,
+    "generatorExecutionAllowed": false,
+    "compilerInvocationAllowed": false,
+    "staticLibraryArchiverInvocationAllowed": false
+  },
+  "dependencyReview": {
+    "result": "partial_exact_direct_dependencies_known_transitive_closure_pending",
+    "directRequired": [
+      {
+        "name": "GLib",
+        "components": [
+          "gio-2.0",
+          "gthread-2.0",
+          "glib-2.0",
+          "gmodule-2.0",
+          "gobject-2.0"
+        ],
+        "minimumVersion": "2.56",
+        "evidence": "meson.build:25,206-220"
+      },
+      {
+        "name": "OpenSSL_or_GnuTLS",
+        "selectedMinimum": "OpenSSL",
+        "versionConstraint": "not_declared_by_libnice",
+        "evidence": "meson.build:222-285"
+      }
+    ],
+    "pinnedGlibFallback": {
+      "version": "2.64.2",
+      "urlInUpstreamWrap": "https://ftp.gnome.org/pub/gnome/sources/glib/2.64/glib-2.64.2.tar.xz",
+      "canonicalNoRedirectUrlForNextLock": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.tar.xz",
+      "sha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+      "evidence": "subprojects/glib.wrap:1-5",
+      "acquisitionStatus": "not_acquired"
+    },
+    "optionalDisabled": [
+      {
+        "name": "GStreamer base",
+        "minimumVersion": "1.14.0",
+        "evidence": "meson.build:28,288-293"
+      },
+      {
+        "name": "GUPnP IGD",
+        "minimumVersion": "0.2.5",
+        "evidence": "meson.build:27,295-297"
+      },
+      {
+        "name": "GObject introspection",
+        "evidence": "meson.build:314,322-342"
+      },
+      {
+        "name": "gtk-doc",
+        "evidence": "meson.build:326-334"
+      }
+    ],
+    "transitiveItemsToResolveAfterGlibIntake": [
+      "libffi",
+      "PCRE_or_PCRE2",
+      "zlib",
+      "iconv_gettext_policy",
+      "platform_threads_and_dynamic_loader"
+    ],
+    "outsideCurrentEffectiveAcquisitionScope": [
+      "OpenSSL"
+    ],
+    "dependencyAcquisitionNetworkIOPerformed": false
+  },
+  "authorityBoundary": {
+    "sourceAcquisitionNetworkIOPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "sourceLinkedOrLoaded": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionPermissionOpened": false
+  }
+}

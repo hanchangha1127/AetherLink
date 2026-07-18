@@ -1,0 +1,104 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-phase-a-progress",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v5",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "libnice_source_intake_complete_glib_lock_ready",
+  "supersedes": {
+    "path": "progress-v4.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v4",
+    "sha256": "72124ade85994a62a81c6f56c999c22278e8f11210435f761ac988d73fde4b4a"
+  },
+  "consumedAuthority": {
+    "decision": {
+      "path": "../decision-v4.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v4",
+      "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v7.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v7",
+      "sha256": "22306a0f057cf9eaf720c865ea7e46ed703a37fba93493eb937f592abefa5a58"
+    },
+    "oneShotAuthorityConsumed": true,
+    "completedRequestCount": 2
+  },
+  "evidence": {
+    "sourceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "sourceIntake": {
+      "path": "offline-source-intake-v3.json",
+      "sha256": "7a8d36474b6704a2e7312fb9697b4b77b555d98945207b421d138834e1b7d4c5"
+    },
+    "dependencyClosure": {
+      "path": "libnice-dependency-closure-v1.json",
+      "sha256": "83604bfc0cbcce3a43cdcc62990ba8698576b219eed51d66c0c077118a0afab4"
+    }
+  },
+  "candidateState": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "sourceIntakeStatus": "complete",
+    "sourceAuditStatus": "in_progress",
+    "dependencyClosureStatus": "partial_exact_glib_lock_ready_crypto_scope_pending",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "acquisitionReceipt": {
+    "libniceArchiveSha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d",
+    "libniceSignatureSha256": "44292ddf373bc7a962eb3949d4754987d7bbd50cb2d3a2effccb71a2d332727b",
+    "signatureTrustStatus": "not_verified",
+    "libniceTreeSha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+    "glibArchivePresent": false,
+    "opensslArchivePresent": false
+  },
+  "authorization": {
+    "additionalLibniceSourceAcquisitionNetworkIOAllowed": false,
+    "glibAcquisitionNetworkIOAllowed": false,
+    "opensslAcquisitionNetworkIOAllowed": false,
+    "offlineSourceInspectionAuthorized": true,
+    "sourceForkAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": true,
+    "sourceInspectionPerformed": true,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionNetworkIOPerformed": false,
+    "measurements": []
+  },
+  "nextStep": {
+    "state": "create_decision_v5_and_handoff_v8_for_exact_glib_2_64_2_source_acquisition",
+    "coveredByExistingUserApproval": true,
+    "opensslScopeExpansionStillRequired": true,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityMayBeOpened": false
+  },
+  "evidenceBoundary": {
+    "proves": "exact_libnice_source_receipt_extraction_equivalence_and_direct_dependency_lock",
+    "doesNotProve": "signature_trust_complete_transitive_dependencies_security_audit_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_progress_only"
+  }
+}

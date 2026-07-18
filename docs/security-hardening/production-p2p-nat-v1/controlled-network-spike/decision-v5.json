@@ -1,0 +1,119 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-dependency-acquisition-decision",
+  "schemaVersion": 1,
+  "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v5",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_glib_2_64_2_source_acquisition_authorized",
+  "approvalSource": "explicit_user_instruction_retained_for_minimum_glib_family_dependencies",
+  "supersedes": {
+    "path": "decision-v4.json",
+    "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v4",
+    "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+  },
+  "completedLibniceIntake": {
+    "path": "phase-a/offline-source-intake-v3.json",
+    "artifactId": "production_p2p_nat_v1_phase_a_libnice_offline_source_intake_v3",
+    "sha256": "7a8d36474b6704a2e7312fb9697b4b77b555d98945207b421d138834e1b7d4c5"
+  },
+  "dependencyClosure": {
+    "path": "phase-a/libnice-dependency-closure-v1.json",
+    "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v1",
+    "sha256": "83604bfc0cbcce3a43cdcc62990ba8698576b219eed51d66c0c077118a0afab4"
+  },
+  "candidateEvaluation": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "evaluationStatus": "approved_for_bounded_phase_a_read_only_source_audit",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "acquisitionAuthorization": {
+    "networkPurpose": "exact_glib_2_64_2_source_and_official_checksum_acquisition_only",
+    "networkIOAllowed": true,
+    "oneShotAuthority": true,
+    "exactRequestCount": 2,
+    "httpsOnly": true,
+    "redirectFollowingAllowed": false,
+    "environmentProxyAllowed": false,
+    "packageManagerAcquisitionAllowed": false,
+    "allowedHosts": [
+      "download.gnome.org"
+    ],
+    "dnsAllowedOnlyForExactHosts": true,
+    "archiveExtractionAllowed": true,
+    "manifestGenerationAllowed": true,
+    "officialIndexUrl": "https://download.gnome.org/sources/glib/2.64/",
+    "artifacts": [
+      {
+        "artifactId": "glib-2.64.2-official-sha256sum",
+        "kind": "official_checksum",
+        "url": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.sha256sum",
+        "relativePath": "build/offline-source/glib-2.64.2/original/glib-2.64.2.sha256sum",
+        "requiredArchiveEntry": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277 glib-2.64.2.tar.xz",
+        "maximumBytes": 4096
+      },
+      {
+        "artifactId": "glib-2.64.2-release-source",
+        "kind": "source_archive",
+        "url": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.tar.xz",
+        "relativePath": "build/offline-source/glib-2.64.2/original/glib-2.64.2.tar.xz",
+        "expectedSha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+        "maximumBytes": 67108864
+      }
+    ],
+    "extractedSourceRelativePath": "build/offline-source/glib-2.64.2/source",
+    "maximumExtractedBytes": 536870912
+  },
+  "furtherDependencyAcquisition": {
+    "userApprovalRecordedForMinimumGlibFamilyClosure": true,
+    "effectiveAuthority": false,
+    "activationRequirements": [
+      "completed_glib_2_64_2_source_intake",
+      "read_only_glib_transitive_dependency_closure",
+      "exact_official_artifact_lock",
+      "new_versioned_decision_and_handoff"
+    ],
+    "opensslAcquisitionAuthorized": false,
+    "opensslRequiresExplicitScopeExpansion": true
+  },
+  "executionAuthority": {
+    "offlineSourceInspectionAuthorized": true,
+    "glibSourceAcquisitionNetworkIOAllowed": true,
+    "otherDependencyAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "testExecutableBuildAllowed": false,
+    "testExecutionAllowed": false,
+    "sourceForkAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false,
+    "handoffV8CreationAuthorized": true
+  },
+  "failurePolicy": {
+    "officialChecksumMismatch": "reject_and_delete_archive",
+    "unexpectedRedirectHostOrUrl": "reject",
+    "sizeLimitExceeded": "reject_and_delete_partial",
+    "archivePathTraversalLinkOrSpecialFile": "reject_before_extraction",
+    "unresolvedAmbientDependency": "stop_before_compile",
+    "dependencyOutsideApprovedScope": "stop_and_require_explicit_scope_expansion"
+  },
+  "nextStep": "create_handoff_v8_validate_authority_then_acquire_official_checksum_and_glib_archive",
+  "evidenceBoundary": {
+    "mayProve": "official_glib_release_bytes_checksum_and_static_source_properties",
+    "doesNotProve": "complete_transitive_closure_openssl_source_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_decision_only"
+  }
+}

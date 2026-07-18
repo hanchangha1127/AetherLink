@@ -23,11 +23,11 @@ PHASE_A_PROGRESS_V1_PATH = (
     DESIGN_ROOT / "controlled-network-spike/phase-a/progress-v1.json"
 )
 CURRENT_REJECTION_DECISION_PATH = (
-    DESIGN_ROOT / "controlled-network-spike/decision-v3.json"
+    DESIGN_ROOT / "controlled-network-spike/decision-v6.json"
 )
-CURRENT_REJECTION_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v6.json"
+CURRENT_REJECTION_HANDOFF_PATH = DESIGN_ROOT / "implementation/handoff-v9.json"
 CURRENT_REJECTION_PROGRESS_PATH = (
-    DESIGN_ROOT / "controlled-network-spike/phase-a/progress-v3.json"
+    DESIGN_ROOT / "controlled-network-spike/phase-a/progress-v8.json"
 )
 PHASE_A_PROGRESS_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_phase_a_progress.py"
 PHASE_A_PROGRESS_TEST_PATH = ROOT / "script/test_p2p_nat_phase_a_progress.py"
@@ -40,6 +40,8 @@ ACQUISITION_AUTHORITY_TEST_PATH = (
 SOURCE_AUDIT_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libjuice_source_audit.py"
 SOURCE_AUDIT_TEST_PATH = ROOT / "script/test_p2p_nat_libjuice_source_audit.py"
 SOURCE_MANIFEST_RECORDER_PATH = ROOT / "script/record_p2p_nat_libjuice_source_manifest.py"
+LIBNICE_SOURCE_AUDIT_VALIDATOR_PATH = ROOT / "script/check_p2p_nat_libnice_source_audit.py"
+LIBNICE_SOURCE_AUDIT_TEST_PATH = ROOT / "script/test_p2p_nat_libnice_source_audit.py"
 PHASE_A_STATIC_PYTHON_PATHS = (
     SESSION_CRYPTO_VALIDATOR_PATH,
     ROOT / "script/test_p2p_nat_session_crypto_vectors.py",
@@ -53,6 +55,8 @@ PHASE_A_STATIC_PYTHON_PATHS = (
     PHASE_A_PROGRESS_TEST_PATH,
     SOURCE_AUDIT_VALIDATOR_PATH,
     SOURCE_AUDIT_TEST_PATH,
+    LIBNICE_SOURCE_AUDIT_VALIDATOR_PATH,
+    LIBNICE_SOURCE_AUDIT_TEST_PATH,
 )
 PHASE_A_STATIC_EVIDENCE_SHA256 = {
     ROOT / "apps/macos/P2PNATContracts/Sources/P2PNATSessionCrypto.swift": "8933edff1e9ed11ac510f4c5c394fa924f5764057e187d127b485661cdc135bb",
@@ -99,8 +103,21 @@ PHASE_A_STATIC_EVIDENCE_SHA256 = {
     SOURCE_AUDIT_VALIDATOR_PATH: "725f6d5a90e797ac6d4c2aace2b21c9226c8d9f280c6a2c3901abd8e60460be0",
     SOURCE_AUDIT_TEST_PATH: "5e9088bd4cb361c2b25b84a907aaf1681f379a597407d93e8088a18ae5c3ea8f",
     SOURCE_MANIFEST_RECORDER_PATH: "3db33af76d3d163c6aca64d00455cd2b8d132991984dc81ce1e11a61a41b8c6e",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libnice-source-audit-v1.json": "2f76f43860e5967403ed2c6bbd7c59aa0b0babc0b5f64b2084b91dc763892ce7",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libnice-source-audit-v1.md": "205882e1cc96d8a5057a48b230a27cc59a39725776c216010cf6f7ff1c3e1174",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/offline-source-intake-v4.json": "507b75fc8003f8e73d307e4fb5eded8be5de29215220ce078a38047ea0fc677d",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/offline-source-intake-v4.md": "6a2ff284501bcc4cc4c3e5b15f25ca2ec8181266c4762a07c62bad35f2305702",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libnice-dependency-closure-v3.json": "d3dea4d275a689b98f8b848df1134d2078a3817f755b885225a0bf738c600968",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/libnice-dependency-closure-v3.md": "5c81e535acb43c0c853a27b35aaa58508e349de58eb39ef36a29eb1adca2ff1f",
+    DESIGN_ROOT / "controlled-network-spike/decision-v6.json": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+    DESIGN_ROOT / "controlled-network-spike/decision-v6.md": "dd27231bf77119f47ce1901f4ac2faa6483390f9789a1cb2f1a5852a8d21e6e3",
+    DESIGN_ROOT / "implementation/handoff-v9.json": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+    DESIGN_ROOT / "implementation/handoff-v9.md": "c7aba9dde3b096238421788691e784f33f2902bdbeeccb6865eab7d53e9b47b8",
+    DESIGN_ROOT / "controlled-network-spike/phase-a/progress-v8.json": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+    LIBNICE_SOURCE_AUDIT_VALIDATOR_PATH: "6bc2cbeeb2cef5cf60805043f6bb8c7c54f845814b32f640912eff3610ed7605",
+    LIBNICE_SOURCE_AUDIT_TEST_PATH: "eceeed48760476db9ab9fbd2d37318882f5d64ff461283c5d78f293ebace2141",
 }
-EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 44
+EXPECTED_PHASE_A_STATIC_EVIDENCE_FILE_COUNT = 57
 EVIDENCE_COLLECTION_SHA256 = "7c2142fdd7ae7dd312ee8b52d320a47594517ea17b2499173b59c0fc1f40b721"
 EXPECTED_EVIDENCE_PATHS = (
     "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt",
@@ -374,6 +391,12 @@ EXPECTED_IMPLEMENTATION_FILES = {
     "handoff-v5.md",
     "handoff-v6.json",
     "handoff-v6.md",
+    "handoff-v7.json",
+    "handoff-v7.md",
+    "handoff-v8.json",
+    "handoff-v8.md",
+    "handoff-v9.json",
+    "handoff-v9.md",
 }
 EXPECTED_PACKAGE_STATES = {
     "canonical-contracts": ("authorized", "not_started", True),
@@ -503,10 +526,10 @@ REQUIRED_DOCUMENT_SNIPPETS = {
         "no networking library, network i/o, or deployment is authorized",
         "initialBoundedHandoffAuthorized=true",
         "implementationAuthorized=false",
-        "authority is closed by `handoff-v6`",
-        "six closed versioned handoff pairs",
+        "authority is closed by `handoff-v9`",
+        "nine closed versioned handoff pairs",
         "handoff-v5",
-        "handoff-v6",
+        "handoff-v9",
     ),
     "selection-profile.md": (
         "explicitly approved for a bounded handoff",
@@ -825,7 +848,7 @@ def validate_json(artifact_count: int) -> set[str]:
     }:
         fail("hardening.json selectionProfileStatus is not a recognized lifecycle state")
     if boundary.get("implementationAuthorized") is not False:
-        fail("hardening.json must preserve the current handoff-v6 implementation closure")
+        fail("hardening.json must preserve the current handoff-v9 implementation closure")
     if boundary.get("conditionalLibrarySelectionAuthorized") is not False:
         fail("hardening.json must not authorize a replacement library selection")
     if boundary.get("controlledSpikePhaseAAuthorized") is not False:
@@ -1087,13 +1110,13 @@ def validate_selection_profile() -> None:
         fail("selection-profile.json selectionInstruction must name the profile")
 
     expected_current_authority = {
-        "decisionPath": "controlled-network-spike/decision-v3.json",
-        "decisionSha256": "ae129fc214ac96abb3e1393b895cf03ddf284004ce9a1d3ac2005b4cb5d2022d",
-        "handoffPath": "implementation/handoff-v6.json",
-        "handoffSha256": "87af07548bfeb17b54642bb16c00fab2652006ba9401a05ccce8d134bba894e5",
-        "progressPath": "controlled-network-spike/phase-a/progress-v3.json",
-        "progressSha256": "22a285b0de28f593f39f6b2a3f43e2966f97e711dd97c6bfc240325c88827db8",
-        "status": "closed_libjuice_rejected_no_fallback_authority",
+        "decisionPath": "controlled-network-spike/decision-v6.json",
+        "decisionSha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+        "handoffPath": "implementation/handoff-v9.json",
+        "handoffSha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+        "progressPath": "controlled-network-spike/phase-a/progress-v8.json",
+        "progressSha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+        "status": "closed_libnice_rejected_no_library_authority",
         "implementationAuthorized": False,
         "fallbackSelectionAuthorized": False,
         "sourceAcquisitionNetworkIOAllowed": False,
@@ -1144,7 +1167,7 @@ def validate_selection_profile() -> None:
         if profile.get("initialBoundedHandoffAuthorized") is not True:
             fail("approved profile must preserve its initial bounded handoff history")
         if profile.get("implementationAuthorized") is not False:
-            fail("approved profile must preserve the current handoff-v6 execution closure")
+            fail("approved profile must preserve the current handoff-v9 execution closure")
         if profile.get("explicitSelectionRequired") is not False:
             fail("approved profile cannot continue requiring explicit selection")
         validate_approved_handoff(profile, actual_decisions)
@@ -1170,7 +1193,7 @@ def validate_selection_profile() -> None:
         "selectionProfileStatus": status,
         "implementationAuthorized": False,
         "selectionDecisionPath": "selection-decision.json",
-        "handoffPath": "implementation/handoff-v6.json",
+        "handoffPath": "implementation/handoff-v9.json",
     }
     for field, expected in expected_boundary.items():
         if boundary.get(field) != expected:
@@ -1236,7 +1259,7 @@ def validate_approved_handoff(profile: dict[str, object], decision_ids: set[str]
     actual_dirs = [path for path in implementation_root.rglob("*") if path.is_dir()]
     if actual_files != EXPECTED_IMPLEMENTATION_FILES or actual_dirs:
         fail(
-            "implementation/ must contain only the six closed versioned handoff pairs; "
+            "implementation/ must contain only the nine closed versioned handoff pairs; "
             f"actual={sorted(actual_files)}"
         )
 
@@ -2106,119 +2129,132 @@ def validate_historical_phase_a_progress(progress: object | None = None) -> None
 def validate_current_rejection_authority() -> None:
     decision = load_json(
         CURRENT_REJECTION_DECISION_PATH,
-        "controlled-network-spike/decision-v3.json",
+        "controlled-network-spike/decision-v6.json",
     )
-    if decision.get("status") != "closed_libjuice_rejected_fallback_unselected":
-        fail("decision-v3 must preserve the closed libjuice rejection")
+    if decision.get("status") != "closed_libnice_rejected_no_networking_candidate":
+        fail("decision-v6 must preserve the closed libnice rejection")
     resolutions = decision.get("resolutions")
     if not isinstance(resolutions, list) or len(resolutions) != 5:
-        fail("decision-v3 must retain exactly five controlled-spike resolutions")
+        fail("decision-v6 must retain exactly five controlled-spike resolutions")
     if not type_exact_equal(
         {
             "decisionUnit": resolutions[0].get("decisionUnit"),
+            "candidate": resolutions[0].get("candidate"),
             "resolution": resolutions[0].get("resolution"),
-        },
-        {
-            "decisionUnit": "networking_library_selection",
-            "resolution": "rejected_before_compile",
-        },
-    ):
-        fail("decision-v3 must reject libjuice before compilation")
-    if not type_exact_equal(
-        {
-            "decisionUnit": resolutions[1].get("decisionUnit"),
-            "candidate": resolutions[1].get("candidate"),
-            "resolution": resolutions[1].get("resolution"),
         },
         {
             "decisionUnit": "networking_library_fallback",
             "candidate": "libnice-0.1.23-glib-c-abi",
-            "resolution": "proposed_not_selected",
+            "resolution": "rejected_before_compile",
         },
     ):
-        fail("decision-v3 must leave libnice proposed and unselected")
+        fail("decision-v6 must reject libnice before compilation")
+    if not type_exact_equal(
+        {
+            "decisionUnit": resolutions[1].get("decisionUnit"),
+            "resolution": resolutions[1].get("resolution"),
+        },
+        {
+            "decisionUnit": "networking_library_selection",
+            "resolution": "unresolved_no_candidate_selected",
+        },
+    ):
+        fail("decision-v6 must leave networking-library selection unresolved")
+    acquisition = decision.get("acquisitionClosure")
+    if not isinstance(acquisition, dict) or any((
+        acquisition.get("pendingFourDependencySourcesAcquired") is not False,
+        acquisition.get("pendingFourDependencyAcquisitionSkippedAfterRejection") is not True,
+        acquisition.get("additionalSourceAcquisitionAuthorized") is not False,
+    )):
+        fail("decision-v6 acquisition closure drifted")
     decision_authority = decision.get("authorization")
     if not isinstance(decision_authority, dict):
-        fail("decision-v3 authorization must be an object")
+        fail("decision-v6 authorization must be an object")
     for field, value in decision_authority.items():
-        expected = field == "handoffV6CreationAuthorized"
+        expected = field == "handoffV9CreationAuthorized"
         if value is not expected:
-            fail(f"decision-v3 authorization.{field} drifted")
+            fail(f"decision-v6 authorization.{field} drifted")
     compile_closure = decision.get("compileClosure")
     if not isinstance(compile_closure, dict) or any(
         value is not False for value in compile_closure.values()
     ):
-        fail("decision-v3 compile closure must keep every compile action false")
+        fail("decision-v6 compile closure must keep every compile action false")
 
     handoff = load_json(
         CURRENT_REJECTION_HANDOFF_PATH,
-        "implementation/handoff-v6.json",
+        "implementation/handoff-v9.json",
     )
-    if handoff.get("status") != "closed_libjuice_rejected_no_fallback_authority":
-        fail("handoff-v6 must preserve the closed rejection status")
+    if handoff.get("status") != "closed_libnice_rejected_no_library_authority":
+        fail("handoff-v9 must preserve the closed rejection status")
     disposition = handoff.get("networkingLibraryDisposition")
     if not isinstance(disposition, dict) or any((
-        disposition.get("rejectedCandidate") != "libjuice-1.7.2-static-c-abi",
-        disposition.get("rejectionStage") != "source_audit_before_compile",
-        disposition.get("fallbackCandidate") != "libnice-0.1.23-glib-c-abi",
-        disposition.get("fallbackStatus") != "proposed_not_selected",
+        disposition.get("historicalRejectedCandidate") != "libjuice-1.7.2-static-c-abi",
+        disposition.get("latestRejectedCandidate") != "libnice-0.1.23-glib-c-abi",
+        disposition.get("latestRejectionStage") != "source_audit_before_compile",
+        disposition.get("latestIndependentP1BlockerCount") != 4,
+        disposition.get("selectedCandidate") is not None,
+        disposition.get("nextCandidate") is not None,
     )):
-        fail("handoff-v6 networking-library disposition drifted")
+        fail("handoff-v9 networking-library disposition drifted")
     handoff_authority = handoff.get("authorization")
     if not isinstance(handoff_authority, dict) or any(
         value is not False for value in handoff_authority.values()
     ):
-        fail("handoff-v6 must keep every current authorization false")
+        fail("handoff-v9 must keep every current authorization false")
     handoff_execution = handoff.get("executionRecord")
     if not isinstance(handoff_execution, dict):
-        fail("handoff-v6 execution record must be an object")
+        fail("handoff-v9 execution record must be an object")
     for field, value in handoff_execution.items():
-        if field == "sourceInspectionPerformed":
+        if field in {
+            "approvedArtifactAcquisitionNetworkIOPerformed",
+            "sourceInspectionPerformed",
+        }:
             if value is not True:
-                fail("handoff-v6 must record the completed read-only inspection")
+                fail(f"handoff-v9 executionRecord.{field} must remain true")
         elif field == "measurements":
             if value != []:
-                fail("handoff-v6 must not claim measurements")
+                fail("handoff-v9 must not claim measurements")
         elif value is not False:
-            fail(f"handoff-v6 executionRecord.{field} must remain false")
+            fail(f"handoff-v9 executionRecord.{field} must remain false")
 
     progress = load_json(
         CURRENT_REJECTION_PROGRESS_PATH,
-        "controlled-network-spike/phase-a/progress-v3.json",
+        "controlled-network-spike/phase-a/progress-v8.json",
     )
-    if progress.get("status") != "blocked_networking_candidate_rejected":
-        fail("progress-v3 must preserve the blocked rejected-candidate state")
+    if progress.get("status") != "blocked_no_networking_library_candidate":
+        fail("progress-v8 must preserve the blocked no-candidate state")
     summary = progress.get("summary")
     if not isinstance(summary, dict) or any((
-        summary.get("wholePhaseASecurityReview") != "blocked_on_fallback_selection_and_evidence",
-        summary.get("networkingCandidateDisposition") != "rejected_before_compile",
-        summary.get("fallbackDisposition") != "proposed_not_selected",
+        summary.get("wholePhaseASecurityReview") != "blocked_no_networking_library_candidate",
+        summary.get("rejectedNetworkingCandidateCount") != 2,
+        summary.get("latestCandidateDisposition") != "rejected_before_compile",
+        summary.get("selectedNetworkingLibrary") is not None,
     )):
-        fail("progress-v3 rejection summary drifted")
+        fail("progress-v8 rejection summary drifted")
     progress_authority = progress.get("authorization")
     if not isinstance(progress_authority, dict) or any(
         value is not False for value in progress_authority.values()
     ):
-        fail("progress-v3 must keep every current authorization false")
+        fail("progress-v8 must keep every current authorization false")
     progress_execution = progress.get("executionRecord")
     if not isinstance(progress_execution, dict):
-        fail("progress-v3 execution record must be an object")
+        fail("progress-v8 execution record must be an object")
     for field, value in progress_execution.items():
         if field in {
             "approvedArtifactAcquisitionNetworkIOPerformed",
             "sourceInspectionPerformed",
         }:
             if value is not True:
-                fail(f"progress-v3 executionRecord.{field} must remain true")
+                fail(f"progress-v8 executionRecord.{field} must remain true")
         elif field == "measurements":
             if value != []:
-                fail("progress-v3 must not claim measurements")
+                fail("progress-v8 must not claim measurements")
         elif value is not False:
-            fail(f"progress-v3 executionRecord.{field} must remain false")
+            fail(f"progress-v8 executionRecord.{field} must remain false")
 
 
 # Immutable historical mutation suites import these original entry points.
-# Main uses the explicit historical names and validates v6/v3 separately.
+# Main uses the explicit historical names and validates the current v9/v8 closure separately.
 def validate_current_controlled_spike_handoff(
     handoff: object | None = None,
 ) -> None:
@@ -2251,6 +2287,7 @@ def validate_phase_a_static_python_ast(raw: str, label: str) -> None:
             "check_p2p_nat_libjuice_compile_only",
             "check_p2p_nat_libjuice_offline_source",
             "check_p2p_nat_libjuice_source_audit",
+            "check_p2p_nat_libnice_source_audit",
             "check_p2p_nat_phase_a_progress",
             "check_p2p_nat_phase_a_harness_egress",
             "check_p2p_nat_security_design",
@@ -2357,7 +2394,7 @@ def main() -> int:
         "Production P2P NAT security design OK: "
         "13 evidence artifacts, 2 opportunities, 6 options, "
         "8 structurally distinct diagrams; historical bounded phase-A approval preserved; "
-        "44-file static preflight pins exact acquisition and libjuice source-audit rejection evidence; "
+        "57-file static preflight pins historical libjuice and current libnice source-audit rejection evidence; "
         "compiler, socket, runtime network, Phase B, and production gates closed."
     )
     return 0

@@ -1,0 +1,91 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-phase-a-progress",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v6",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "glib_2_64_2_source_acquisition_authorized_not_started",
+  "supersedes": {
+    "path": "progress-v5.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v5",
+    "sha256": "f7680cffe2402545ec3b3ede970bb7aa2795910f0f42240e0d27b0256daebc1f"
+  },
+  "currentAuthority": {
+    "decision": {
+      "path": "../decision-v5.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v5",
+      "sha256": "d1c31cce719aae8f3fbb5f5ab6fd564091d7ef72966e7f25a6e54ca8adb69d95"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v8.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v8",
+      "sha256": "e51b970f5bc18800d462bcfea0f252c297648a8f07d54a19072416b405623613"
+    }
+  },
+  "candidateState": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "libniceSourceIntakeStatus": "complete",
+    "glibSourceIntakeStatus": "authorized_not_started",
+    "sourceAuditStatus": "in_progress",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "acquisitionState": {
+    "authorityStatus": "authorized_not_consumed",
+    "authorizedRequestCount": 2,
+    "completedRequestCount": 0,
+    "officialChecksumPresent": false,
+    "sourceArchivePresent": false,
+    "sourceExtracted": false,
+    "sourceManifestRecorded": false,
+    "transitiveDependencyClosureRecorded": false,
+    "otherDependencyAcquisitionAuthorized": false
+  },
+  "authorization": {
+    "glibSourceAcquisitionNetworkIOAllowed": true,
+    "otherDependencyAcquisitionNetworkIOAllowed": false,
+    "opensslAcquisitionNetworkIOAllowed": false,
+    "offlineSourceInspectionAuthorized": true,
+    "sourceForkAuthorized": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecord": {
+    "glibAcquisitionNetworkIOPerformed": false,
+    "glibSourceInspectionPerformed": false,
+    "sourceOrGeneratorExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionNetworkIOPerformed": false,
+    "measurements": []
+  },
+  "nextStep": {
+    "state": "validate_authority_then_acquire_exact_glib_checksum_and_archive",
+    "afterAcquisition": "verify_checksum_safe_extract_hash_and_derive_transitive_closure_read_only",
+    "opensslScopeExpansionStillRequired": true,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityMayBeOpened": false
+  },
+  "evidenceBoundary": {
+    "proves": "bounded_glib_source_acquisition_authority_exists",
+    "doesNotProve": "glib_receipt_transitive_dependency_completeness_source_quality_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_progress_only"
+  }
+}

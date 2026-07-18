@@ -1,0 +1,102 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-dependency-closure",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v3",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "closed_candidate_rejected_no_pending_source_intake",
+  "supersedes": {
+    "path": "libnice-dependency-closure-v2.json",
+    "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v2",
+    "sha256": "32acfbed04225a09121056db3a19796f804e2e3e3d5dd675cdad5991954f5d52"
+  },
+  "sourceAudit": {
+    "path": "libnice-source-audit-v1.json",
+    "auditId": "production_p2p_nat_v1_libnice_source_audit_v1",
+    "sha256": "2f76f43860e5967403ed2c6bbd7c59aa0b0babc0b5f64b2084b91dc763892ce7",
+    "outcome": "rejected_before_compile"
+  },
+  "completedPins": [
+    {
+      "name": "libnice",
+      "version": "0.1.23",
+      "archiveSha256": "618fc4e8de393b719b1641c1d8eec01826d4d39d15ade92679d221c7f5e4e70d",
+      "treeSha256": "e594b0b2435e10a8df970304ba3dec24ea0353820f1eecb820a810ab56cd276a",
+      "status": "acquired_and_verified_by_archive_tree_equivalence"
+    },
+    {
+      "name": "GLib",
+      "version": "2.64.2",
+      "archiveSha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+      "treeSha256": "1c36d535b42d89b62c375b60005dd3c073033ba5bb4928c6825c09a4bc61d3ac",
+      "status": "acquired_and_verified_by_official_checksum_and_tree_equivalence"
+    }
+  ],
+  "identifiedButNotAcquired": [
+    {
+      "name": "libffi",
+      "proposedVersion": "3.7.1",
+      "reason": "mandatory_GObject_dependency",
+      "status": "cancelled_before_exact_asset_lock_candidate_rejected"
+    },
+    {
+      "name": "GNU libiconv",
+      "proposedVersion": "1.19",
+      "reason": "Android_NDK_iconv_requires_API_28_but_target_is_minSdk26",
+      "status": "cancelled_before_acquisition_candidate_rejected"
+    },
+    {
+      "name": "proxy-libintl",
+      "proposedVersion": "0.1",
+      "requiredPolicy": "STUB_ONLY_no_dynamic_libintl_loading",
+      "reason": "minimum_Android_ngettext_compatibility",
+      "status": "cancelled_before_exact_archive_hash_candidate_rejected"
+    },
+    {
+      "name": "OpenSSL",
+      "proposedVersion": "3.5.7-LTS",
+      "reason": "selected_crypto_dependency_with_smaller_closure_than_GnuTLS",
+      "status": "cancelled_before_scope_expansion_and_exact_asset_lock_candidate_rejected"
+    }
+  ],
+  "platformInputs": {
+    "Android": [
+      "NDK_r28c_libc_libm_libdl_POSIX_threads",
+      "NDK_r28c_system_zlib"
+    ],
+    "macOS": [
+      "pinned_macOS_SDK_libSystem_libresolv_iconv_CoreFoundation",
+      "pinned_macOS_SDK_system_zlib"
+    ],
+    "bundled": [
+      "GLib_internal_PCRE"
+    ]
+  },
+  "compileOnlyPrerequisitesDisposition": {
+    "exactPendingSourceManifests": "not_required_candidate_rejected",
+    "noExeWrapperCrossConfiguration": "not_created_candidate_rejected",
+    "productCAbiContract": "not_created_candidate_rejected",
+    "newCompileAuthority": "not_requested_candidate_rejected"
+  },
+  "authorization": {
+    "pendingSourceAcquisitionNetworkIOAllowed": false,
+    "sourceForkAuthorized": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "nextStep": "new_versioned_networking_library_review_required_before_reusing_any_dependency_plan",
+  "evidenceBoundary": {
+    "proves": "minimum_dependency_set_identification_and_early_stop_after_candidate_rejection",
+    "doesNotProve": "unacquired_source_provenance_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_dependency_closure_only"
+  }
+}

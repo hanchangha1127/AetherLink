@@ -31,11 +31,14 @@ The controlled-spike history has since advanced without activating the design.
 `decision-v2` and `handoff-v5` authorized and consumed one exact acquisition of
 official libjuice v1.7.2 and Android NDK r28c. The mandatory read-only source
 audit rejected libjuice before compilation for five P1 profile failures.
-`decision-v3` and `handoff-v6` are now the current execution boundary:
-implementation, replacement-library acquisition, compiler and archiver use,
-source execution, sockets, runtime or harness network I/O, Phase B, and
-production remain unauthorized. libnice 0.1.23 is only a proposed fallback and
-requires a new explicit acquisition decision.
+`decision-v4` through `decision-v5` and `handoff-v7` through `handoff-v8` later
+authorized and consumed only exact libnice 0.1.23 and GLib 2.64.2 source
+acquisition for a read-only audit. That audit rejected libnice before
+compilation for four independent P1 profile failures. `decision-v6` and
+`handoff-v9` are now the current execution boundary: implementation, library
+selection, further acquisition or inspection, compiler and archiver use, source
+execution, sockets, runtime or harness network I/O, Phase B, and production
+remain unauthorized. No networking-library candidate is selected.
 
 ## Constraints
 
@@ -54,8 +57,9 @@ requires a new explicit acquisition decision.
 - Keep `route.refresh` as the only active traversal-related protocol namespace
   until a selected profile defines and reviews additional message families.
 - Do not select or acquire a replacement ICE, TURN, TLS, HPKE, or QUIC library
-  without a new versioned decision. The rejected libjuice choice grants no
-  fallback or source-fork authority.
+  without a new versioned review and explicit decision. The rejected libjuice
+  and libnice choices grant no fallback, acquisition, compile, or source-fork
+  authority.
 - Use a balanced security, reliability, latency, battery, and operability profile.
   No measured performance or capacity budget was supplied.
 - Treat [RFC 8445](https://www.rfc-editor.org/rfc/rfc8445.html),
@@ -208,15 +212,17 @@ selects all seven recommended policies, and `handoff-v3` supersedes
 authorize sockets or deployment, or provide network implementation evidence.
 The historical controlled-spike decision-v1 and `handoff-v4` conditionally
 selected the four Phase A candidates. The one-shot decision-v2 and `handoff-v5`
-then authorized exact libjuice and NDK acquisition. That authority is consumed;
-decision-v3 and `handoff-v6` reject libjuice before compilation and close
-replacement acquisition, implementation, compiler, runtime, harness, socket,
-Phase B, measurement, and production authority.
+then authorized exact libjuice and NDK acquisition. Later one-shot records
+authorized exact libnice and GLib acquisition only. All acquisition authorities
+are consumed; decision-v6 and `handoff-v9` reject libnice before compilation and
+close library selection, further acquisition or inspection, implementation,
+compiler, runtime, harness, socket, Phase B, measurement, and production
+authority.
 
 No recommendation closes a security gap until a future selected implementation
 is revalidated on real networks and devices. The original explicit selection
 authorized only its bounded historical handoff scope; current execution
-authority is closed by `handoff-v6`.
+authority is closed by `handoff-v9`.
 
 ## Next Decisions
 
@@ -227,11 +233,12 @@ The separate [phase A approval decision](controlled-network-spike/decision-v1.md
 and `handoff-v4` conditionally select all four for offline inspection of
 user-provided or pre-existing workspace source, compile-only,
 session-cryptography vector, and static harness/egress evidence. The later
-one-shot acquisition authority in decision-v2 and `handoff-v5` is consumed.
-Current decision-v3 and `handoff-v6` reject libjuice and authorize no additional
-source acquisition, inspected-code execution, compiler, socket, runtime or
-harness network I/O, Phase B, measurement, or production deployment. libnice
-remains `proposed_not_selected` pending a new explicit acquisition decision.
+one-shot acquisition authority in decision-v2 and `handoff-v5` is consumed, as
+are the exact libnice and GLib authorities in decision-v4 through decision-v5
+and `handoff-v7` through `handoff-v8`. Current decision-v6 and `handoff-v9`
+reject libnice and authorize no new candidate, additional source acquisition,
+inspection, source execution, compiler, socket, runtime or harness network I/O,
+Phase B, measurement, or production deployment.
 
 The [pre-network review v1](pre-network/review-v1.md) remains the immutable
 `proposed_not_selected` source packet. The separate closed approval decision
@@ -259,9 +266,11 @@ keeps network, library, socket, and deployment authorization false.
   restrictive NAT, carrier NAT, VPN, IPv4, IPv6, NAT64, Wi-Fi/cellular changes,
   suspend/resume, consent loss, TURN outage, signaling replay, and service
   compromise simulations.
-- Keep `implementation/` limited to the six closed versioned handoff pairs:
+- Keep `implementation/` limited to the nine closed versioned handoff pairs:
   `handoff-v1`, its `handoff-v2` completion record, and the policy-selected
   `handoff-v3`, the historical Phase-A-only `handoff-v4`, the consumed exact
-  acquisition record `handoff-v5`, and the current rejection record
-  `handoff-v6`. Do not execute the rejected library or add socket-capable
-  implementation code under that directory.
+  libjuice/NDK acquisition record `handoff-v5`, the libjuice rejection record
+  `handoff-v6`, the consumed libnice and GLib acquisition records `handoff-v7`
+  and `handoff-v8`, and the current libnice rejection record `handoff-v9`. Do
+  not execute either rejected library or add socket-capable implementation code
+  under that directory.

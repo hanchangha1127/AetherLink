@@ -1,0 +1,100 @@
+{
+  "documentType": "aetherlink.p2p-nat-controlled-spike-phase-a-progress",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v4",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "libnice_source_acquisition_authorized_not_started",
+  "supersedes": {
+    "path": "progress-v3.json",
+    "artifactId": "production_p2p_nat_v1_controlled_spike_phase_a_progress_v3",
+    "sha256": "22a285b0de28f593f39f6b2a3f43e2966f97e711dd97c6bfc240325c88827db8"
+  },
+  "currentAuthority": {
+    "decision": {
+      "path": "../decision-v4.json",
+      "decisionId": "production_p2p_nat_v1_controlled_network_spike_decision_v4",
+      "sha256": "a8a60ad80f9d83ebf29aae3d030b2d129bc98e7a88b4b05691327f6d08731809"
+    },
+    "handoff": {
+      "path": "../../implementation/handoff-v7.json",
+      "handoffId": "production_p2p_nat_v1_handoff_v7",
+      "sha256": "22306a0f057cf9eaf720c865ea7e46ed703a37fba93493eb937f592abefa5a58"
+    },
+    "fallbackReview": {
+      "path": "../review-v2.json",
+      "reviewId": "production_p2p_nat_v1_controlled_network_spike_fallback_review_v2",
+      "sha256": "d20c9ddcf572edbfeb8df3bf899cb32f0f61c684974ea074f7ed841332c4122b"
+    }
+  },
+  "objective": "pin_and_audit_libnice_0_1_23_and_minimum_required_dependencies_without_compilation",
+  "candidateState": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "selectionStatus": "not_selected",
+    "evaluationStatus": "approved_for_bounded_phase_a_read_only_source_audit",
+    "compileEligibilityStatus": "not_determined"
+  },
+  "acquisitionState": {
+    "authorityStatus": "authorized_not_consumed",
+    "authorizedRequestCount": 2,
+    "completedRequestCount": 0,
+    "sourceArchivePresent": false,
+    "detachedSignaturePresent": false,
+    "sourceExtracted": false,
+    "sourceManifestRecorded": false,
+    "dependencyClosureRecorded": false,
+    "dependencyAcquisitionAuthorized": false,
+    "dependencyArtifactsAcquired": false
+  },
+  "executionAuthority": {
+    "offlineSourceInspectionAuthorized": true,
+    "libniceSourceAcquisitionNetworkIOAllowed": true,
+    "dependencyAcquisitionNetworkIOAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "buildSystemExecutionAllowed": false,
+    "configureExecutionAllowed": false,
+    "sourceExecutionAllowed": false,
+    "testExecutionAllowed": false,
+    "sourceForkAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "harnessNetworkIOAllowed": false,
+    "controlledSpikeNetworkIOAllowed": false,
+    "controlledSpikeSocketExecutionAuthorized": false,
+    "phaseBExecutionAuthorized": false,
+    "phaseBNetworkIOAllowed": false,
+    "phaseBSocketExecutionAuthorized": false,
+    "phaseBExternalEgressAllowed": false,
+    "productionNetworkIOAllowed": false,
+    "productionDeploymentAuthorized": false
+  },
+  "executionRecord": {
+    "approvedArtifactAcquisitionNetworkIOPerformed": false,
+    "sourceInspectionPerformed": false,
+    "sourceExecutionPerformed": false,
+    "compilerInvocationPerformed": false,
+    "staticLibraryArchiverInvocationPerformed": false,
+    "buildSystemExecutionPerformed": false,
+    "socketCreationPerformed": false,
+    "runtimeOrHarnessNetworkIOPerformed": false,
+    "phaseBPerformed": false,
+    "productionNetworkIOPerformed": false,
+    "measurements": []
+  },
+  "nextStep": {
+    "state": "validate_authority_then_acquire_exact_libnice_archive_and_signature",
+    "afterAcquisition": "safe_extract_hash_and_derive_minimum_dependency_closure_read_only",
+    "newUserApprovalRequiredForLockedGlibFamilyDependencies": false,
+    "scopeExpansionRequiresExplicitUserApproval": true,
+    "compilerSocketRuntimePhaseBOrProductionAuthorityMayBeOpened": false
+  },
+  "evidenceBoundary": {
+    "proves": "explicit_bounded_authority_exists_before_libnice_source_acquisition",
+    "doesNotProve": "artifact_receipt_signature_trust_dependency_closure_source_quality_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_progress_only"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-dependency-closure",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v2",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "complete_minimum_source_set_identified_acquisition_scope_expansion_pending",
+  "supersedes": {
+    "path": "libnice-dependency-closure-v1.json",
+    "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v1",
+    "sha256": "83604bfc0cbcce3a43cdcc62990ba8698576b219eed51d66c0c077118a0afab4"
+  },
+  "evidence": {
+    "libniceManifest": {
+      "path": "libnice-source-manifest-v1.json",
+      "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+    },
+    "glibManifest": {
+      "path": "glib-source-manifest-v1.json",
+      "sha256": "a49ea1128e6644fa29b271be3a70a394e4a8dae554218ef40fe05d13f1756ec7"
+    },
+    "glibIntake": {
+      "path": "glib-offline-source-intake-v1.json",
+      "sha256": "cec4fd2a71a9b26ab4e0bc4be99e60edbf9f04672a65cca784dede78a6dc8720"
+    }
+  },
+  "target": {
+    "android": "minSdk26_arm64_v8a_and_x86_64_static_c_abi",
+    "macos": "arm64_and_x86_64_static_c_abi",
+    "libnice": "0.1.23",
+    "glib": "2.64.2"
+  },
+  "minimumSourceSet": [
+    {
+      "name": "libnice",
+      "version": "0.1.23",
+      "status": "acquired_and_pinned"
+    },
+    {
+      "name": "GLib",
+      "version": "2.64.2",
+      "status": "acquired_and_pinned"
+    },
+    {
+      "name": "libffi",
+      "constraint": ">=3.0.0",
+      "proposedVersion": "3.7.1",
+      "reason": "mandatory_GObject_dependency_and_current_release_contains_aarch64_Darwin_correctness_fixes",
+      "officialReleasePage": "https://github.com/libffi/libffi/releases/tag/v3.7.1",
+      "status": "scope_expansion_and_exact_asset_lock_pending"
+    },
+    {
+      "name": "GNU libiconv",
+      "constraint": "Android_minSdk26_compatible",
+      "proposedVersion": "1.19",
+      "reason": "Android_NDK_iconv_is_introduced_at_API_28",
+      "officialArchiveUrl": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz",
+      "officialSignatureUrl": "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz.sig",
+      "status": "scope_expansion_pending"
+    },
+    {
+      "name": "proxy-libintl",
+      "constraint": "GLib_upstream_wrap_revision_0.1",
+      "proposedVersion": "0.1",
+      "reason": "Android_libc_lacks_ngettext_and_full_GNU_gettext_is_not_minimum",
+      "officialTagPage": "https://github.com/frida/proxy-libintl/tree/0.1",
+      "requiredCompilePolicy": "STUB_ONLY_no_dynamic_libintl_loading",
+      "status": "scope_expansion_and_exact_archive_hash_pending"
+    },
+    {
+      "name": "OpenSSL",
+      "constraint": "supported_LTS_compatible_with_libnice_0_1_23",
+      "proposedVersion": "3.5.7",
+      "reason": "LTS_until_2030_and_smaller_dependency_closure_than_GnuTLS",
+      "officialReleasePage": "https://openssl-library.org/source/",
+      "status": "scope_expansion_and_exact_asset_lock_pending"
+    }
+  ],
+  "noAdditionalSourceRequired": [
+    {
+      "name": "PCRE",
+      "resolution": "GLib_bundled_internal_source",
+      "requiredOption": "internal_pcre=true"
+    },
+    {
+      "name": "zlib",
+      "resolution": "pinned_Android_NDK_r28c_and_macOS_SDK_system_input"
+    },
+    {
+      "name": "threads_dynamic_loader_math_xattr_and_macos_iconv",
+      "resolution": "pinned_platform_SDK_inputs"
+    }
+  ],
+  "excluded": [
+    "GnuTLS",
+    "GStreamer",
+    "GUPnP_IGD",
+    "GObject_introspection",
+    "gtk_doc",
+    "libmount",
+    "SELinux",
+    "FAM",
+    "full_GNU_gettext"
+  ],
+  "compileOnlyPrerequisites": [
+    "exact_archive_checksum_signature_and_tree_manifests_for_four_pending_sources",
+    "line_referenced_security_and_license_audit_for_each_pending_source",
+    "no_exe_wrapper_cross_configuration_for_android_and_macos",
+    "reviewed_cross_properties_preventing_probe_execution",
+    "proxy_libintl_STUB_ONLY_proof",
+    "exact_export_allocator_callback_cancellation_and_error_contract",
+    "new_versioned_compile_only_authority"
+  ],
+  "authorization": {
+    "pendingSourceAcquisitionNetworkIOAllowed": false,
+    "sourceOrGeneratorExecutionAllowed": false,
+    "compilerInvocationAuthorized": false,
+    "staticLibraryArchiverInvocationAuthorized": false,
+    "socketCreationAllowed": false,
+    "runtimeNetworkIOAllowed": false,
+    "phaseBExecutionAuthorized": false,
+    "productionNetworkIOAllowed": false
+  },
+  "nextStep": "finish_libnice_security_audit_then_request_single_exact_scope_expansion_for_four_sources_only_if_candidate_survives",
+  "evidenceBoundary": {
+    "proves": "minimum_source_and_platform_dependency_set_derived_from_exact_libnice_and_glib_sources",
+    "doesNotProve": "pending_source_provenance_security_compile_abi_runtime_socket_network_nat_device_phase_b_or_production_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_dependency_closure_only"
+  }
+}

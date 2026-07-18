@@ -1,0 +1,136 @@
+{
+  "documentType": "aetherlink.p2p-nat-libnice-dependency-closure",
+  "schemaVersion": 1,
+  "artifactId": "production_p2p_nat_v1_libnice_dependency_closure_v1",
+  "profileId": "production_p2p_nat_v1_recommended",
+  "recordedDate": "2026-07-17",
+  "status": "partial_exact_glib_lock_ready_crypto_scope_pending",
+  "sourceManifest": {
+    "path": "libnice-source-manifest-v1.json",
+    "manifestId": "production_p2p_nat_v1_libnice_source_manifest_v1",
+    "sha256": "bacd979c0c2e60f6f374c7034cddc9377bdcaf038a7a08786d390e9f48201f2f"
+  },
+  "target": {
+    "candidateId": "libnice-0.1.23-glib-c-abi",
+    "android": "minSdk26_static_c_abi",
+    "macos": "static_c_abi",
+    "buildExecutionPerformed": false
+  },
+  "directRequired": [
+    {
+      "dependency": "GLib",
+      "components": [
+        "gio-2.0",
+        "gthread-2.0",
+        "glib-2.0",
+        "gmodule-2.0",
+        "gobject-2.0"
+      ],
+      "minimumVersion": "2.56",
+      "upstreamFallbackVersion": "2.64.2",
+      "evidence": [
+        "meson.build:25",
+        "meson.build:206-220",
+        "subprojects/glib.wrap:1-5"
+      ],
+      "status": "exact_source_lock_ready"
+    },
+    {
+      "dependency": "crypto_provider",
+      "allowedByUpstream": [
+        "GnuTLS >= 3.6.0",
+        "OpenSSL with no declared minimum"
+      ],
+      "recommendedMinimumClosure": "OpenSSL",
+      "reason": "GnuTLS introduces a larger mandatory transitive source closure",
+      "evidence": [
+        "meson.build:26",
+        "meson.build:222-285"
+      ],
+      "status": "required_outside_current_effective_glib_family_acquisition_scope"
+    }
+  ],
+  "exactNextSourceLock": {
+    "dependency": "GLib",
+    "version": "2.64.2",
+    "officialIndexUrl": "https://download.gnome.org/sources/glib/2.64/",
+    "archiveUrl": "https://download.gnome.org/sources/glib/2.64/glib-2.64.2.tar.xz",
+    "archiveRelativePath": "build/offline-source/glib-2.64.2/original/glib-2.64.2.tar.xz",
+    "extractedSourceRelativePath": "build/offline-source/glib-2.64.2/source",
+    "sha256": "9a2f21ed8f13b9303399de13a0252b7cbcede593d26971378ec6cb90e87f2277",
+    "maximumArchiveBytes": 67108864,
+    "maximumExtractedBytes": 536870912,
+    "sourceOfLock": "libnice-0.1.23/subprojects/glib.wrap",
+    "redirectFreeCanonicalization": "ftp.gnome.org_url_replaced_with_official_download.gnome.org_equivalent",
+    "acquisitionStatus": "not_started"
+  },
+  "optionalDisabled": [
+    {
+      "dependency": "GStreamer base >= 1.14.0",
+      "option": "gstreamer=disabled",
+      "evidence": "meson.build:28,288-293"
+    },
+    {
+      "dependency": "GUPnP IGD >= 0.2.5",
+      "option": "gupnp=disabled",
+      "evidence": "meson.build:27,295-297"
+    },
+    {
+      "dependency": "GObject introspection",
+      "option": "introspection=disabled",
+      "evidence": "meson.build:314,322-324"
+    },
+    {
+      "dependency": "gtk-doc",
+      "option": "gtk_doc=disabled",
+      "evidence": "meson.build:326-334"
+    },
+    {
+      "dependency": "examples_and_tests",
+      "option": "examples=disabled,tests=disabled",
+      "evidence": "meson.build:336-342"
+    }
+  ],
+  "generatedInputs": {
+    "required": [
+      "config.h",
+      "agent/agent-enum-types.c",
+      "agent/agent-enum-types.h",
+      "nice/nice-version.h",
+      "nice/libnice.map_or_platform_equivalent"
+    ],
+    "sourceProvidedPythonGenerators": [
+      "nice/gen-def.py",
+      "nice/gen-map.py"
+    ],
+    "generatorExecutionAuthorized": false,
+    "evidence": [
+      "agent/meson.build:22-47",
+      "nice/meson.build:1-46"
+    ]
+  },
+  "transitiveClosurePendingFromGlib": [
+    "libffi_policy",
+    "PCRE_or_PCRE2_policy",
+    "zlib_policy",
+    "iconv_and_gettext_policy",
+    "platform_threads_and_dynamic_loader_policy"
+  ],
+  "scopeBoundary": {
+    "glibAcquisitionCoveredByRecordedUserApproval": true,
+    "glibAcquisitionEffectiveOnlyAfterDecisionV5AndHandoffV8": true,
+    "opensslAcquisitionCoveredByCurrentEffectiveScope": false,
+    "opensslRequiresExplicitScopeExpansion": true,
+    "compilerOrBuildExecutionAuthorized": false,
+    "socketRuntimePhaseBOrProductionAuthorityOpened": false
+  },
+  "nextStep": "close_libnice_intake_then_authorize_exact_glib_2_64_2_source_acquisition_only",
+  "evidenceBoundary": {
+    "proves": "direct_dependency_requirements_and_exact_upstream_glib_fallback_lock_from_read_only_source",
+    "doesNotProve": "complete_glib_transitive_closure_crypto_source_lock_compile_abi_runtime_or_network_behavior"
+  },
+  "immutability": {
+    "recordStatus": "closed_append_only",
+    "supersessionRule": "new_versioned_dependency_closure_only"
+  }
+}

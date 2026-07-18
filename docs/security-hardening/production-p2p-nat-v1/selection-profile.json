@@ -6,13 +6,13 @@
   "implementationAuthorized": false,
   "initialBoundedHandoffAuthorized": true,
   "currentExecutionAuthority": {
-    "decisionPath": "controlled-network-spike/decision-v3.json",
-    "decisionSha256": "ae129fc214ac96abb3e1393b895cf03ddf284004ce9a1d3ac2005b4cb5d2022d",
-    "handoffPath": "implementation/handoff-v6.json",
-    "handoffSha256": "87af07548bfeb17b54642bb16c00fab2652006ba9401a05ccce8d134bba894e5",
-    "progressPath": "controlled-network-spike/phase-a/progress-v3.json",
-    "progressSha256": "22a285b0de28f593f39f6b2a3f43e2966f97e711dd97c6bfc240325c88827db8",
-    "status": "closed_libjuice_rejected_no_fallback_authority",
+    "decisionPath": "controlled-network-spike/decision-v6.json",
+    "decisionSha256": "65095344cbdc13445ef171562b4f60d2b1005d6feaf128d94660f1204c931755",
+    "handoffPath": "implementation/handoff-v9.json",
+    "handoffSha256": "d1e2649504de1661b3184ce21ebfacfd9c38eb590b00e32ff755b77a0d66341d",
+    "progressPath": "controlled-network-spike/phase-a/progress-v8.json",
+    "progressSha256": "d83f81af28b03493ce47088e81a41a8ac73c722efd18e0f6b333b1b3c20f92a7",
+    "status": "closed_libnice_rejected_no_library_authority",
     "implementationAuthorized": false,
     "fallbackSelectionAuthorized": false,
     "sourceAcquisitionNetworkIOAllowed": false,
@@ -121,5 +121,5 @@
     }
   ],
   "explicitSelectionRequired": false,
-  "selectionInstruction": "Profile production_p2p_nat_v1_recommended retains its original bounded design approval from selection-decision.json and implementation/handoff-v1.json. The controlled-spike history progressed through the consumed exact acquisition authority in decision-v2.json and handoff-v5.json; the mandatory source audit rejected libjuice before compilation, and decision-v3.json plus handoff-v6.json now close implementation, replacement acquisition, compiler, source-execution, runtime, harness, socket, phase B, and production authority. libnice remains proposed_not_selected and requires a new explicit acquisition decision."
+  "selectionInstruction": "Profile production_p2p_nat_v1_recommended retains its original bounded design approval from selection-decision.json and implementation/handoff-v1.json. The controlled-spike history rejected libjuice before compilation, then consumed exact libnice and GLib source-acquisition authorities for a read-only audit. decision-v6.json plus handoff-v9.json reject libnice before compilation and close library selection, further acquisition, inspection, source execution, compiler, runtime, harness, socket, phase B, and production authority. No networking candidate is selected; a new candidate requires a new versioned review and explicit decision."
 }
