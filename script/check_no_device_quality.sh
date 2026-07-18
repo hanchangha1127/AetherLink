@@ -5359,6 +5359,7 @@ run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionW
 	run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreLoadOrCreatePersistsRuntimeIdentity|RuntimeIdentityKeyStoreTests/testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity|RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge'
 run swift test --filter TrustedDeviceStoreTests
 run swift test --filter RuntimeModelPullApproval
+	run swift test --filter 'RuntimeModelPullApprovalStoreTests/testRecoveryRejectsCorruptTerminalHistory|RuntimeModelPullApprovalStoreTests/testRecoveryRejectsOrphanAuditEvent|RuntimeModelPullApprovalStoreTests/testRecoveryRejectsEventsSchemaWithoutRequiredForeignKey|RuntimeModelPullApprovalStoreTests/testRecoveryStreamsMaximumAuditHistoryAndBlocksAdditionalIntake|RuntimeModelPullApprovalStoreTests/testRecoveryRejectsAuditHistoryAboveMaximumOperationCount|RuntimeModelPullApprovalBrokerTests/testCorruptTerminalAuditAtStartupBlocksIntakeAndDispatch|RuntimeModelPullApprovalBrokerTests/testOrphanAuditAtStartupBlocksIntakeAndDispatch|RuntimeModelPullApprovalBrokerTests/testMissingEventForeignKeyAtStartupBlocksIntakeAndDispatch'
 run swift test --filter CompanionModelPullApprovalTests
 run swift test --filter RuntimePermissionPolicyRegistryTests
 run swift test --filter RuntimeHostApprovalCoordinatorTests
@@ -5459,6 +5460,7 @@ echo "Covered v0.4 addendum: Android research brief model capability selection"
 echo "Covered v0.4 addendum: Android drawer selected-model capability summary"
 echo "Covered v0.5 prerequisite: models.pull host-approval fail-closed barrier"
 echo "Covered v0.5 addendum: models.pull host-local approval broker and durable redacted audit"
+echo "Covered v0.5 addendum: model-pull startup validates completed audit history before intake or provider dispatch"
 echo "Covered v0.5 addendum: host-local runtime permission policy registry and redacted action audit"
 echo "Covered v0.5 addendum: host-local action-neutral approval lifecycle core"
 echo "Covered v0.5 addendum: exact provider dispatch identity and host-approval publication linearization"

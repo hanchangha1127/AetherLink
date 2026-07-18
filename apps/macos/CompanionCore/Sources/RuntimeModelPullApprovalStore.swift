@@ -100,6 +100,7 @@ public enum RuntimeModelPullApprovalStoreError: Error, Equatable, Sendable {
     case invalidEvent
     case invalidTimestamp
     case invalidLimit
+    case capacityExceeded
     case duplicateOperationID
     case duplicateRequestBinding
     case operationNotFound
@@ -148,6 +149,7 @@ public final class SQLiteRuntimeModelPullApprovalStore:
     public static let requestBindingDigestPrefix =
         RuntimePermissionPolicyRegistry.requestBindingDigestPrefix
     public static let maximumRecentEventLimit = 500
+    static let maximumOperationCount = 10_000
 
     private static let schemaVersion = 2
     private static let legacySchemaVersion = 1
@@ -202,6 +204,9 @@ public final class SQLiteRuntimeModelPullApprovalStore:
 
         return try withDatabase { database in
             try withImmediateTransaction(database) {
+                guard try Self.operationCount(database: database) < Self.maximumOperationCount else {
+                    throw RuntimeModelPullApprovalStoreError.capacityExceeded
+                }
                 if try Self.valueExists(
                     operationID,
                     column: "operation_id",
@@ -418,6 +423,7 @@ public final class SQLiteRuntimeModelPullApprovalStore:
         let atMS = try Self.canonicalMilliseconds(at)
         return try withDatabase { database in
             try withImmediateTransaction(database) {
+                try Self.validateAllRecordHistories(database: database)
                 let records = try Self.readUnfinishedRecords(database: database)
                 for record in records {
                     let updatedAtMS = try Self.canonicalMilliseconds(record.updatedAt)
@@ -733,7 +739,6 @@ public final class SQLiteRuntimeModelPullApprovalStore:
               try tableColumns(metadataTable, database: database) == metadataColumns else {
             throw RuntimeModelPullApprovalStoreError.corruptPersistence
         }
-
         let statement = try prepare(
             database,
             "SELECT singleton, schema_version FROM \(metadataTable)"
@@ -841,6 +846,7 @@ public final class SQLiteRuntimeModelPullApprovalStore:
               try tableColumns(metadataTable, database: database) == metadataColumns else {
             throw RuntimeModelPullApprovalStoreError.corruptPersistence
         }
+        try verifyEventsForeignKey(database)
 
         let statement = try prepare(
             database,
@@ -860,6 +866,26 @@ public final class SQLiteRuntimeModelPullApprovalStore:
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_ROW,
               validText(statement, at: 0) == "ok",
+              sqlite3_step(statement) == SQLITE_DONE else {
+            throw RuntimeModelPullApprovalStoreError.corruptPersistence
+        }
+    }
+
+    private static func verifyEventsForeignKey(_ database: OpaquePointer) throws {
+        let statement = try prepare(
+            database,
+            "PRAGMA foreign_key_list(\(eventsTable))"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              validInt(statement, at: 0) == 0,
+              validInt(statement, at: 1) == 0,
+              validText(statement, at: 2) == operationsTable,
+              validText(statement, at: 3) == "operation_id",
+              validText(statement, at: 4) == "operation_id",
+              validText(statement, at: 5) == "NO ACTION",
+              validText(statement, at: 6) == "RESTRICT",
+              validText(statement, at: 7) == "NONE",
               sqlite3_step(statement) == SQLITE_DONE else {
             throw RuntimeModelPullApprovalStoreError.corruptPersistence
         }
@@ -1088,22 +1114,23 @@ public final class SQLiteRuntimeModelPullApprovalStore:
     }
 
     private static func eventRecord(
-        from statement: OpaquePointer
+        from statement: OpaquePointer,
+        columnOffset: Int32 = 0
     ) throws -> RuntimeModelPullApprovalEventRecord {
-        guard let operationID = validText(statement, at: 0),
-              let order = validInt(statement, at: 1),
+        guard let operationID = validText(statement, at: columnOffset),
+              let order = validInt(statement, at: columnOffset + 1),
               (0...2).contains(order),
-              let eventCode = validText(statement, at: 2),
+              let eventCode = validText(statement, at: columnOffset + 2),
               let event = RuntimeModelPullApprovalEvent(rawValue: eventCode),
-              let outcomeCode = validText(statement, at: 3),
+              let outcomeCode = validText(statement, at: columnOffset + 3),
               let outcome = RuntimeModelPullApprovalOutcome(rawValue: outcomeCode),
               event.outcome == outcome,
-              let occurredAtMS = validInt64(statement, at: 4),
+              let occurredAtMS = validInt64(statement, at: columnOffset + 4),
               (0...maximumEpochMilliseconds).contains(occurredAtMS),
-              let version = validInt(statement, at: 5),
+              let version = validInt(statement, at: columnOffset + 5),
               version == schemaVersion,
-              let actionID = validText(statement, at: 6),
-              let policyRevision = validText(statement, at: 7) else {
+              let actionID = validText(statement, at: columnOffset + 6),
+              let policyRevision = validText(statement, at: columnOffset + 7) else {
             throw RuntimeModelPullApprovalStoreError.corruptPersistence
         }
         do {
@@ -1154,6 +1181,13 @@ public final class SQLiteRuntimeModelPullApprovalStore:
             events.append(try eventRecord(from: statement))
         }
 
+        try validateEventHistory(for: record, events: events)
+    }
+
+    private static func validateEventHistory(
+        for record: RuntimeModelPullApprovalRecord,
+        events: [RuntimeModelPullApprovalEventRecord]
+    ) throws {
         let expectedEvents: [RuntimeModelPullApprovalEvent]
         switch record.currentEvent {
         case .requested:
@@ -1201,32 +1235,115 @@ public final class SQLiteRuntimeModelPullApprovalStore:
     }
 
     private static func validateAllRecordHistories(database: OpaquePointer) throws {
+        try validateForeignKeyIntegrity(database)
+        let expectedOperationCount = try operationCount(database: database)
+        guard expectedOperationCount <= maximumOperationCount else {
+            throw RuntimeModelPullApprovalStoreError.capacityExceeded
+        }
         let statement = try prepare(
             database,
-            "SELECT operation_id FROM \(operationsTable) ORDER BY operation_id"
+            """
+            SELECT operations.operation_id, operations.request_binding_digest,
+                   operations.provider_code, operations.action_id,
+                   operations.policy_revision, operations.current_event_code,
+                   operations.outcome_code, operations.created_at_ms,
+                   operations.updated_at_ms, operations.expires_at_ms,
+                   operations.schema_version,
+                   events.operation_id, events.event_order, events.event_code,
+                   events.outcome_code, events.occurred_at_ms, events.schema_version,
+                   operations.action_id, operations.policy_revision
+            FROM \(operationsTable) AS operations
+            LEFT JOIN \(eventsTable) AS events
+              ON events.operation_id = operations.operation_id
+            ORDER BY operations.operation_id, events.event_order
+            """
         )
-        var operationIDs: [String] = []
+        defer { sqlite3_finalize(statement) }
+        var currentRecord: RuntimeModelPullApprovalRecord?
+        var currentEvents: [RuntimeModelPullApprovalEventRecord] = []
+        var validatedOperationCount = 0
+
+        func validateCurrentRecord() throws {
+            guard let currentRecord else { return }
+            try validateEventHistory(for: currentRecord, events: currentEvents)
+            validatedOperationCount += 1
+        }
+
         while true {
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { break }
-            guard result == SQLITE_ROW,
-                  let operationID = validText(statement, at: 0) else {
-                sqlite3_finalize(statement)
-                throw RuntimeModelPullApprovalStoreError.corruptPersistence
+            guard result == SQLITE_ROW else {
+                throw failure(database, "Could not stream model-pull approval histories.")
             }
-            operationIDs.append(operationID)
+            let record = try approvalRecord(from: statement)
+            let event = try eventRecord(from: statement, columnOffset: 11)
+            if let existingRecord = currentRecord,
+               existingRecord.operationID != record.operationID {
+                try validateCurrentRecord()
+                currentRecord = record
+                currentEvents = [event]
+            } else {
+                if let existingRecord = currentRecord, existingRecord != record {
+                    throw RuntimeModelPullApprovalStoreError.corruptPersistence
+                }
+                currentRecord = record
+                currentEvents.append(event)
+                guard currentEvents.count <= 3 else {
+                    throw RuntimeModelPullApprovalStoreError.corruptPersistence
+                }
+            }
         }
-        sqlite3_finalize(statement)
+        try validateCurrentRecord()
+        guard validatedOperationCount == expectedOperationCount else {
+            throw RuntimeModelPullApprovalStoreError.corruptPersistence
+        }
+    }
 
-        for operationID in operationIDs {
-            guard try readRecord(
-                operationID: operationID,
-                validateHistory: true,
-                database: database
-            ) != nil else {
-                throw RuntimeModelPullApprovalStoreError.corruptPersistence
-            }
+    private static func validateForeignKeyIntegrity(_ database: OpaquePointer) throws {
+        let statement = try prepare(database, "PRAGMA foreign_key_check")
+        defer { sqlite3_finalize(statement) }
+        let result = sqlite3_step(statement)
+        if result == SQLITE_ROW {
+            throw RuntimeModelPullApprovalStoreError.corruptPersistence
         }
+        guard result == SQLITE_DONE else {
+            throw failure(database, "Could not validate model-pull approval foreign keys.")
+        }
+
+        let ownershipStatement = try prepare(
+            database,
+            """
+            SELECT 1
+            FROM \(eventsTable) AS events
+            LEFT JOIN \(operationsTable) AS operations
+              ON operations.operation_id = events.operation_id
+            WHERE operations.operation_id IS NULL
+            LIMIT 1
+            """
+        )
+        defer { sqlite3_finalize(ownershipStatement) }
+        let ownershipResult = sqlite3_step(ownershipStatement)
+        if ownershipResult == SQLITE_ROW {
+            throw RuntimeModelPullApprovalStoreError.corruptPersistence
+        }
+        guard ownershipResult == SQLITE_DONE else {
+            throw failure(database, "Could not validate model-pull approval event ownership.")
+        }
+    }
+
+    private static func operationCount(database: OpaquePointer) throws -> Int {
+        let statement = try prepare(
+            database,
+            "SELECT COUNT(*) FROM \(operationsTable)"
+        )
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let count = validInt(statement, at: 0),
+              count >= 0,
+              sqlite3_step(statement) == SQLITE_DONE else {
+            throw RuntimeModelPullApprovalStoreError.corruptPersistence
+        }
+        return count
     }
 
     private static func valueExists(

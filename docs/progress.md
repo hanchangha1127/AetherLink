@@ -1,8 +1,18 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-17 KST.
+Last updated: 2026-07-18 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
+
+## 2026-07-18 v0.5 Model-Pull Audit Recovery Integrity
+
+- Implemented: v2 schema verification now pins the exact event-to-operation `PRAGMA foreign_key_list` definition and `ON DELETE RESTRICT`. `SQLiteRuntimeModelPullApprovalStore.recoverUnfinished(at:)` calls `validateAllRecordHistories` inside its `BEGIN IMMEDIATE` transaction before selecting unfinished approvals. The validator runs both `PRAGMA foreign_key_check` and an independent orphan anti-join, streams one ordered `LEFT JOIN`, and retains only the current operation plus at most three events rather than loading all IDs and issuing N+1 full-history reads.
+- Capacity and fail-closed result: the store admits at most 10,000 audit operations. Exact-limit recovery is allowed, while a larger store or additional intake fails with `capacityExceeded`. Corruption aborts recovery before any transition; broker initialization records the failure, and subsequent intake returns `storageUnavailable` with no pending review and zero provider dispatches.
+- Regressions: the store tests cover completed timestamp corruption, orphan events, removal of the otherwise exact required FK, 10,000-operation streaming/intake capacity, and `testRecoveryRejectsAuditHistoryAboveMaximumOperationCount` for explicit 10,001-operation recovery rejection. The broker tests cover all three corruption classes, preserve any unexpectedly accepted operation id, attempt approval, and require the dispatcher to remain at zero. Copy hygiene structurally pins the exact single FK tuple, both exact capacity comparisons, and each broker `enqueue` to `approve` to zero-dispatch proof path.
+- Current verification: the exact eight-test focused command and all 43 `RuntimeModelPullApproval` tests pass with zero failures; `testRecoveryStreamsMaximumAuditHistoryAndBlocksAdditionalIntake` completes exact-limit recovery in 0.265 seconds on this host. The adjacent permission/coordinator selection passes 29 tests, copy hygiene passes across 91 files, docs hygiene passes across 11 documents, and the 57-file P2P security-design preflight confirms that compiler, socket, runtime-network, Phase B, and production gates remain closed. Final GPT-5.6 Sol re-review reports `no P0-P3 findings`.
+- Final aggregate: `build/qa/check-no-device-quality-model-pull-audit-recovery-integrity-final-20260718.log` exits 0 across 12,192 lines with exactly one overall success marker, one model-pull audit-recovery addendum, 43/43 model-pull tests, 8/8 exact focused regressions, 88 existing local development-relay matches, and 905 encrypted frame bodies. Post-gate `adb devices -l` lists no attached device.
+- Scope: no schema, protocol, capability, permission, UI, provider-routing, source-acquisition, socket, or network authority changed. P2P candidate closure and all Phase B/production restrictions remain in force.
+- Evidence boundary: this is no-device macOS Swift persistence and approval-state verification. The timing is a local regression ceiling, not a capacity claim. This is not physical Android, optical QR, live-provider download, external-network, P2P/NAT, Phase B, deployment, or production-readiness proof.
 
 ## 2026-07-17 Production P2P/NAT libnice Source Audit Rejection And Candidate Closure (No Compilation)
 

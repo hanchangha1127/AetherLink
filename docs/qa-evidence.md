@@ -2,6 +2,24 @@
 
 This document separates current verification evidence from historical captures.
 
+## 2026-07-18 v0.5 Model-Pull Audit Recovery Integrity No-Device Checklist
+
+- [x] `recoverUnfinished(at:)` runs `validateAllRecordHistories` within the same `BEGIN IMMEDIATE` transaction before `readUnfinishedRecords`, covering completed and unfinished audit histories before recovery or new intake can proceed.
+- [x] v2 schema verification pins the exact `PRAGMA foreign_key_list` event-to-operation relation and `ON DELETE RESTRICT`. Recovery independently rejects both `PRAGMA foreign_key_check` rows and an events-to-operations orphan anti-join before streaming one operation-ordered `LEFT JOIN`.
+- [x] Streaming retains at most one operation and three events instead of an unbounded ID array or N+1 full-history queries.
+- [x] The durable audit cap is 10,000 operations. Exact-limit recovery succeeds in 0.265 seconds on the current host, while new intake at the limit returns `capacityExceeded`; this timing is no-device regression evidence, not production capacity proof.
+- [x] `testRecoveryRejectsCorruptTerminalHistory` mutates a completed dismissal event timestamp in a valid v2 SQLite store and proves startup recovery returns `corruptPersistence` instead of silently succeeding.
+- [x] `testRecoveryRejectsOrphanAuditEvent` inserts a valid-shaped orphan event with foreign keys disabled and proves recovery rejects it even though ordinary SQLite `quick_check` can remain clean.
+- [x] `testRecoveryRejectsEventsSchemaWithoutRequiredForeignKey` rebuilds an otherwise equivalent v2 events table without only the required FK and proves schema opening fails closed.
+- [x] `testRecoveryRejectsAuditHistoryAboveMaximumOperationCount` materializes 10,001 valid completed histories and proves startup recovery returns `capacityExceeded` before streaming or accepting new work; copy hygiene requires this exact named evidence in every aligned record.
+- [x] The three broker startup tests preserve any unexpectedly accepted operation, attempt approval, and prove timestamp corruption, orphan data, and missing-FK schema drift map to `storageUnavailable`, no pending review, and zero provider dispatches.
+- [x] The exact eight-test focused selector in `script/check_no_device_quality.sh` passes with zero failures.
+- [x] All 43 `swift test --filter RuntimeModelPullApproval` tests and the adjacent 29 permission/coordinator tests pass with zero failures. Copy hygiene structurally pins the exact FK tuple, exact cap comparisons, over-limit regression, and each direct broker approval/zero-dispatch path; it passes across 91 files. Docs hygiene passes across 11 documents, and the P2P security-design validator passes its 57-file static preflight with all runtime-network and production gates closed.
+- [x] Final GPT-5.6 Sol re-review reports `no P0-P3 findings` after the exact FK, capacity, broker direct-dispatch, over-limit evidence, and function-boundary guards were all tightened.
+- [x] `build/qa/check-no-device-quality-model-pull-audit-recovery-integrity-final-20260718.log` exits 0 across 12,192 lines with exactly one `No-device quality checks passed.` marker and one dedicated model-pull audit-recovery marker. It records 43/43 model-pull tests, 8/8 focused regressions, 88 existing local development-relay matches, and 905 encrypted frame bodies; post-gate `adb devices -l` lists no attached device.
+- Authority boundary: no schema, protocol, capability, permission decision, UI, source acquisition, provider execution route, socket, network, Phase B, production, or deployment authority changed.
+- Proof boundary: these are macOS Swift no-device persistence and state-machine checks. They do not establish physical Android behavior, optical QR, live-provider download, external networking, P2P/NAT traversal, Phase B, production capacity, deployment, or production readiness.
+
 ## 2026-07-17 Production P2P/NAT libnice Source Audit Rejection No-Device Checklist
 
 - [x] Current authority is pinned by [progress-v8.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/progress-v8.json), [decision-v6.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/decision-v6.json), [handoff-v9.json](security-hardening/production-p2p-nat-v1/implementation/handoff-v9.json), and [libnice-source-audit-v1.json](security-hardening/production-p2p-nat-v1/controlled-network-spike/phase-a/libnice-source-audit-v1.json). Both libjuice and libnice are rejected before compilation, and no networking library is selected.

@@ -336,6 +336,127 @@ final class RuntimeModelPullApprovalStoreTests: XCTestCase {
         )
     }
 
+    func testRecoveryRejectsCorruptTerminalHistory() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        let completedID = operationID(18)
+        _ = try store.createRequest(
+            operationID: completedID,
+            requestBindingDigest: requestBindingDigest("a"),
+            provider: .ollama,
+            requestedAt: date(100),
+            expiresAt: date(500)
+        )
+        _ = try store.recordTerminal(
+            operationID: completedID,
+            event: .dismissal,
+            at: date(150)
+        )
+        try executeRaw(
+            databaseURL,
+            "UPDATE runtime_model_pull_approval_events SET occurred_at_ms = 175000 " +
+                "WHERE operation_id = '\(completedID)' AND event_order = 1"
+        )
+
+        let reopened = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        XCTAssertThrowsError(try reopened.recoverUnfinished(at: date(200))) {
+            XCTAssertEqual($0 as? RuntimeModelPullApprovalStoreError, .corruptPersistence)
+        }
+    }
+
+    func testRecoveryRejectsOrphanAuditEvent() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        XCTAssertEqual(
+            try store.recoverUnfinished(at: date(100)),
+            RuntimeModelPullApprovalRecoveryResult(
+                pendingTerminalized: 0,
+                reservedTerminalized: 0
+            )
+        )
+        let orphanID = operationID(19)
+        try executeRaw(
+            databaseURL,
+            """
+            INSERT INTO runtime_model_pull_approval_events(
+                operation_id, event_order, event_code, outcome_code,
+                occurred_at_ms, schema_version
+            ) VALUES ('\(orphanID)', 0, 'requested', 'none', 100000, 2)
+            """
+        )
+
+        let reopened = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        XCTAssertThrowsError(try reopened.recoverUnfinished(at: date(200))) {
+            XCTAssertEqual($0 as? RuntimeModelPullApprovalStoreError, .corruptPersistence)
+        }
+    }
+
+    func testRecoveryRejectsEventsSchemaWithoutRequiredForeignKey() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        let completedID = operationID(21)
+        _ = try store.createRequest(
+            operationID: completedID,
+            requestBindingDigest: requestBindingDigest("b"),
+            provider: .ollama,
+            requestedAt: date(100),
+            expiresAt: date(500)
+        )
+        _ = try store.recordTerminal(
+            operationID: completedID,
+            event: .dismissal,
+            at: date(150)
+        )
+        try removeRequiredEventForeignKey(databaseURL)
+
+        let reopened = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        XCTAssertThrowsError(try reopened.recoverUnfinished(at: date(200))) {
+            XCTAssertEqual($0 as? RuntimeModelPullApprovalStoreError, .corruptPersistence)
+        }
+    }
+
+    func testRecoveryStreamsMaximumAuditHistoryAndBlocksAdditionalIntake() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        _ = try store.recoverUnfinished(at: date(100))
+        let maximum = SQLiteRuntimeModelPullApprovalStore.maximumOperationCount
+        try insertCompletedHistories(maximum, into: databaseURL)
+
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        XCTAssertEqual(
+            try store.recoverUnfinished(at: date(200)),
+            RuntimeModelPullApprovalRecoveryResult(
+                pendingTerminalized: 0,
+                reservedTerminalized: 0
+            )
+        )
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - startedAt, 5.0)
+        XCTAssertThrowsError(try store.createRequest(
+            operationID: operationID(20),
+            requestBindingDigest: requestBindingDigest("f"),
+            provider: .ollama,
+            requestedAt: date(200),
+            expiresAt: date(500)
+        )) {
+            XCTAssertEqual($0 as? RuntimeModelPullApprovalStoreError, .capacityExceeded)
+        }
+    }
+
+    func testRecoveryRejectsAuditHistoryAboveMaximumOperationCount() throws {
+        let databaseURL = temporaryDatabaseURL()
+        let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        _ = try store.recoverUnfinished(at: date(100))
+        try insertCompletedHistories(
+            SQLiteRuntimeModelPullApprovalStore.maximumOperationCount + 1,
+            into: databaseURL
+        )
+
+        let reopened = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
+        XCTAssertThrowsError(try reopened.recoverUnfinished(at: date(200))) {
+            XCTAssertEqual($0 as? RuntimeModelPullApprovalStoreError, .capacityExceeded)
+        }
+    }
+
     func testDatabaseAndDirectoryUseOwnerOnlyPermissions() throws {
         let databaseURL = temporaryDatabaseURL()
         let store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
@@ -734,6 +855,83 @@ final class RuntimeModelPullApprovalStoreTests: XCTestCase {
         guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
             throw NSError(domain: "RuntimeModelPullApprovalStoreTests", code: 4)
         }
+    }
+
+    private func insertCompletedHistories(_ count: Int, into databaseURL: URL) throws {
+        try executeRaw(
+            databaseURL,
+            """
+            BEGIN IMMEDIATE;
+            WITH RECURSIVE sequence(value) AS (
+                VALUES(0)
+                UNION ALL
+                SELECT value + 1 FROM sequence WHERE value + 1 < \(count)
+            )
+            INSERT INTO runtime_model_pull_approval_operations(
+                operation_id, request_binding_digest, provider_code, action_id,
+                policy_revision, current_event_code, outcome_code, created_at_ms,
+                updated_at_ms, expires_at_ms, schema_version
+            )
+            SELECT printf('00000000-0000-4000-8001-%012d', value),
+                   '\(SQLiteRuntimeModelPullApprovalStore.requestBindingDigestPrefix)'
+                       || printf('%064x', value),
+                   'ollama',
+                   '\(RuntimePermissionPolicyRegistry.modelPullActionID)',
+                   '\(RuntimePermissionPolicyRegistry.modelPullRevision)',
+                   'dismissal', 'dismissal', 100000, 150000, 500000, 2
+            FROM sequence;
+            INSERT INTO runtime_model_pull_approval_events(
+                operation_id, event_order, event_code, outcome_code,
+                occurred_at_ms, schema_version
+            )
+            SELECT operation_id, 0, 'requested', 'none', 100000, 2
+            FROM runtime_model_pull_approval_operations;
+            INSERT INTO runtime_model_pull_approval_events(
+                operation_id, event_order, event_code, outcome_code,
+                occurred_at_ms, schema_version
+            )
+            SELECT operation_id, 1, 'dismissal', 'dismissal', 150000, 2
+            FROM runtime_model_pull_approval_operations;
+            COMMIT;
+            """
+        )
+    }
+
+    private func removeRequiredEventForeignKey(_ databaseURL: URL) throws {
+        try executeRaw(
+            databaseURL,
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE runtime_model_pull_approval_events
+              RENAME TO runtime_model_pull_approval_events_with_foreign_key;
+            CREATE TABLE runtime_model_pull_approval_events(
+                operation_id TEXT NOT NULL,
+                event_order INTEGER NOT NULL CHECK(event_order BETWEEN 0 AND 2),
+                event_code TEXT NOT NULL CHECK(event_code IN (
+                    'requested', 'dispatch_reserved', 'success', 'failure',
+                    'result_suppressed', 'dismissal', 'expiry', 'connection_closed',
+                    'authentication_changed', 'permission_changed', 'host_restarted'
+                )),
+                outcome_code TEXT NOT NULL CHECK(outcome_code IN (
+                    'none', 'success', 'failure', 'result_suppressed', 'dismissal',
+                    'expiry', 'connection_closed', 'authentication_changed',
+                    'permission_changed', 'host_restarted'
+                )),
+                occurred_at_ms INTEGER NOT NULL,
+                schema_version INTEGER NOT NULL CHECK(schema_version = 2),
+                PRIMARY KEY(operation_id, event_order),
+                UNIQUE(operation_id, event_code)
+            );
+            INSERT INTO runtime_model_pull_approval_events
+            SELECT * FROM runtime_model_pull_approval_events_with_foreign_key;
+            DROP TABLE runtime_model_pull_approval_events_with_foreign_key;
+            CREATE INDEX runtime_model_pull_approval_events_recent
+            ON runtime_model_pull_approval_events(
+                occurred_at_ms DESC, operation_id DESC, event_order DESC
+            );
+            COMMIT;
+            """
+        )
     }
 }
 

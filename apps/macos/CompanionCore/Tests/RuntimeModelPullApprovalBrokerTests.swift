@@ -2,6 +2,7 @@ import Foundation
 @testable import CompanionCore
 import CryptoKit
 import OllamaBackend
+import SQLite3
 import XCTest
 
 final class RuntimeModelPullApprovalBrokerTests: XCTestCase {
@@ -578,6 +579,106 @@ final class RuntimeModelPullApprovalBrokerTests: XCTestCase {
         XCTAssertEqual(dispatchCallCount, 0)
     }
 
+    func testCorruptTerminalAuditAtStartupBlocksIntakeAndDispatch() async throws {
+        let fixture = try StoreFixture()
+        defer { fixture.remove() }
+        let completedID = UUID().uuidString.lowercased()
+        _ = try fixture.store.createRequest(
+            operationID: completedID,
+            requestBindingDigest: digest("a"),
+            provider: .ollama,
+            requestedAt: date(100),
+            expiresAt: date(500)
+        )
+        _ = try fixture.store.recordTerminal(
+            operationID: completedID,
+            event: .dismissal,
+            at: date(150)
+        )
+        try executeRaw(
+            fixture.databaseURL,
+            "UPDATE runtime_model_pull_approval_events SET occurred_at_ms = 175000 " +
+                "WHERE operation_id = '\(completedID)' AND event_order = 1"
+        )
+        let dispatcher = MockModelPullDispatcher()
+        let broker = makeBroker(dispatcher: dispatcher, store: fixture.store)
+
+        do {
+            let unexpectedOperationID = try await broker.enqueue(intake(digest: digest("b")))
+            try await broker.approve(operationID: unexpectedOperationID)
+            XCTFail("Corrupt durable audit history must block new intake")
+        } catch {
+            assertBrokerError(error, is: .storageUnavailable)
+        }
+        let dispatchCallCount = await dispatcher.callCount()
+        let pendingReviews = await broker.pendingReviews()
+        XCTAssertEqual(dispatchCallCount, 0)
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
+    func testOrphanAuditAtStartupBlocksIntakeAndDispatch() async throws {
+        let fixture = try StoreFixture()
+        defer { fixture.remove() }
+        _ = try fixture.store.recoverUnfinished(at: date(100))
+        let orphanID = UUID().uuidString.lowercased()
+        try executeRaw(
+            fixture.databaseURL,
+            """
+            INSERT INTO runtime_model_pull_approval_events(
+                operation_id, event_order, event_code, outcome_code,
+                occurred_at_ms, schema_version
+            ) VALUES ('\(orphanID)', 0, 'requested', 'none', 100000, 2)
+            """
+        )
+        let dispatcher = MockModelPullDispatcher()
+        let broker = makeBroker(dispatcher: dispatcher, store: fixture.store)
+
+        do {
+            let unexpectedOperationID = try await broker.enqueue(intake(digest: digest("c")))
+            try await broker.approve(operationID: unexpectedOperationID)
+            XCTFail("Orphan durable audit history must block new intake")
+        } catch {
+            assertBrokerError(error, is: .storageUnavailable)
+        }
+        let dispatchCallCount = await dispatcher.callCount()
+        let pendingReviews = await broker.pendingReviews()
+        XCTAssertEqual(dispatchCallCount, 0)
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
+    func testMissingEventForeignKeyAtStartupBlocksIntakeAndDispatch() async throws {
+        let fixture = try StoreFixture()
+        defer { fixture.remove() }
+        let completedID = UUID().uuidString.lowercased()
+        _ = try fixture.store.createRequest(
+            operationID: completedID,
+            requestBindingDigest: digest("d"),
+            provider: .ollama,
+            requestedAt: date(100),
+            expiresAt: date(500)
+        )
+        _ = try fixture.store.recordTerminal(
+            operationID: completedID,
+            event: .dismissal,
+            at: date(150)
+        )
+        try removeRequiredEventForeignKey(fixture.databaseURL)
+        let dispatcher = MockModelPullDispatcher()
+        let broker = makeBroker(dispatcher: dispatcher, store: fixture.store)
+
+        do {
+            let unexpectedOperationID = try await broker.enqueue(intake(digest: digest("e")))
+            try await broker.approve(operationID: unexpectedOperationID)
+            XCTFail("Missing audit foreign key must block new intake")
+        } catch {
+            assertBrokerError(error, is: .storageUnavailable)
+        }
+        let dispatchCallCount = await dispatcher.callCount()
+        let pendingReviews = await broker.pendingReviews()
+        XCTAssertEqual(dispatchCallCount, 0)
+        XCTAssertTrue(pendingReviews.isEmpty)
+    }
+
     func testApprovalCrossingExpiryTerminalizesWithoutDispatchOrPendingLeak() async throws {
         let fixture = try StoreFixture()
         defer { fixture.remove() }
@@ -1026,6 +1127,60 @@ final class RuntimeModelPullApprovalBrokerTests: XCTestCase {
         Date(timeIntervalSince1970: seconds)
     }
 
+    private func executeRaw(_ databaseURL: URL, _ sql: String) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(
+            databaseURL.path,
+            &database,
+            SQLITE_OPEN_READWRITE,
+            nil
+        ) == SQLITE_OK,
+              let database else {
+            throw TestFailure.databaseUnavailable
+        }
+        defer { sqlite3_close(database) }
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw TestFailure.databaseUnavailable
+        }
+    }
+
+    private func removeRequiredEventForeignKey(_ databaseURL: URL) throws {
+        try executeRaw(
+            databaseURL,
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE runtime_model_pull_approval_events
+              RENAME TO runtime_model_pull_approval_events_with_foreign_key;
+            CREATE TABLE runtime_model_pull_approval_events(
+                operation_id TEXT NOT NULL,
+                event_order INTEGER NOT NULL CHECK(event_order BETWEEN 0 AND 2),
+                event_code TEXT NOT NULL CHECK(event_code IN (
+                    'requested', 'dispatch_reserved', 'success', 'failure',
+                    'result_suppressed', 'dismissal', 'expiry', 'connection_closed',
+                    'authentication_changed', 'permission_changed', 'host_restarted'
+                )),
+                outcome_code TEXT NOT NULL CHECK(outcome_code IN (
+                    'none', 'success', 'failure', 'result_suppressed', 'dismissal',
+                    'expiry', 'connection_closed', 'authentication_changed',
+                    'permission_changed', 'host_restarted'
+                )),
+                occurred_at_ms INTEGER NOT NULL,
+                schema_version INTEGER NOT NULL CHECK(schema_version = 2),
+                PRIMARY KEY(operation_id, event_order),
+                UNIQUE(operation_id, event_code)
+            );
+            INSERT INTO runtime_model_pull_approval_events
+            SELECT * FROM runtime_model_pull_approval_events_with_foreign_key;
+            DROP TABLE runtime_model_pull_approval_events_with_foreign_key;
+            CREATE INDEX runtime_model_pull_approval_events_recent
+            ON runtime_model_pull_approval_events(
+                occurred_at_ms DESC, operation_id DESC, event_order DESC
+            );
+            COMMIT;
+            """
+        )
+    }
+
     private func waitForCallCount(
         _ expected: Int,
         dispatcher: MockModelPullDispatcher
@@ -1067,6 +1222,7 @@ final class RuntimeModelPullApprovalBrokerTests: XCTestCase {
 
 private struct StoreFixture {
     let directoryURL: URL
+    let databaseURL: URL
     let store: SQLiteRuntimeModelPullApprovalStore
 
     init() throws {
@@ -1076,9 +1232,8 @@ private struct StoreFixture {
             at: directoryURL,
             withIntermediateDirectories: true
         )
-        store = SQLiteRuntimeModelPullApprovalStore(
-            databaseURL: directoryURL.appendingPathComponent("approvals.sqlite")
-        )
+        databaseURL = directoryURL.appendingPathComponent("approvals.sqlite")
+        store = SQLiteRuntimeModelPullApprovalStore(databaseURL: databaseURL)
     }
 
     func remove() {
@@ -1269,5 +1424,6 @@ private struct SecretProviderFailure: Error, Sendable {
 }
 
 private enum TestFailure: Error {
+    case databaseUnavailable
     case timedOut
 }

@@ -52089,12 +52089,149 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
         "migrateLegacySchema",
         "public func recoverUnfinished(",
         "validateAllRecordHistories",
+        "static let maximumOperationCount = 10_000",
+        "RuntimeModelPullApprovalStoreError.capacityExceeded",
+        'prepare(database, "PRAGMA foreign_key_check")',
+        "PRAGMA foreign_key_list(\\(eventsTable))",
+        'validText(statement, at: 6) == "RESTRICT"',
+        "WHERE operations.operation_id IS NULL",
+        "LEFT JOIN \\(eventsTable) AS events",
+        "currentEvents.count <= 3",
         "reservationTimes.allSatisfy({ $0 < expiresAtMS })",
         "terminalTimeIsValid",
         ".permissionChanged",
     ):
         if snippet not in texts["store"]:
             failures.append(f"RuntimeModelPullApprovalStore.swift: missing policy audit invariant {snippet!r}.")
+    schema_match = re.search(
+        r"private static func verifySchema\(_ database: OpaquePointer\) throws \{"
+        r"(?P<body>.*?)\n    \}\n\n    private static func verifyIntegrity",
+        texts["store"],
+        re.DOTALL,
+    )
+    if schema_match is None or "try verifyEventsForeignKey(database)" not in schema_match.group("body"):
+        failures.append(
+            "RuntimeModelPullApprovalStore.swift: v2 schema verification must pin the event foreign key."
+        )
+    foreign_key_match = re.search(
+        r"private static func verifyEventsForeignKey\(_ database: OpaquePointer\) throws \{"
+        r"(?P<body>.*?)\n    \}\n\n    private static func insertOperation",
+        texts["store"],
+        re.DOTALL,
+    )
+    expected_foreign_key_sequence = (
+        '"PRAGMA foreign_key_list(\\(eventsTable))"',
+        "sqlite3_step(statement) == SQLITE_ROW",
+        "validInt(statement, at: 0) == 0",
+        "validInt(statement, at: 1) == 0",
+        "validText(statement, at: 2) == operationsTable",
+        'validText(statement, at: 3) == "operation_id"',
+        'validText(statement, at: 4) == "operation_id"',
+        'validText(statement, at: 5) == "NO ACTION"',
+        'validText(statement, at: 6) == "RESTRICT"',
+        'validText(statement, at: 7) == "NONE"',
+        "sqlite3_step(statement) == SQLITE_DONE",
+    )
+    if foreign_key_match is None:
+        failures.append(
+            "RuntimeModelPullApprovalStore.swift: missing exact event foreign-key verifier."
+        )
+    else:
+        foreign_key_body = foreign_key_match.group("body")
+        positions = [foreign_key_body.find(snippet) for snippet in expected_foreign_key_sequence]
+        if (
+            any(position < 0 for position in positions)
+            or positions != sorted(positions)
+            or foreign_key_body.count("sqlite3_step(statement)") != 2
+        ):
+            failures.append(
+                "RuntimeModelPullApprovalStore.swift: event foreign-key verifier must require the "
+                "single exact operations(operation_id) relation and pinned actions."
+            )
+    create_request_match = re.search(
+        r"public func createRequest\(\s*"
+        r"operationID: String,\s*"
+        r"requestBindingDigest: String,\s*"
+        r"provider: RuntimeModelPullApprovalProvider,.*?"
+        r"\) throws -> RuntimeModelPullApprovalRecord \{(?P<body>.*?)"
+        r"\n    \}\n\n    @discardableResult\n    public func createRequest\(\s*"
+        r"operationID: String,\s*"
+        r"requestBindingDigest: String,\s*"
+        r"providerCode: String,",
+        texts["store"],
+        re.DOTALL,
+    )
+    if create_request_match is None or re.search(
+        r"try withImmediateTransaction\(database\) \{\s*"
+        r"guard try Self\.operationCount\(database: database\) "
+        r"< Self\.maximumOperationCount else \{\s*"
+        r"throw RuntimeModelPullApprovalStoreError\.capacityExceeded\s*\}",
+        create_request_match.group("body") if create_request_match else "",
+    ) is None:
+        failures.append(
+            "RuntimeModelPullApprovalStore.swift: createRequest must enforce the exact "
+            "operationCount-below-maximum capacity boundary inside its immediate transaction."
+        )
+    recovery_match = re.search(
+        r"public func recoverUnfinished\(.*?\) throws -> "
+        r"RuntimeModelPullApprovalRecoveryResult \{(?P<body>.*?)\n    \}\n\n    public func recentEvents",
+        texts["store"],
+        re.DOTALL,
+    )
+    if recovery_match is None:
+        failures.append(
+            "RuntimeModelPullApprovalStore.swift: missing bounded recoverUnfinished body."
+        )
+    else:
+        recovery_body = recovery_match.group("body")
+        transaction_sequence = re.search(
+            r"try withImmediateTransaction\(database\) \{\s*"
+            r"try Self\.validateAllRecordHistories\(database: database\)\s*"
+            r"let records = try Self\.readUnfinishedRecords\(database: database\)",
+            recovery_body,
+        )
+        if transaction_sequence is None:
+            failures.append(
+                "RuntimeModelPullApprovalStore.swift: recovery must validate every audit history "
+                "inside the immediate transaction before reading unfinished approvals."
+            )
+    all_history_match = re.search(
+        r"private static func validateAllRecordHistories\(database: OpaquePointer\) throws \{"
+        r"(?P<body>.*?)\n    \}\n\n    private static func validateForeignKeyIntegrity",
+        texts["store"],
+        re.DOTALL,
+    )
+    if all_history_match is None:
+        failures.append(
+            "RuntimeModelPullApprovalStore.swift: missing streaming all-history validator."
+        )
+    else:
+        all_history_body = all_history_match.group("body")
+        for snippet in (
+            "try validateForeignKeyIntegrity(database)",
+            "LEFT JOIN \\(eventsTable) AS events",
+            "currentEvents.count <= 3",
+            "validatedOperationCount == expectedOperationCount",
+        ):
+            if snippet not in all_history_body:
+                failures.append(
+                    "RuntimeModelPullApprovalStore.swift: streaming all-history validator "
+                    f"missing {snippet!r}."
+                )
+        if "readRecord(" in all_history_body or "operationIDs" in all_history_body:
+            failures.append(
+                "RuntimeModelPullApprovalStore.swift: all-history recovery must not restore "
+                "the unbounded ID array or N+1 record reads."
+            )
+        if re.search(
+            r"guard expectedOperationCount <= maximumOperationCount else \{\s*"
+            r"throw RuntimeModelPullApprovalStoreError\.capacityExceeded\s*\}",
+            all_history_body,
+        ) is None:
+            failures.append(
+                "RuntimeModelPullApprovalStore.swift: recovery must reject the exact "
+                "maximumOperationCount-plus-one boundary."
+            )
 
     coordinator = texts["coordinator"]
     for snippet in (
@@ -52335,6 +52472,11 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
             "testSchemaV1MigrationRejectsInvalidRowVersionsAndRollsBackPolicyStamping",
             "XCTAssertEqual(try userVersion(databaseURL), 1)",
             "XCTAssertThrowsError(try store.recentEvents(limit: 10))",
+            "testRecoveryRejectsCorruptTerminalHistory",
+            "testRecoveryRejectsOrphanAuditEvent",
+            "testRecoveryRejectsEventsSchemaWithoutRequiredForeignKey",
+            "testRecoveryStreamsMaximumAuditHistoryAndBlocksAdditionalIntake",
+            "testRecoveryRejectsAuditHistoryAboveMaximumOperationCount",
         ),
         "broker_tests": (
             "testBrokerRejectsUnregisteredPermissionClaimBeforeAuditOrDispatch",
@@ -52344,6 +52486,9 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
             "testAuthorityDelayCrossingMonotonicTTLWithWallRollbackExpiresBeforeDispatch",
             "testDuplicateRequestBindingRejectsReplayWithoutPoisoningBroker",
             "testTerminalAndSuppressionAuditFailureBlocksIntakeUntilRecovery",
+            "testCorruptTerminalAuditAtStartupBlocksIntakeAndDispatch",
+            "testOrphanAuditAtStartupBlocksIntakeAndDispatch",
+            "testMissingEventForeignKeyAtStartupBlocksIntakeAndDispatch",
             "testAdapterCanonicalizesAndBoundsUnicodeDeviceDisplayNameBeforeCoordinator",
             "testAdapterFallsBackForInvisibleOnlyDeviceDisplayNameBeforeCoordinator",
             "testAdapterProjectionIsIdempotentAfterFilteringNormalizationAndBounding",
@@ -52426,9 +52571,71 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
     for label, snippets in required_tests.items():
         for snippet in snippets:
             if snippet not in texts[label]:
-                failures.append(f"{paths[label].relative_to(ROOT)}: missing regression {snippet!r}.")
+                failures.append(
+                    f"{paths[label].relative_to(ROOT)}: missing regression {snippet!r}."
+                )
+
+    for test_name in (
+        "testCorruptTerminalAuditAtStartupBlocksIntakeAndDispatch",
+        "testOrphanAuditAtStartupBlocksIntakeAndDispatch",
+        "testMissingEventForeignKeyAtStartupBlocksIntakeAndDispatch",
+    ):
+        match = re.search(
+            rf"func {test_name}\(\) async throws \{{(?P<body>.*?)(?=\n    func |\n    private func )",
+            texts["broker_tests"],
+            re.DOTALL,
+        )
+        if match is None:
+            failures.append(
+                f"RuntimeModelPullApprovalBrokerTests.swift: missing direct-dispatch proof {test_name}."
+            )
+            continue
+        body = match.group("body")
+        for snippet in (
+            "let unexpectedOperationID = try await broker.enqueue(",
+            "try await broker.approve(operationID: unexpectedOperationID)",
+            "let dispatchCallCount = await dispatcher.callCount()",
+            "XCTAssertEqual(dispatchCallCount, 0)",
+        ):
+            if snippet not in body:
+                failures.append(
+                    f"RuntimeModelPullApprovalBrokerTests.swift: {test_name} must pin {snippet!r}."
+                )
+
+    over_limit_match = re.search(
+        r"func testRecoveryRejectsAuditHistoryAboveMaximumOperationCount\(\) throws \{"
+        r"(?P<body>.*?)(?=\n    func |\n    private func )",
+        texts["store_tests"],
+        re.DOTALL,
+    )
+    if over_limit_match is None:
+        failures.append(
+            "RuntimeModelPullApprovalStoreTests.swift: missing over-limit recovery regression."
+        )
+    else:
+        over_limit_body = over_limit_match.group("body")
+        for snippet in (
+            "SQLiteRuntimeModelPullApprovalStore.maximumOperationCount + 1",
+            "try insertCompletedHistories(",
+            "XCTAssertThrowsError(try reopened.recoverUnfinished(",
+            "RuntimeModelPullApprovalStoreError, .capacityExceeded",
+        ):
+            if snippet not in over_limit_body:
+                failures.append(
+                    "RuntimeModelPullApprovalStoreTests.swift: over-limit recovery regression "
+                    f"missing {snippet!r}."
+                )
 
     for snippet in (
+        "run swift test --filter RuntimeModelPullApproval",
+        "RuntimeModelPullApprovalStoreTests/testRecoveryRejectsCorruptTerminalHistory",
+        "RuntimeModelPullApprovalStoreTests/testRecoveryRejectsOrphanAuditEvent",
+        "RuntimeModelPullApprovalStoreTests/testRecoveryRejectsEventsSchemaWithoutRequiredForeignKey",
+        "RuntimeModelPullApprovalStoreTests/testRecoveryStreamsMaximumAuditHistoryAndBlocksAdditionalIntake",
+        "RuntimeModelPullApprovalStoreTests/testRecoveryRejectsAuditHistoryAboveMaximumOperationCount",
+        "RuntimeModelPullApprovalBrokerTests/testCorruptTerminalAuditAtStartupBlocksIntakeAndDispatch",
+        "RuntimeModelPullApprovalBrokerTests/testOrphanAuditAtStartupBlocksIntakeAndDispatch",
+        "RuntimeModelPullApprovalBrokerTests/testMissingEventForeignKeyAtStartupBlocksIntakeAndDispatch",
         "run swift test --filter RuntimePermissionPolicyRegistryTests",
         "run swift test --filter RuntimeHostApprovalCoordinatorTests",
         "testModelsPullMissingPermissionPolicyFailsClosedBeforeAuditOrDispatch",
@@ -52447,9 +52654,51 @@ def runtime_permission_policy_registry_guard_failures() -> list[str]:
         "testModelsPullTransportBindingDriftAfterFinalReadBeforeTerminalCommitSuppressesWireResult",
         "testModelsPullTransportBindingMutationCannotLinearizeInsideFinalAuthorityTransaction",
         "Covered v0.5 addendum: exact provider dispatch identity and host-approval publication linearization",
+        "Covered v0.5 addendum: model-pull startup validates completed audit history before intake or provider dispatch",
     ):
         if snippet not in texts["no_device"]:
             failures.append(f"check_no_device_quality.sh: missing runtime-permission gate {snippet!r}.")
+
+    audit_recovery_sections = (
+        ("roadmap", "v0.5 Model-Pull Audit Recovery Integrity"),
+        ("progress", "2026-07-18 v0.5 Model-Pull Audit Recovery Integrity"),
+        ("qa", "2026-07-18 v0.5 Model-Pull Audit Recovery Integrity No-Device Checklist"),
+        ("security", "Model-Pull Audit Recovery Integrity"),
+    )
+    for label, heading in audit_recovery_sections:
+        match = re.search(
+            rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)",
+            texts[label],
+        )
+        if match is None:
+            failures.append(f"docs/{label}: missing model-pull audit recovery record.")
+            continue
+        section = match.group("body")
+        for snippet in (
+            "validateAllRecordHistories",
+            "BEGIN IMMEDIATE",
+            "completed",
+            "foreign_key_check",
+            "foreign_key_list",
+            "anti-join",
+            "LEFT JOIN",
+            "10,000",
+            "10,001",
+            "capacityExceeded",
+            "testRecoveryRejectsAuditHistoryAboveMaximumOperationCount",
+            "storageUnavailable",
+            "zero provider dispatch",
+            "no-device",
+            "physical Android",
+            "live-provider",
+            "network",
+            "Phase B",
+            "production",
+        ):
+            if snippet not in section:
+                failures.append(
+                    f"docs/{label}: model-pull audit recovery record missing {snippet!r}."
+                )
 
     dispatch_sections = (
         ("roadmap", "v0.5 Exact Provider Dispatch Identity And Host-Approval Publication Linearization"),
