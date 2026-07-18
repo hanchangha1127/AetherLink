@@ -7,7 +7,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
-import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.InputStream
 import java.nio.ByteBuffer
@@ -330,16 +329,21 @@ private class RawJsonObjectInspector(
 }
 
 private fun InputStream.readExactly(size: Int): ByteArray {
-    val buffer = ByteArrayOutputStream(size)
-    val chunk = ByteArray(size)
-    var remaining = size
-    while (remaining > 0) {
-        val read = read(chunk, 0, remaining.coerceAtMost(chunk.size))
+    val buffer = ByteArray(size)
+    var offset = 0
+    while (offset < size) {
+        val read = read(buffer, offset, size - offset)
         if (read == -1) throw EOFException("Stream ended while reading frame")
-        buffer.write(chunk, 0, read)
-        remaining -= read
+        if (read == 0) {
+            val byte = read()
+            if (byte == -1) throw EOFException("Stream ended while reading frame")
+            buffer[offset] = byte.toByte()
+            offset += 1
+        } else {
+            offset += read
+        }
     }
-    return buffer.toByteArray()
+    return buffer
 }
 
 private fun kotlinx.serialization.json.JsonElement.jsonObject(): kotlinx.serialization.json.JsonObject {

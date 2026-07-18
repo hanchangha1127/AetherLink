@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import CompanionCore
 import OllamaBackend
@@ -732,6 +733,42 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 )
             }
         }
+    }
+
+    @MainActor
+    func testPairingQRCodeImageCacheRendersOncePerExactPayload() {
+        var renderedPayloads: [String] = []
+        let firstImage = NSImage(size: NSSize(width: 1, height: 1))
+        let secondImage = NSImage(size: NSSize(width: 2, height: 2))
+        let cache = PairingQRCodeImageCache { payload in
+            renderedPayloads.append(payload)
+            return payload == "payload-a" ? firstImage : secondImage
+        }
+
+        XCTAssertTrue(cache.image(for: "payload-a") === firstImage)
+        XCTAssertTrue(cache.image(for: "payload-a") === firstImage)
+        XCTAssertEqual(renderedPayloads.count, 1)
+        XCTAssertEqual(renderedPayloads, ["payload-a"])
+
+        XCTAssertTrue(cache.image(for: "payload-b") === secondImage)
+        XCTAssertTrue(cache.image(for: "payload-b") === secondImage)
+        XCTAssertEqual(renderedPayloads.count, 2)
+        XCTAssertEqual(renderedPayloads, ["payload-a", "payload-b"])
+    }
+
+    @MainActor
+    func testPairingQRCodeImageCacheRetriesAfterTransientRenderFailure() {
+        var renderCount = 0
+        let recoveredImage = NSImage(size: NSSize(width: 2, height: 2))
+        let cache = PairingQRCodeImageCache { _ in
+            renderCount += 1
+            return renderCount == 1 ? nil : recoveredImage
+        }
+
+        XCTAssertNil(cache.image(for: "payload-retry"))
+        XCTAssertTrue(cache.image(for: "payload-retry") === recoveredImage)
+        XCTAssertTrue(cache.image(for: "payload-retry") === recoveredImage)
+        XCTAssertEqual(renderCount, 2)
     }
 
     func testPairingQRExpirationProgressAccessibilityUsesSelectedLanguage() {
@@ -2577,10 +2614,11 @@ final class AetherLinkLocalizationTests: XCTestCase {
         )
     }
 
-    func testTrustedDeviceCountChangeReturnsUnpairedRuntimeToPairing() {
+    func testTrustedDeviceCountChangeKeepsOnboardingTransitionExplicit() {
         XCTAssertEqual(
             companionSectionAfterTrustedDeviceCountChange(
                 current: .trustedDevices,
+                previousTrustedDeviceCount: 1,
                 trustedDeviceCount: 0
             ),
             .pairing
@@ -2588,6 +2626,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertEqual(
             companionSectionAfterTrustedDeviceCountChange(
                 current: .logs,
+                previousTrustedDeviceCount: 0,
                 trustedDeviceCount: 0
             ),
             .pairing
@@ -2595,9 +2634,32 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertEqual(
             companionSectionAfterTrustedDeviceCountChange(
                 current: .logs,
+                previousTrustedDeviceCount: 1,
                 trustedDeviceCount: 1
             ),
             .logs
+        )
+    }
+
+    func testFirstTrustedDeviceTransitionsPairingToStatus() {
+        XCTAssertEqual(
+            companionSectionAfterTrustedDeviceCountChange(
+                current: .pairing,
+                previousTrustedDeviceCount: 0,
+                trustedDeviceCount: 1
+            ),
+            .status
+        )
+    }
+
+    func testAdditionalTrustedDeviceKeepsPairingVisible() {
+        XCTAssertEqual(
+            companionSectionAfterTrustedDeviceCountChange(
+                current: .pairing,
+                previousTrustedDeviceCount: 1,
+                trustedDeviceCount: 2
+            ),
+            .pairing
         )
     }
 

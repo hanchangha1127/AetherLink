@@ -1,5 +1,11 @@
 # AetherLink Security Model
 
+## Optimization Security Invariants
+
+The 2026-07-18 optimization pass changes computation reuse, not authority or protocol semantics. Relay epoch caching remains instance-local and direction-specific. It retains the exact traffic secret, binding digest, epoch, direction, sequence, nonce, AAD, authentication tag, fixed vectors, counter exhaustion, and authentication-failure counter rules; no derived key is persisted or shared across sessions. Pairing QR caching keys only on the exact already-authorized payload and stores the image in memory for the current view lifetime; payload changes replace it, and expiry does not mutate QR bytes. Android direct frame reads still allocate only after the existing validated 1 MiB ceiling and fail closed on EOF. No-device suite deduplication removes only active selectors already subsumed by an earlier complete class run and is guarded against unique-test loss.
+
+This work grants no source acquisition, provider, pairing, permission, file, process, socket, runtime-network, P2P Phase B, production-network, or deployment authority. Local Swift/JVM and static checks do not prove physical-device QR scanning, live-provider behavior, external networking, production performance, or production readiness.
+
 ## Production P2P/NAT libjuice Source Audit Rejection
 
 The exact official-tag libjuice v1.7.2 source and Android NDK r28c were acquired under the bounded one-shot decision-v2/handoff-v5 authority. The source manifest proves that all 81 extracted regular files match the retained archive and records the license, embedded notices, generated-file result, dependency closure, build inputs, NDK/tool hashes, and Apple tool metadata.

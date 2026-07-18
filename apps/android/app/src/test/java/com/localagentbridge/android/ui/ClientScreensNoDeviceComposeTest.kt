@@ -567,7 +567,7 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
-    fun settingsScreenRendersPairingFirstFlowAndQrAction() {
+    fun settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics() {
         var scanClicks = 0
 
         compose.setContent {
@@ -609,9 +609,19 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText("Scan Pairing QR")
             .performScrollTo()
             .assertIsDisplayed()
-        compose.onNodeWithText("No trusted runtime saved")
-            .performScrollTo()
-            .assertIsDisplayed()
+        compose.onAllNodesWithText("No trusted runtime saved").assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(CONNECTION_STATUS_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(CONNECTION_STATUS_ACTIONS_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(AUTO_RECONNECT_CARD_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
 
         compose.onNode(
             hasText("Scan QR") and
@@ -1644,6 +1654,10 @@ class ClientScreensNoDeviceComposeTest {
                 hasStateDescription("Connection attempt in progress.") and
                 hasClickActionLabel("Connecting"),
         ).assertIsNotEnabled()
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
 
         assertEquals(0, connectClicks)
     }
@@ -1978,10 +1992,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
         }
 
-        fun assertTrustedRuntimePanelBounds(
-            languageTag: String,
-            trustedRuntime: Boolean,
-        ) {
+        fun assertTrustedRuntimePanelBounds(languageTag: String) {
             val rootBounds = compose.onNodeWithTag(settingsTrustedRuntimePanelNarrowRootTestTag)
                 .getUnclippedBoundsInRoot()
             val panelBounds = compose
@@ -2023,27 +2034,15 @@ class ClientScreensNoDeviceComposeTest {
                 boundsOverlap(labelBounds, nameBounds),
             )
 
-            if (trustedRuntime) {
-                val forgetBounds = compose
-                    .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG, useUnmergedTree = true)
-                    .assertIsDisplayed()
-                    .getUnclippedBoundsInRoot()
-                assertBoundsInside("$languageTag trusted-runtime forget action", forgetBounds, panelBounds)
-                assertFalse(
-                    "$languageTag trusted-runtime forget action should not overlap header.",
-                    boundsOverlap(forgetBounds, headerBounds),
-                )
-            } else {
-                val detailBounds = compose
-                    .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG, useUnmergedTree = true)
-                    .assertIsDisplayed()
-                    .getUnclippedBoundsInRoot()
-                assertBoundsInside("$languageTag trusted-runtime empty detail", detailBounds, panelBounds)
-                assertFalse(
-                    "$languageTag trusted-runtime empty detail should not overlap header.",
-                    boundsOverlap(detailBounds, headerBounds),
-                )
-            }
+            val forgetBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$languageTag trusted-runtime forget action", forgetBounds, panelBounds)
+            assertFalse(
+                "$languageTag trusted-runtime forget action should not overlap header.",
+                boundsOverlap(forgetBounds, headerBounds),
+            )
         }
 
         languageTags.forEach { languageTag ->
@@ -2055,7 +2054,7 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
             revealTrustedRuntimePanel(R.string.status_title, initiallyCollapsed = true)
-            assertTrustedRuntimePanelBounds(languageTag, trustedRuntime = true)
+            assertTrustedRuntimePanelBounds(languageTag)
 
             compose.runOnUiThread {
                 currentCase.value = TrustedRuntimePanelCase(
@@ -2064,8 +2063,10 @@ class ClientScreensNoDeviceComposeTest {
                 )
             }
             compose.waitForIdle()
-            revealTrustedRuntimePanel(R.string.pairing_title, initiallyCollapsed = false)
-            assertTrustedRuntimePanelBounds(languageTag, trustedRuntime = false)
+            compose.onAllNodesWithTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG, useUnmergedTree = true)
+                .assertCountEquals(0)
+            compose.onNodeWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
         }
     }
 
@@ -5362,13 +5363,16 @@ class ClientScreensNoDeviceComposeTest {
         val pendingDetail =
             "This QR identified AetherLink Runtime, but it cannot reconnect across networks without protected connection details. Generate the latest QR in AetherLink Runtime and scan it again."
         compose.onAllNodesWithText(pendingDetail).onFirst().assertExists()
-        compose.onNodeWithText("Waiting for AetherLink Runtime").assertExists()
         compose.onNode(
             hasContentDescription("QR scanned. $pendingDetail Waiting for AetherLink Runtime") and
                 hasPoliteLiveRegion(),
             useUnmergedTree = true,
         ).assertExists()
         compose.onAllNodesWithText("Scan latest QR").onFirst().assertExists()
+        compose.onAllNodesWithTag(CONNECTION_STATUS_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(AUTO_RECONNECT_CARD_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -5792,11 +5796,9 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
-        compose.onNodeWithText("Saved connection")
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
             .performScrollTo()
-            .assertIsDisplayed()
-        compose.onNode(hasStateDescription("Saved connection"), useUnmergedTree = true)
-            .performScrollTo()
+            .assert(hasStateDescription("Saved connection"))
             .assertIsDisplayed()
     }
 
@@ -5837,20 +5839,38 @@ class ClientScreensNoDeviceComposeTest {
         val recoverySteps = "Open AetherLink Runtime, generate the latest QR, then scan it here."
         val noticeSummary = "Connection status. Refresh needed. $detail $recoverySteps"
 
-        compose.onNodeWithText(detail)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
         compose.onNode(
             hasContentDescription(noticeSummary) and
                 hasStateDescription("Refresh needed") and
-                hasPoliteLiveRegion() and
-                hasClickActionLabel("Scan latest QR") and
-                hasClickAction(),
+                hasPoliteLiveRegion(),
             useUnmergedTree = true,
         )
             .performScrollTo()
             .assertIsDisplayed()
+        compose.onAllNodes(
+            hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assert(hasClickActionLabel("Scan latest QR"))
+            .performScrollTo()
             .performClick()
+        compose.onNode(
+            hasText("Scan latest QR") and
+                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertExists()
+        compose.onAllNodes(
+            hasText(detail) and hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onAllNodes(
+            hasText(recoverySteps) and hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
 
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
@@ -5885,11 +5905,13 @@ class ClientScreensNoDeviceComposeTest {
             endpointSource.value = source
             compose.waitForIdle()
 
-            compose.onNodeWithText("Diagnostics")
+            compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
                 .performScrollTo()
-                .assertIsDisplayed()
-            compose.onNodeWithText("Using a diagnostics route for troubleshooting. Normal pairing stays QR-only.")
-                .performScrollTo()
+                .assert(
+                    hasContentDescription(
+                        "Connection status. Diagnostics. Using a diagnostics route for troubleshooting. Normal pairing stays QR-only.",
+                    ) and hasStateDescription("Diagnostics"),
+                )
                 .assertIsDisplayed()
             assertNoVisibleText("Connection troubleshooting")
             assertNoVisibleText("Diagnostic QR text")
@@ -6687,13 +6709,24 @@ class ClientScreensNoDeviceComposeTest {
             hasContentDescription(
                 "Connection status. Saved connection. Trusted connection saved. AetherLink will reconnect when both devices are available.",
             ) and
-                hasStateDescription("Saved connection") and
-                hasClickAction() and
-                hasClickActionLabel("Connect trusted route"),
+                hasStateDescription("Saved connection"),
             useUnmergedTree = true,
         )
             .performScrollTo()
+            .assertIsDisplayed()
+        compose.onAllNodes(
+            hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assert(hasClickActionLabel("Connect trusted route"))
+            .performScrollTo()
             .performClick()
+        compose.onNode(
+            hasText("Connect trusted route") and
+                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertExists()
 
         assertEquals(1, connectClicks)
         assertEquals(0, scanQrClicks)
@@ -6735,16 +6768,30 @@ class ClientScreensNoDeviceComposeTest {
             hasContentDescription(
                 "Connection status. Refresh needed. Connection details need refreshing. Scan the latest AetherLink Runtime QR with remote connection details before using AetherLink away from this network. Open AetherLink Runtime, generate the latest QR, then scan it here.",
             ) and
-                hasStateDescription("Refresh needed") and
-                hasClickAction() and
-                hasClickActionLabel("Scan latest QR"),
+                hasStateDescription("Refresh needed"),
             useUnmergedTree = true,
         )
             .performScrollTo()
+            .assertIsDisplayed()
+        compose.onAllNodes(
+            hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assert(hasClickActionLabel("Scan latest QR"))
+            .performScrollTo()
             .performClick()
+        compose.onNode(
+            hasText("Scan latest QR") and
+                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertExists()
 
-        compose.onNodeWithText("Open AetherLink Runtime, generate the latest QR, then scan it here.")
-            .assertExists()
+        compose.onAllNodes(
+            hasText("Open AetherLink Runtime, generate the latest QR, then scan it here.") and
+                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
@@ -6791,19 +6838,29 @@ class ClientScreensNoDeviceComposeTest {
             .onLast()
             .performScrollTo()
             .assertIsDisplayed()
-        compose.onNodeWithText(detail)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
             .performScrollTo()
             .assertIsDisplayed()
         compose.onNode(
             hasContentDescription(noticeSummary) and
-                hasStateDescription("Scan QR") and
-                hasClickAction() and
-                hasClickActionLabel("Scan latest QR"),
+                hasStateDescription("Scan QR"),
             useUnmergedTree = true,
         )
             .performScrollTo()
             .assertIsDisplayed()
+        compose.onAllNodes(
+            hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assert(hasClickActionLabel("Scan latest QR"))
+            .performScrollTo()
             .performClick()
+        compose.onNode(
+            hasText("Scan latest QR") and
+                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+            useUnmergedTree = true,
+        ).assertExists()
 
         assertEquals(0, connectClicks)
         assertEquals(1, scanQrClicks)
@@ -6966,8 +7023,7 @@ class ClientScreensNoDeviceComposeTest {
                     .assert(
                         hasContentDescription(expectedSummary) and
                             hasStateDescription(status) and
-                            hasPoliteLiveRegion() and
-                            hasClickActionLabel(action),
+                            hasPoliteLiveRegion(),
                     )
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
@@ -6988,21 +7044,27 @@ class ClientScreensNoDeviceComposeTest {
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
                 val titleBounds = compose
-                    .onNode(hasText(title) and hasTestTag(RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG), useUnmergedTree = true)
+                    .onNodeWithTag(RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG, useUnmergedTree = true)
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
                 val statusBounds = compose
-                    .onNode(hasText(status) and hasTestTag(RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG), useUnmergedTree = true)
+                    .onNodeWithTag(RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG, useUnmergedTree = true)
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
                 val detailBounds = compose
-                    .onNode(hasText(detail) and hasTestTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG), useUnmergedTree = true)
+                    .onNodeWithTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG, useUnmergedTree = true)
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
                 val actionBounds = compose
-                    .onNode(hasText(action) and hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG), useUnmergedTree = true)
+                    .onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+                    .assert(hasClickActionLabel(action))
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
+                compose.onNode(
+                    hasText(action) and
+                        hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                    useUnmergedTree = true,
+                ).assertIsDisplayed()
 
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice", noticeBounds, rootBounds)
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice row", rowBounds, noticeBounds)
@@ -7028,10 +7090,7 @@ class ClientScreensNoDeviceComposeTest {
 
                 if (layoutCase.expectsRecoverySteps) {
                     val recoveryBounds = compose
-                        .onNode(
-                            hasText(recoverySteps) and hasTestTag(RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG),
-                            useUnmergedTree = true,
-                        )
+                        .onNodeWithTag(RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG, useUnmergedTree = true)
                         .assertIsDisplayed()
                         .getUnclippedBoundsInRoot()
                     assertBoundsInside(
@@ -7054,9 +7113,21 @@ class ClientScreensNoDeviceComposeTest {
                     ).assertCountEquals(0)
                 }
 
+                listOf(title, status, detail, recoverySteps).forEach { staticCopy ->
+                    compose.onAllNodes(
+                        hasText(staticCopy) and
+                            hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)),
+                        useUnmergedTree = true,
+                    ).assertCountEquals(0)
+                }
+
                 val connectBefore = connectClicks
                 val scanBefore = scanQrClicks
-                compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
+                compose.onAllNodes(
+                    hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+                    useUnmergedTree = true,
+                ).assertCountEquals(0)
+                compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)
                     .performClick()
                 compose.waitForIdle()
                 when (layoutCase.expectedAction) {
@@ -7078,24 +7149,28 @@ class ClientScreensNoDeviceComposeTest {
         val hapticFeedback = RecordingHapticFeedback()
         var connectClicks = 0
         var scanQrClicks = 0
+        val trustedRuntime = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-1",
+        )
+        val currentState = mutableStateOf(
+            RuntimeUiState(
+                trustedRuntime = trustedRuntime,
+                backendAvailable = true,
+            ),
+        )
 
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
                 MaterialTheme {
                     SettingsScreen(
-                        state = RuntimeUiState(
-                            trustedRuntime = RuntimeTrustedRuntime(
-                                deviceId = "runtime-1",
-                                name = "AetherLink Runtime",
-                                relayHost = "relay.example.test",
-                                relayPort = 443,
-                                relayId = "relay-1",
-                                relaySecret = "secret-1",
-                                relayExpiresAtEpochMillis = 1L,
-                                relayNonce = "nonce-1",
-                            ),
-                            backendAvailable = true,
-                        ),
+                        state = currentState.value,
                         onHostChange = {},
                         onPortChange = {},
                         onUseUsbReverse = {},
@@ -7129,17 +7204,54 @@ class ClientScreensNoDeviceComposeTest {
             }
         }
 
-        compose.onNodeWithText("Refresh needed")
-            .performScrollTo()
-            .assertIsDisplayed()
-        compose.onAllNodesWithText("Scan latest QR")
-            .onLast()
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
+            .assert(hasClickActionLabel("Connect trusted route"))
             .performScrollTo()
             .performClick()
 
-        assertEquals(0, connectClicks)
+        assertEquals(1, connectClicks)
+        assertEquals(0, scanQrClicks)
+
+        compose.runOnUiThread {
+            currentState.value = currentState.value.copy(
+                trustedRuntime = trustedRuntime.copy(relayExpiresAtEpochMillis = 1L),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .performScrollTo()
+            .assert(hasStateDescription("Refresh needed"))
+            .assertIsDisplayed()
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(1)
+        compose.onAllNodesWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
+            .assert(hasClickActionLabel("Scan latest QR"))
+            .performScrollTo()
+            .performClick()
+
+        assertEquals(1, connectClicks)
         assertEquals(1, scanQrClicks)
-        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        assertEquals(
+            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
+            hapticFeedback.events,
+        )
     }
 
     @Test
@@ -7205,6 +7317,12 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
 
         compose.onAllNodesWithText("Connect").assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onAllNodesWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
         assertEquals(0, connectClicks)
         assertEquals(1, refreshClicks)
         assertEquals(1, disconnectClicks)
@@ -7366,15 +7484,10 @@ class ClientScreensNoDeviceComposeTest {
                     sectionHeaderNode.assert(hasStateDescription(expandedState))
                 }
 
-                val qrAction = localizedContext.getString(R.string.scan_qr)
-                val qrState = localizedContext.getString(R.string.scan_qr_state_ready)
-                val qrButtonBounds = assertVisibleTagInsideRoot(
-                    "$languageTag ${settingsCase.name} Settings QR scan action",
-                    SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG,
-                )
-                compose.onNodeWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
-                    .assert(hasStateDescription(qrState) and hasClickActionLabel(qrAction))
-                    .assertIsEnabled()
+                compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
+                    .assertCountEquals(0)
+                compose.onAllNodesWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
+                    .assertCountEquals(0)
 
                 val heroTitle = localizedContext.getString(connectionStatusHeroTitleRes(settingsCase.state))
                 val heroDetail = localizedContext.getString(
@@ -7386,17 +7499,12 @@ class ClientScreensNoDeviceComposeTest {
                     heroTitle,
                     heroDetail,
                 )
-                val heroBounds = assertVisibleTagInsideRoot(
+                assertVisibleTagInsideRoot(
                     "$languageTag ${settingsCase.name} Settings connection hero",
                     CONNECTION_STATUS_HERO_TEST_TAG,
                 )
                 compose.onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
                     .assert(hasContentDescription(heroSummary))
-
-                assertTrue(
-                    "$languageTag ${settingsCase.name} Settings QR action should precede connection hero.",
-                    qrButtonBounds.top <= heroBounds.top,
-                )
 
                 if (settingsCase.expectsRouteRecovery) {
                     val title = localizedContext.getString(R.string.route_notice_title)
@@ -7411,6 +7519,27 @@ class ClientScreensNoDeviceComposeTest {
                         detail,
                         recoverySteps,
                     )
+                    val primaryActionBounds = assertVisibleTagInsideRoot(
+                        "$languageTag ${settingsCase.name} Settings pairing primary action",
+                        SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG,
+                    )
+                    compose
+                        .onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG, useUnmergedTree = true)
+                        .assert(
+                            hasStateDescription(
+                                localizedContext.getString(R.string.scan_latest_qr_state_ready),
+                            ) and hasClickActionLabel(scanLatestQr),
+                        )
+                        .assertIsDisplayed()
+                    assertBoundsInside(
+                        "$languageTag ${settingsCase.name} Settings pairing primary action",
+                        primaryActionBounds,
+                        rootBounds(),
+                    )
+                    compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
+                        .performClick()
+                    compose.waitForIdle()
+
                     val noticeBounds = assertVisibleTagInsideRoot(
                         "$languageTag ${settingsCase.name} Settings route notice",
                         RUNTIME_ROUTE_NOTICE_TEST_TAG,
@@ -7419,24 +7548,27 @@ class ClientScreensNoDeviceComposeTest {
                         .assert(
                             hasContentDescription(noticeSummary) and
                                 hasStateDescription(status) and
-                                hasPoliteLiveRegion() and
-                                hasClickActionLabel(scanLatestQr),
+                                hasPoliteLiveRegion(),
                         )
                         .assertIsDisplayed()
-                    val actionBounds = compose
-                        .onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
-                        .assertTextContains(scanLatestQr)
-                        .assertIsDisplayed()
-                        .getUnclippedBoundsInRoot()
-
+                    compose.onAllNodes(
+                        hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
+                        useUnmergedTree = true,
+                    ).assertCountEquals(0)
+                    compose.onAllNodesWithTag(
+                        RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
+                        useUnmergedTree = true,
+                    ).assertCountEquals(0)
                     assertBoundsInside(
-                        "$languageTag ${settingsCase.name} Settings route notice action",
-                        actionBounds,
+                        "$languageTag ${settingsCase.name} Settings route notice",
                         noticeBounds,
+                        rootBounds(),
                     )
-                    compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
-                        .performClick()
-                    compose.waitForIdle()
+                } else {
+                    compose.onAllNodesWithTag(
+                        SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG,
+                        useUnmergedTree = true,
+                    ).assertCountEquals(0)
                 }
 
                 if (settingsCase.expectsConnectedActions) {
@@ -8038,16 +8170,8 @@ class ClientScreensNoDeviceComposeTest {
         settingsState.value = settingsState.value.copy(trustedRuntime = null)
         compose.waitForIdle()
 
-        val disabledAutoReconnect = compose
-            .onNodeWithContentDescription("Auto reconnect", useUnmergedTree = true)
-            .assertIsNotEnabled()
-            .assert(
-                hasStateDescription(
-                    "Off. Pair with AetherLink Runtime before enabling auto reconnect.",
-                ),
-            )
-            .fetchSemanticsNode()
-        assertFalse(disabledAutoReconnect.config.contains(SemanticsActions.OnClick))
+        compose.onAllNodesWithTag(AUTO_RECONNECT_CARD_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
     }
 
     @Test
@@ -18179,6 +18303,13 @@ class ClientScreensNoDeviceComposeTest {
             val panelBounds = compose.onNodeWithTag(SETTINGS_QR_PAIRING_PANEL_TEST_TAG, useUnmergedTree = true)
                 .assertIsDisplayed()
                 .getUnclippedBoundsInRoot()
+            val titleBounds = compose.onNodeWithTag(
+                SETTINGS_QR_PAIRING_TITLE_TEST_TAG,
+                useUnmergedTree = true,
+            )
+                .assertTextContains(title)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
             val scanButtonBounds = compose.onNodeWithTag(
                 SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG,
                 useUnmergedTree = true,
@@ -18189,7 +18320,14 @@ class ClientScreensNoDeviceComposeTest {
                 .getUnclippedBoundsInRoot()
 
             assertBoundsInside("$languageTag QR pairing panel", panelBounds, rootBounds)
+            assertBoundsInside("$languageTag QR pairing title", titleBounds, panelBounds)
             assertBoundsInside("$languageTag QR scan action", scanButtonBounds, panelBounds)
+            if (languageTag == "en") {
+                assertTrue(
+                    "English QR pairing title should keep enough width to render without forced one-line truncation at 260dp and 1.5 font scale. title=$titleBounds",
+                    titleBounds.right - titleBounds.left >= 100.dp,
+                )
+            }
             listOf(
                 title to "QR pairing title",
                 detail to "QR pairing detail",
@@ -27955,9 +28093,16 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
             assertRootHasStableLayout()
-            compose.onNodeWithText(requireNotNull(nextCase.visibleAnchor))
-                .performScrollTo()
-                .assertIsDisplayed()
+            if (nextCase.surface == RenderSmokeSurface.Connection) {
+                compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+                    .performScrollTo()
+                    .assert(hasStateDescription(requireNotNull(nextCase.visibleAnchor)))
+                    .assertIsDisplayed()
+            } else {
+                compose.onNodeWithText(requireNotNull(nextCase.visibleAnchor))
+                    .performScrollTo()
+                    .assertIsDisplayed()
+            }
         }
     }
 

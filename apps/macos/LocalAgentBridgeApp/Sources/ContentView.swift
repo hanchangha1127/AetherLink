@@ -105,9 +105,10 @@ struct ContentView: View {
             )
             requestedSection = nil
         }
-        .onChange(of: model.trustedDevices.count) { _, trustedDeviceCount in
+        .onChange(of: model.trustedDevices.count) { previousTrustedDeviceCount, trustedDeviceCount in
             selectedSection = companionSectionAfterTrustedDeviceCountChange(
                 current: selectedSection,
+                previousTrustedDeviceCount: previousTrustedDeviceCount,
                 trustedDeviceCount: trustedDeviceCount
             )
         }
@@ -356,12 +357,16 @@ func companionSectionAfterExternalRequest(
 
 func companionSectionAfterTrustedDeviceCountChange(
     current: CompanionSection,
+    previousTrustedDeviceCount: Int,
     trustedDeviceCount: Int
 ) -> CompanionSection {
-    return companionOnboardingSection(
-        current: current,
-        trustedDeviceCount: trustedDeviceCount
-    )
+    if trustedDeviceCount == 0 {
+        return .pairing
+    }
+    if previousTrustedDeviceCount == 0, current == .pairing {
+        return .status
+    }
+    return current
 }
 
 func sidebarBrandAccessibilityLabel() -> String {

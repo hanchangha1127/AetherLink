@@ -5,6 +5,7 @@ import DocumentIngestion
 import OllamaBackend
 import SwiftUI
 import TrustedDevices
+import Vision
 import XCTest
 @testable import LocalAgentBridge
 
@@ -249,13 +250,14 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                 try withStoredPreferences(language: language, appearance: appearance) {
                     let model = renderSmokeModel()
                     model.beginPairing(routePolicy: .allowLocalDiagnostic)
-                    XCTAssertNotNil(
+                    let pairingSession = try XCTUnwrap(
                         model.pairingSession,
                         "Expected an active pairing QR session for \(language.rawValue) \(appearance.rawValue)"
                     )
+                    let layoutObserver = PairingTaskLayoutObserver()
 
                     let bitmap = try render(
-                        PairingView(model: model)
+                        PairingView(model: model, layoutObserver: layoutObserver)
                             .environment(\.locale, Locale(identifier: language.localeIdentifier))
                             .preferredColorScheme(appearance.preferredColorScheme),
                         size: compactDetailSize
@@ -265,7 +267,49 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         bitmap,
                         label: "Active PairingView \(language.rawValue) \(appearance.rawValue)"
                     )
+                    assertPairingTaskLayout(
+                        layoutObserver,
+                        viewportSize: compactDetailSize,
+                        requiresVerticalVisibility: true,
+                        label: "Active PairingView \(language.rawValue) \(appearance.rawValue)"
+                    )
+                    if language == .english, appearance == .light {
+                        assertPairingQRCodeDecodes(
+                            bitmap,
+                            expectedPayload: pairingSession.compactQRCodePayload,
+                            label: "Active PairingView rendered QR"
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    func testActivePairingQRCodeRendersAtCompactAccessibilitySizeAcrossLanguages() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let model = renderSmokeModel()
+                model.beginPairing(routePolicy: .allowLocalDiagnostic)
+                XCTAssertNotNil(model.pairingSession)
+                let layoutObserver = PairingTaskLayoutObserver()
+
+                let bitmap = try render(
+                    PairingView(model: model, layoutObserver: layoutObserver)
+                        .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                        .environment(\.dynamicTypeSize, .accessibility3),
+                    size: compactDetailSize
+                )
+
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Active PairingView accessibility \(language.rawValue)"
+                )
+                assertPairingTaskLayout(
+                    layoutObserver,
+                    viewportSize: compactDetailSize,
+                    requiresVerticalVisibility: false,
+                    label: "Active PairingView accessibility \(language.rawValue)"
+                )
             }
         }
     }
@@ -797,6 +841,63 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         return hostingView.fittingSize
     }
 
+    private func assertPairingTaskLayout(
+        _ observer: PairingTaskLayoutObserver,
+        viewportSize: CGSize,
+        requiresVerticalVisibility: Bool,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let qrFrame = observer.frames[.qrCode] else {
+            XCTFail("\(label) QR frame was not reported", file: file, line: line)
+            return
+        }
+        guard let renewalFrame = observer.frames[.renewalAction] else {
+            XCTFail("\(label) renewal action frame was not reported", file: file, line: line)
+            return
+        }
+
+        let horizontalViewport = CGRect(
+            x: -0.5,
+            y: -CGFloat.greatestFiniteMagnitude / 4,
+            width: viewportSize.width + 1,
+            height: CGFloat.greatestFiniteMagnitude / 2
+        )
+        XCTAssertGreaterThanOrEqual(qrFrame.width, 180, "\(label) QR width", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(qrFrame.height, 180, "\(label) QR height", file: file, line: line)
+        XCTAssertGreaterThan(renewalFrame.width, 0, "\(label) renewal width", file: file, line: line)
+        XCTAssertGreaterThan(renewalFrame.height, 0, "\(label) renewal height", file: file, line: line)
+        XCTAssertTrue(
+            horizontalViewport.contains(qrFrame),
+            "\(label) QR is horizontally clipped: \(qrFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            horizontalViewport.contains(renewalFrame),
+            "\(label) renewal action is horizontally clipped: \(renewalFrame)",
+            file: file,
+            line: line
+        )
+
+        if requiresVerticalVisibility {
+            let viewport = CGRect(origin: .zero, size: viewportSize).insetBy(dx: -0.5, dy: -0.5)
+            XCTAssertTrue(
+                viewport.contains(qrFrame),
+                "\(label) QR is outside the compact viewport: \(qrFrame)",
+                file: file,
+                line: line
+            )
+            XCTAssertTrue(
+                viewport.contains(renewalFrame),
+                "\(label) renewal action is outside the compact viewport: \(renewalFrame)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
     private func assertMeaningfulRender(
         _ bitmap: NSBitmapImageRep,
         label: String,
@@ -837,6 +938,36 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
         XCTAssertGreaterThan(opaqueSamples, 20, "\(label) opaque samples", file: file, line: line)
         XCTAssertGreaterThanOrEqual(colors.count, 4, "\(label) sampled colors", file: file, line: line)
+    }
+
+    private func assertPairingQRCodeDecodes(
+        _ bitmap: NSBitmapImageRep,
+        expectedPayload: String,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let image = bitmap.cgImage else {
+            XCTFail("\(label) CGImage conversion failed", file: file, line: line)
+            return
+        }
+
+        let request = VNDetectBarcodesRequest()
+        request.symbologies = [.qr]
+        do {
+            try VNImageRequestHandler(cgImage: image).perform([request])
+        } catch {
+            XCTFail("\(label) barcode detection failed: \(error)", file: file, line: line)
+            return
+        }
+
+        let decodedPayloads = (request.results ?? []).compactMap(\.payloadStringValue)
+        XCTAssertTrue(
+            decodedPayloads.contains(expectedPayload),
+            "\(label) did not decode the exact active pairing payload",
+            file: file,
+            line: line
+        )
     }
 
     private func withStoredPreferences<T>(

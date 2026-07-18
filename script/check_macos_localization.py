@@ -1549,7 +1549,8 @@ def check_remote_route_preparation_issue_display() -> list[str]:
     failures.extend(missing_source_snippets(
         SOURCE_ROOT / "PairingView.swift",
         (
-            "let qrImage = pairingQRCodeImage(from: qrPayload)",
+            "final class PairingQRCodeImageCache: ObservableObject",
+            "let qrImage = qrImageCache.image(for: qrPayload)",
             "let isAvailable = qrImage != nil",
             "QRCodeView(image: qrImage)",
             "func pairingQRCodeImage(from text: String) -> NSImage?",
@@ -1564,6 +1565,8 @@ def check_remote_route_preparation_issue_display() -> list[str]:
     failures.extend(missing_source_snippets(
         LOCALIZATION_TEST_SOURCE,
         (
+            "testPairingQRCodeImageCacheRendersOncePerExactPayload",
+            "let cache = PairingQRCodeImageCache { payload in",
             "unavailableValue",
             "pairingQRCodeAccessibilityValue(isExpired: false, isAvailable: false)",
             "pairingQRCodeAccessibilityValue(isExpired: true, isAvailable: false)",

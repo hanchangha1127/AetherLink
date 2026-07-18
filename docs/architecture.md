@@ -34,6 +34,13 @@ Runtime Host
 
 There is no cloud AI backend in v0.1. The client device must not call Ollama or LM Studio directly. Any future signaling, relay, or TURN-style service is connection metadata infrastructure only, not an AI backend.
 
+## Hot-Path Efficiency Invariants
+
+- Relay frame cryptography treats epoch material as immutable derived state. Each send/receive direction caches only its current epoch key and epoch-bound AAD prefix; sequence-specific nonce and AAD suffixes are still rebuilt for every frame, and counters advance only after successful encryption or authentication.
+- The macOS pairing timeline owns expiry presentation only. QR rasterization is cached by the exact compact payload, so layout alternatives and one-second countdown updates cannot regenerate unchanged pairing bytes.
+- Android length-prefixed protocol reads allocate the validated exact body size once and fill that destination across fragmented `InputStream` reads. Frame bounds and EOF failure remain codec-owned.
+- Aggregate no-device suites are executable evidence units. Once a complete test class has run, named class selectors are traceability metadata rather than additional executions; copy hygiene enforces that distinction for the macOS localization and render suites.
+
 ## Remote Connectivity Architecture
 
 See [connection-overlay.md](connection-overlay.md) for the concrete phased design for paired identity, local direct routing, distributed or decentralized rendezvous/bootstrap/DHT options where possible, remote NAT traversal, and blind encrypted relay fallback.

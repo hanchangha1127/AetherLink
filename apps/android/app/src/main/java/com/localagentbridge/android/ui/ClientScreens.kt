@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -251,6 +252,7 @@ private fun QrPairingPanel(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -262,7 +264,7 @@ private fun QrPairingPanel(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Filled.Link,
+                            imageVector = Icons.Filled.QrCodeScanner,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
@@ -272,17 +274,18 @@ private fun QrPairingPanel(
                     text = stringResource(R.string.qr_pairing_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.semantics {
-                        heading()
-                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(SETTINGS_QR_PAIRING_TITLE_TEST_TAG)
+                        .semantics {
+                            heading()
+                        },
                 )
             }
             Text(
                 text = stringResource(R.string.qr_pairing_detail),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val scanQrStateDescription = if (state.isConnecting) {
                 stringResource(R.string.scan_qr_state_connecting)
@@ -310,7 +313,7 @@ private fun QrPairingPanel(
                     },
             ) {
                 Icon(
-                    Icons.Filled.Link,
+                    Icons.Filled.QrCodeScanner,
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
@@ -322,7 +325,7 @@ private fun QrPairingPanel(
             Text(
                 text = stringResource(R.string.qr_pairing_security_note),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -521,7 +524,7 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
                 contentDescription = pendingAccessibilitySummary
                 liveRegion = LiveRegionMode.Polite
             },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
         Row(
@@ -581,6 +584,12 @@ private fun PairingConnectButton(
     val action = pairingConnectPrimaryAction(state)
     val connectStateDescription = pairingConnectButtonStateDescription(state, action)
     val actionLabel = pairingConnectButtonLabel(state, action)
+    val (actionIcon, actionIconTag) = when (action) {
+        RouteNoticePrimaryAction.ScanLatestQr ->
+            Icons.Filled.QrCodeScanner to SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG
+        RouteNoticePrimaryAction.Connect,
+        null -> Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG
+    }
 
     Button(
         onClick = {
@@ -594,14 +603,16 @@ private fun PairingConnectButton(
         enabled = state.trustedRuntime != null && !state.isConnecting,
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
             .semantics {
                 stateDescription = connectStateDescription
                 onClick(label = actionLabel, action = null)
             },
     ) {
         Icon(
-            Icons.Filled.Link,
+            actionIcon,
             contentDescription = null,
+            modifier = Modifier.testTag(actionIconTag),
         )
         Spacer(Modifier.width(8.dp))
         Text(actionLabel)
@@ -824,7 +835,7 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
             .semantics(mergeDescendants = true) {
                 contentDescription = accessibilitySummary
             },
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
         color = containerColor,
     ) {
         Row(
@@ -994,25 +1005,12 @@ private fun RuntimeRouteNotice(
         modifier = Modifier
             .fillMaxWidth()
             .testTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
-            .semantics(mergeDescendants = true) {
+            .semantics {
                 contentDescription = accessibilitySummary
                 stateDescription = statusDescription
                 liveRegion = LiveRegionMode.Polite
-            }
-            .let { base ->
-                if (actionHandler == null) {
-                    base
-                } else {
-                    base.clickable(
-                        role = Role.Button,
-                        onClickLabel = actionLabel,
-                    ) {
-                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                        actionHandler()
-                    }
-                }
             },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
         color = notice.containerColor(),
         contentColor = notice.contentColor(),
     ) {
@@ -1044,43 +1042,59 @@ private fun RuntimeRouteNotice(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = title,
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .testTag(RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = notice.contentColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    ) {
+                        Text(
+                            text = title,
+                            modifier = Modifier.clearAndSetSemantics {},
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = notice.contentColor(),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     RouteNoticeStatusPill(notice)
                 }
-                Text(
-                    text = detailDescription,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = notice.contentColor(),
-                    modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG),
-                )
-                if (recoverySteps != null) {
+                Box(modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG)) {
                     Text(
-                        text = recoverySteps,
+                        text = detailDescription,
                         style = MaterialTheme.typography.bodySmall,
-                        color = notice.contentColor().copy(alpha = 0.82f),
-                        modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG),
+                        color = notice.contentColor(),
+                        modifier = Modifier.clearAndSetSemantics {},
                     )
                 }
+                if (recoverySteps != null) {
+                    Box(modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG)) {
+                        Text(
+                            text = recoverySteps,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = notice.contentColor().copy(alpha = 0.82f),
+                            modifier = Modifier.clearAndSetSemantics {},
+                        )
+                    }
+                }
                 if (actionLabel != null && actionHandler != null) {
-                    Text(
-                        text = actionLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = notice.contentColor(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG),
-                    )
+                    TextButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            actionHandler()
+                        },
+                        modifier = Modifier
+                            .testTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)
+                            .semantics {
+                                onClick(label = actionLabel, action = null)
+                            },
+                    ) {
+                        Text(
+                            text = actionLabel,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -1097,6 +1111,7 @@ private fun routeNoticeRecoverySteps(notice: RuntimeRouteNoticeState): String? {
 @Composable
 private fun RouteNoticeStatusPill(notice: RuntimeRouteNoticeState) {
     Surface(
+        modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG),
         shape = RoundedCornerShape(999.dp),
         color = notice.contentColor().copy(alpha = 0.10f),
         contentColor = notice.contentColor(),
@@ -1104,8 +1119,8 @@ private fun RouteNoticeStatusPill(notice: RuntimeRouteNoticeState) {
         Text(
             text = stringResource(notice.statusRes),
             modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 3.dp)
-                .testTag(RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG),
+                .clearAndSetSemantics {}
+                .padding(horizontal = 8.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -2093,43 +2108,41 @@ fun SettingsScreen(
                 initiallyExpanded = settingsPrimaryConnectionSectionInitiallyExpanded(state),
                 expandWhenKey = settingsPrimaryConnectionSectionExpansionKey(state),
             ) {
-                QrPairingPanel(
-                    state = state,
-                    onScanPairingQr = onScanPairingQr,
-                )
-                CompanionOnlyPanel()
-                if (state.isPairingAwaitingRoute) {
-                    PendingPairingRouteStatus(state = state)
-                }
-                TrustedRuntimePanel(
-                    state = state,
-                    onForgetTrustedRuntime = onForgetTrustedRuntime,
-                )
-                if (settingsShowsPairingConnectButton(state)) {
-                    PairingConnectButton(
+                if (state.trustedRuntime == null) {
+                    QrPairingPanel(
                         state = state,
-                        onConnect = onConnect,
-                        onScanLatestQr = onScanPairingQr,
+                        onScanPairingQr = onScanPairingQr,
+                    )
+                    CompanionOnlyPanel()
+                    if (state.isPairingAwaitingRoute) {
+                        PendingPairingRouteStatus(state = state)
+                    }
+                } else {
+                    TrustedRuntimePanel(
+                        state = state,
+                        onForgetTrustedRuntime = onForgetTrustedRuntime,
+                    )
+                    if (settingsShowsPairingConnectButton(state)) {
+                        PairingConnectButton(
+                            state = state,
+                            onConnect = onConnect,
+                            onScanLatestQr = onScanPairingQr,
+                        )
+                    }
+                    ConnectionStatusPanel(
+                        state = state,
+                    )
+                    ConnectionStatusActions(
+                        state = state,
+                        onRefreshHealth = onRefreshHealth,
+                        onDisconnect = onDisconnect,
+                    )
+                    AutoReconnectSettingRow(
+                        enabled = state.trustedRuntimeAutoReconnectEnabled,
+                        canChange = true,
+                        onSetAutoReconnectEnabled = onSetAutoReconnectEnabled,
                     )
                 }
-                if (state.trustedRuntime == null) {
-                    EmptyState(text = stringResource(R.string.connect_requires_pairing))
-                }
-                ConnectionStatusPanel(
-                    state = state,
-                    onConnect = onConnect,
-                    onScanLatestQr = onScanPairingQr,
-                )
-                ConnectionStatusActions(
-                    state = state,
-                    onRefreshHealth = onRefreshHealth,
-                    onDisconnect = onDisconnect,
-                )
-                AutoReconnectSettingRow(
-                    enabled = state.trustedRuntimeAutoReconnectEnabled,
-                    canChange = state.trustedRuntime != null,
-                    onSetAutoReconnectEnabled = onSetAutoReconnectEnabled,
-                )
             }
         }
         item {
@@ -3414,6 +3427,7 @@ private fun ChatEmptyState(
         emptyBody,
     )
     val statusIcon = when {
+        primaryAction == ChatEmptyPrimaryAction.ScanQr -> Icons.Filled.QrCodeScanner
         !state.isConnected -> Icons.Filled.Link
         state.isStreaming -> Icons.Filled.Refresh
         selectedModelIsUsable(state) -> Icons.Filled.CheckCircle
@@ -3432,7 +3446,7 @@ private fun ChatEmptyState(
         Icon(
             imageVector = statusIcon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(30.dp),
         )
         Column(
@@ -3459,7 +3473,7 @@ private fun ChatEmptyState(
                 text = emptyBody,
                 modifier = Modifier.testTag(CHAT_EMPTY_STATE_BODY_TEST_TAG),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
         }
@@ -3494,7 +3508,13 @@ private fun ChatEmptyState(
                         onClick(label = primaryActionLabel, action = null)
                     },
             ) {
-                Icon(Icons.Filled.Link, contentDescription = null)
+                Icon(
+                    imageVector = when (primaryAction) {
+                        ChatEmptyPrimaryAction.Connect -> Icons.Filled.Link
+                        ChatEmptyPrimaryAction.ScanQr -> Icons.Filled.QrCodeScanner
+                    },
+                    contentDescription = null,
+                )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = primaryActionLabel,
@@ -10919,7 +10939,12 @@ internal const val PENDING_ATTACHMENT_CHIP_MAX_WIDTH_DP = 244
 internal const val PENDING_ATTACHMENT_CHIPS_TEST_TAG = "aetherlink_pending_attachment_chips"
 internal const val PENDING_ATTACHMENT_CHIP_TEST_TAG_PREFIX = "aetherlink_pending_attachment_chip_"
 internal const val SETTINGS_QR_PAIRING_PANEL_TEST_TAG = "aetherlink_settings_qr_pairing_panel"
+internal const val SETTINGS_QR_PAIRING_TITLE_TEST_TAG = "aetherlink_settings_qr_pairing_title"
 internal const val SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG = "aetherlink_settings_qr_pairing_scan_button"
+internal const val SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG = "aetherlink_settings_pairing_primary_action"
+internal const val SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG = "aetherlink_settings_pairing_primary_qr_icon"
+internal const val SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG =
+    "aetherlink_settings_pairing_primary_connect_icon"
 internal const val SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG =
     "aetherlink_settings_pending_pairing_route_status"
 internal const val SETTINGS_PENDING_PAIRING_ROUTE_ROW_TEST_TAG =

@@ -10406,7 +10406,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "settingsTrustedRuntimePanelListTestTag",
         "SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG",
         "SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG",
-        "SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG",
+        "settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics",
         "assertFalse(\n                \"$languageTag trusted-runtime icon should not overlap runtime name.\"",
         "settingsPreferenceRowsExposeSelectedStateToAccessibility",
         "settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
@@ -12184,16 +12184,16 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                        actionHandler()",
-            "Connection route notice cards must keep primary-action haptic.",
+            "                            actionHandler()",
+            "Connection route notice action buttons must keep primary-action haptic.",
         ),
         (
-            "onClickLabel = actionLabel",
-            "Connection route notice cards must expose localized accessibility action labels.",
+            "onClick(label = actionLabel, action = null)",
+            "Connection route notice action buttons must expose localized accessibility action labels.",
         ),
         (
             "R.string.route_notice_accessibility_summary",
-            "Connection route notice cards must expose a merged accessibility summary.",
+            "Connection route notice surfaces must expose an accessibility summary.",
         ),
         (
             "R.string.route_notice_accessibility_summary_with_steps",
@@ -12209,7 +12209,7 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "contentDescription = accessibilitySummary",
-            "Connection route notice cards must attach the merged accessibility summary to the actionable card.",
+            "Connection route notice surfaces must attach the accessibility summary to status content.",
         ),
         (
             "stateDescription = statusDescription",
@@ -12598,7 +12598,7 @@ def android_haptic_guard_failures() -> list[str]:
             "text = emptyBody,\n"
             "                modifier = Modifier.testTag(CHAT_EMPTY_STATE_BODY_TEST_TAG),\n"
             "                style = MaterialTheme.typography.bodyMedium,\n"
-            "                color = MaterialTheme.colorScheme.secondary,\n"
+            "                color = MaterialTheme.colorScheme.onSurfaceVariant,\n"
             "                textAlign = TextAlign.Center,\n"
             "            )",
             "Chat empty-state detail copy must wrap fully instead of truncating route-recovery guidance.",
@@ -13407,8 +13407,8 @@ def android_haptic_guard_failures() -> list[str]:
         "hasContentDescription(summary) and hasPoliteLiveRegion()",
         'hasClickActionLabel("Disable Auto reconnect")',
         'hasClickActionLabel("Enable Auto reconnect")',
-        "Off. Pair with AetherLink Runtime before enabling auto reconnect.",
-        "assertFalse(disabledAutoReconnect.config.contains(SemanticsActions.OnClick))",
+        "settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics",
+        "compose.onAllNodesWithTag(AUTO_RECONNECT_CARD_TEST_TAG, useUnmergedTree = true)",
         "settingsDiscoveredRuntimeActionsUseContextualAccessibilityLabels",
         "settingsDiscoveredRuntimeUnavailableRowsExposeContextualAccessibilityLabels",
         "settingsDiscoveryActionsExplainIdleAndRunningStatesAcrossSupportedLanguages",
@@ -14097,7 +14097,7 @@ def android_heading_accessibility_guard_failures() -> list[str]:
     required_ui_snippets = (
         "import androidx.compose.ui.semantics.heading",
         "text = stringResource(R.string.qr_pairing_title)",
-        "modifier = Modifier.semantics {\n                        heading()\n                    },",
+        "modifier = Modifier\n                        .weight(1f)\n                        .testTag(SETTINGS_QR_PAIRING_TITLE_TEST_TAG)\n                        .semantics {\n                            heading()\n                        },",
         "text = stringResource(title),\n            style = MaterialTheme.typography.headlineSmall",
         ".semantics(mergeDescendants = true) {\n                    heading()\n                    stateDescription = toggleStateDescription",
         "SETTINGS_EXPANDABLE_SECTION_HEADER_TEST_TAG_PREFIX",
@@ -27202,8 +27202,12 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR image must use the testable localized accessibility label helper.",
         ),
         (
-            "let qrImage = pairingQRCodeImage(from: qrPayload)",
-            "Pairing QR image parent must know whether QR generation succeeded before setting accessibility state.",
+            "let qrImage = qrImageCache.image(for: qrPayload)",
+            "Pairing QR image parent must reuse exact-payload rendering and know whether generation succeeded.",
+        ),
+        (
+            "final class PairingQRCodeImageCache: ObservableObject",
+            "Pairing QR rendering must remain cached by exact payload instead of repeating on timeline ticks.",
         ),
         (
             "let isAvailable = qrImage != nil",
@@ -27368,6 +27372,8 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
         "配对 QR 码",
         "QR code de jumelage",
         "testPairingQRExpirationProgressAccessibilityUsesSelectedLanguage",
+        "testPairingQRCodeImageCacheRendersOncePerExactPayload",
+        'XCTAssertEqual(renderedPayloads, ["payload-a", "payload-b"])',
         "Pairing QR time remaining",
         "페어링 QR 남은 시간",
         "Temps restant du QR de jumelage",
@@ -34598,6 +34604,576 @@ def macos_runtime_archive_polish_guard_failures() -> list[str]:
         if snippet not in no_device_text:
             failures.append(
                 f"{no_device_path.relative_to(ROOT)}: Default no-device gate must pin archived chat.send restore-gate coverage; missing {snippet}."
+            )
+
+    return failures
+
+
+def code_tokens_without_comments_or_literals(source: str) -> str:
+    output: list[str] = []
+    index = 0
+    block_comment_depth = 0
+    in_line_comment = False
+    string_delimiter: str | None = None
+    triple_quoted = False
+
+    def hide(value: str) -> None:
+        output.extend("\n" if character == "\n" else " " for character in value)
+
+    while index < len(source):
+        if in_line_comment:
+            character = source[index]
+            hide(character)
+            index += 1
+            if character == "\n":
+                in_line_comment = False
+            continue
+
+        if block_comment_depth > 0:
+            if source.startswith("/*", index):
+                hide("/*")
+                block_comment_depth += 1
+                index += 2
+            elif source.startswith("*/", index):
+                hide("*/")
+                block_comment_depth -= 1
+                index += 2
+            else:
+                hide(source[index])
+                index += 1
+            continue
+
+        if string_delimiter is not None:
+            closing = string_delimiter * (3 if triple_quoted else 1)
+            if source.startswith(closing, index):
+                hide(closing)
+                index += len(closing)
+                string_delimiter = None
+                triple_quoted = False
+            elif not triple_quoted and source[index] == "\\" and index + 1 < len(source):
+                hide(source[index : index + 2])
+                index += 2
+            else:
+                hide(source[index])
+                index += 1
+            continue
+
+        if source.startswith("//", index):
+            hide("//")
+            in_line_comment = True
+            index += 2
+        elif source.startswith("/*", index):
+            hide("/*")
+            block_comment_depth = 1
+            index += 2
+        elif source.startswith('"""', index) or source.startswith("'''", index):
+            string_delimiter = source[index]
+            triple_quoted = True
+            hide(source[index : index + 3])
+            index += 3
+        elif source[index] in {'"', "'"}:
+            string_delimiter = source[index]
+            triple_quoted = False
+            hide(source[index])
+            index += 1
+        else:
+            output.append(source[index])
+            index += 1
+
+    return "".join(output)
+
+
+def cross_codebase_optimization_guard_failures() -> list[str]:
+    failures: list[str] = []
+    scanner_probe = """let live = 1
+/* outer guardedToken /* nested guardedToken */ guardedToken */
+let quoted = \"guardedToken\"
+let multiline = \"\"\"guardedToken\"\"\"
+// guardedToken
+"""
+    scanner_output = code_tokens_without_comments_or_literals(scanner_probe)
+    if "let live = 1" not in scanner_output or "guardedToken" in scanner_output:
+        failures.append("Cross-codebase optimization lexical scanner self-test failed.")
+
+    code_regions = (
+        (
+            "apps/macos/Protocol/Sources/ProtocolCodec.swift",
+            "public struct RelayFrameCipher: Sendable {",
+            "    private static func bigEndianData",
+            (
+                "private struct EpochMaterial: Sendable",
+                "cachedMaterial.epoch == epoch",
+                "epochMaterial = material",
+                "epochKeyDerivationCount += 1",
+            ),
+            "RelayFrameCipher epoch cache implementation",
+        ),
+        (
+            "apps/macos/Protocol/Tests/ProtocolCodecTests.swift",
+            "    func testRelayFrameCipherDerivesEpochMaterialOncePerDirectionAndEpoch() throws {",
+            "    func testRelayFrameCipherRejectsCounterAtInt64MaxBeforeCryptography() throws {",
+            (
+                "XCTAssertEqual(cipher.epochKeyDerivationCount, 1)",
+                "XCTAssertEqual(cipher.epochKeyDerivationCount, 2)",
+                "XCTAssertEqual(cipher.epochKeyDerivationCount, 3)",
+            ),
+            "RelayFrameCipher epoch cache regression",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
+            "final class PairingQRCodeImageCache: ObservableObject {",
+            "private struct ActivePairingCard: View {",
+            (
+                "if cachedPayload == payload, let cachedImage",
+                "guard let image = renderer(payload) else",
+                "cachedPayload = nil",
+                "cachedPayload = payload",
+                "cachedImage = image",
+            ),
+            "Pairing QR successful-payload cache implementation",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
+            "private struct ActivePairingCard: View {",
+            "private struct PairingRouteNotice {",
+            (
+                "@StateObject private var qrImageCache = PairingQRCodeImageCache()",
+                "let qrImage = qrImageCache.image(for: qrPayload)",
+                "QRCodeView(image: qrImage)",
+            ),
+            "ActivePairingCard QR cache integration",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift",
+            "    func testPairingQRCodeImageCacheRendersOncePerExactPayload() {",
+            "    func testPairingQRExpirationProgressAccessibilityUsesSelectedLanguage() {",
+            (
+                "let cache = PairingQRCodeImageCache { payload in",
+                "XCTAssertEqual(renderedPayloads.count, 1)",
+                "XCTAssertEqual(renderedPayloads.count, 2)",
+            ),
+            "Pairing QR cache regression",
+        ),
+        (
+            "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt",
+            "private fun InputStream.readExactly(size: Int): ByteArray {",
+            "private fun kotlinx.serialization.json.JsonElement.jsonObject()",
+            (
+                "val buffer = ByteArray(size)",
+                "val read = read(buffer, offset, size - offset)",
+                "if (read == -1) throw EOFException(",
+                "if (byte == -1) throw EOFException(",
+                "return buffer",
+            ),
+            "Android exact-buffer frame reader",
+        ),
+        (
+            "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt",
+            "    @Test\n    fun readsFragmentedFrameIntoExactDestinationAndRejectsTruncation() {",
+            "    fun decodeRejectsUnknownTopLevelEnvelopeFields() {",
+            (
+                "if (readCalls == 1 || readCalls == 3) return 0",
+                "assertEquals(nextEnvelope, codec.readFrame(fragmented))",
+                "assertThrows(EOFException::class.java)",
+            ),
+            "Android exact-buffer frame regression",
+        ),
+    )
+
+    for relative_path, start, end, snippets, label in code_regions:
+        path = ROOT / relative_path
+        if not path.exists():
+            failures.append(f"{relative_path}: required optimization contract file is missing.")
+            continue
+        source = code_tokens_without_comments_or_literals(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        start_index = source.find(start)
+        end_index = source.find(end, start_index + len(start)) if start_index >= 0 else -1
+        if start_index < 0 or end_index < 0:
+            failures.append(f"{relative_path}: missing structured {label} region.")
+            continue
+        region = source[start_index:end_index]
+        for snippet in snippets:
+            if snippet not in region:
+                failures.append(f"{relative_path}: {label} is missing {snippet!r}.")
+
+    required_snippets = {
+        "script/check_no_device_quality.sh": (
+            "ProtocolCodecTests/testRelayFrameCipherDerivesEpochMaterialOncePerDirectionAndEpoch",
+            "Suite-subsumed named evidence is kept visible for contract guards",
+            "run swift test --filter AetherLinkLocalizationTests",
+            "run swift test --filter AetherLinkRenderSmokeTests",
+            "Covered cross-codebase optimization addendum: relay epoch material cache",
+        ),
+        "script/check_macos_localization.py": (
+            '"final class PairingQRCodeImageCache: ObservableObject"',
+            '"let qrImage = qrImageCache.image(for: qrPayload)"',
+            '"testPairingQRCodeImageCacheRendersOncePerExactPayload"',
+        ),
+        "docs/progress.md": (
+            "2026-07-18 Cross-Codebase Optimization Pass",
+            "complete disjoint inventory of 302 tracked first-party code files",
+        ),
+        "docs/qa-evidence.md": (
+            "2026-07-18 Cross-Codebase Optimization No-Device Checklist",
+            "Final aggregate no-device verification and post-change wall-time comparison",
+        ),
+        "docs/roadmap.md": (
+            "Cross-Codebase Optimization Pass",
+            "coalesce Android draft and streaming whole-state persistence",
+        ),
+        "docs/architecture.md": (
+            "Hot-Path Efficiency Invariants",
+            "sequence-specific nonce and AAD suffixes are still rebuilt for every frame",
+        ),
+        "docs/security.md": (
+            "Optimization Security Invariants",
+            "no derived key is persisted or shared across sessions",
+        ),
+    }
+
+    for relative_path, snippets in required_snippets.items():
+        path = ROOT / relative_path
+        if not path.exists():
+            failures.append(f"{relative_path}: required optimization contract file is missing.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path}: missing cross-codebase optimization contract {snippet!r}.")
+
+    android_codec_path = (
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt"
+    )
+    if android_codec_path.exists() and "ByteArrayOutputStream" in android_codec_path.read_text(encoding="utf-8"):
+        failures.append(
+            f"{android_codec_path.relative_to(ROOT)}: frame reads must not restore ByteArrayOutputStream staging."
+        )
+
+    return failures
+
+
+def frontend_readiness_design_guard_failures() -> list[str]:
+    failures: list[str] = []
+    code_regions = (
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift",
+            ".onChange(of: model.trustedDevices.count) { previousTrustedDeviceCount, trustedDeviceCount in",
+            "private var languageBinding: Binding<String>",
+            (
+                "selectedSection = companionSectionAfterTrustedDeviceCountChange(",
+                "current: selectedSection",
+                "previousTrustedDeviceCount: previousTrustedDeviceCount",
+                "trustedDeviceCount: trustedDeviceCount",
+            ),
+            "macOS trusted-device navigation integration",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/ContentView.swift",
+            "func companionSectionAfterTrustedDeviceCountChange(",
+            "func sidebarBrandAccessibilityLabel()",
+            (
+                "previousTrustedDeviceCount: Int",
+                "if trustedDeviceCount == 0",
+                "if previousTrustedDeviceCount == 0, current == .pairing",
+                "return .status",
+            ),
+            "macOS first-device readiness transition",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
+            "private struct ActivePairingCard: View {",
+            "private struct PairingRouteNotice {",
+            (
+                "regularContent(at: timeline.date, isExpired: isExpired)",
+                "compactContent(at: timeline.date, isExpired: isExpired)",
+                "stackedContent(at: timeline.date, isExpired: isExpired)",
+                "qrCode(dimension: 184, isExpired: isExpired)",
+                "qrCode(dimension: 220, isExpired: isExpired)",
+                "instructions(at: date, compact: true)",
+            ),
+            "macOS compact pairing task surface",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
+            "private fun QrPairingPanel(",
+            "internal fun ManualPairingPayloadDialog(",
+            (
+                "Icons.Filled.QrCodeScanner",
+                ".weight(1f)",
+                "MaterialTheme.colorScheme.onSurfaceVariant",
+                "shape = RoundedCornerShape(8.dp)",
+            ),
+            "Android QR readiness surface",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
+            "private fun PairingConnectButton(",
+            "private fun pairingConnectButtonStateDescription(",
+            (
+                "val (actionIcon, actionIconTag) = when (action)",
+                "RouteNoticePrimaryAction.ScanLatestQr ->\n"
+                "            Icons.Filled.QrCodeScanner to SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG",
+                "RouteNoticePrimaryAction.Connect,\n"
+                "        null -> Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
+                "modifier = Modifier.testTag(actionIconTag)",
+            ),
+            "Android trusted-route primary icon mapping",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
+            "fun SettingsScreen(",
+            "internal fun settingsScreenShowsTroubleshootingSection(",
+            (
+                "if (state.trustedRuntime == null)",
+                "} else {",
+                "TrustedRuntimePanel(",
+                "ConnectionStatusPanel(",
+                "ConnectionStatusActions(",
+                "AutoReconnectSettingRow(",
+            ),
+            "Android trusted-runtime diagnostic disclosure",
+        ),
+        (
+            "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt",
+            "private fun ChatEmptyState(",
+            "private fun quickModelStatus(",
+            (
+                "primaryAction == ChatEmptyPrimaryAction.ScanQr -> Icons.Filled.QrCodeScanner",
+                "ChatEmptyPrimaryAction.ScanQr -> Icons.Filled.QrCodeScanner",
+                "MaterialTheme.colorScheme.onSurfaceVariant",
+            ),
+            "Android chat-entry readiness presentation",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift",
+            "    func testTrustedDeviceCountChangeKeepsOnboardingTransitionExplicit() {",
+            "    func testToolbarAndMenuPairingQRGenerationUsesSharedAvailabilityContract() {",
+            (
+                "func testFirstTrustedDeviceTransitionsPairingToStatus()",
+                "func testAdditionalTrustedDeviceKeepsPairingVisible()",
+                "previousTrustedDeviceCount: 0",
+                "previousTrustedDeviceCount: 1",
+            ),
+            "macOS readiness navigation regressions",
+        ),
+        (
+            "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift",
+            "    func testActivePairingQRCodeRendersAtCompactDetailSizeAcrossLanguagesAndAppearances() throws {",
+            "    func testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances() throws {",
+            (
+                "func testActivePairingQRCodeRendersAtCompactAccessibilitySizeAcrossLanguages() throws",
+                "let layoutObserver = PairingTaskLayoutObserver()",
+                "assertPairingTaskLayout(",
+                "assertPairingQRCodeDecodes(",
+                "expectedPayload: pairingSession.compactQRCodePayload",
+                "requiresVerticalVisibility: true",
+                "requiresVerticalVisibility: false",
+            ),
+            "macOS pairing render evidence",
+        ),
+        (
+            "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
+            "    fun settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics() {",
+            "    fun settingsScreenHeadersExposeHeadingSemanticsAcrossSupportedLanguages() {",
+            (
+                "onAllNodesWithTag(CONNECTION_STATUS_PANEL_TEST_TAG",
+                "onAllNodesWithTag(CONNECTION_STATUS_ACTIONS_TEST_TAG",
+                "onAllNodesWithTag(AUTO_RECONNECT_CARD_TEST_TAG",
+                "onAllNodesWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG",
+            ),
+            "Android first-launch readiness regression",
+        ),
+        (
+            "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt",
+            "    fun settingsExpiredRelayRoutePrimaryActionScansLatestQrWithHaptic() {",
+            "    fun settingsConnectedTrustedRuntimeDoesNotExposePairingConnectButton() {",
+            (
+                "SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG",
+                "SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
+                "SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG",
+                "SETTINGS_QR_PAIRING_PANEL_TEST_TAG",
+                "RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG",
+                "assertCountEquals(1)",
+                "assertCountEquals(0)",
+            ),
+            "Android trusted-runtime action cardinality regression",
+        ),
+    )
+
+    for relative_path, start, end, snippets, label in code_regions:
+        path = ROOT / relative_path
+        if not path.exists():
+            failures.append(f"{relative_path}: required frontend readiness file is missing.")
+            continue
+        source = code_tokens_without_comments_or_literals(
+            path.read_text(encoding="utf-8", errors="replace")
+        )
+        start_index = source.find(start)
+        end_index = source.find(end, start_index + len(start)) if start_index >= 0 else -1
+        if start_index < 0 or end_index < 0:
+            failures.append(f"{relative_path}: missing structured {label} region.")
+            continue
+        region = source[start_index:end_index]
+        for snippet in snippets:
+            if snippet not in region:
+                failures.append(f"{relative_path}: {label} is missing {snippet!r}.")
+
+    direct_contracts = {
+        "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift": (
+            ".background(Color(nsColor: .windowBackgroundColor))",
+            "guard let image = renderer(payload) else",
+            ".reportPairingTaskFrame(.qrCode)",
+            ".reportPairingTaskFrame(.renewalAction)",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift": (
+            "testPairingQRCodeImageCacheRetriesAfterTransientRenderFailure",
+        ),
+        "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift": (
+            "import Vision",
+            "VNDetectBarcodesRequest()",
+            "decodedPayloads.contains(expectedPayload)",
+        ),
+        "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt": (
+            ".testTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)",
+            ".testTag(actionIconTag)",
+            "SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG",
+            "SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG",
+            "Icons.Filled.QrCodeScanner",
+            ".clearAndSetSemantics {}",
+            "shape = RoundedCornerShape(8.dp)",
+            ".testTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)",
+        ),
+        "script/check_no_device_quality.sh": (
+            "settingsFirstLaunchShowsOnlyQrReadinessActionWithoutConnectionDiagnostics",
+            "Covered cross-platform readiness UI addendum",
+            "Suite-subsumed frontend readiness evidence",
+        ),
+        "docs/progress.md": (
+            "2026-07-18 Cross-Platform Readiness UI Pass",
+            "current blocking state and one next action",
+        ),
+        "docs/qa-evidence.md": (
+            "2026-07-18 Cross-Platform Readiness UI No-Device Checklist",
+            "in-memory layout frame assertions",
+        ),
+        "docs/roadmap.md": (
+            "Cross-Platform Readiness UI Pass",
+            "physical Android camera QR and TalkBack",
+        ),
+    }
+    for relative_path, snippets in direct_contracts.items():
+        path = ROOT / relative_path
+        if not path.exists():
+            failures.append(f"{relative_path}: required frontend readiness contract file is missing.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(f"{relative_path}: missing frontend readiness contract {snippet!r}.")
+
+    pending_region_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    if pending_region_path.exists():
+        source = code_tokens_without_comments_or_literals(
+            pending_region_path.read_text(encoding="utf-8", errors="replace")
+        )
+        start = source.find("private fun PendingPairingRouteStatus(")
+        end = source.find("private fun PairingConnectButton(", start + 1) if start >= 0 else -1
+        if start < 0 or end < 0:
+            failures.append("Android pending pairing route status region is missing.")
+        elif "RoundedCornerShape(16.dp)" in source[start:end]:
+            failures.append("Android pending pairing route status must not restore a nested 16dp surface.")
+
+    render_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    if render_test_path.exists():
+        render_test_text = render_test_path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in (
+            "AETHERLINK_RENDER_ARTIFACT_DIR",
+            "writeRenderArtifact",
+            "bitmap.representation(using:",
+            "bitmap.tiffRepresentation",
+        ):
+            if forbidden in render_test_text:
+                failures.append(
+                    "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift: "
+                    f"credential-bearing pairing render persistence is forbidden ({forbidden!r})."
+                )
+
+    return failures
+
+
+def no_device_suite_subsumed_rerun_guard_failures() -> list[str]:
+    failures: list[str] = []
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    if not no_device_path.exists():
+        return ["script/check_no_device_quality.sh is missing."]
+
+    lines = no_device_path.read_text(encoding="utf-8").splitlines()
+
+    def logical_shell_lines(source_lines: list[str]) -> list[tuple[int, str]]:
+        logical_lines: list[tuple[int, str]] = []
+        segments: list[str] = []
+        start_line = 1
+        for line_number, line in enumerate(source_lines, start=1):
+            if not segments:
+                start_line = line_number
+            trailing_backslashes = len(line) - len(line.rstrip("\\"))
+            continues = trailing_backslashes % 2 == 1
+            segments.append(line[:-1] if continues else line)
+            if continues:
+                continue
+            logical_lines.append((start_line, " ".join(" ".join(segments).split())))
+            segments = []
+        if segments:
+            logical_lines.append((start_line, " ".join(" ".join(segments).split())))
+        return logical_lines
+
+    def active_suite_commands(source_lines: list[str], suite: str) -> list[tuple[int, str]]:
+        return [
+            (index, command)
+            for index, command in logical_shell_lines(source_lines)
+            if command.startswith("run swift test --filter") and suite in command
+        ]
+
+    def duplicate_suite_commands(source_lines: list[str], suite: str) -> list[tuple[int, str]]:
+        full_suite_command = f"run swift test --filter {suite}"
+        return [
+            (index, command)
+            for index, command in active_suite_commands(source_lines, suite)
+            if command != full_suite_command
+        ]
+
+    for suite in ("AetherLinkLocalizationTests", "AetherLinkRenderSmokeTests"):
+        full_suite_command = f"run swift test --filter {suite}"
+        suite_commands = active_suite_commands(lines, suite)
+        full_suite_lines = [index for index, command in suite_commands if command == full_suite_command]
+        if len(full_suite_lines) != 1:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: expected exactly one active {suite} full-suite command; "
+                f"found {len(full_suite_lines)}."
+            )
+        for index, _ in duplicate_suite_commands(lines, suite):
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}:{index}: active {suite} selector duplicates "
+                "the required full-suite execution."
+            )
+
+        for label, sample_lines in (
+            ("before", [f"run swift test --filter {suite}/testExample", full_suite_command]),
+            ("after", [full_suite_command, f"run swift test --filter {suite}/testExample"]),
+            ("multiline before", ["run swift test --filter \\", f"  {suite}/testExample", full_suite_command]),
+            ("multiline after", [full_suite_command, "run swift test --filter \\", f"  {suite}/testExample"]),
+        ):
+            if len(duplicate_suite_commands(sample_lines, suite)) != 1:
+                failures.append(
+                    f"No-device suite-subsumed guard self-test failed for a named selector {label} "
+                    f"the {suite} full-suite command."
+                )
+        exact_multiline = ["run swift test --filter \\", f"  {suite}"]
+        if active_suite_commands(exact_multiline, suite) != [(1, full_suite_command)]:
+            failures.append(
+                f"No-device suite-subsumed guard self-test failed for an exact multiline {suite} command."
             )
 
     return failures
@@ -56287,6 +56863,27 @@ def main() -> int:
     if macos_render_smoke_failures:
         print("macOS render smoke guard failed:", file=sys.stderr)
         for failure in macos_render_smoke_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    no_device_suite_subsumed_rerun_failures = no_device_suite_subsumed_rerun_guard_failures()
+    if no_device_suite_subsumed_rerun_failures:
+        print("No-device suite-subsumed rerun guard failed:", file=sys.stderr)
+        for failure in no_device_suite_subsumed_rerun_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    cross_codebase_optimization_failures = cross_codebase_optimization_guard_failures()
+    if cross_codebase_optimization_failures:
+        print("Cross-codebase optimization guard failed:", file=sys.stderr)
+        for failure in cross_codebase_optimization_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    frontend_readiness_design_failures = frontend_readiness_design_guard_failures()
+    if frontend_readiness_design_failures:
+        print("Frontend readiness design guard failed:", file=sys.stderr)
+        for failure in frontend_readiness_design_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

@@ -531,6 +531,23 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertEqual(try nextEpochCipher.encryptClientBody(Data("epoch-edge".utf8)).hexString, "a0cd1619ae98e59b6a7213b109015754312b1bbd1002c962842f")
     }
 
+    func testRelayFrameCipherDerivesEpochMaterialOncePerDirectionAndEpoch() throws {
+        let keys = try relayVector().clientKeys
+        var cipher = RelayFrameCipher(sessionKeys: keys, frameIndex: 65_535)
+
+        _ = try cipher.encryptClientBody(Data("epoch-edge".utf8))
+        XCTAssertEqual(cipher.epochKeyDerivationCount, 1)
+
+        _ = try cipher.encryptClientBody(Data("next-epoch".utf8))
+        XCTAssertEqual(cipher.epochKeyDerivationCount, 2)
+
+        _ = try cipher.encryptClientBody(Data("same-epoch".utf8))
+        XCTAssertEqual(cipher.epochKeyDerivationCount, 2)
+
+        _ = try cipher.encryptRuntimeBody(Data("independent-direction".utf8))
+        XCTAssertEqual(cipher.epochKeyDerivationCount, 3)
+    }
+
     func testRelayFrameCipherRejectsCounterAtInt64MaxBeforeCryptography() throws {
         let keys = try relayVector().clientKeys
         var cipher = RelayFrameCipher(sessionKeys: keys, frameIndex: Int64.max)

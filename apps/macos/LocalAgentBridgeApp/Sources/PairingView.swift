@@ -4,6 +4,12 @@ import SwiftUI
 
 struct PairingView: View {
     @ObservedObject var model: CompanionAppModel
+    let layoutObserver: PairingTaskLayoutObserver?
+
+    init(model: CompanionAppModel, layoutObserver: PairingTaskLayoutObserver? = nil) {
+        self.model = model
+        self.layoutObserver = layoutObserver
+    }
 
     var body: some View {
         ScrollView {
@@ -75,6 +81,11 @@ struct PairingView: View {
             }
             .padding(24)
             .frame(maxWidth: 920, alignment: .leading)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .coordinateSpace(name: PairingTaskLayoutCoordinateSpace.name)
+        .onPreferenceChange(PairingTaskFramePreferenceKey.self) { frames in
+            layoutObserver?.update(frames)
         }
     }
 
@@ -179,6 +190,75 @@ func pairingQRGenerationAvailable(
     canPrepareAutomatically || isRouteEligibleForQRCode
 }
 
+final class PairingQRCodeImageCache: ObservableObject {
+    private let renderer: (String) -> NSImage?
+    private var cachedPayload: String?
+    private var cachedImage: NSImage?
+
+    init(renderer: @escaping (String) -> NSImage? = pairingQRCodeImage) {
+        self.renderer = renderer
+    }
+
+    func image(for payload: String) -> NSImage? {
+        if cachedPayload == payload, let cachedImage {
+            return cachedImage
+        }
+        guard let image = renderer(payload) else {
+            cachedPayload = nil
+            cachedImage = nil
+            return nil
+        }
+        cachedPayload = payload
+        cachedImage = image
+        return image
+    }
+}
+
+enum PairingTaskLayoutElement: Hashable {
+    case qrCode
+    case renewalAction
+}
+
+final class PairingTaskLayoutObserver {
+    private(set) var frames: [PairingTaskLayoutElement: CGRect] = [:]
+
+    func update(_ frames: [PairingTaskLayoutElement: CGRect]) {
+        self.frames = frames
+    }
+}
+
+private enum PairingTaskLayoutCoordinateSpace {
+    static let name = "aetherlink-pairing-task-layout"
+}
+
+private struct PairingTaskFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [PairingTaskLayoutElement: CGRect] = [:]
+
+    static func reduce(
+        value: inout [PairingTaskLayoutElement: CGRect],
+        nextValue: () -> [PairingTaskLayoutElement: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private extension View {
+    func reportPairingTaskFrame(_ element: PairingTaskLayoutElement) -> some View {
+        background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: PairingTaskFramePreferenceKey.self,
+                    value: [
+                        element: geometry.frame(
+                            in: .named(PairingTaskLayoutCoordinateSpace.name)
+                        ),
+                    ]
+                )
+            }
+        }
+    }
+}
+
 private struct ActivePairingCard: View {
     let qrPayload: String
     let expiresAt: Date
@@ -186,48 +266,51 @@ private struct ActivePairingCard: View {
     let routeNotice: PairingRouteNotice
     let onGenerateNewQR: () -> Void
     @State private var sessionStartedAt = Date()
+    @StateObject private var qrImageCache = PairingQRCodeImageCache()
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { timeline in
             let isExpired = expiresAt <= timeline.date
 
             ViewThatFits(in: .horizontal) {
-                content(axis: .horizontal, at: timeline.date, isExpired: isExpired)
-                content(axis: .vertical, at: timeline.date, isExpired: isExpired)
-            }
-            .padding(16)
-            .background(expirationTint(at: timeline.date), in: RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(expirationBorderColor(at: timeline.date), lineWidth: isExpired ? 1.5 : 1)
+                regularContent(at: timeline.date, isExpired: isExpired)
+                compactContent(at: timeline.date, isExpired: isExpired)
+                stackedContent(at: timeline.date, isExpired: isExpired)
             }
             .animation(.easeInOut(duration: 0.2), value: isExpired)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func content(axis: Axis, at date: Date, isExpired: Bool) -> some View {
-        let spacing: CGFloat = axis == .horizontal ? 22 : 16
-        if axis == .horizontal {
-            HStack(alignment: .center, spacing: spacing) {
-                qrCode(isExpired: isExpired)
-                instructions(at: date)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: spacing) {
-                qrCode(isExpired: isExpired)
-                instructions(at: date)
-            }
+    private func regularContent(at date: Date, isExpired: Bool) -> some View {
+        HStack(alignment: .center, spacing: 22) {
+            qrCode(dimension: 252, isExpired: isExpired)
+            instructions(at: date, compact: false)
         }
     }
 
-    private func qrCode(isExpired: Bool) -> some View {
-        let qrImage = pairingQRCodeImage(from: qrPayload)
+    private func compactContent(at date: Date, isExpired: Bool) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            qrCode(dimension: 184, isExpired: isExpired)
+            instructions(at: date, compact: true)
+                .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+        }
+    }
+
+    private func stackedContent(at date: Date, isExpired: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            qrCode(dimension: 220, isExpired: isExpired)
+            instructions(at: date, compact: true)
+        }
+    }
+
+    private func qrCode(dimension: CGFloat, isExpired: Bool) -> some View {
+        let qrImage = qrImageCache.image(for: qrPayload)
         let isAvailable = qrImage != nil
         return QRCodeView(image: qrImage)
-            .frame(width: 276, height: 276)
-            .padding(14)
+            .frame(width: dimension, height: dimension)
+            .padding(dimension < 220 ? 10 : 14)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
             .opacity(isExpired ? 0.28 : 1)
             .overlay {
@@ -248,26 +331,36 @@ private struct ActivePairingCard: View {
                     .padding(18)
                 }
             }
-            .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+            .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+            .reportPairingTaskFrame(.qrCode)
             .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("pairing-active-qr")
             .accessibilityAddTraits(.isImage)
             .accessibilityLabel(Text(pairingQRCodeAccessibilityLabel()))
             .accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired, isAvailable: isAvailable)))
             .accessibilityHint(Text(pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: remoteRouteExpiresAt)))
     }
 
-    private func instructions(at date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private func instructions(at date: Date, compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+            Label(NSLocalizedString("Scan this QR from AetherLink.", comment: ""), systemImage: "qrcode.viewfinder")
+                .font(.title3.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+            if !compact {
+                Text(NSLocalizedString("This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.", comment: ""))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             VStack(alignment: .leading, spacing: 7) {
-                Label(NSLocalizedString("Scan this QR from AetherLink.", comment: ""), systemImage: "qrcode.viewfinder")
-                Label(NSLocalizedString("This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
                 PairingRouteNoticeLabel(routeNotice: routeNotice)
                 if let remoteRouteExpiresAt {
                     Label(remoteRouteExpirationText(remoteRouteExpiresAt), systemImage: "timer")
                         .foregroundStyle(routeNotice.tone.color)
                 }
-                Label(NSLocalizedString("After pairing, manage or remove trusted devices in Trusted Devices.", comment: ""), systemImage: "lock.shield")
-                Label(NSLocalizedString("Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
                     .foregroundStyle(expiresAt <= date ? .orange : .secondary)
                     .accessibilityElement(children: .ignore)
@@ -275,10 +368,8 @@ private struct ActivePairingCard: View {
                     .accessibilityValue(Text(expirationText(at: date)))
                 expirationProgress(at: date)
                     .accessibilityHidden(true)
-                Label(NSLocalizedString("Keep AetherLink Runtime open until pairing completes.", comment: ""), systemImage: "display")
             }
             .font(.callout)
-            .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -287,9 +378,18 @@ private struct ActivePairingCard: View {
                 Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(.bordered)
+            .reportPairingTaskFrame(.renewalAction)
+            .accessibilityIdentifier("pairing-renew-action")
             .help(activePairingQRRenewalActionAccessibilityHint())
             .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: true)))
             .accessibilityHint(Text(activePairingQRRenewalActionAccessibilityHint()))
+
+            if !compact {
+                Label(NSLocalizedString("Keep AetherLink Runtime open until pairing completes.", comment: ""), systemImage: "display")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -315,14 +415,6 @@ private struct ActivePairingCard: View {
         let totalSeconds = max(1, expiresAt.timeIntervalSince(sessionStartedAt))
         let remainingSeconds = max(0, expiresAt.timeIntervalSince(date))
         return min(1, remainingSeconds / totalSeconds)
-    }
-
-    private func expirationTint(at date: Date) -> Color {
-        expiresAt <= date ? Color.orange.opacity(0.08) : Color.accentColor.opacity(0.05)
-    }
-
-    private func expirationBorderColor(at date: Date) -> Color {
-        expiresAt <= date ? Color.orange.opacity(0.55) : Color.primary.opacity(0.08)
     }
 
     private func expirationText(at date: Date) -> String {

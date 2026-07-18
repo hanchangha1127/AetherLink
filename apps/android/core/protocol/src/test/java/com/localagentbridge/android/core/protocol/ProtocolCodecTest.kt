@@ -16,6 +16,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.io.EOFException
 import java.io.File
 
 class ProtocolCodecTest {
@@ -336,6 +337,32 @@ class ProtocolCodecTest {
         val framedBody = codec.readFrameBody(ByteArrayInputStream(codec.encodeFrameBody(body)))
 
         assertEquals(envelope, codec.decode(framedBody))
+    }
+
+    @Test
+    fun readsFragmentedFrameIntoExactDestinationAndRejectsTruncation() {
+        val codec = ProtocolCodec()
+        val envelope = ProtocolEnvelope(type = MessageType.ModelsList, payload = JsonObject(emptyMap()))
+        val nextEnvelope = ProtocolEnvelope(type = MessageType.RuntimeHealth, payload = JsonObject(emptyMap()))
+        val encoded = codec.encode(envelope)
+        val concatenated = encoded + codec.encode(nextEnvelope)
+        var readCalls = 0
+        val fragmented = object : ByteArrayInputStream(concatenated) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                readCalls += 1
+                if (readCalls == 1 || readCalls == 3) return 0
+                return super.read(buffer, offset, length.coerceAtMost(3))
+            }
+        }
+
+        assertEquals(envelope, codec.readFrame(fragmented))
+        assertEquals(nextEnvelope, codec.readFrame(fragmented))
+        assertTrue(readCalls > 2)
+
+        val truncated = encoded.copyOf(encoded.size - 1)
+        assertThrows(EOFException::class.java) {
+            codec.readFrame(ByteArrayInputStream(truncated))
+        }
     }
 
     @Test
