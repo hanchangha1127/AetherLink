@@ -207,6 +207,11 @@
 "No overview details" = "概要の詳細なし";
 "No additional guidance" = "追加案内なし";
 "Runtime overview %@. Status %@. %@ %@" = "ランタイム概要 %@。ステータス %@。%@ %@";
+"Runtime status and readiness details" = "ランタイムの状態と準備状況の詳細";
+"Runtime details expanded" = "ランタイムの詳細は展開済み";
+"Runtime details collapsed" = "ランタイムの詳細は折りたたみ済み";
+"Show or hide runtime status and readiness details." = "ランタイムの状態と準備状況の詳細を表示または非表示にします。";
+"Open Connection Recovery." = "接続の復旧を開きます。";
 "No local models loaded" = "読み込まれたモデルはありません";
 "Load models available through AetherLink Runtime." = "AetherLink Runtime で利用できるモデルを読み込みます。";
 

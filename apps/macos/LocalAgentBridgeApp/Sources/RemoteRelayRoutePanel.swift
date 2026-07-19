@@ -145,6 +145,7 @@ func connectionRecoveryResultAllowsDraftResync(_ result: CompanionRelayConfigura
 struct RemoteRelayRoutePanel: View {
     @ObservedObject var model: CompanionAppModel
     var onGenerateRemotePairingQRCode: (() -> Void)?
+    let advancedSettingsExpansionRequest: Int
     @State private var bootstrapEndpoints = ""
     @State private var bootstrapAllocationToken = ""
     @State private var bootstrapAllowsPrivateOverlay = false
@@ -164,11 +165,16 @@ struct RemoteRelayRoutePanel: View {
     @State private var bootstrapDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryBootstrapDraft>
     @State private var developmentDraftRevision: ConnectionRecoveryDraftRevision<ConnectionRecoveryDevelopmentDraft>
 
-    init(model: CompanionAppModel, onGenerateRemotePairingQRCode: (() -> Void)? = nil) {
+    init(
+        model: CompanionAppModel,
+        onGenerateRemotePairingQRCode: (() -> Void)? = nil,
+        advancedSettingsExpansionRequest: Int = 0
+    ) {
         let bootstrapDraft = ConnectionRecoveryBootstrapDraft(settings: model.bootstrapRelaySettings)
         let developmentDraft = ConnectionRecoveryDevelopmentDraft(settings: model.developmentRelaySettings)
         self.model = model
         self.onGenerateRemotePairingQRCode = onGenerateRemotePairingQRCode
+        self.advancedSettingsExpansionRequest = advancedSettingsExpansionRequest
         _bootstrapEndpoints = State(initialValue: bootstrapDraft.endpoints)
         _bootstrapAllocationToken = State(initialValue: bootstrapDraft.allocationToken)
         _bootstrapAllowsPrivateOverlay = State(initialValue: bootstrapDraft.allowsPrivateOverlay)
@@ -235,6 +241,9 @@ struct RemoteRelayRoutePanel: View {
         }
         .onChange(of: model.pairingSession?.id) { _, _ in
             resolvePendingPairingRefresh()
+        }
+        .onChange(of: advancedSettingsExpansionRequest) { _, _ in
+            isAdvancedRouteSettingsExpanded = true
         }
         .confirmationDialog(
             NSLocalizedString("Remove saved bootstrap relay?", comment: ""),

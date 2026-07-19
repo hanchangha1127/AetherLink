@@ -207,6 +207,11 @@
 "No overview details" = "No overview details";
 "No additional guidance" = "No additional guidance";
 "Runtime overview %@. Status %@. %@ %@" = "Runtime overview %@. Status %@. %@ %@";
+"Runtime status and readiness details" = "Runtime status and readiness details";
+"Runtime details expanded" = "Runtime details expanded";
+"Runtime details collapsed" = "Runtime details collapsed";
+"Show or hide runtime status and readiness details." = "Show or hide runtime status and readiness details.";
+"Open Connection Recovery." = "Open Connection Recovery.";
 "No local models loaded" = "No models loaded";
 "Load models available through AetherLink Runtime." = "Load models available through AetherLink Runtime.";
 

@@ -550,6 +550,57 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testRuntimeOverviewPrimaryActionFitsCompactAccessibilityLayoutAcrossLanguages() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let overview = RuntimeOverview(
+                    focus: .routeQRCode,
+                    title: NSLocalizedString("Connection details not ready for QR", comment: ""),
+                    detail: NSLocalizedString("Connection details are prepared. AetherLink Runtime is reconnecting; generate the latest QR after the connection is ready.", comment: ""),
+                    footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
+                    tone: .neutral
+                )
+                let action = try XCTUnwrap(
+                    runtimeOverviewPrimaryActionPresentation(
+                        focus: overview.focus,
+                        canGeneratePairingQR: true,
+                        hasPairingAction: true,
+                        hasActivePairingSession: false,
+                        isPreparingPairingRoute: false
+                    )
+                )
+                let layoutObserver = RuntimeOverviewLayoutObserver()
+
+                let bitmap = try render(
+                    RuntimeOverviewPanel(
+                        overview: overview,
+                        primaryAction: action,
+                        onPrimaryAction: { _ in },
+                        layoutObserver: layoutObserver
+                    )
+                    .frame(
+                        width: compactDetailSize.width,
+                        height: compactDetailSize.height,
+                        alignment: .topLeading
+                    )
+                    .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                    .environment(\.dynamicTypeSize, .accessibility3),
+                    size: compactDetailSize
+                )
+
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "Runtime overview accessibility action \(language.rawValue)"
+                )
+                assertRuntimeOverviewActionLayout(
+                    layoutObserver,
+                    viewportSize: compactDetailSize,
+                    label: "Runtime overview accessibility action \(language.rawValue)"
+                )
+            }
+        }
+    }
+
     func testModelIdleUnloadPolicyPickerRendersAcrossLanguagesAndAppearances() throws {
         for language in AetherLinkAppLanguage.allCases {
             for appearance in AetherLinkAppAppearance.pickerOptions {
@@ -1110,6 +1161,30 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                 line: line
             )
         }
+    }
+
+    private func assertRuntimeOverviewActionLayout(
+        _ observer: RuntimeOverviewLayoutObserver,
+        viewportSize: CGSize,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let summaryFrame = observer.frames[.summary] else {
+            XCTFail("\(label) summary frame was not reported", file: file, line: line)
+            return
+        }
+        guard let actionFrame = observer.frames[.primaryAction] else {
+            XCTFail("\(label) primary action frame was not reported", file: file, line: line)
+            return
+        }
+
+        let viewport = CGRect(origin: .zero, size: viewportSize)
+        XCTAssertFalse(summaryFrame.isEmpty, "\(label) summary is empty", file: file, line: line)
+        XCTAssertFalse(actionFrame.isEmpty, "\(label) action is empty", file: file, line: line)
+        XCTAssertTrue(viewport.contains(summaryFrame), "\(label) summary is clipped: \(summaryFrame)", file: file, line: line)
+        XCTAssertTrue(viewport.contains(actionFrame), "\(label) action is clipped: \(actionFrame)", file: file, line: line)
+        XCTAssertFalse(summaryFrame.intersects(actionFrame), "\(label) action overlaps summary", file: file, line: line)
     }
 
     private func assertMeaningfulRender(

@@ -12,198 +12,168 @@ struct StatusView: View {
     @State private var isRuntimeMemoryInspectorPresented = false
     @State private var isRuntimeChatCompactionCalibrationPresented = false
     @State private var isRuntimeDocumentSourcesInspectorPresented = false
+    @State private var isRuntimeDetailsExpanded = false
+    @State private var connectionRecoveryExpansionRequest = 0
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12)]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                CompanionPageHeader(
-                    title: NSLocalizedString("AetherLink Runtime", comment: ""),
-                    subtitle: NSLocalizedString("Bridge trusted devices through AetherLink Runtime to local models.", comment: ""),
-                    systemImage: "bolt.horizontal.circle.fill"
-                )
+        ScrollViewReader { scrollProxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    CompanionPageHeader(
+                        title: NSLocalizedString("AetherLink Runtime", comment: ""),
+                        subtitle: NSLocalizedString("Bridge trusted devices through AetherLink Runtime to local models.", comment: ""),
+                        systemImage: "bolt.horizontal.circle.fill"
+                    )
 
-                RuntimeOverviewPanel(overview: runtimeOverview)
+                    let overview = runtimeOverview
+                    RuntimeOverviewPanel(
+                        overview: overview,
+                        primaryAction: runtimeOverviewPrimaryActionPresentation(
+                            focus: overview.focus,
+                            canGeneratePairingQR: canGeneratePairingQR,
+                            hasPairingAction: onGenerateRelayQRCode != nil,
+                            hasActivePairingSession: model.pairingSession != nil,
+                            isPreparingPairingRoute: model.isRemoteRoutePreparationInFlight
+                        ),
+                        onPrimaryAction: { action in
+                            performRuntimeOverviewAction(action, scrollProxy: scrollProxy)
+                        }
+                    )
 
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                    StatusCard(
-                        title: NSLocalizedString("Runtime", comment: ""),
-                        value: localizedTransportStatus(model.transportState),
-                        detail: runtimeDetail,
-                        systemImage: "antenna.radiowaves.left.and.right",
-                        tone: transportTone(for: model.transportState)
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Device Connections", comment: ""),
-                        value: connectionRouteValue,
-                        detail: connectionRouteDetail,
-                        systemImage: "point.3.connected.trianglepath.dotted",
-                        tone: connectionRouteTone
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Model Providers", comment: ""),
-                        value: backendSummary.value,
-                        detail: backendSummary.detail,
-                        systemImage: "cpu",
-                        tone: backendSummary.tone
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Trusted Devices", comment: ""),
-                        value: trustedDeviceCount,
-                        detail: trustedDeviceDetail,
-                        systemImage: "lock.shield",
-                        tone: model.trustedDevices.isEmpty ? .inactive : .ready
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Model Residency", comment: ""),
-                        value: modelResidencyValue,
-                        detail: modelResidencyDetail,
-                        systemImage: "memorychip",
-                        tone: modelResidencyTone
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Model Downloads", comment: ""),
-                        value: modelPullApprovalValue,
-                        detail: modelPullApprovalDetail,
-                        systemImage: "arrow.down.square",
-                        tone: model.pendingModelPullReviews.isEmpty ? .neutral : .warning
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Runtime History", comment: ""),
-                        value: runtimeHistoryValue,
-                        detail: runtimeHistoryDetail,
-                        systemImage: "text.bubble",
-                        tone: runtimeDataTone
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Runtime Memory", comment: ""),
-                        value: runtimeMemoryValue,
-                        detail: runtimeMemoryDetail,
-                        systemImage: "brain.head.profile",
-                        tone: runtimeDataTone
-                    )
-                    StatusCard(
-                        title: NSLocalizedString("Document Sources", comment: ""),
-                        value: runtimeDocumentSourcesCardValue(model.runtimeDocumentSources.count),
-                        detail: runtimeDocumentSourcesDetail,
-                        systemImage: "doc.text.magnifyingglass",
-                        tone: runtimeDocumentSourcesTone
-                    )
-                }
+                    CompanionPanel(title: NSLocalizedString("Readiness", comment: ""), systemImage: "checklist") {
+                        DisclosureGroup(isExpanded: $isRuntimeDetailsExpanded) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                                    runtimeStatusCards
+                                }
 
-                CompanionPanel(title: NSLocalizedString("Readiness", comment: ""), systemImage: "checklist") {
-                    VStack(spacing: 0) {
-                        ForEach(readinessItems) { item in
-                            ReadinessRow(item: item)
-                            if item.id != readinessItems.last?.id {
                                 Divider()
+
+                                VStack(spacing: 0) {
+                                    ForEach(readinessItems) { item in
+                                        ReadinessRow(item: item)
+                                        if item.id != readinessItems.last?.id {
+                                            Divider()
+                                        }
+                                    }
+                                }
                             }
+                            .padding(.top, 8)
+                        } label: {
+                            Text(NSLocalizedString("Technical Details", comment: ""))
+                                .font(.subheadline.weight(.medium))
                         }
-                    }
-                }
-
-                CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
-                    StatusQuickActions(
-                        model: model,
-                        canGeneratePairingQR: canGeneratePairingQR,
-                        onGenerateRelayQRCode: onGenerateRelayQRCode,
-                        onInspectRuntimeHistory: {
-                            model.refreshRuntimeChatSessions()
-                            isRuntimeHistoryInspectorPresented = true
-                        },
-                        onInspectRuntimeMemory: {
-                            model.refreshRuntimeMemoryEntries()
-                            isRuntimeMemoryInspectorPresented = true
-                        },
-                        onInspectRuntimeChatCompactionCalibration: {
-                            isRuntimeChatCompactionCalibrationPresented = true
-                            Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
-                        },
-                        onManageRuntimeDocumentSources: {
-                            isRuntimeDocumentSourcesInspectorPresented = true
-                            Task { await model.refreshRuntimeDocumentSources() }
-                        }
-                    )
-                }
-
-                CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
-                    if providerStatuses.isEmpty {
-                        let emptyModelProvidersTitle = NSLocalizedString("No model providers available", comment: "")
-                        let emptyModelProvidersDescription = NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: "")
-                        ContentUnavailableView(
-                            emptyModelProvidersTitle,
-                            systemImage: "server.rack",
-                            description: Text(emptyModelProvidersDescription)
+                        .accessibilityLabel(Text(runtimeDetailsDisclosureAccessibilityLabel()))
+                        .accessibilityValue(
+                            Text(runtimeDetailsDisclosureAccessibilityValue(isExpanded: isRuntimeDetailsExpanded))
                         )
-                        .frame(maxWidth: .infinity, minHeight: 160)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(
-                            Text(
-                                companionEmptyStateAccessibilityLabel(
-                                    title: emptyModelProvidersTitle,
-                                    description: emptyModelProvidersDescription
+                        .accessibilityHint(Text(runtimeDetailsDisclosureAccessibilityHint()))
+                    }
+
+                    CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
+                        StatusQuickActions(
+                            model: model,
+                            onInspectRuntimeHistory: {
+                                model.refreshRuntimeChatSessions()
+                                isRuntimeHistoryInspectorPresented = true
+                            },
+                            onInspectRuntimeMemory: {
+                                model.refreshRuntimeMemoryEntries()
+                                isRuntimeMemoryInspectorPresented = true
+                            },
+                            onInspectRuntimeChatCompactionCalibration: {
+                                isRuntimeChatCompactionCalibrationPresented = true
+                                Task { await model.refreshRuntimeChatCompactionCalibrationReport() }
+                            },
+                            onManageRuntimeDocumentSources: {
+                                isRuntimeDocumentSourcesInspectorPresented = true
+                                Task { await model.refreshRuntimeDocumentSources() }
+                            }
+                        )
+                    }
+
+                    CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
+                        if providerStatuses.isEmpty {
+                            let emptyModelProvidersTitle = NSLocalizedString("No model providers available", comment: "")
+                            let emptyModelProvidersDescription = NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: "")
+                            ContentUnavailableView(
+                                emptyModelProvidersTitle,
+                                systemImage: "server.rack",
+                                description: Text(emptyModelProvidersDescription)
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(
+                                Text(
+                                    companionEmptyStateAccessibilityLabel(
+                                        title: emptyModelProvidersTitle,
+                                        description: emptyModelProvidersDescription
+                                    )
                                 )
                             )
-                        )
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(providerStatuses) { provider in
-                                ProviderStatusRow(status: provider)
-                                if provider.id != providerStatuses.last?.id {
-                                    Divider()
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(providerStatuses) { provider in
+                                    ProviderStatusRow(status: provider)
+                                    if provider.id != providerStatuses.last?.id {
+                                        Divider()
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                CompanionPanel(
-                    title: NSLocalizedString("Model Download Approval", comment: ""),
-                    systemImage: "checkmark.shield"
-                ) {
-                    ModelPullApprovalPanel(model: model)
-                }
+                    CompanionPanel(
+                        title: NSLocalizedString("Model Download Approval", comment: ""),
+                        systemImage: "checkmark.shield"
+                    ) {
+                        ModelPullApprovalPanel(model: model)
+                    }
 
-                CompanionPanel(title: NSLocalizedString("Models", comment: ""), systemImage: "shippingbox") {
-                    if model.models.isEmpty {
-                        let emptyModelsTitle = NSLocalizedString("No models loaded", comment: "")
-                        let emptyModelsDescription = NSLocalizedString("Load models available through AetherLink Runtime.", comment: "")
-                        ContentUnavailableView(
-                            emptyModelsTitle,
-                            systemImage: "shippingbox",
-                            description: Text(emptyModelsDescription)
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(
-                            Text(
-                                companionEmptyStateAccessibilityLabel(
-                                    title: emptyModelsTitle,
-                                    description: emptyModelsDescription
+                    CompanionPanel(title: NSLocalizedString("Models", comment: ""), systemImage: "shippingbox") {
+                        if model.models.isEmpty {
+                            let emptyModelsTitle = NSLocalizedString("No models loaded", comment: "")
+                            let emptyModelsDescription = NSLocalizedString("Load models available through AetherLink Runtime.", comment: "")
+                            ContentUnavailableView(
+                                emptyModelsTitle,
+                                systemImage: "shippingbox",
+                                description: Text(emptyModelsDescription)
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 180)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(
+                                Text(
+                                    companionEmptyStateAccessibilityLabel(
+                                        title: emptyModelsTitle,
+                                        description: emptyModelsDescription
+                                    )
                                 )
                             )
-                        )
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(modelGroups) { group in
-                                ModelGroupSection(group: group)
-                                if group.id != modelGroups.last?.id {
-                                    Divider()
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(modelGroups) { group in
+                                    ModelGroupSection(group: group)
+                                    if group.id != modelGroups.last?.id {
+                                        Divider()
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if shouldShowRouteDiagnosticsPanel(model: model) {
-                    RemoteRelayRoutePanel(
-                        model: model,
-                        onGenerateRemotePairingQRCode: onGenerateRemoteRelayQRCode
-                    )
+                    if shouldShowRouteDiagnosticsPanel(model: model) {
+                        RemoteRelayRoutePanel(
+                            model: model,
+                            onGenerateRemotePairingQRCode: onGenerateRemoteRelayQRCode,
+                            advancedSettingsExpansionRequest: connectionRecoveryExpansionRequest
+                        )
+                        .id(StatusViewAnchor.connectionRecovery)
+                    }
                 }
+                .padding(24)
+                .frame(maxWidth: 920, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: 920, alignment: .leading)
         }
         .sheet(isPresented: $isRuntimeHistoryInspectorPresented) {
             RuntimeHistoryInspectorSheet(
@@ -244,6 +214,92 @@ struct StatusView: View {
         .task {
             await model.refreshRuntimeDocumentSources()
             await model.refreshModelPullApprovals()
+        }
+    }
+
+    @ViewBuilder
+    private var runtimeStatusCards: some View {
+        StatusCard(
+            title: NSLocalizedString("Runtime", comment: ""),
+            value: localizedTransportStatus(model.transportState),
+            detail: runtimeDetail,
+            systemImage: "antenna.radiowaves.left.and.right",
+            tone: transportTone(for: model.transportState)
+        )
+        StatusCard(
+            title: NSLocalizedString("Device Connections", comment: ""),
+            value: connectionRouteValue,
+            detail: connectionRouteDetail,
+            systemImage: "point.3.connected.trianglepath.dotted",
+            tone: connectionRouteTone
+        )
+        StatusCard(
+            title: NSLocalizedString("Model Providers", comment: ""),
+            value: backendSummary.value,
+            detail: backendSummary.detail,
+            systemImage: "cpu",
+            tone: backendSummary.tone
+        )
+        StatusCard(
+            title: NSLocalizedString("Trusted Devices", comment: ""),
+            value: trustedDeviceCount,
+            detail: trustedDeviceDetail,
+            systemImage: "lock.shield",
+            tone: model.trustedDevices.isEmpty ? .inactive : .ready
+        )
+        StatusCard(
+            title: NSLocalizedString("Model Residency", comment: ""),
+            value: modelResidencyValue,
+            detail: modelResidencyDetail,
+            systemImage: "memorychip",
+            tone: modelResidencyTone
+        )
+        StatusCard(
+            title: NSLocalizedString("Model Downloads", comment: ""),
+            value: modelPullApprovalValue,
+            detail: modelPullApprovalDetail,
+            systemImage: "arrow.down.square",
+            tone: model.pendingModelPullReviews.isEmpty ? .neutral : .warning
+        )
+        StatusCard(
+            title: NSLocalizedString("Runtime History", comment: ""),
+            value: runtimeHistoryValue,
+            detail: runtimeHistoryDetail,
+            systemImage: "text.bubble",
+            tone: runtimeDataTone
+        )
+        StatusCard(
+            title: NSLocalizedString("Runtime Memory", comment: ""),
+            value: runtimeMemoryValue,
+            detail: runtimeMemoryDetail,
+            systemImage: "brain.head.profile",
+            tone: runtimeDataTone
+        )
+        StatusCard(
+            title: NSLocalizedString("Document Sources", comment: ""),
+            value: runtimeDocumentSourcesCardValue(model.runtimeDocumentSources.count),
+            detail: runtimeDocumentSourcesDetail,
+            systemImage: "doc.text.magnifyingglass",
+            tone: runtimeDocumentSourcesTone
+        )
+    }
+
+    private func performRuntimeOverviewAction(
+        _ action: StatusRuntimeOverviewAction,
+        scrollProxy: ScrollViewProxy
+    ) {
+        switch action {
+        case .pairing:
+            onGenerateRelayQRCode?()
+        case .refreshProviders:
+            Task { await model.refreshBackendStatus() }
+        case .loadModels:
+            Task { await model.loadModels() }
+        case .connectionRecovery:
+            connectionRecoveryExpansionRequest &+= 1
+            withAnimation(.easeInOut(duration: 0.2)) {
+                scrollProxy.scrollTo(StatusViewAnchor.connectionRecovery, anchor: .top)
+            }
         }
     }
 
@@ -499,6 +555,7 @@ struct StatusView: View {
         switch focus {
         case .runtimeSetup:
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Setup needed", comment: ""),
                 detail: NSLocalizedString("Start AetherLink Runtime before devices can connect.", comment: ""),
                 footnote: NSLocalizedString("AetherLink Runtime mediates device requests. Model providers stay private.", comment: ""),
@@ -506,6 +563,7 @@ struct StatusView: View {
             )
         case .pairing:
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Pair a Device to Continue", comment: ""),
                 detail: pairingOverviewDetail,
                 footnote: NSLocalizedString("Pairing saves trust so devices reconnect without provider URLs.", comment: ""),
@@ -513,6 +571,7 @@ struct StatusView: View {
             )
         case .backend:
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Model service needs attention", comment: ""),
                 detail: NSLocalizedString("Start a model provider for AetherLink Runtime, then check again.", comment: ""),
                 footnote: NSLocalizedString("AetherLink Runtime mediates device requests. Model providers stay private.", comment: ""),
@@ -520,6 +579,7 @@ struct StatusView: View {
             )
         case .models:
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Load models", comment: ""),
                 detail: NSLocalizedString("Load models so devices can choose an installed chat model through AetherLink Runtime.", comment: ""),
                 footnote: NSLocalizedString("Chat and embedding model choices are managed separately so each workflow uses the right model.", comment: ""),
@@ -530,6 +590,7 @@ struct StatusView: View {
                 break
             }
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Connection details need attention", comment: ""),
                 detail: remoteRoutePreparationIssueText(issue),
                 footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
@@ -537,6 +598,7 @@ struct StatusView: View {
             )
         case .routeQRCode:
             return RuntimeOverview(
+                focus: focus,
                 title: NSLocalizedString("Connection details not ready for QR", comment: ""),
                 detail: relayQRCodeReadinessText(
                     settings: model.developmentRelaySettings,
@@ -552,6 +614,7 @@ struct StatusView: View {
         }
 
         return RuntimeOverview(
+            focus: focus,
             title: NSLocalizedString("Ready for Devices", comment: ""),
             detail: NSLocalizedString("AetherLink Runtime is ready, model providers are responding, and trusted devices can chat.", comment: ""),
             footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
@@ -693,8 +756,6 @@ func modelResidencyStatusTone(_ residency: CompanionModelResidencyStatus) -> Sta
 
 private struct StatusQuickActions: View {
     @ObservedObject var model: CompanionAppModel
-    let canGeneratePairingQR: Bool
-    let onGenerateRelayQRCode: (() -> Void)?
     let onInspectRuntimeHistory: () -> Void
     let onInspectRuntimeMemory: () -> Void
     let onInspectRuntimeChatCompactionCalibration: () -> Void
@@ -704,11 +765,6 @@ private struct StatusQuickActions: View {
 
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-            let canRunPairingQRAction = canGeneratePairingQR && onGenerateRelayQRCode != nil
-            let pairingQRActionHint = pairingQRGenerationActionAccessibilityHint(
-                isAvailable: canGeneratePairingQR,
-                hasAction: onGenerateRelayQRCode != nil
-            )
             let canUnloadResidentModel = model.modelResidency.supported &&
                 model.modelResidency.activeModelID != nil &&
                 model.modelResidency.unloadingModelID == nil &&
@@ -719,51 +775,6 @@ private struct StatusQuickActions: View {
                 inFlightGenerations: model.modelResidency.inFlightGenerations,
                 isUnloading: isUnloadingResidentModel
             )
-            Button {
-                onGenerateRelayQRCode?()
-            } label: {
-                if model.pairingSession == nil {
-                    Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
-                } else {
-                    Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canRunPairingQRAction)
-            .help(pairingQRActionHint)
-            .accessibilityValue(
-                Text(
-                    pairingQRGenerationActionAccessibilityValue(
-                        isAvailable: canGeneratePairingQR,
-                        hasAction: onGenerateRelayQRCode != nil
-                    )
-                )
-            )
-            .accessibilityHint(Text(pairingQRActionHint))
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-                Task { await model.refreshBackendStatus() }
-            } label: {
-                Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .help(modelProviderCheckActionAccessibilityHint())
-            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
-            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-                Task { await model.loadModels() }
-            } label: {
-                Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
-            }
-            .buttonStyle(.bordered)
-            .help(modelListLoadActionAccessibilityHint())
-            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
-            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
-            .frame(maxWidth: .infinity, alignment: .leading)
-
             Button {
                 model.refreshRuntimeDataSummary()
             } label: {
@@ -955,6 +966,10 @@ private func isManualModelResidencyEvent(_ normalizedEvent: String) -> Bool {
     normalizedEvent.hasSuffix("(manual)") || normalizedEvent.contains("(manual):")
 }
 
+private enum StatusViewAnchor: Hashable {
+    case connectionRecovery
+}
+
 enum StatusRuntimeOverviewFocus: Equatable {
     case runtimeSetup
     case pairing
@@ -963,6 +978,81 @@ enum StatusRuntimeOverviewFocus: Equatable {
     case routeIssue
     case routeQRCode
     case ready
+}
+
+enum StatusRuntimeOverviewAction: Equatable {
+    case pairing
+    case refreshProviders
+    case loadModels
+    case connectionRecovery
+}
+
+struct RuntimeOverviewPrimaryActionPresentation: Equatable {
+    let action: StatusRuntimeOverviewAction
+    let title: String
+    let systemImage: String
+    let accessibilityValue: String
+    let accessibilityHint: String
+    let isEnabled: Bool
+}
+
+func runtimeOverviewPrimaryActionPresentation(
+    focus: StatusRuntimeOverviewFocus,
+    canGeneratePairingQR: Bool,
+    hasPairingAction: Bool,
+    hasActivePairingSession: Bool,
+    isPreparingPairingRoute: Bool
+) -> RuntimeOverviewPrimaryActionPresentation? {
+    switch focus {
+    case .runtimeSetup, .ready:
+        return nil
+    case .pairing:
+        return RuntimeOverviewPrimaryActionPresentation(
+            action: .pairing,
+            title: hasActivePairingSession
+                ? NSLocalizedString("Generate New QR", comment: "")
+                : NSLocalizedString("Generate Pairing QR", comment: ""),
+            systemImage: "qrcode",
+            accessibilityValue: pairingQRGenerationActionAccessibilityValue(
+                isAvailable: canGeneratePairingQR,
+                hasAction: hasPairingAction,
+                isPreparing: isPreparingPairingRoute
+            ),
+            accessibilityHint: pairingQRGenerationActionAccessibilityHint(
+                isAvailable: canGeneratePairingQR,
+                hasAction: hasPairingAction,
+                isPreparing: isPreparingPairingRoute
+            ),
+            isEnabled: canGeneratePairingQR && hasPairingAction
+        )
+    case .backend:
+        return RuntimeOverviewPrimaryActionPresentation(
+            action: .refreshProviders,
+            title: NSLocalizedString("Check Model Providers", comment: ""),
+            systemImage: "arrow.clockwise",
+            accessibilityValue: modelProviderCheckActionAccessibilityValue(),
+            accessibilityHint: modelProviderCheckActionAccessibilityHint(),
+            isEnabled: true
+        )
+    case .models:
+        return RuntimeOverviewPrimaryActionPresentation(
+            action: .loadModels,
+            title: NSLocalizedString("Load Models", comment: ""),
+            systemImage: "shippingbox",
+            accessibilityValue: modelListLoadActionAccessibilityValue(),
+            accessibilityHint: modelListLoadActionAccessibilityHint(),
+            isEnabled: true
+        )
+    case .routeIssue, .routeQRCode:
+        return RuntimeOverviewPrimaryActionPresentation(
+            action: .connectionRecovery,
+            title: NSLocalizedString("Connection Recovery", comment: ""),
+            systemImage: "wrench.and.screwdriver",
+            accessibilityValue: NSLocalizedString("Available", comment: ""),
+            accessibilityHint: NSLocalizedString("Open Connection Recovery.", comment: ""),
+            isEnabled: true
+        )
+    }
 }
 
 func statusRuntimeOverviewFocus(
@@ -995,22 +1085,111 @@ func statusRuntimeOverviewFocus(
     return .ready
 }
 
-private struct RuntimeOverviewPanel: View {
+enum RuntimeOverviewLayoutElement: Hashable {
+    case summary
+    case primaryAction
+}
+
+final class RuntimeOverviewLayoutObserver {
+    private(set) var frames: [RuntimeOverviewLayoutElement: CGRect] = [:]
+
+    func update(_ frames: [RuntimeOverviewLayoutElement: CGRect]) {
+        self.frames = frames
+    }
+}
+
+private enum RuntimeOverviewLayoutCoordinateSpace {
+    static let name = "aetherlink-runtime-overview-layout"
+}
+
+private struct RuntimeOverviewFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [RuntimeOverviewLayoutElement: CGRect] = [:]
+
+    static func reduce(
+        value: inout [RuntimeOverviewLayoutElement: CGRect],
+        nextValue: () -> [RuntimeOverviewLayoutElement: CGRect]
+    ) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+private extension View {
+    func reportRuntimeOverviewFrame(_ element: RuntimeOverviewLayoutElement) -> some View {
+        background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: RuntimeOverviewFramePreferenceKey.self,
+                    value: [
+                        element: geometry.frame(in: .named(RuntimeOverviewLayoutCoordinateSpace.name)),
+                    ]
+                )
+            }
+        }
+    }
+}
+
+struct RuntimeOverviewPanel: View {
     let overview: RuntimeOverview
+    let primaryAction: RuntimeOverviewPrimaryActionPresentation?
+    let onPrimaryAction: (StatusRuntimeOverviewAction) -> Void
+    let layoutObserver: RuntimeOverviewLayoutObserver?
+
+    init(
+        overview: RuntimeOverview,
+        primaryAction: RuntimeOverviewPrimaryActionPresentation?,
+        onPrimaryAction: @escaping (StatusRuntimeOverviewAction) -> Void,
+        layoutObserver: RuntimeOverviewLayoutObserver? = nil
+    ) {
+        self.overview = overview
+        self.primaryAction = primaryAction
+        self.onPrimaryAction = onPrimaryAction
+        self.layoutObserver = layoutObserver
+    }
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 18) {
+                overviewSummary
+                Spacer(minLength: 4)
+                primaryActionButton
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                overviewSummary
+                primaryActionButton
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(overview.tone.color.opacity(0.22), lineWidth: 1)
+        }
+        .coordinateSpace(name: RuntimeOverviewLayoutCoordinateSpace.name)
+        .onPreferenceChange(RuntimeOverviewFramePreferenceKey.self) { frames in
+            layoutObserver?.update(frames)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var overviewSummary: some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: overview.tone.systemImage)
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(overview.tone.color)
                 .frame(width: 44, height: 44)
                 .background(overview.tone.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(overview.title)
-                        .font(.title3.weight(.semibold))
-                    StatusPill(text: overview.statusText, tone: overview.tone)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        overviewTitle
+                        StatusPill(text: overview.statusText, tone: overview.tone)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        overviewTitle
+                        StatusPill(text: overview.statusText, tone: overview.tone)
+                    }
                 }
 
                 Text(overview.detail)
@@ -1023,15 +1202,9 @@ private struct RuntimeOverviewPanel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(18)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(overview.tone.color.opacity(0.22), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .reportRuntimeOverviewFrame(.summary)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             Text(
@@ -1043,6 +1216,30 @@ private struct RuntimeOverviewPanel: View {
                 )
             )
         )
+    }
+
+    private var overviewTitle: some View {
+        Text(overview.title)
+            .font(.title3.weight(.semibold))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var primaryActionButton: some View {
+        if let primaryAction {
+            Button {
+                onPrimaryAction(primaryAction.action)
+            } label: {
+                Label(primaryAction.title, systemImage: primaryAction.systemImage)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!primaryAction.isEnabled)
+            .help(primaryAction.accessibilityHint)
+            .accessibilityValue(Text(primaryAction.accessibilityValue))
+            .accessibilityHint(Text(primaryAction.accessibilityHint))
+            .reportRuntimeOverviewFrame(.primaryAction)
+        }
     }
 }
 
@@ -1064,7 +1261,22 @@ func runtimeOverviewAccessibilityLabel(title: String, status: String, detail: St
     )
 }
 
-private struct RuntimeOverview {
+func runtimeDetailsDisclosureAccessibilityLabel() -> String {
+    NSLocalizedString("Runtime status and readiness details", comment: "")
+}
+
+func runtimeDetailsDisclosureAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Runtime details expanded", comment: "")
+        : NSLocalizedString("Runtime details collapsed", comment: "")
+}
+
+func runtimeDetailsDisclosureAccessibilityHint() -> String {
+    NSLocalizedString("Show or hide runtime status and readiness details.", comment: "")
+}
+
+struct RuntimeOverview {
+    let focus: StatusRuntimeOverviewFocus
     let title: String
     let detail: String
     let footnote: String

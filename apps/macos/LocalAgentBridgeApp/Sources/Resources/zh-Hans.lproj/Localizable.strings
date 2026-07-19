@@ -207,6 +207,11 @@
 "No overview details" = "无概览详情";
 "No additional guidance" = "无其他指引";
 "Runtime overview %@. Status %@. %@ %@" = "运行时概览 %@。状态 %@。%@ %@";
+"Runtime status and readiness details" = "运行时状态和就绪详情";
+"Runtime details expanded" = "运行时详情已展开";
+"Runtime details collapsed" = "运行时详情已折叠";
+"Show or hide runtime status and readiness details." = "显示或隐藏运行时状态和就绪详情。";
+"Open Connection Recovery." = "打开连接恢复。";
 "No local models loaded" = "尚未加载模型";
 "Load models available through AetherLink Runtime." = "加载 AetherLink Runtime 可用的模型。";
 

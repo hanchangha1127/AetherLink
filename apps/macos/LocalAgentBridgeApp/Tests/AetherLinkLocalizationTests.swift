@@ -2979,6 +2979,21 @@ final class AetherLinkLocalizationTests: XCTestCase {
         )
     }
 
+    func testStatusUsesOverviewAsItsOnlyPrimaryActionSurface() {
+        XCTAssertEqual(
+            companionToolbarPrimaryActionOrder(section: .status, trustedDeviceCount: 0),
+            []
+        )
+        XCTAssertEqual(
+            companionToolbarPrimaryActionOrder(section: .status, trustedDeviceCount: 1),
+            []
+        )
+        XCTAssertEqual(
+            companionToolbarPrimaryActionOrder(section: .pairing, trustedDeviceCount: 0),
+            companionPrimaryActionOrder(trustedDeviceCount: 0)
+        )
+    }
+
     func testMenuBarStatusAndCommandTitlesUseSelectedLanguage() {
         let expectations: [(
             languageTag: String,
@@ -3816,6 +3831,150 @@ final class AetherLinkLocalizationTests: XCTestCase {
             ),
             .backend
         )
+    }
+
+    func testStatusOverviewMapsEachFocusToOnePrimaryAction() {
+        let expectations: [(StatusRuntimeOverviewFocus, StatusRuntimeOverviewAction?)] = [
+            (.runtimeSetup, nil),
+            (.pairing, .pairing),
+            (.backend, .refreshProviders),
+            (.models, .loadModels),
+            (.routeIssue, .connectionRecovery),
+            (.routeQRCode, .connectionRecovery),
+            (.ready, nil),
+        ]
+
+        for (focus, expectedAction) in expectations {
+            let presentation = runtimeOverviewPrimaryActionPresentation(
+                focus: focus,
+                canGeneratePairingQR: true,
+                hasPairingAction: true,
+                hasActivePairingSession: false,
+                isPreparingPairingRoute: false
+            )
+            XCTAssertEqual(presentation?.action, expectedAction, "Unexpected action for \(focus)")
+            if expectedAction != nil {
+                XCTAssertFalse(presentation?.title.isEmpty ?? true, "Missing title for \(focus)")
+                XCTAssertFalse(presentation?.accessibilityValue.isEmpty ?? true, "Missing value for \(focus)")
+                XCTAssertFalse(presentation?.accessibilityHint.isEmpty ?? true, "Missing hint for \(focus)")
+                XCTAssertEqual(presentation?.isEnabled, true, "Unexpected disabled action for \(focus)")
+            }
+        }
+    }
+
+    func testStatusOverviewPairingActionPreservesPreparationAvailabilityContract() {
+        let presentation = runtimeOverviewPrimaryActionPresentation(
+            focus: .pairing,
+            canGeneratePairingQR: false,
+            hasPairingAction: true,
+            hasActivePairingSession: true,
+            isPreparingPairingRoute: true
+        )
+
+        XCTAssertEqual(presentation?.action, .pairing)
+        XCTAssertEqual(presentation?.title, NSLocalizedString("Generate New QR", comment: ""))
+        XCTAssertEqual(presentation?.isEnabled, false)
+        XCTAssertEqual(
+            presentation?.accessibilityValue,
+            pairingQRGenerationActionAccessibilityValue(isAvailable: false, isPreparing: true)
+        )
+        XCTAssertEqual(
+            presentation?.accessibilityHint,
+            pairingQRGenerationActionAccessibilityHint(isAvailable: false, isPreparing: true)
+        )
+
+        let missingActionPresentation = runtimeOverviewPrimaryActionPresentation(
+            focus: .pairing,
+            canGeneratePairingQR: true,
+            hasPairingAction: false,
+            hasActivePairingSession: false,
+            isPreparingPairingRoute: false
+        )
+        XCTAssertEqual(missingActionPresentation?.action, .pairing)
+        XCTAssertEqual(missingActionPresentation?.isEnabled, false)
+        XCTAssertEqual(
+            missingActionPresentation?.accessibilityValue,
+            pairingQRGenerationActionAccessibilityValue(isAvailable: true, hasAction: false)
+        )
+        XCTAssertEqual(
+            missingActionPresentation?.accessibilityHint,
+            pairingQRGenerationActionAccessibilityHint(isAvailable: true, hasAction: false)
+        )
+    }
+
+    func testStatusOverviewConnectionRecoveryActionHintUsesSelectedLanguage() {
+        let expectations = [
+            ("en", "Open Connection Recovery."),
+            ("ko", "연결 복구를 엽니다."),
+            ("ja", "接続の復旧を開きます。"),
+            ("zh-Hans", "打开连接恢复。"),
+            ("fr", "Ouvrir la récupération de connexion."),
+        ]
+
+        XCTAssertEqual(expectations.map(\.0), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        for (languageTag, expectedHint) in expectations {
+            withStoredAppLanguage(languageTag) {
+                let presentation = runtimeOverviewPrimaryActionPresentation(
+                    focus: .routeIssue,
+                    canGeneratePairingQR: false,
+                    hasPairingAction: false,
+                    hasActivePairingSession: false,
+                    isPreparingPairingRoute: false
+                )
+                XCTAssertEqual(presentation?.action, .connectionRecovery)
+                XCTAssertEqual(presentation?.accessibilityHint, expectedHint)
+            }
+        }
+    }
+
+    func testRuntimeDetailsDisclosureAccessibilityUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, label: String, expanded: String, collapsed: String, hint: String)] = [
+            (
+                "en",
+                "Runtime status and readiness details",
+                "Runtime details expanded",
+                "Runtime details collapsed",
+                "Show or hide runtime status and readiness details."
+            ),
+            (
+                "ko",
+                "런타임 상태 및 준비 세부 정보",
+                "런타임 세부 정보 펼쳐짐",
+                "런타임 세부 정보 접힘",
+                "런타임 상태와 준비 세부 정보를 표시하거나 숨깁니다."
+            ),
+            (
+                "ja",
+                "ランタイムの状態と準備状況の詳細",
+                "ランタイムの詳細は展開済み",
+                "ランタイムの詳細は折りたたみ済み",
+                "ランタイムの状態と準備状況の詳細を表示または非表示にします。"
+            ),
+            (
+                "zh-Hans",
+                "运行时状态和就绪详情",
+                "运行时详情已展开",
+                "运行时详情已折叠",
+                "显示或隐藏运行时状态和就绪详情。"
+            ),
+            (
+                "fr",
+                "Détails de l’état et de la préparation du runtime",
+                "Détails du runtime développés",
+                "Détails du runtime réduits",
+                "Afficher ou masquer les détails de l’état et de la préparation du runtime."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(runtimeDetailsDisclosureAccessibilityLabel(), expectation.label)
+                XCTAssertEqual(runtimeDetailsDisclosureAccessibilityValue(isExpanded: true), expectation.expanded)
+                XCTAssertEqual(runtimeDetailsDisclosureAccessibilityValue(isExpanded: false), expectation.collapsed)
+                XCTAssertEqual(runtimeDetailsDisclosureAccessibilityHint(), expectation.hint)
+            }
+        }
     }
 
     func testRuntimeOverviewAccessibilityLabelUsesTitleStatusDetailAndFootnote() {

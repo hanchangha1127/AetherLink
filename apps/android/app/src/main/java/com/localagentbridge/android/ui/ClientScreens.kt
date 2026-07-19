@@ -575,35 +575,32 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
 }
 
 @Composable
-private fun PairingConnectButton(
+private fun ConnectionJourneyPrimaryAction(
     state: RuntimeUiState,
-    onConnect: () -> Unit,
-    onScanLatestQr: () -> Unit,
+    action: RouteNoticePrimaryAction,
+    actionTestTag: String,
+    onAction: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val action = pairingConnectPrimaryAction(state)
     val connectStateDescription = pairingConnectButtonStateDescription(state, action)
     val actionLabel = pairingConnectButtonLabel(state, action)
     val (actionIcon, actionIconTag) = when (action) {
         RouteNoticePrimaryAction.ScanLatestQr ->
             Icons.Filled.QrCodeScanner to SETTINGS_PAIRING_PRIMARY_QR_ICON_TEST_TAG
-        RouteNoticePrimaryAction.Connect,
-        null -> Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG
+        RouteNoticePrimaryAction.Connect ->
+            Icons.Filled.Link to SETTINGS_PAIRING_PRIMARY_CONNECT_ICON_TEST_TAG
     }
 
     Button(
         onClick = {
             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-            when (action) {
-                RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr()
-                RouteNoticePrimaryAction.Connect,
-                null -> onConnect()
-            }
+            onAction()
         },
-        enabled = state.trustedRuntime != null && !state.isConnecting,
+        enabled = !state.isConnecting,
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
+            .heightIn(min = 54.dp)
+            .testTag(actionTestTag)
             .semantics {
                 stateDescription = connectStateDescription
                 onClick(label = actionLabel, action = null)
@@ -622,7 +619,7 @@ private fun PairingConnectButton(
 @Composable
 private fun pairingConnectButtonStateDescription(
     state: RuntimeUiState,
-    action: RouteNoticePrimaryAction?,
+    action: RouteNoticePrimaryAction,
 ): String {
     return when {
         state.isConnecting -> stringResource(R.string.connect_runtime_state_connecting)
@@ -634,24 +631,11 @@ private fun pairingConnectButtonStateDescription(
 @Composable
 private fun pairingConnectButtonLabel(
     state: RuntimeUiState,
-    action: RouteNoticePrimaryAction?,
+    action: RouteNoticePrimaryAction,
 ): String {
     return when (action) {
         RouteNoticePrimaryAction.ScanLatestQr -> stringResource(routeNoticeActionLabelRes(action))
-        RouteNoticePrimaryAction.Connect,
-        null -> connectRuntimeActionLabel(state)
-    }
-}
-
-internal fun pairingConnectPrimaryAction(state: RuntimeUiState): RouteNoticePrimaryAction? {
-    return when {
-        state.isConnecting || state.isConnected -> null
-        state.trustedRuntime == null -> null
-        runtimeRouteNotice(state, state.trustedRuntime)?.action == RouteNoticePrimaryAction.ScanLatestQr ->
-            RouteNoticePrimaryAction.ScanLatestQr
-        routeNoticePrimaryAction(state) == RouteNoticePrimaryAction.ScanLatestQr ->
-            RouteNoticePrimaryAction.ScanLatestQr
-        else -> RouteNoticePrimaryAction.Connect
+        RouteNoticePrimaryAction.Connect -> connectRuntimeActionLabel(state)
     }
 }
 
@@ -692,6 +676,7 @@ fun ConnectionStatusScreen(
                 state = state,
                 onConnect = onConnect,
                 onScanLatestQr = onScanLatestQr,
+                primaryActionTestTag = CONNECTION_STATUS_HERO_ACTION_TEST_TAG,
             )
         }
         item {
@@ -706,8 +691,8 @@ fun ConnectionStatusScreen(
             ErrorText(
                 error = state.error,
                 routeAction = routeNoticePrimaryAction(state),
-                onConnect = onConnect,
-                onScanLatestQr = onScanLatestQr,
+                onConnect = null,
+                onScanLatestQr = null,
             )
         }
     }
@@ -718,6 +703,7 @@ private fun ConnectionStatusPanel(
     state: RuntimeUiState,
     onConnect: (() -> Unit)? = null,
     onScanLatestQr: (() -> Unit)? = null,
+    primaryActionTestTag: String = CONNECTION_STATUS_HERO_ACTION_TEST_TAG,
 ) {
     OutlinedCard(
         modifier = Modifier
@@ -730,7 +716,12 @@ private fun ConnectionStatusPanel(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ConnectionStatusHero(state = state)
+            ConnectionStatusHero(
+                state = state,
+                onConnect = onConnect,
+                onScanLatestQr = onScanLatestQr,
+                primaryActionTestTag = primaryActionTestTag,
+            )
             StatusLine(
                 label = stringResource(R.string.runtime),
                 value = runtimeStatusLabel(state.runtimeStatus),
@@ -766,8 +757,8 @@ private fun ConnectionStatusPanel(
             ProviderStatusRows(providers = state.providerStatuses)
             RuntimeRouteNotice(
                 state = state,
-                onConnect = onConnect,
-                onScanLatestQr = onScanLatestQr,
+                onConnect = null,
+                onScanLatestQr = null,
             )
             StatusLine(
                 label = stringResource(R.string.connected),
@@ -795,91 +786,110 @@ private fun ConnectionStatusPanel(
 }
 
 @Composable
-private fun ConnectionStatusHero(state: RuntimeUiState) {
+private fun ConnectionStatusHero(
+    state: RuntimeUiState,
+    onConnect: (() -> Unit)?,
+    onScanLatestQr: (() -> Unit)?,
+    primaryActionTestTag: String,
+) {
     val trustedRuntimeName = state.trustedRuntime?.name?.takeIf { it.isNotBlank() }
     val pendingRuntimeName = state.pendingPairingRuntimeName?.takeIf { it.isNotBlank() }
     val runtimeName = trustedRuntimeName
         ?: pendingRuntimeName
         ?: stringResource(R.string.trusted_runtime)
 
-    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
-    val needsPairing = state.trustedRuntime == null && !state.isConnected
-    val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
-    val hasConnectableRoute = hasConnectableTrustedRuntimeRoute(state)
-    val needsRoute = state.trustedRuntime != null && !hasConnectableRoute && !state.isConnected
-
-    val title = stringResource(connectionStatusHeroTitleRes(state))
-    val detail = stringResource(connectionStatusHeroDetailRes(state), runtimeName)
+    val journey = connectionJourneyPresentation(state)
+    val title = stringResource(journey.titleRes)
+    val detail = stringResource(journey.detailRes, runtimeName)
     val accessibilitySummary = stringResource(R.string.status_hero_accessibility_summary, title, detail)
-    val icon = when {
-        isTrustedConnection -> Icons.Filled.CheckCircle
-        state.isConnecting -> Icons.Filled.Refresh
-        state.isPairingAwaitingRoute || needsRoute || needsPairing -> Icons.Filled.Error
-        else -> Icons.Filled.Link
+    val actionHandler = when (journey.primaryAction) {
+        RouteNoticePrimaryAction.Connect -> onConnect
+        RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr
+        null -> null
     }
-    val containerColor = when {
-        isTrustedConnection -> MaterialTheme.colorScheme.primaryContainer
-        state.isPairingAwaitingRoute || needsRoute || needsPairing -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = when {
-        isTrustedConnection -> MaterialTheme.colorScheme.onPrimaryContainer
-        state.isPairingAwaitingRoute || needsRoute || needsPairing -> MaterialTheme.colorScheme.onErrorContainer
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val containerColor = journey.tone.containerColor()
+    val contentColor = journey.tone.contentColor()
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(CONNECTION_STATUS_HERO_TEST_TAG)
-            .semantics(mergeDescendants = true) {
-                contentDescription = accessibilitySummary
-            },
+            .testTag(CONNECTION_STATUS_HERO_TEST_TAG),
         shape = RoundedCornerShape(8.dp),
         color = containerColor,
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Top,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
+            Row(
                 modifier = Modifier
-                    .size(22.dp)
-                    .testTag(CONNECTION_STATUS_HERO_ICON_TEST_TAG),
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                    .fillMaxWidth()
+                    .testTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = accessibilitySummary
+                    },
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = contentColor,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.testTag(CONNECTION_STATUS_HERO_TITLE_TEST_TAG),
+                Icon(
+                    imageVector = journey.icon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .testTag(CONNECTION_STATUS_HERO_ICON_TEST_TAG),
                 )
-                Text(
-                    text = detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentColor,
-                    modifier = Modifier.testTag(CONNECTION_STATUS_HERO_DETAIL_TEST_TAG),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(CONNECTION_STATUS_HERO_TITLE_TEST_TAG),
+                    )
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor,
+                        modifier = Modifier.testTag(CONNECTION_STATUS_HERO_DETAIL_TEST_TAG),
+                    )
+                }
+            }
+            if (journey.primaryAction != null && actionHandler != null) {
+                ConnectionJourneyPrimaryAction(
+                    state = state,
+                    action = journey.primaryAction,
+                    actionTestTag = primaryActionTestTag,
+                    onAction = actionHandler,
                 )
             }
         }
     }
 }
 
-@StringRes
-internal fun connectionStatusHeroTitleRes(state: RuntimeUiState): Int {
+internal data class ConnectionJourneyPresentation(
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val detailRes: Int,
+    val tone: ConnectionJourneyTone,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val primaryAction: RouteNoticePrimaryAction?,
+)
+
+internal enum class ConnectionJourneyTone {
+    Ready,
+    Action,
+    Warning,
+    Neutral,
+}
+
+internal fun connectionJourneyPresentation(state: RuntimeUiState): ConnectionJourneyPresentation {
     val isTrustedConnection = state.isConnected && state.trustedRuntime != null
     val needsPairing = state.trustedRuntime == null && !state.isConnected
     val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
@@ -888,7 +898,7 @@ internal fun connectionStatusHeroTitleRes(state: RuntimeUiState): Int {
     val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
     val hasSavedRoute = hasConnectableRoute && !state.isConnected
 
-    return when {
+    val titleRes = when {
         isTrustedConnection -> R.string.status_connected_trusted_title
         state.isConnected -> R.string.status_connected_diagnostics_title
         state.isConnecting -> R.string.status_connecting_trusted_title
@@ -898,19 +908,7 @@ internal fun connectionStatusHeroTitleRes(state: RuntimeUiState): Int {
         hasSavedRoute -> R.string.status_connect_ready_title
         else -> R.string.status_disconnected
     }
-}
-
-@StringRes
-internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
-    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
-    val needsPairing = state.trustedRuntime == null && !state.isConnected
-    val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
-    val hasConnectableRoute = hasConnectableTrustedRuntimeRoute(state)
-    val needsRoute = state.trustedRuntime != null && !hasConnectableRoute && !state.isConnected
-    val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
-    val hasSavedRoute = hasConnectableRoute && !state.isConnected
-
-    return when {
+    val detailRes = when {
         isTrustedConnection -> R.string.status_connected_trusted_detail
         state.isConnected -> R.string.status_connected_diagnostics_detail
         state.isConnecting -> R.string.status_connecting_trusted_detail
@@ -921,6 +919,59 @@ internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
         hasSavedRoute -> R.string.status_connect_ready_detail
         else -> R.string.status_disconnected_summary
     }
+    val tone = when {
+        isTrustedConnection -> ConnectionJourneyTone.Ready
+        state.isPairingAwaitingRoute || needsRoute -> ConnectionJourneyTone.Warning
+        needsPairing || hasSavedRelayRoute || hasSavedRoute -> ConnectionJourneyTone.Action
+        else -> ConnectionJourneyTone.Neutral
+    }
+    val icon = when {
+        isTrustedConnection -> Icons.Filled.CheckCircle
+        state.isConnecting -> Icons.Filled.Refresh
+        needsPairing -> Icons.Filled.QrCodeScanner
+        state.isPairingAwaitingRoute || needsRoute -> Icons.Filled.Error
+        else -> Icons.Filled.Link
+    }
+
+    return ConnectionJourneyPresentation(
+        titleRes = titleRes,
+        detailRes = detailRes,
+        tone = tone,
+        icon = icon,
+        primaryAction = if (state.isConnecting && state.trustedRuntime != null) {
+            RouteNoticePrimaryAction.Connect
+        } else {
+            routeNoticePrimaryAction(state)
+        },
+    )
+}
+
+@StringRes
+internal fun connectionStatusHeroTitleRes(state: RuntimeUiState): Int {
+    return connectionJourneyPresentation(state).titleRes
+}
+
+@StringRes
+internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
+    return connectionJourneyPresentation(state).detailRes
+}
+
+@Composable
+private fun ConnectionJourneyTone.containerColor() = when (this) {
+    ConnectionJourneyTone.Ready,
+    ConnectionJourneyTone.Action,
+    -> MaterialTheme.colorScheme.primaryContainer
+    ConnectionJourneyTone.Warning -> MaterialTheme.colorScheme.errorContainer
+    ConnectionJourneyTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
+}
+
+@Composable
+private fun ConnectionJourneyTone.contentColor() = when (this) {
+    ConnectionJourneyTone.Ready,
+    ConnectionJourneyTone.Action,
+    -> MaterialTheme.colorScheme.onPrimaryContainer
+    ConnectionJourneyTone.Warning -> MaterialTheme.colorScheme.onErrorContainer
+    ConnectionJourneyTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 internal fun RuntimeTrustedRuntime?.hasRelayRouteMaterial(): Boolean {
@@ -2122,15 +2173,11 @@ fun SettingsScreen(
                         state = state,
                         onForgetTrustedRuntime = onForgetTrustedRuntime,
                     )
-                    if (settingsShowsPairingConnectButton(state)) {
-                        PairingConnectButton(
-                            state = state,
-                            onConnect = onConnect,
-                            onScanLatestQr = onScanPairingQr,
-                        )
-                    }
                     ConnectionStatusPanel(
                         state = state,
+                        onConnect = onConnect,
+                        onScanLatestQr = onScanPairingQr,
+                        primaryActionTestTag = SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG,
                     )
                     ConnectionStatusActions(
                         state = state,
@@ -2342,8 +2389,8 @@ fun SettingsScreen(
             ErrorText(
                 error = state.error,
                 routeAction = routeNoticePrimaryAction(state),
-                onConnect = onConnect,
-                onScanLatestQr = onScanPairingQr,
+                onConnect = null,
+                onScanLatestQr = null,
             )
         }
     }
@@ -2383,10 +2430,6 @@ internal fun settingsPrimaryConnectionSectionExpansionKey(state: RuntimeUiState)
         state.isPairingAwaitingRoute -> "pairing-route:${state.pendingPairingRuntimeName.orEmpty()}"
         else -> "trusted:${state.trustedRuntime.deviceId}"
     }
-}
-
-internal fun settingsShowsPairingConnectButton(state: RuntimeUiState): Boolean {
-    return !state.isConnected && state.trustedRuntime != null
 }
 
 internal fun settingsSectionExpandedStateDescriptionRes(): Int = R.string.section_state_expanded
@@ -9945,6 +9988,7 @@ internal const val CONNECTION_STATUS_HERO_ROW_TEST_TAG = "connection_status_hero
 internal const val CONNECTION_STATUS_HERO_ICON_TEST_TAG = "connection_status_hero_icon"
 internal const val CONNECTION_STATUS_HERO_TITLE_TEST_TAG = "connection_status_hero_title"
 internal const val CONNECTION_STATUS_HERO_DETAIL_TEST_TAG = "connection_status_hero_detail"
+internal const val CONNECTION_STATUS_HERO_ACTION_TEST_TAG = "connection_status_hero_action"
 internal const val CONNECTION_STATUS_LINE_TEST_TAG_PREFIX = "connection_status_line_"
 internal const val CONNECTION_STATUS_LINE_LABEL_TEST_TAG_PREFIX = "connection_status_line_label_"
 internal const val CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX = "connection_status_line_value_"

@@ -1217,6 +1217,29 @@ class ClientScreensNoDeviceComposeTest {
                 "$languageTag $scenarioName connection hero title should not overlap detail.",
                 boundsOverlap(titleBounds, detailBounds),
             )
+
+            val heroActionNodes = compose.onAllNodesWithTag(
+                CONNECTION_STATUS_HERO_ACTION_TEST_TAG,
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes()
+            if (heroActionNodes.isNotEmpty()) {
+                val actionBounds = compose.onNodeWithTag(
+                    CONNECTION_STATUS_HERO_ACTION_TEST_TAG,
+                    useUnmergedTree = true,
+                )
+                    .assertIsDisplayed()
+                    .assertHeightIsAtLeast(54.dp)
+                    .getUnclippedBoundsInRoot()
+                assertBoundsInside(
+                    "$languageTag $scenarioName connection hero primary action",
+                    actionBounds,
+                    heroBounds,
+                )
+                assertFalse(
+                    "$languageTag $scenarioName connection hero text should not overlap its primary action.",
+                    boundsOverlap(heroRowBounds, actionBounds),
+                )
+            }
         }
 
         fun assertStatusLineBounds(languageTag: String, scenarioName: String, key: String) {
@@ -5910,13 +5933,17 @@ class ClientScreensNoDeviceComposeTest {
             hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
             useUnmergedTree = true,
         ).assertCountEquals(0)
-        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+        compose.onAllNodesWithTag(
+            RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
             .assert(hasClickActionLabel("Scan latest QR"))
             .performScrollTo()
             .performClick()
         compose.onNode(
             hasText("Scan latest QR") and
-                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)),
             useUnmergedTree = true,
         ).assertExists()
         compose.onAllNodes(
@@ -6774,13 +6801,17 @@ class ClientScreensNoDeviceComposeTest {
             hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
             useUnmergedTree = true,
         ).assertCountEquals(0)
-        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+        compose.onAllNodesWithTag(
+            RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
             .assert(hasClickActionLabel("Connect trusted route"))
             .performScrollTo()
             .performClick()
         compose.onNode(
             hasText("Connect trusted route") and
-                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)),
             useUnmergedTree = true,
         ).assertExists()
 
@@ -6833,13 +6864,17 @@ class ClientScreensNoDeviceComposeTest {
             hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
             useUnmergedTree = true,
         ).assertCountEquals(0)
-        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+        compose.onAllNodesWithTag(
+            RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
             .assert(hasClickActionLabel("Scan latest QR"))
             .performScrollTo()
             .performClick()
         compose.onNode(
             hasText("Scan latest QR") and
-                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)),
             useUnmergedTree = true,
         ).assertExists()
 
@@ -6908,13 +6943,17 @@ class ClientScreensNoDeviceComposeTest {
             hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
             useUnmergedTree = true,
         ).assertCountEquals(0)
-        compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+        compose.onAllNodesWithTag(
+            RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
             .assert(hasClickActionLabel("Scan latest QR"))
             .performScrollTo()
             .performClick()
         compose.onNode(
             hasText("Scan latest QR") and
-                hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)),
             useUnmergedTree = true,
         ).assertExists()
 
@@ -7111,16 +7150,10 @@ class ClientScreensNoDeviceComposeTest {
                     .onNodeWithTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG, useUnmergedTree = true)
                     .assertIsDisplayed()
                     .getUnclippedBoundsInRoot()
-                val actionBounds = compose
-                    .onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
-                    .assert(hasClickActionLabel(action))
-                    .assertIsDisplayed()
-                    .getUnclippedBoundsInRoot()
-                compose.onNode(
-                    hasText(action) and
-                        hasAnyAncestor(hasTestTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)),
+                compose.onAllNodesWithTag(
+                    RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG,
                     useUnmergedTree = true,
-                ).assertIsDisplayed()
+                ).assertCountEquals(0)
 
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice", noticeBounds, rootBounds)
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice row", rowBounds, noticeBounds)
@@ -7130,7 +7163,6 @@ class ClientScreensNoDeviceComposeTest {
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice title", titleBounds, headerBounds)
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice status", statusBounds, headerBounds)
                 assertBoundsInside("$languageTag ${layoutCase.name} route notice detail", detailBounds, columnBounds)
-                assertBoundsInside("$languageTag ${layoutCase.name} route notice action", actionBounds, columnBounds)
                 assertFalse(
                     "$languageTag ${layoutCase.name} route notice icon should not overlap text.",
                     boundsOverlap(iconBounds, columnBounds),
@@ -7138,10 +7170,6 @@ class ClientScreensNoDeviceComposeTest {
                 assertFalse(
                     "$languageTag ${layoutCase.name} route notice title should not overlap status.",
                     boundsOverlap(titleBounds, statusBounds),
-                )
-                assertFalse(
-                    "$languageTag ${layoutCase.name} route notice detail should not overlap action.",
-                    boundsOverlap(detailBounds, actionBounds),
                 )
 
                 if (layoutCase.expectsRecoverySteps) {
@@ -7157,10 +7185,6 @@ class ClientScreensNoDeviceComposeTest {
                     assertFalse(
                         "$languageTag ${layoutCase.name} route notice detail should not overlap recovery.",
                         boundsOverlap(detailBounds, recoveryBounds),
-                    )
-                    assertFalse(
-                        "$languageTag ${layoutCase.name} route notice recovery should not overlap action.",
-                        boundsOverlap(recoveryBounds, actionBounds),
                     )
                 } else {
                     compose.onAllNodesWithTag(
@@ -7183,7 +7207,35 @@ class ClientScreensNoDeviceComposeTest {
                     hasTestTag(RUNTIME_ROUTE_NOTICE_TEST_TAG) and hasClickAction(),
                     useUnmergedTree = true,
                 ).assertCountEquals(0)
-                compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)
+                compose.onNodeWithTag(connectionStatusRouteNoticeListTestTag)
+                    .performScrollToNode(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG))
+                compose.waitForIdle()
+                val heroBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                val actionBounds = compose
+                    .onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG, useUnmergedTree = true)
+                    .assert(hasClickActionLabel(action))
+                    .assertHeightIsAtLeast(54.dp)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                compose.onNode(
+                    hasText(action) and
+                        hasAnyAncestor(hasTestTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)),
+                    useUnmergedTree = true,
+                ).assertIsDisplayed()
+                assertBoundsInside(
+                    "$languageTag ${layoutCase.name} connection hero action",
+                    actionBounds,
+                    heroBounds,
+                )
+                assertBoundsInside(
+                    "$languageTag ${layoutCase.name} connection hero action in root",
+                    actionBounds,
+                    rootBounds,
+                )
+                compose.onNodeWithTag(CONNECTION_STATUS_HERO_ACTION_TEST_TAG)
                     .performClick()
                 compose.waitForIdle()
                 when (layoutCase.expectedAction) {
@@ -7281,6 +7333,7 @@ class ClientScreensNoDeviceComposeTest {
         compose.runOnUiThread {
             currentState.value = currentState.value.copy(
                 trustedRuntime = trustedRuntime.copy(relayExpiresAtEpochMillis = 1L),
+                error = RuntimeUiError(code = "remote_route_expired"),
             )
         }
         compose.waitForIdle()
@@ -7297,9 +7350,22 @@ class ClientScreensNoDeviceComposeTest {
             .assertCountEquals(1)
         compose.onAllNodesWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
             .assertCountEquals(0)
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasTestTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG))
+        compose.waitForIdle()
+        compose.onNodeWithTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onAllNodes(
+            hasTestTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG) and hasClickAction(),
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        compose.onAllNodesWithTag(ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithTag(settingsHeadersListTestTag)
+            .performScrollToNode(hasTestTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG))
+        compose.waitForIdle()
         compose.onNodeWithTag(SETTINGS_PAIRING_PRIMARY_ACTION_TEST_TAG)
             .assert(hasClickActionLabel("Scan latest QR"))
-            .performScrollTo()
             .performClick()
 
         assertEquals(1, connectClicks)
@@ -7559,7 +7625,7 @@ class ClientScreensNoDeviceComposeTest {
                     "$languageTag ${settingsCase.name} Settings connection hero",
                     CONNECTION_STATUS_HERO_TEST_TAG,
                 )
-                compose.onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+                compose.onNodeWithTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG, useUnmergedTree = true)
                     .assert(hasContentDescription(heroSummary))
 
                 if (settingsCase.expectsRouteRecovery) {

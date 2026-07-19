@@ -53,6 +53,8 @@ import com.localagentbridge.android.ui.chatHistoryPermanentDeleteChatEnabled
 import com.localagentbridge.android.ui.chatHistoryRefreshEnabled
 import com.localagentbridge.android.ui.chatHistorySessionStatusRes
 import com.localagentbridge.android.ui.connectRuntimeActionLabelRes
+import com.localagentbridge.android.ui.connectionJourneyPresentation
+import com.localagentbridge.android.ui.ConnectionJourneyTone
 import com.localagentbridge.android.ui.connectionStatusHeroDetailRes
 import com.localagentbridge.android.ui.connectionStatusHeroTitleRes
 import com.localagentbridge.android.ui.chatEmptyStaticPromptRes
@@ -381,6 +383,46 @@ class AppNavigationTest {
 
         assertEquals(R.string.status_route_needed_title, connectionStatusHeroTitleRes(state))
         assertEquals(R.string.pending_pairing_route_detail, connectionStatusHeroDetailRes(state))
+    }
+
+    @Test
+    fun connectionJourneyKeepsOnePrimaryActionAlignedWithVisibleState() {
+        val unpaired = connectionJourneyPresentation(RuntimeUiState())
+        assertEquals(R.string.status_pairing_needed_title, unpaired.titleRes)
+        assertEquals(ConnectionJourneyTone.Action, unpaired.tone)
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, unpaired.primaryAction)
+
+        val savedRoute = connectionJourneyPresentation(
+            RuntimeUiState(
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                    relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                    relayNonce = "nonce-1",
+                    relayScope = "remote",
+                ),
+            ),
+        )
+        assertEquals(R.string.status_relay_ready_title, savedRoute.titleRes)
+        assertEquals(ConnectionJourneyTone.Action, savedRoute.tone)
+        assertEquals(RouteNoticePrimaryAction.Connect, savedRoute.primaryAction)
+
+        val connected = connectionJourneyPresentation(
+            RuntimeUiState(
+                isConnected = true,
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+            ),
+        )
+        assertEquals(R.string.status_connected_trusted_title, connected.titleRes)
+        assertEquals(ConnectionJourneyTone.Ready, connected.tone)
+        assertNull(connected.primaryAction)
     }
 
     @Test

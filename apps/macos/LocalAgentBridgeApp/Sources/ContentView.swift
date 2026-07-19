@@ -87,7 +87,12 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                ForEach(companionPrimaryActionOrder(trustedDeviceCount: model.trustedDevices.count)) { action in
+                ForEach(
+                    companionToolbarPrimaryActionOrder(
+                        section: selectedSection,
+                        trustedDeviceCount: model.trustedDevices.count
+                    )
+                ) { action in
                     toolbarPrimaryAction(action)
                 }
             }
@@ -205,6 +210,16 @@ struct ContentView: View {
             )
         }
     }
+}
+
+func companionToolbarPrimaryActionOrder(
+    section: CompanionSection,
+    trustedDeviceCount: Int
+) -> [CompanionPrimaryAction] {
+    guard section != .status else {
+        return []
+    }
+    return companionPrimaryActionOrder(trustedDeviceCount: trustedDeviceCount)
 }
 
 func pairingQRGenerationCommandAvailable(
